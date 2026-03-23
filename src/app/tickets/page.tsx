@@ -17,10 +17,13 @@ export default async function TicketsPage({
   if (params.tech) filters!.technicianId = params.tech
   if (params.status) filters!.status = params.status as TicketStatus
 
-  const [tickets, users] = await Promise.all([
-    getTickets(filters),
-    getUsers(true),
-  ])
+  let tickets: Awaited<ReturnType<typeof getTickets>> = []
+  let users: Awaited<ReturnType<typeof getUsers>> = []
+  try {
+    ;[tickets, users] = await Promise.all([getTickets(filters), getUsers(true)])
+  } catch {
+    // Tables may not exist yet or Supabase is unreachable — render empty board
+  }
 
   return (
     <div className="p-6 space-y-6">

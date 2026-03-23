@@ -29,11 +29,11 @@ export async function middleware(request: NextRequest) {
   )
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
 
   // Redirect unauthenticated users to login (except /login itself)
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  if (!session && !request.nextUrl.pathname.startsWith('/login')) {
     // API routes get a 401, not a redirect
     if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
