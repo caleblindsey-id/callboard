@@ -1,11 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { Menu, Wrench } from 'lucide-react'
 import Sidebar from './Sidebar'
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const pathname = usePathname()
+
+  if (pathname === '/login') {
+    return <>{children}</>
+  }
 
   return (
     <>

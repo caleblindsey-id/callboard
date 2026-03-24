@@ -5,7 +5,7 @@ import { TicketStatus } from '@/types/database'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as {
-      equipment_id: string
+      equipment_id?: string
       customer_id: number
       month: number
       year: number
@@ -15,9 +15,9 @@ export async function POST(request: NextRequest) {
 
     const { equipment_id, customer_id, month, year, assigned_technician_id, scheduled_date } = body
 
-    if (!equipment_id || !customer_id || !month || !year) {
+    if (!customer_id || !month || !year) {
       return NextResponse.json(
-        { error: 'equipment_id, customer_id, month, and year are required' },
+        { error: 'customer_id, month, and year are required' },
         { status: 400 }
       )
     }
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       .from('pm_tickets')
       .insert({
         pm_schedule_id: null,
-        equipment_id,
+        equipment_id: equipment_id ?? null,
         customer_id,
         assigned_technician_id: assigned_technician_id ?? null,
         month,
