@@ -152,7 +152,7 @@ export type ProductInsert = MakeOptional<
 
 export type UserInsert = MakeOptional<
   Omit<UserRow, 'id' | 'created_at'>,
-  'active'
+  'active' | 'synergy_id'
 >
 
 export type EquipmentInsert = MakeOptional<
