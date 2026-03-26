@@ -11,10 +11,14 @@ export function isTechnician(role: UserRole | null): boolean {
 }
 
 export async function getCurrentUser(): Promise<UserRow | null> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  return getUser(user.id)
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error || !user) return null
+    return getUser(user.id)
+  } catch {
+    return null
+  }
 }
 
 export async function requireRole(...roles: UserRole[]): Promise<UserRow> {

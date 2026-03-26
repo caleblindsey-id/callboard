@@ -30,12 +30,16 @@ export default async function RootLayout({
 
   // Refresh the pm-role cookie on every full page load
   if (dbUser?.role) {
-    const cookieStore = await cookies()
-    cookieStore.set('pm-role', dbUser.role, {
-      httpOnly: true,
-      sameSite: 'strict',
-      path: '/',
-    })
+    try {
+      const cookieStore = await cookies()
+      cookieStore.set('pm-role', dbUser.role, {
+        httpOnly: true,
+        sameSite: 'strict',
+        path: '/',
+      })
+    } catch {
+      // Cookie setting can fail in certain server component contexts — non-fatal
+    }
   }
 
   const userContext = dbUser?.role
