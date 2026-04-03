@@ -18,6 +18,7 @@ interface PartLine {
 
 interface BillingTicket {
   id: string
+  workOrderNumber: number
   customerName: string
   accountNumber: string | null
   billingAddress: string | null
@@ -44,6 +45,7 @@ interface BillingTicket {
 // Raw Supabase join shape
 interface RawTicket {
   id: string
+  work_order_number: number
   pm_schedule_id: string | null
   completed_date: string | null
   hours_worked: number | null
@@ -149,6 +151,7 @@ export async function POST(request: NextRequest) {
       .from('pm_tickets')
       .select(`
         id,
+        work_order_number,
         pm_schedule_id,
         completed_date,
         hours_worked,
@@ -248,6 +251,7 @@ export async function POST(request: NextRequest) {
 
       return {
         id: raw.id,
+        workOrderNumber: raw.work_order_number,
         customerName: raw.customers?.name ?? '—',
         accountNumber: raw.customers?.account_number ?? null,
         billingAddress: raw.customers?.billing_address ?? null,

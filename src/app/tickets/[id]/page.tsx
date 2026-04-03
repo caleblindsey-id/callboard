@@ -47,7 +47,7 @@ export default async function TicketDetailPage({
               Ticket Detail
             </h1>
             <p className="text-sm text-gray-500 mt-0.5 truncate">
-              {ticket.customers?.name ?? 'Unknown Customer'} — {equipmentLabel}
+              WO-{ticket.work_order_number} — {ticket.customers?.name ?? 'Unknown Customer'} — {equipmentLabel}
             </p>
           </div>
         </div>

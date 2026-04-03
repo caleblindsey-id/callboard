@@ -302,7 +302,10 @@ export default function TicketBoard({
                   onClick={() => router.push(`/tickets/${ticket.id}`)}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <StatusBadge status={ticket.status} />
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-slate-500">WO-{ticket.work_order_number}</span>
+                      <StatusBadge status={ticket.status} />
+                    </div>
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-sm font-medium text-gray-900 truncate">
                         {ticket.customers?.name ?? '—'}
@@ -347,6 +350,7 @@ export default function TicketBoard({
                         />
                       </th>
                     )}
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">WO #</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">Customer</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">Equipment</th>
@@ -375,6 +379,9 @@ export default function TicketBoard({
                           />
                         </td>
                       )}
+                      <td className="px-4 py-3 text-gray-600 font-medium">
+                        WO-{ticket.work_order_number}
+                      </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={ticket.status} />
                       </td>

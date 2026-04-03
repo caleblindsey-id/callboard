@@ -12,6 +12,7 @@ interface PartLine {
 
 interface BillingTicket {
   id: string
+  workOrderNumber: number
   customerName: string
   accountNumber: string | null
   billingAddress: string | null
@@ -280,6 +281,12 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
 
   return (
     <View>
+      {/* WORK ORDER */}
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldLabel}>Work Order #:</Text>
+        <Text style={[styles.fieldValue, { fontFamily: 'Helvetica-Bold' }]}>WO-{ticket.workOrderNumber}</Text>
+      </View>
+
       {/* CUSTOMER */}
       <Text style={styles.sectionLabel}>Customer</Text>
       <View style={styles.fieldRow}>
