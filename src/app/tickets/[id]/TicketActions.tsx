@@ -53,18 +53,41 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   const [serviceRequestLoading, setServiceRequestLoading] = useState(false)
   const [serviceRequestSuccess, setServiceRequestSuccess] = useState(false)
 
-  // Completion form state
+  // Completion form state — pre-populate from saved draft data
   const [completedDate, setCompletedDate] = useState(
-    new Date().toISOString().split('T')[0]
+    ticket.completed_date
+      ? new Date(ticket.completed_date).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0]
   )
-  const [hoursWorked, setHoursWorked] = useState('')
-  const [completionNotes, setCompletionNotes] = useState('')
+  const [hoursWorked, setHoursWorked] = useState(
+    ticket.hours_worked != null ? String(ticket.hours_worked) : ''
+  )
+  const [completionNotes, setCompletionNotes] = useState(
+    ticket.completion_notes ?? ''
+  )
   const [billingAmount, setBillingAmount] = useState(
-    isFlatRate && flatRate != null ? String(flatRate) : ''
+    ticket.billing_amount != null
+      ? String(ticket.billing_amount)
+      : isFlatRate && flatRate != null ? String(flatRate) : ''
   )
-  const [parts, setParts] = useState<PartEntry[]>([])
+  const [parts, setParts] = useState<PartEntry[]>(
+    ticket.parts_used && ticket.parts_used.length > 0
+      ? ticket.parts_used.map((p) => ({
+          description: p.description,
+          quantity: p.quantity,
+          unitPrice: p.unit_price,
+          synergyProductId: p.synergy_product_id,
+          isFromDb: p.synergy_product_id != null,
+          searchOpen: false,
+          searchResults: [],
+          searching: false,
+        }))
+      : []
+  )
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
@@ -150,6 +173,41 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleSaveProgress() {
+    setSaving(true)
+    setError(null)
+    setSaveSuccess(false)
+    try {
+      const partsUsed: PartUsed[] = parts.map((p) => ({
+        synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
+        description: p.description,
+        quantity: p.quantity,
+        unit_price: p.unitPrice,
+      }))
+
+      const res = await fetch(`/api/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          completed_date: completedDate || null,
+          hours_worked: parseFloat(hoursWorked) || null,
+          completion_notes: completionNotes || null,
+          parts_used: partsUsed.length > 0 ? partsUsed : null,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to save progress')
+      }
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -600,13 +658,26 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               }}
             />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
-            >
-              {loading ? 'Completing...' : 'Mark Complete'}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSaveProgress}
+                disabled={saving || loading}
+                className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                {saving ? 'Saving...' : 'Save Progress'}
+              </button>
+              <button
+                type="submit"
+                disabled={loading || saving}
+                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                {loading ? 'Completing...' : 'Mark Complete'}
+              </button>
+              {saveSuccess && (
+                <span className="text-sm text-green-600">Saved</span>
+              )}
+            </div>
           </form>
         </div>
         {serviceRequestSection}
