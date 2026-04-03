@@ -1,4 +1,4 @@
-import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 
 // ============================================================
 // Types
@@ -29,6 +29,8 @@ interface BillingTicket {
   billingType: string | null
   flatRate: number | null
   poRequired: boolean
+  customerSignature: string | null
+  customerSignatureName: string | null
 }
 
 interface BillingDocumentProps {
@@ -180,6 +182,30 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: 'right',
     color: '#111111',
+  },
+  // Customer signature
+  signatureBlock: {
+    marginTop: 16,
+    paddingTop: 10,
+    borderTopWidth: 0.5,
+    borderTopColor: '#cccccc',
+  },
+  signatureImage: {
+    height: 50,
+    width: 150,
+    objectFit: 'contain' as const,
+  },
+  signatureLine: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#111111',
+    width: 200,
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  signatureName: {
+    fontSize: 8,
+    color: '#444444',
+    marginTop: 2,
   },
   // Divider between tickets
   ticketDivider: {
@@ -364,6 +390,18 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
           </Text>
         </View>
       </View>
+
+      {/* CUSTOMER SIGNATURE */}
+      {ticket.customerSignature && (
+        <View style={styles.signatureBlock}>
+          <Text style={styles.sectionLabel}>Customer Acknowledgement</Text>
+          <Image src={ticket.customerSignature} style={styles.signatureImage} />
+          <View style={styles.signatureLine} />
+          <Text style={styles.signatureName}>
+            {ticket.customerSignatureName ?? '—'}
+          </Text>
+        </View>
+      )}
     </View>
   )
 }

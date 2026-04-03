@@ -109,6 +109,8 @@ export async function completeTicket(
     partsUsed: PartUsed[]
     completionNotes: string
     billingAmount: number
+    customerSignature: string
+    customerSignatureName: string
   }
 ): Promise<PmTicketRow> {
   const supabase = await createClient()
@@ -122,6 +124,8 @@ export async function completeTicket(
       parts_used: data.partsUsed,
       completion_notes: data.completionNotes,
       billing_amount: data.billingAmount,
+      customer_signature: data.customerSignature,
+      customer_signature_name: data.customerSignatureName,
     })
     .eq('id', id)
     .select()

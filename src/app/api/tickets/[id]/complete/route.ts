@@ -10,6 +10,8 @@ interface CompleteTicketBody {
   partsUsed: PartUsed[]
   completionNotes: string
   billingAmount: number
+  customerSignature: string
+  customerSignatureName: string
 }
 
 export async function POST(
@@ -20,11 +22,18 @@ export async function POST(
     const { id } = await params
     const body = await request.json() as CompleteTicketBody
 
-    const { completedDate, hoursWorked, partsUsed, completionNotes, billingAmount } = body
+    const { completedDate, hoursWorked, partsUsed, completionNotes, billingAmount, customerSignature, customerSignatureName } = body
 
     if (!completedDate || hoursWorked === undefined || billingAmount === undefined) {
       return NextResponse.json(
         { error: 'completedDate, hoursWorked, and billingAmount are required' },
+        { status: 400 }
+      )
+    }
+
+    if (!customerSignature || !customerSignatureName) {
+      return NextResponse.json(
+        { error: 'Customer signature and printed name are required' },
         { status: 400 }
       )
     }
@@ -87,6 +96,8 @@ export async function POST(
       partsUsed: finalParts,
       completionNotes: completionNotes ?? '',
       billingAmount: finalBillingAmount,
+      customerSignature,
+      customerSignatureName,
     })
 
     return NextResponse.json(updated)

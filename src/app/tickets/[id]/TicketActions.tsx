@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { TicketDetail } from '@/lib/db/tickets'
 import { PartUsed, UserRole } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
+import SignaturePad from '@/components/SignaturePad'
 
 interface ProductResult {
   id: number
@@ -62,6 +63,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
     isFlatRate && flatRate != null ? String(flatRate) : ''
   )
   const [parts, setParts] = useState<PartEntry[]>([])
+  const [signatureImage, setSignatureImage] = useState<string | null>(null)
+  const [signatureName, setSignatureName] = useState('')
 
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
@@ -107,6 +110,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
   async function handleComplete(e: React.FormEvent) {
     e.preventDefault()
+
+    if (!signatureImage || !signatureName.trim()) {
+      setError('Customer signature and printed name are required.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     try {
@@ -128,6 +137,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           billingAmount: isTech
             ? (isFlatRate ? flatRate! : 0)
             : (parseFloat(billingAmount) || 0),
+          customerSignature: signatureImage,
+          customerSignatureName: signatureName.trim(),
         }),
       })
       if (!res.ok) {
@@ -582,6 +593,13 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               </div>
             )}
 
+            <SignaturePad
+              onSignatureChange={({ image, name: sigName }) => {
+                setSignatureImage(image)
+                setSignatureName(sigName)
+              }}
+            />
+
             <button
               type="submit"
               disabled={loading}
@@ -704,6 +722,24 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           <p className="text-sm text-gray-900 mt-1 whitespace-pre-wrap">
             {ticket.completion_notes}
           </p>
+        </div>
+      )}
+      {ticket.customer_signature && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <span className="text-sm text-gray-500">Customer Signature</span>
+          <div className="mt-2 border border-gray-200 rounded-md bg-white p-2 inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={ticket.customer_signature}
+              alt="Customer signature"
+              className="h-20 w-auto"
+            />
+          </div>
+          {ticket.customer_signature_name && (
+            <p className="text-sm text-gray-900 font-medium mt-1">
+              {ticket.customer_signature_name}
+            </p>
+          )}
         </div>
       )}
       {ticket.status === 'completed' && !isTech && (

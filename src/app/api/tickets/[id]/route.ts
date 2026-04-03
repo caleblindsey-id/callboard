@@ -105,6 +105,8 @@ export async function PATCH(
               hours_worked: null,
               parts_used: null,
               billing_amount: null,
+              customer_signature: null,
+              customer_signature_name: null,
             }
           : { status: 'unassigned' as const }
         const updated = await updateTicket(id, updateData as any)
