@@ -710,7 +710,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         <div className="mt-5 pt-4 border-t border-gray-200">
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           <button
-            onClick={handleReopen}
+            onClick={() => handleReopen('in_progress')}
             disabled={loading}
             className="px-4 py-3 sm:py-2 text-sm font-medium text-orange-700 bg-white border border-orange-300 rounded-md hover:bg-orange-50 disabled:opacity-50 transition-colors min-h-[44px]"
           >
