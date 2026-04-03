@@ -77,6 +77,11 @@ export default function AddEquipmentModal({
   const [description, setDescription] = useState('')
   const [locationOnSite, setLocationOnSite] = useState('')
 
+  // Contact
+  const [contactName, setContactName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+
   // Default technician
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([])
   const [defaultTechId, setDefaultTechId] = useState('')
@@ -245,6 +250,9 @@ export default function AddEquipmentModal({
     setSerialNumber('')
     setDescription('')
     setLocationOnSite('')
+    setContactName('')
+    setContactEmail('')
+    setContactPhone('')
     setDefaultTechId('')
     setDefaultProducts([])
     setProductSearch('')
@@ -277,6 +285,9 @@ export default function AddEquipmentModal({
         serial_number: serialNumber || null,
         description: description || null,
         location_on_site: locationOnSite || null,
+        contact_name: contactName || null,
+        contact_email: contactEmail || null,
+        contact_phone: contactPhone || null,
         default_products: defaultProducts.length > 0 ? defaultProducts : [],
         active: true,
       })
@@ -457,6 +468,34 @@ export default function AddEquipmentModal({
               onChange={(e) => setLocationOnSite(e.target.value)}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
+          </div>
+
+          {/* Contact */}
+          <div className="pt-2 border-t border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Contact</label>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Name"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+              <input
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+              <input
+                type="tel"
+                value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value)}
+                placeholder="Phone"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+            </div>
           </div>
 
           {/* Default Technician */}

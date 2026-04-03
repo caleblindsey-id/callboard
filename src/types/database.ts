@@ -110,6 +110,9 @@ export type EquipmentRow = {
   serial_number: string | null
   description: string | null
   location_on_site: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
   default_products: DefaultProduct[]
   active: boolean
   created_at: string
@@ -199,7 +202,7 @@ export type UserInsert = MakeOptional<
 
 export type EquipmentInsert = MakeOptional<
   Omit<EquipmentRow, 'id' | 'created_at' | 'updated_at'>,
-  'active' | 'customer_id' | 'default_technician_id' | 'ship_to_location_id' | 'make' | 'model' | 'serial_number' | 'description' | 'location_on_site' | 'default_products'
+  'active' | 'customer_id' | 'default_technician_id' | 'ship_to_location_id' | 'make' | 'model' | 'serial_number' | 'description' | 'location_on_site' | 'contact_name' | 'contact_email' | 'contact_phone' | 'default_products'
 >
 
 export type PmScheduleInsert = MakeOptional<

@@ -22,6 +22,9 @@ export default function EquipmentForm({ equipment, users, shipToLocations }: Equ
   const [serialNumber, setSerialNumber] = useState(equipment.serial_number ?? '')
   const [description, setDescription] = useState(equipment.description ?? '')
   const [locationOnSite, setLocationOnSite] = useState(equipment.location_on_site ?? '')
+  const [contactName, setContactName] = useState(equipment.contact_name ?? '')
+  const [contactEmail, setContactEmail] = useState(equipment.contact_email ?? '')
+  const [contactPhone, setContactPhone] = useState(equipment.contact_phone ?? '')
   const [shipToLocationId, setShipToLocationId] = useState(String(equipment.ship_to_location_id ?? ''))
   const [defaultTechId, setDefaultTechId] = useState(equipment.default_technician_id ?? '')
   const [active, setActive] = useState(equipment.active)
@@ -41,6 +44,9 @@ export default function EquipmentForm({ equipment, users, shipToLocations }: Equ
         serial_number: serialNumber || null,
         description: description || null,
         location_on_site: locationOnSite || null,
+        contact_name: contactName || null,
+        contact_email: contactEmail || null,
+        contact_phone: contactPhone || null,
         ship_to_location_id: shipToLocationId ? parseInt(shipToLocationId) : null,
         default_technician_id: defaultTechId || null,
         active,
@@ -85,6 +91,14 @@ export default function EquipmentForm({ equipment, users, shipToLocations }: Equ
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Location on Site</label>
           <input type="text" value={locationOnSite} onChange={(e) => setLocationOnSite(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Contact</label>
+          <div className="space-y-2">
+            <input type="text" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Name" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500" />
+            <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Email" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500" />
+            <input type="tel" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="Phone" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500" />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Ship-To Location</label>
