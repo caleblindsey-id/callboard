@@ -9,6 +9,7 @@ import {
   Building2,
   Package,
   FileText,
+  BarChart3,
   Settings,
   LogOut,
   UserRoundSearch,
@@ -24,6 +25,7 @@ const allNavItems = [
   { label: 'Prospects', icon: UserRoundSearch, route: '/prospects' },
   { label: 'Products', icon: Package, route: '/products' },
   { label: 'Billing', icon: FileText, route: '/billing' },
+  { label: 'Analytics', icon: BarChart3, route: '/analytics' },
   { label: 'Settings', icon: Settings, route: '/settings' },
 ]
 

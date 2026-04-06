@@ -98,6 +98,7 @@ export type UserRow = {
   active: boolean
   created_at: string
   synergy_id: string | null
+  hourly_cost: number | null
 }
 
 export type EquipmentRow = {
@@ -169,6 +170,18 @@ export type EquipmentNoteRow = {
   created_at: string
 }
 
+export type TechnicianTargetRow = {
+  id: string
+  technician_id: string | null
+  metric: string
+  target_value: number
+  period_type: string
+  effective_from: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type EquipmentProspectRow = {
   id: string
   equipment_id: string
@@ -219,7 +232,7 @@ export type ProductInsert = MakeOptional<
 
 export type UserInsert = MakeOptional<
   Omit<UserRow, 'id' | 'created_at'>,
-  'active' | 'synergy_id'
+  'active' | 'synergy_id' | 'hourly_cost'
 >
 
 export type EquipmentInsert = MakeOptional<
@@ -452,6 +465,20 @@ export interface Database {
           {
             foreignKeyName: 'equipment_prospects_removed_by_fkey'
             columns: ['removed_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      technician_targets: {
+        Row: TechnicianTargetRow
+        Insert: Pick<TechnicianTargetRow, 'metric' | 'target_value' | 'period_type'> & Partial<Pick<TechnicianTargetRow, 'technician_id' | 'effective_from' | 'active'>>
+        Update: Partial<Omit<TechnicianTargetRow, 'id' | 'created_at'>>
+        Relationships: [
+          {
+            foreignKeyName: 'technician_targets_technician_id_fkey'
+            columns: ['technician_id']
             isOneToOne: false
             referencedRelation: 'users'
             referencedColumns: ['id']

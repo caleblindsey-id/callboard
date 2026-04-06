@@ -49,6 +49,7 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
                 <th className="px-5 py-3 text-left font-medium text-gray-600">Name</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600">Email</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600">Role</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600">Hourly Rate</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600">Status</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600">Actions</th>
               </tr>
@@ -142,6 +143,9 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
 function UserTableRow({ user }: { user: UserRow }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [editingCost, setEditingCost] = useState(false)
+  const [hourlyCost, setHourlyCost] = useState(user.hourly_cost?.toString() ?? '')
+  const [savingCost, setSavingCost] = useState(false)
 
   async function handleToggleActive() {
     setLoading(true)
@@ -154,11 +158,63 @@ function UserTableRow({ user }: { user: UserRow }) {
     router.refresh()
   }
 
+  async function handleSaveCost() {
+    setSavingCost(true)
+    const supabase = createClient()
+    await supabase
+      .from('users')
+      .update({ hourly_cost: hourlyCost ? parseFloat(hourlyCost) : null } )
+      .eq('id', user.id)
+    setSavingCost(false)
+    setEditingCost(false)
+    router.refresh()
+  }
+
   return (
     <tr>
       <td className="px-5 py-3 text-gray-900 font-medium">{user.name}</td>
       <td className="px-5 py-3 text-gray-600">{user.email}</td>
       <td className="px-5 py-3 text-gray-600 capitalize">{user.role ?? '—'}</td>
+      <td className="px-5 py-3">
+        {user.role === 'technician' ? (
+          editingCost ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 text-sm">$</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={hourlyCost}
+                onChange={(e) => setHourlyCost(e.target.value)}
+                className="w-20 rounded border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                placeholder="0.00"
+              />
+              <button
+                onClick={handleSaveCost}
+                disabled={savingCost}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+              >
+                {savingCost ? '...' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setEditingCost(false); setHourlyCost(user.hourly_cost?.toString() ?? '') }}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditingCost(true)}
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              {user.hourly_cost != null ? `$${user.hourly_cost.toFixed(2)}/hr` : 'Set rate'}
+            </button>
+          )
+        ) : (
+          <span className="text-sm text-gray-400">—</span>
+        )}
+      </td>
       <td className="px-5 py-3">
         <span
           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
