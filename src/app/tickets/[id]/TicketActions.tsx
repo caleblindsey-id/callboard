@@ -125,6 +125,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
   // Share work order state
   const [sharing, setSharing] = useState(false)
+  const [workOrderFile, setWorkOrderFile] = useState<File | null>(null)
 
   const billingType = ticket.schedule?.billing_type ?? null
   const flatRate = ticket.schedule?.flat_rate ?? null
@@ -497,7 +498,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
     setPhotos((prev) => prev.filter((_, i) => i !== index))
   }
 
-  async function handleShareWorkOrder() {
+  async function handlePrepareWorkOrder() {
     setSharing(true)
     setError(null)
     try {
@@ -510,28 +511,46 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
       const customerSlug = (ticket.customers?.name ?? 'Customer').replace(/[^a-zA-Z0-9]/g, '-').substring(0, 40)
       const filename = `WO-${ticket.work_order_number}-${customerSlug}.pdf`
       const file = new File([blob], filename, { type: 'application/pdf' })
+      setWorkOrderFile(file)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate work order')
+    } finally {
+      setSharing(false)
+    }
+  }
 
-      // Try Web Share API (mobile)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: `Work Order WO-${ticket.work_order_number}` })
+  async function handleShareWorkOrder() {
+    if (!workOrderFile) return
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [workOrderFile] })) {
+        await navigator.share({ files: [workOrderFile], title: `Work Order WO-${ticket.work_order_number}` })
       } else {
         // Fallback: download
-        const url = URL.createObjectURL(blob)
+        const url = URL.createObjectURL(workOrderFile)
         const a = document.createElement('a')
         a.href = url
-        a.download = filename
+        a.download = workOrderFile.name
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
       }
     } catch (err) {
-      // User cancelling share sheet throws AbortError — don't show as error
       if (err instanceof Error && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Failed to share work order')
-    } finally {
-      setSharing(false)
     }
+  }
+
+  function handleDownloadWorkOrder() {
+    if (!workOrderFile) return
+    const url = URL.createObjectURL(workOrderFile)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = workOrderFile.name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   async function handleDelete() {
@@ -1216,13 +1235,31 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
       )}
       {/* Share Work Order — visible to all roles on completed/billed tickets */}
       <div className="mt-5 pt-4 border-t border-gray-200">
-        <button
-          onClick={handleShareWorkOrder}
-          disabled={sharing}
-          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
-        >
-          {sharing ? 'Generating...' : 'Share Work Order'}
-        </button>
+        {!workOrderFile ? (
+          <button
+            onClick={handlePrepareWorkOrder}
+            disabled={sharing}
+            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
+          >
+            {sharing ? 'Generating...' : 'Share Work Order'}
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleShareWorkOrder}
+              className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors min-h-[44px]"
+            >
+              Share
+            </button>
+            <button
+              onClick={handleDownloadWorkOrder}
+              className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors min-h-[44px]"
+            >
+              Download
+            </button>
+            <span className="text-sm text-green-600">Ready</span>
+          </div>
+        )}
       </div>
       {ticket.status === 'completed' && !isTech && (
         <div className="mt-5 pt-4 border-t border-gray-200">
