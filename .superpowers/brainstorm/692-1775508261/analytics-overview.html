@@ -1,0 +1,179 @@
+<h2>Analytics — Team Overview Page</h2>
+<p class="subtitle">The /analytics page managers and coordinators see. Weekly/monthly toggle controls all sections.</p>
+
+<div class="section">
+  <h3>Layout Structure</h3>
+  <p>Top-to-bottom: Period toggle → KPI summary cards → Leaderboard table → Team trends chart</p>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Desktop: /analytics</div>
+  <div class="mockup-body" style="background:#f8fafc; padding:24px; font-family:system-ui,-apple-system,sans-serif;">
+
+    <!-- Period Toggle -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+      <div>
+        <div style="font-size:20px; font-weight:700; color:#0f172a;">Technician Analytics</div>
+        <div style="font-size:13px; color:#64748b;">Week of Mar 31 – Apr 6, 2026</div>
+      </div>
+      <div style="display:flex; gap:0; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+        <div style="padding:8px 16px; background:#2563eb; color:white; font-size:13px; font-weight:600;">Weekly</div>
+        <div style="padding:8px 16px; background:white; color:#64748b; font-size:13px; cursor:pointer;">Monthly</div>
+      </div>
+    </div>
+
+    <!-- KPI Summary Cards -->
+    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px; margin-bottom:24px;">
+      <div style="background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Tickets Completed</div>
+        <div style="font-size:28px; font-weight:700; color:#0f172a;">38</div>
+        <div style="font-size:12px; color:#16a34a;">↑ 12% vs last week</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Total Revenue</div>
+        <div style="font-size:28px; font-weight:700; color:#0f172a;">$8,420</div>
+        <div style="font-size:12px; color:#16a34a;">↑ 5% vs last week</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Gross Profit</div>
+        <div style="font-size:28px; font-weight:700; color:#0f172a;">$5,180</div>
+        <div style="font-size:12px; color:#16a34a;">↑ 8% vs last week</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Avg Hours/Ticket</div>
+        <div style="font-size:28px; font-weight:700; color:#0f172a;">2.1</div>
+        <div style="font-size:12px; color:#ef4444;">↑ 0.3 vs last week</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Avg Completion</div>
+        <div style="font-size:28px; font-weight:700; color:#0f172a;">1.8d</div>
+        <div style="font-size:12px; color:#16a34a;">↓ 0.5d vs last week</div>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div style="background:white; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08); margin-bottom:24px;">
+      <div style="padding:16px 20px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:15px; font-weight:700; color:#0f172a;">Leaderboard</div>
+        <div style="display:flex; gap:0; border:1px solid #e2e8f0; border-radius:6px; overflow:hidden;">
+          <div style="padding:4px 12px; background:#2563eb; color:white; font-size:11px; font-weight:600;">Revenue</div>
+          <div style="padding:4px 12px; background:white; color:#64748b; font-size:11px;">Tickets</div>
+          <div style="padding:4px 12px; background:white; color:#64748b; font-size:11px;">Profit</div>
+          <div style="padding:4px 12px; background:white; color:#64748b; font-size:11px;">Efficiency</div>
+        </div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <th style="text-align:left; padding:10px 20px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">Rank</th>
+            <th style="text-align:left; padding:10px 12px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">Technician</th>
+            <th style="text-align:right; padding:10px 12px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">Tickets</th>
+            <th style="text-align:right; padding:10px 12px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">Revenue</th>
+            <th style="text-align:right; padding:10px 12px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">Hours</th>
+            <th style="text-align:right; padding:10px 12px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">$/Hour</th>
+            <th style="text-align:right; padding:10px 12px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">Profit</th>
+            <th style="text-align:center; padding:10px 20px; color:#64748b; font-weight:600; font-size:11px; text-transform:uppercase;">vs Target</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f8fafc; cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            <td style="padding:12px 20px;"><span style="background:#fbbf24; color:#78350f; font-weight:700; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px;">1</span></td>
+            <td style="padding:12px 12px; font-weight:600; color:#0f172a;">Mike Jennings</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">8</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a; font-weight:600;">$2,140</td>
+            <td style="padding:12px 12px; text-align:right; color:#64748b;">14.5</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">$147.59</td>
+            <td style="padding:12px 12px; text-align:right; color:#16a34a; font-weight:600;">$1,415</td>
+            <td style="padding:12px 12px; text-align:center;"><span style="background:#dcfce7; color:#16a34a; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600;">↑ 107%</span></td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc; cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            <td style="padding:12px 20px;"><span style="background:#e2e8f0; color:#475569; font-weight:700; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px;">2</span></td>
+            <td style="padding:12px 12px; font-weight:600; color:#0f172a;">Jacob Essmon</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">7</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a; font-weight:600;">$1,890</td>
+            <td style="padding:12px 12px; text-align:right; color:#64748b;">13.0</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">$145.38</td>
+            <td style="padding:12px 12px; text-align:right; color:#16a34a; font-weight:600;">$1,240</td>
+            <td style="padding:12px 12px; text-align:center;"><span style="background:#dcfce7; color:#16a34a; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600;">↑ 95%</span></td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc; cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            <td style="padding:12px 20px;"><span style="background:#e2e8f0; color:#475569; font-weight:700; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px;">3</span></td>
+            <td style="padding:12px 12px; font-weight:600; color:#0f172a;">Tommy Fields</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">6</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a; font-weight:600;">$1,560</td>
+            <td style="padding:12px 12px; text-align:right; color:#64748b;">12.5</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">$124.80</td>
+            <td style="padding:12px 12px; text-align:right; color:#16a34a; font-weight:600;">$935</td>
+            <td style="padding:12px 12px; text-align:center;"><span style="background:#fef9c3; color:#a16207; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600;">→ 82%</span></td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc; cursor:pointer; background:#fff5f5;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='#fff5f5'">
+            <td style="padding:12px 20px;"><span style="background:#e2e8f0; color:#475569; font-weight:700; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px;">4</span></td>
+            <td style="padding:12px 12px; font-weight:600; color:#0f172a;">Danny Roberts</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">3</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a; font-weight:600;">$680</td>
+            <td style="padding:12px 12px; text-align:right; color:#64748b;">11.0</td>
+            <td style="padding:12px 12px; text-align:right; color:#0f172a;">$61.82</td>
+            <td style="padding:12px 12px; text-align:right; color:#ef4444; font-weight:600;">$130</td>
+            <td style="padding:12px 12px; text-align:center;"><span style="background:#fee2e2; color:#dc2626; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600;">↓ 45%</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 20px; border-top:1px solid #f1f5f9; text-align:center; font-size:12px; color:#94a3b8;">Click any row to view detailed technician profile →</div>
+    </div>
+
+    <!-- Trend Chart Placeholder -->
+    <div style="background:white; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+      <div style="padding:16px 20px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:15px; font-weight:700; color:#0f172a;">Team Trends</div>
+        <div style="display:flex; gap:0; border:1px solid #e2e8f0; border-radius:6px; overflow:hidden;">
+          <div style="padding:4px 12px; background:#2563eb; color:white; font-size:11px; font-weight:600;">Revenue</div>
+          <div style="padding:4px 12px; background:white; color:#64748b; font-size:11px;">Tickets</div>
+          <div style="padding:4px 12px; background:white; color:#64748b; font-size:11px;">Profit Margin</div>
+        </div>
+      </div>
+      <div style="padding:24px 20px; display:flex; align-items:flex-end; gap:4px; height:200px;">
+        <!-- Simple bar chart mockup -->
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div style="width:100%; background:#bfdbfe; border-radius:4px 4px 0 0; height:60px;"></div>
+          <div style="font-size:10px; color:#94a3b8;">Jan</div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div style="width:100%; background:#bfdbfe; border-radius:4px 4px 0 0; height:85px;"></div>
+          <div style="font-size:10px; color:#94a3b8;">Feb</div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div style="width:100%; background:#93c5fd; border-radius:4px 4px 0 0; height:110px;"></div>
+          <div style="font-size:10px; color:#94a3b8;">Mar</div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div style="width:100%; background:#2563eb; border-radius:4px 4px 0 0; height:140px;"></div>
+          <div style="font-size:10px; color:#64748b; font-weight:600;">Apr</div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div style="width:100%; background:#e2e8f0; border-radius:4px 4px 0 0; height:40px; border:1px dashed #94a3b8;"></div>
+          <div style="font-size:10px; color:#94a3b8;">May</div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div style="width:100%; background:#e2e8f0; border-radius:4px 4px 0 0; height:40px; border:1px dashed #94a3b8;"></div>
+          <div style="font-size:10px; color:#94a3b8;">Jun</div>
+        </div>
+      </div>
+      <div style="padding:0 20px 16px; display:flex; gap:16px; justify-content:center;">
+        <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:#64748b;"><div style="width:10px; height:10px; background:#2563eb; border-radius:2px;"></div> Actual</div>
+        <div style="display:flex; align-items:center; gap:4px; font-size:11px; color:#64748b;"><div style="width:10px; height:10px; background:#e2e8f0; border:1px dashed #94a3b8; border-radius:2px;"></div> Projected</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;">
+  <h3>Key Design Decisions</h3>
+  <ul style="font-size:14px; color:#cbd5e1; line-height:1.8;">
+    <li><strong>Period toggle</strong> — switches all sections between weekly and monthly views</li>
+    <li><strong>KPI cards</strong> — team-wide aggregates with period-over-period delta</li>
+    <li><strong>Leaderboard</strong> — sortable by different metrics (revenue, tickets, profit, efficiency). Red highlight row = below target threshold</li>
+    <li><strong>Trend chart</strong> — monthly bar chart with actual vs projected. Toggles between revenue, tickets, and profit margin</li>
+    <li><strong>Click-through</strong> — any tech row links to /analytics/[id] for the deep-dive</li>
+  </ul>
+</div>

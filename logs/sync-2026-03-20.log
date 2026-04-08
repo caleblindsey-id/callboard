@@ -1,0 +1,151 @@
+2026-03-20 15:42:48,082 [INFO] ============================================================
+2026-03-20 15:42:48,082 [INFO] PM Scheduler — Nightly Synergy Sync starting
+2026-03-20 15:42:48,082 [INFO] ============================================================
+2026-03-20 15:42:48,083 [WARNING] Could not write sync_log start entry: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+2026-03-20 15:42:48,084 [DEBUG] sync_log row created: id=None
+2026-03-20 15:42:48,084 [INFO] Connecting to SynergyERP via ODBC DSN 'ERPlinked'...
+2026-03-20 15:42:48,096 [INFO] Connected.
+2026-03-20 15:42:48,099 [INFO] Discovered 278 ERP tables.
+2026-03-20 15:42:48,099 [DEBUG] Tables: ['a80vm', 'abcdata', 'alertcostchange', 'alertdata', 'alertheader', 'alerttrailer', 'alerttype', 'altvend', 'apdeta', 'apdeth', 'apdetl', 'apdetm', 'appoh', 'appohh', 'appol', 'arproof', 'artermcode', 'arup', 'bomfle', 'bowork', 'brktbl', 'buyer', 'callnotes', 'ccodes', 'collagent', 'commhead', 'commodity', 'contlist', 'contnotes', 'contracth', 'contwt', 'costhist', 'cpicust', 'cpidet', 'cpihead', 'cslkeywrd', 'cslsales', 'cszone', 'ctwtaccum', 'ctwtaccumh', 'cust', 'custcat', 'custcont', 'custcrhist', 'custgrp', 'custnotes', 'custprdmsg', 'custshnote', 'custsls', 'custtax', 'deals', 'deptfle', 'deptslscur', 'divifle', 'docdeliv', 'entdby', 'fifolot', 'fifotrans', 'formbatch', 'formheader', 'formheaderdata', 'formline', 'formlinedata', 'formtotaldata', 'formtype', 'glmaster', 'invcost', 'invh', 'invl', 'invltag', 'invm', 'invs', 'invt', 'invtrans', 'itemhist', 'lastprice', 'matcode', 'msdfle', 'msdshist', 'nstkdesc', 'pickedby', 'poctfle', 'pohead', 'poheadh', 'poline', 'polineh', 'poltag', 'pom', 'pomiscchrg', 'pomsgh', 'ponstkh', 'prdkeywrd', 'prod', 'prodgroup', 'prodloc', 'prodsls', 'produda', 'prodwhse', 'prodwhstat', 'progaccess', 'progaccess_parameter', 'pserlno', 'pwsales', 'qoh', 'qol', 'qom', 'qordlkitl', 'qos', 'qot', 'rcontracth', 'rebatedtl', 'rebtnotes', 'replenh', 'replenl', 'reportcolumnheaders', 'reportdata', 'reportheader', 'rfpickq', 'rfpickqh', 'roh', 'rolnew', 'roltag', 'rom', 'ros', 'rot', 'saract', 'saractf', 'sardetl', 'sardetlh', 'shiplist', 'simpleviewcharts', 'simpleviewfilter', 'simpleviewfilterfields', 'simpleviewobj', 'sllstprice', 'slscurr', 'slsmsls', 'sorce', 'sordcash', 'sordcashh', 'sordlkith', 'sordlkitl', 'sordlot', 'sotibatch', 'sotiorderattachment', 'sotiorderdetail', 'sotiorderheader', 'sotiproductdetail', 'specmsg', 'specprice', 'sprodcatgy', 'sprodlot', 'sslsm', 'sslsmcomm', 'sslsmcommh', 'stagitem', 'table1', 'taxcode', 'txitemsaleshistorybycustomermonthsumpc1', 'txitemsaleshistorybycustomermonthsumpc1pivot', 'txitemsaleshistorybycustomermonthsumpc1pivotsum', 'txitemsaleshistseqmonths1', 'txitemsalesinperiodbuckets', 'txitemsalesperiodbucketssum0x', 'txitemsalesperiodbucketssumpercent', 'txitemsalesperiodbucketssumx', 'txitemsalesperiodbucketssumxx', 'txprodwhsetotalspinstk4venuom', 'upcxref', 'usercntrl', 'usrdefcat', 'vendgrp', 'vendrebate', 'vendtag', 'vendwhse', 'vwaccountspayable', 'vwaccountsreceivable', 'vwcustomer', 'vwcustomerdifferentbillto', 'vwcustomersalesorderhistory', 'vwinvoicehistory', 'vwinvoicehistorylines', 'vwlastprice', 'vwlostsales', 'vwopenorders', 'vwordership', 'vwordersourceanalysis', 'vwpricebook', 'vwproduct', 'vwproductinventory', 'vwproductprice', 'vwproductsales', 'vwpurchaseorders', 'vwrebates', 'vwsalesorder', 'vwsalesorder2', 'vwsalesperson', 'vwsalestotalsthisyearvslastyear', 'vwshiplist', 'vwsourcecomparison_avggrossprofit', 'vwsourcecomparison_avgsales', 'vwsourcecomparison_cost', 'vwsourcecomparison_grossprofit', 'vwsourcecomparison_invoice', 'vwsourcecomparison_sale', 'vwvendor', 'vwxaranalysis', 'vwxaranalysis2', 'vwxaranalysis_30', 'vwxaranalysis_45', 'vwxaranalysis_60', 'vwxaranalysis_90', 'vwxaranalysis_current', 'vwxardetail', 'vwxarlessthan30days', 'vwxbottom10customersbymerchandisedollars', 'vwxbottom10customersbyprofitdollars', 'vwxbottom10productsbymerchandisedollars', 'vwxbottom10productsbyprofitdollars', 'vwxbottom10salesmanbymerchandisedollars', 'vwxbottom10salesmanbyprofitdollars', 'vwxbottom10vendorsbymerchandisedollars', 'vwxbottom10vendorsbyprofitdollars', 'vwxchartdata', 'vwxdivisiontotalsbyprofitdollars', 'vwxproductanalysis', 'vwxproductanalysisdetail', 'vwxsaleshistory', 'vwxsaleshistory2', 'vwxtop10customersbymerchandisedollars', 'vwxtop10customersbyprofitdollars', 'vwxtop10productsbymerchandisedollars', 'vwxtop10productsbyprofitdollars', 'vwxtop10salesmanbymerchandisedollars', 'vwxtop10salesmanbyprofitdollars', 'vwxtop10vendorsbymerchandisedollars', 'vwxtop10vendorsbyprofitdollars', 'vwxwarehousetotalsbyprofitdollars', 'vxitemsaleshistbymonthcust', 'vxitemsaleshistorybycustomermonthsum', 'vxitemsaleshistorybycustomermonthsumpc1', 'vxitemsaleshistorybycustomermonthsumpc1pivot', 'vxitemsaleshistorybycustomermonthsumpc1pivotsum', 'vxitemsaleshistorybycustomermonthsumpc5', 'vxitemsaleshistorybymonthsum', 'vxitemsaleshistseqmonths1', 'vxitemsalesinperiodbucketssum', 'vxitemsalesinperiodbucketssumpercent', 'vxitemsalesperiodbucketssumxsum', 'vxpinsock', 'vxproductsalesmen2', 'vxprodwhsetotals', 'vxprodwhsetotalspinstk4', 'vxprodwhsetotalspinstk4venuom', 'vxwarehousestock', 'vxwarehousestocktotal', 'weeklysls', 'whinfo', 'wohfle', 'wohist', 'wohistl', 'wolfle', 'wos_t_machine', 'wos_t_machineruntime', 'wos_t_machresallocation', 'wos_t_machresource', 'wos_t_reports', 'wos_t_resource', 'wos_t_resusers', 'wos_t_resusers_1', 'wos_t_rptparm', 'wos_t_user', 'wos_t_womachinedata', 'wos_t_woschedule', 'wos_t_wosschedmod', 'wos_t_wosstatus', 'wos_t_wouserdata', 'zonefle']
+2026-03-20 15:42:48,099 [INFO] --- Syncing customers ---
+2026-03-20 15:42:48,219 [INFO]   Fetched 9480 customer rows from Synergy.
+2026-03-20 15:42:48,244 [ERROR] Customer sync failed: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+Traceback (most recent call last):
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 495, in main
+    count = sync_customers(erp_conn)
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 286, in sync_customers
+    count = upsert_in_batches(customers, "customers")
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 146, in upsert_in_batches
+    count = supabase_upsert(table, batch, on_conflict=on_conflict)
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 129, in supabase_upsert
+    response = requests.post(url, json=records, headers=supabase_headers(), timeout=60)
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\api.py", line 115, in post
+    return request("post", url, data=data, json=json, **kwargs)
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\sessions.py", line 575, in request
+    prep = self.prepare_request(req)
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\sessions.py", line 484, in prepare_request
+    p.prepare(
+    ~~~~~~~~~^
+        method=request.method.upper(),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        hooks=merge_hooks(request.hooks, self.hooks),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 368, in prepare
+    self.prepare_headers(headers)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 490, in prepare_headers
+    check_header_validity(header)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\utils.py", line 1032, in check_header_validity
+    _validate_header_part(header, value, 1)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\utils.py", line 1048, in _validate_header_part
+    raise InvalidHeader(
+    ...<2 lines>...
+    )
+requests.exceptions.InvalidHeader: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+2026-03-20 15:42:48,284 [INFO] --- Syncing contacts ---
+2026-03-20 15:42:48,299 [INFO]   Fetched 1292 contact rows from Synergy.
+2026-03-20 15:42:48,299 [WARNING] Could not fetch customer map from Supabase: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+2026-03-20 15:42:48,299 [DEBUG]   Skipped 1292 contacts with no matching customer in Supabase.
+2026-03-20 15:42:48,299 [INFO]   No records to upsert for table 'contacts'.
+2026-03-20 15:42:48,299 [INFO]   Contacts synced: 0
+2026-03-20 15:42:48,299 [INFO] --- Syncing products ---
+2026-03-20 15:42:48,336 [INFO]   Fetched 2607 product rows from Synergy.
+2026-03-20 15:42:48,340 [ERROR] Product sync failed: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+Traceback (most recent call last):
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 511, in main
+    count = sync_products(erp_conn)
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 338, in sync_products
+    count = upsert_in_batches(products, "products")
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 146, in upsert_in_batches
+    count = supabase_upsert(table, batch, on_conflict=on_conflict)
+  File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\synergy-sync.py", line 129, in supabase_upsert
+    response = requests.post(url, json=records, headers=supabase_headers(), timeout=60)
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\api.py", line 115, in post
+    return request("post", url, data=data, json=json, **kwargs)
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\sessions.py", line 575, in request
+    prep = self.prepare_request(req)
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\sessions.py", line 484, in prepare_request
+    p.prepare(
+    ~~~~~~~~~^
+        method=request.method.upper(),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        hooks=merge_hooks(request.hooks, self.hooks),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 368, in prepare
+    self.prepare_headers(headers)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 490, in prepare_headers
+    check_header_validity(header)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\utils.py", line 1032, in check_header_validity
+    _validate_header_part(header, value, 1)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\utils.py", line 1048, in _validate_header_part
+    raise InvalidHeader(
+    ...<2 lines>...
+    )
+requests.exceptions.InvalidHeader: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+2026-03-20 15:42:48,342 [DEBUG] ERP connection closed.
+2026-03-20 15:42:48,342 [ERROR] Sync completed with failures: customers: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'; products: Invalid leading whitespace, reserved character(s), or return character(s) in header value: '# Setup: edit the SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY values below,\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhb2hreWJubW5wdXhwaXlranZiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg2MjA1NywiZXhwIjoyMDg5NDM4MDU3fQ.uw_t_dKzlQPctD3yS2M6qgHSr9FjHHzMvRzMb61OXOM'
+2026-03-20 15:42:48,342 [INFO] Total records synced before failure(s): 0
+2026-03-20 15:42:56,430 [INFO] ============================================================
+2026-03-20 15:42:56,430 [INFO] PM Scheduler — Nightly Synergy Sync starting
+2026-03-20 15:42:56,430 [INFO] ============================================================
+2026-03-20 15:42:57,741 [DEBUG] sync_log row created: id=8
+2026-03-20 15:42:57,741 [INFO] Connecting to SynergyERP via ODBC DSN 'ERPlinked'...
+2026-03-20 15:42:57,754 [INFO] Connected.
+2026-03-20 15:42:57,760 [INFO] Discovered 278 ERP tables.
+2026-03-20 15:42:57,760 [DEBUG] Tables: ['a80vm', 'abcdata', 'alertcostchange', 'alertdata', 'alertheader', 'alerttrailer', 'alerttype', 'altvend', 'apdeta', 'apdeth', 'apdetl', 'apdetm', 'appoh', 'appohh', 'appol', 'arproof', 'artermcode', 'arup', 'bomfle', 'bowork', 'brktbl', 'buyer', 'callnotes', 'ccodes', 'collagent', 'commhead', 'commodity', 'contlist', 'contnotes', 'contracth', 'contwt', 'costhist', 'cpicust', 'cpidet', 'cpihead', 'cslkeywrd', 'cslsales', 'cszone', 'ctwtaccum', 'ctwtaccumh', 'cust', 'custcat', 'custcont', 'custcrhist', 'custgrp', 'custnotes', 'custprdmsg', 'custshnote', 'custsls', 'custtax', 'deals', 'deptfle', 'deptslscur', 'divifle', 'docdeliv', 'entdby', 'fifolot', 'fifotrans', 'formbatch', 'formheader', 'formheaderdata', 'formline', 'formlinedata', 'formtotaldata', 'formtype', 'glmaster', 'invcost', 'invh', 'invl', 'invltag', 'invm', 'invs', 'invt', 'invtrans', 'itemhist', 'lastprice', 'matcode', 'msdfle', 'msdshist', 'nstkdesc', 'pickedby', 'poctfle', 'pohead', 'poheadh', 'poline', 'polineh', 'poltag', 'pom', 'pomiscchrg', 'pomsgh', 'ponstkh', 'prdkeywrd', 'prod', 'prodgroup', 'prodloc', 'prodsls', 'produda', 'prodwhse', 'prodwhstat', 'progaccess', 'progaccess_parameter', 'pserlno', 'pwsales', 'qoh', 'qol', 'qom', 'qordlkitl', 'qos', 'qot', 'rcontracth', 'rebatedtl', 'rebtnotes', 'replenh', 'replenl', 'reportcolumnheaders', 'reportdata', 'reportheader', 'rfpickq', 'rfpickqh', 'roh', 'rolnew', 'roltag', 'rom', 'ros', 'rot', 'saract', 'saractf', 'sardetl', 'sardetlh', 'shiplist', 'simpleviewcharts', 'simpleviewfilter', 'simpleviewfilterfields', 'simpleviewobj', 'sllstprice', 'slscurr', 'slsmsls', 'sorce', 'sordcash', 'sordcashh', 'sordlkith', 'sordlkitl', 'sordlot', 'sotibatch', 'sotiorderattachment', 'sotiorderdetail', 'sotiorderheader', 'sotiproductdetail', 'specmsg', 'specprice', 'sprodcatgy', 'sprodlot', 'sslsm', 'sslsmcomm', 'sslsmcommh', 'stagitem', 'table1', 'taxcode', 'txitemsaleshistorybycustomermonthsumpc1', 'txitemsaleshistorybycustomermonthsumpc1pivot', 'txitemsaleshistorybycustomermonthsumpc1pivotsum', 'txitemsaleshistseqmonths1', 'txitemsalesinperiodbuckets', 'txitemsalesperiodbucketssum0x', 'txitemsalesperiodbucketssumpercent', 'txitemsalesperiodbucketssumx', 'txitemsalesperiodbucketssumxx', 'txprodwhsetotalspinstk4venuom', 'upcxref', 'usercntrl', 'usrdefcat', 'vendgrp', 'vendrebate', 'vendtag', 'vendwhse', 'vwaccountspayable', 'vwaccountsreceivable', 'vwcustomer', 'vwcustomerdifferentbillto', 'vwcustomersalesorderhistory', 'vwinvoicehistory', 'vwinvoicehistorylines', 'vwlastprice', 'vwlostsales', 'vwopenorders', 'vwordership', 'vwordersourceanalysis', 'vwpricebook', 'vwproduct', 'vwproductinventory', 'vwproductprice', 'vwproductsales', 'vwpurchaseorders', 'vwrebates', 'vwsalesorder', 'vwsalesorder2', 'vwsalesperson', 'vwsalestotalsthisyearvslastyear', 'vwshiplist', 'vwsourcecomparison_avggrossprofit', 'vwsourcecomparison_avgsales', 'vwsourcecomparison_cost', 'vwsourcecomparison_grossprofit', 'vwsourcecomparison_invoice', 'vwsourcecomparison_sale', 'vwvendor', 'vwxaranalysis', 'vwxaranalysis2', 'vwxaranalysis_30', 'vwxaranalysis_45', 'vwxaranalysis_60', 'vwxaranalysis_90', 'vwxaranalysis_current', 'vwxardetail', 'vwxarlessthan30days', 'vwxbottom10customersbymerchandisedollars', 'vwxbottom10customersbyprofitdollars', 'vwxbottom10productsbymerchandisedollars', 'vwxbottom10productsbyprofitdollars', 'vwxbottom10salesmanbymerchandisedollars', 'vwxbottom10salesmanbyprofitdollars', 'vwxbottom10vendorsbymerchandisedollars', 'vwxbottom10vendorsbyprofitdollars', 'vwxchartdata', 'vwxdivisiontotalsbyprofitdollars', 'vwxproductanalysis', 'vwxproductanalysisdetail', 'vwxsaleshistory', 'vwxsaleshistory2', 'vwxtop10customersbymerchandisedollars', 'vwxtop10customersbyprofitdollars', 'vwxtop10productsbymerchandisedollars', 'vwxtop10productsbyprofitdollars', 'vwxtop10salesmanbymerchandisedollars', 'vwxtop10salesmanbyprofitdollars', 'vwxtop10vendorsbymerchandisedollars', 'vwxtop10vendorsbyprofitdollars', 'vwxwarehousetotalsbyprofitdollars', 'vxitemsaleshistbymonthcust', 'vxitemsaleshistorybycustomermonthsum', 'vxitemsaleshistorybycustomermonthsumpc1', 'vxitemsaleshistorybycustomermonthsumpc1pivot', 'vxitemsaleshistorybycustomermonthsumpc1pivotsum', 'vxitemsaleshistorybycustomermonthsumpc5', 'vxitemsaleshistorybymonthsum', 'vxitemsaleshistseqmonths1', 'vxitemsalesinperiodbucketssum', 'vxitemsalesinperiodbucketssumpercent', 'vxitemsalesperiodbucketssumxsum', 'vxpinsock', 'vxproductsalesmen2', 'vxprodwhsetotals', 'vxprodwhsetotalspinstk4', 'vxprodwhsetotalspinstk4venuom', 'vxwarehousestock', 'vxwarehousestocktotal', 'weeklysls', 'whinfo', 'wohfle', 'wohist', 'wohistl', 'wolfle', 'wos_t_machine', 'wos_t_machineruntime', 'wos_t_machresallocation', 'wos_t_machresource', 'wos_t_reports', 'wos_t_resource', 'wos_t_resusers', 'wos_t_resusers_1', 'wos_t_rptparm', 'wos_t_user', 'wos_t_womachinedata', 'wos_t_woschedule', 'wos_t_wosschedmod', 'wos_t_wosstatus', 'wos_t_wouserdata', 'zonefle']
+2026-03-20 15:42:57,760 [INFO] --- Syncing customers ---
+2026-03-20 15:42:57,878 [INFO]   Fetched 9480 customer rows from Synergy.
+2026-03-20 15:42:59,150 [DEBUG]   Upserted batch 1 (500 records) to 'customers'.
+2026-03-20 15:43:00,007 [DEBUG]   Upserted batch 2 (500 records) to 'customers'.
+2026-03-20 15:43:00,534 [DEBUG]   Upserted batch 3 (500 records) to 'customers'.
+2026-03-20 15:43:01,291 [DEBUG]   Upserted batch 4 (500 records) to 'customers'.
+2026-03-20 15:43:02,004 [DEBUG]   Upserted batch 5 (500 records) to 'customers'.
+2026-03-20 15:43:02,510 [DEBUG]   Upserted batch 6 (500 records) to 'customers'.
+2026-03-20 15:43:02,956 [DEBUG]   Upserted batch 7 (500 records) to 'customers'.
+2026-03-20 15:43:03,895 [DEBUG]   Upserted batch 8 (500 records) to 'customers'.
+2026-03-20 15:43:04,363 [DEBUG]   Upserted batch 9 (500 records) to 'customers'.
+2026-03-20 15:43:04,833 [DEBUG]   Upserted batch 10 (500 records) to 'customers'.
+2026-03-20 15:43:05,341 [DEBUG]   Upserted batch 11 (500 records) to 'customers'.
+2026-03-20 15:43:05,901 [DEBUG]   Upserted batch 12 (500 records) to 'customers'.
+2026-03-20 15:43:06,342 [DEBUG]   Upserted batch 13 (500 records) to 'customers'.
+2026-03-20 15:43:06,840 [DEBUG]   Upserted batch 14 (500 records) to 'customers'.
+2026-03-20 15:43:07,294 [DEBUG]   Upserted batch 15 (500 records) to 'customers'.
+2026-03-20 15:43:07,951 [DEBUG]   Upserted batch 16 (500 records) to 'customers'.
+2026-03-20 15:43:08,471 [DEBUG]   Upserted batch 17 (500 records) to 'customers'.
+2026-03-20 15:43:08,942 [DEBUG]   Upserted batch 18 (500 records) to 'customers'.
+2026-03-20 15:43:09,396 [DEBUG]   Upserted batch 19 (480 records) to 'customers'.
+2026-03-20 15:43:09,396 [INFO]   Customers synced: 9480
+2026-03-20 15:43:09,400 [INFO] --- Syncing contacts ---
+2026-03-20 15:43:09,417 [INFO]   Fetched 1292 contact rows from Synergy.
+2026-03-20 15:43:09,783 [DEBUG]   Skipped 1064 contacts with no matching customer in Supabase.
+2026-03-20 15:43:10,105 [DEBUG]   Cleared existing contacts before re-insert.
+2026-03-20 15:43:10,636 [DEBUG]   Upserted batch 1 (228 records) to 'contacts'.
+2026-03-20 15:43:10,636 [INFO]   Contacts synced: 228
+2026-03-20 15:43:10,636 [INFO] --- Syncing products ---
+2026-03-20 15:43:10,667 [INFO]   Fetched 2607 product rows from Synergy.
+2026-03-20 15:43:11,224 [DEBUG]   Upserted batch 1 (500 records) to 'products'.
+2026-03-20 15:43:11,616 [DEBUG]   Upserted batch 2 (500 records) to 'products'.
+2026-03-20 15:43:12,101 [DEBUG]   Upserted batch 3 (500 records) to 'products'.
+2026-03-20 15:43:12,585 [DEBUG]   Upserted batch 4 (500 records) to 'products'.
+2026-03-20 15:43:13,278 [DEBUG]   Upserted batch 5 (500 records) to 'products'.
+2026-03-20 15:43:13,622 [DEBUG]   Upserted batch 6 (107 records) to 'products'.
+2026-03-20 15:43:13,622 [INFO]   Products synced: 2607
+2026-03-20 15:43:13,623 [DEBUG] ERP connection closed.
+2026-03-20 15:43:13,623 [INFO] Sync completed successfully. Total records synced: 12315

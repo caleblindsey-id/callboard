@@ -53,11 +53,11 @@ function ReadOnlyPhotos({ photos }: { photos: TicketPhoto[] }) {
 
   return (
     <div className="mt-4">
-      <span className="text-sm text-gray-500">Service Photos</span>
+      <span className="text-sm text-gray-500 dark:text-gray-400">Service Photos</span>
       <div className="mt-2 grid grid-cols-3 gap-2">
         {urls.map((url, i) => (
           url ? (
-            <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-md overflow-hidden border border-gray-200">
+            <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-md overflow-hidden border border-gray-200 dark:border-gray-700">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={url} alt={`Service photo ${i + 1}`} className="w-full h-full object-cover" />
             </a>
@@ -593,7 +593,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   }
 
   const deleteButton = userRole === 'manager' ? (
-    <div className="mt-6 pt-4 border-t border-gray-200">
+    <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
       <button
         type="button"
         onClick={handleDelete}
@@ -626,12 +626,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                   ref={(el) => { comboMap.current.set(i, el) }}
                 >
                   {part.isFromDb ? (
-                    <div className="flex items-center gap-1 rounded-md border border-green-300 bg-green-50 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900">
+                    <div className="flex items-center gap-1 rounded-md border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 dark:text-white">
                       <span className="flex-1 truncate">{part.description}</span>
                       <button
                         type="button"
                         onClick={() => handleClearProduct(i, setter)}
-                        className="text-gray-400 hover:text-red-500 shrink-0 p-1"
+                        className="text-gray-400 dark:text-gray-500 hover:text-red-500 shrink-0 p-1"
                       >
                         &times;
                       </button>
@@ -642,20 +642,20 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                       placeholder="Search products..."
                       value={part.description}
                       onChange={(e) => handlePartSearch(i, e.target.value, setter, debounceMap)}
-                      className="w-full rounded-md border border-gray-300 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
                     />
                   )}
                   {part.searchOpen && part.searchResults.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
                       {part.searchResults.map((product) => (
                         <button
                           key={product.id}
                           type="button"
                           onClick={() => handleSelectProduct(i, product, setter, options.zeroPricesOnSelect)}
-                          className="w-full text-left px-3 py-3 sm:py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                          className="w-full text-left px-3 py-3 sm:py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
                         >
-                          <span className="font-medium text-gray-900">{product.number}</span>
-                          <span className="text-gray-500"> — {product.description ?? ''}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{product.number}</span>
+                          <span className="text-gray-500 dark:text-gray-400"> — {product.description ?? ''}</span>
                           {options.showPrices && product.unit_price != null && (
                             <span className="text-green-700 sm:float-right font-medium block sm:inline mt-0.5 sm:mt-0">
                               ${product.unit_price.toFixed(2)}
@@ -666,12 +666,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                     </div>
                   )}
                   {part.searchOpen && !part.searching && part.searchResults.length === 0 && part.description.trim() && (
-                    <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2.5 text-sm text-gray-500">
+                    <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400">
                       No products found — enter details manually
                     </div>
                   )}
                   {part.searching && (
-                    <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2.5 text-sm text-gray-500">
+                    <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400">
                       Searching...
                     </div>
                   )}
@@ -679,20 +679,20 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                 {/* Qty + optional Price + Remove */}
                 <div className="flex items-center gap-2 sm:contents">
                   <div className="flex-1 sm:contents">
-                    <label className="block text-xs text-gray-500 mb-0.5 sm:hidden">Qty</label>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5 sm:hidden">Qty</label>
                     <input
                       type="number"
                       min="1"
                       placeholder="Qty"
                       value={part.quantity}
                       onChange={(e) => handleUpdatePartField(i, 'quantity', e.target.value, setter)}
-                      className="w-full rounded-md border border-gray-300 px-2 h-[44px] sm:h-[34px] text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-2 h-[44px] sm:h-[34px] text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-slate-500"
                     />
                   </div>
                   {options.showPrices && (
                     <>
                       <div className="flex-1 sm:contents">
-                        <label className="block text-xs text-gray-500 mb-0.5 sm:hidden">Price</label>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5 sm:hidden">Price</label>
                         <input
                           type="number"
                           step="0.01"
@@ -701,12 +701,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                           value={part.unitPrice}
                           onChange={(e) => handleUpdatePartField(i, 'unitPrice', e.target.value, setter)}
                           readOnly={part.isFromDb}
-                          className={`w-full rounded-md border px-2 h-[44px] sm:h-[34px] text-sm text-gray-900 text-right focus:outline-none focus:ring-2 focus:ring-slate-500 ${
-                            part.isFromDb ? 'border-green-300 bg-green-50 cursor-not-allowed' : 'border-gray-300'
+                          className={`w-full rounded-md border px-2 h-[44px] sm:h-[34px] text-sm text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-slate-500 ${
+                            part.isFromDb ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 cursor-not-allowed' : 'border-gray-300 dark:bg-gray-700 dark:border-gray-600'
                           }`}
                         />
                       </div>
-                      <div className="hidden sm:block text-sm text-gray-600 text-right tabular-nums">
+                      <div className="hidden sm:block text-sm text-gray-600 dark:text-gray-400 text-right tabular-nums">
                         ${(part.quantity * part.unitPrice).toFixed(2)}
                       </div>
                     </>
@@ -714,7 +714,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                   <button
                     type="button"
                     onClick={() => handleRemovePart(i, setter, debounceMap, comboMap)}
-                    className="text-gray-400 hover:text-red-500 text-xs min-h-[44px] sm:min-h-0 flex items-center justify-center px-1"
+                    className="text-gray-400 dark:text-gray-500 hover:text-red-500 text-xs min-h-[44px] sm:min-h-0 flex items-center justify-center px-1"
                   >
                     Remove
                   </button>
@@ -740,8 +740,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
   if (ticket.status === 'unassigned' || ticket.status === 'assigned') {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
           Actions
         </h2>
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
@@ -764,8 +764,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   if (ticket.status === 'in_progress') {
     return (
       <>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
             Complete Ticket
           </h2>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
@@ -773,7 +773,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             {/* Date + PO */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Completion Date
                 </label>
                 <input
@@ -781,25 +781,25 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                   required
                   value={completedDate}
                   onChange={(e) => setCompletedDate(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   PO Number
                 </label>
                 <input
                   type="text"
                   value={poNumber}
                   onChange={(e) => setPoNumber(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   placeholder="Enter PO number if required..."
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Hours Worked
               </label>
               <input
@@ -809,17 +809,17 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                 required
                 value={hoursWorked}
                 onChange={(e) => setHoursWorked(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                 placeholder="0.00"
               />
             </div>
 
             {/* ── SECTION 1: PM Service ── */}
-            <div className="rounded-lg border-2 border-blue-200 bg-blue-50/50 p-4">
-              <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wide mb-1">
+            <div className="rounded-lg border-2 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20 p-4">
+              <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300 uppercase tracking-wide mb-1">
                 PM Service — Covered Under Agreement
               </h3>
-              <p className="text-xs text-gray-500 mb-3">Parts included in the PM agreement</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Parts included in the PM agreement</p>
 
               {renderPartsSection(
                 pmParts, setPmParts, pmDebounceRefs, pmComboRefs,
@@ -828,23 +828,23 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
               {/* PM Subtotal — managers/coordinators only */}
               {canSeePricing && isFlatRate && (
-                <div className="flex items-center justify-between mt-3 py-2 px-3 bg-blue-100 rounded-md">
-                  <span className="text-sm font-medium text-blue-800">PM Service — Flat Rate</span>
-                  <span className="text-sm font-semibold text-blue-800">${flatRate!.toFixed(2)}</span>
+                <div className="flex items-center justify-between mt-3 py-2 px-3 bg-blue-100 dark:bg-blue-900/30 rounded-md">
+                  <span className="text-sm font-medium text-blue-800 dark:text-blue-300">PM Service — Flat Rate</span>
+                  <span className="text-sm font-semibold text-blue-800 dark:text-blue-300">${flatRate!.toFixed(2)}</span>
                 </div>
               )}
             </div>
 
             {/* ── SECTION 2: Additional Work ── */}
-            <div className="rounded-lg border-2 border-amber-200 bg-amber-50/50 p-4">
-              <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wide mb-1">
+            <div className="rounded-lg border-2 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/20 p-4">
+              <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-1">
                 Additional Work — Not Covered Under Agreement
               </h3>
-              <p className="text-xs text-gray-500 mb-3">Labor and parts beyond the PM agreement</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Labor and parts beyond the PM agreement</p>
 
               {/* Additional Labor Hours */}
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Additional Labor Hours
                 </label>
                 <div className="flex items-center gap-2">
@@ -854,11 +854,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                     min="0"
                     value={additionalHoursWorked}
                     onChange={(e) => setAdditionalHoursWorked(e.target.value)}
-                    className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-24 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-24 focus:outline-none focus:ring-2 focus:ring-slate-500"
                     placeholder="0.00"
                   />
                   {parseFloat(additionalHoursWorked) > 0 && (
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
                       @ ${laborRate.toFixed(2)}/hr = <strong>${additionalLaborTotal.toFixed(2)}</strong>
                     </span>
                   )}
@@ -866,7 +866,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               </div>
 
               {/* Additional Parts */}
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Additional Parts
               </label>
               {renderPartsSection(
@@ -876,20 +876,20 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
               {/* Additional Work Subtotal — managers/coordinators only */}
               {canSeePricing && (additionalPartsTotal > 0 || additionalLaborTotal > 0) && (
-                <div className="mt-3 py-2 px-3 bg-amber-100 rounded-md space-y-1">
+                <div className="mt-3 py-2 px-3 bg-amber-100 dark:bg-amber-900/30 rounded-md space-y-1">
                   {additionalLaborTotal > 0 && (
-                    <div className="flex justify-between text-sm text-amber-900">
+                    <div className="flex justify-between text-sm text-amber-900 dark:text-amber-300">
                       <span>Labor: {additionalHoursWorked} hrs × ${laborRate.toFixed(2)}</span>
                       <span>${additionalLaborTotal.toFixed(2)}</span>
                     </div>
                   )}
                   {additionalPartsTotal > 0 && (
-                    <div className="flex justify-between text-sm text-amber-900">
+                    <div className="flex justify-between text-sm text-amber-900 dark:text-amber-300">
                       <span>Parts</span>
                       <span>${additionalPartsTotal.toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-sm font-semibold text-amber-900 pt-1 border-t border-amber-200">
+                  <div className="flex justify-between text-sm font-semibold text-amber-900 dark:text-amber-300 pt-1 border-t border-amber-200 dark:border-amber-800">
                     <span>Additional Work Subtotal</span>
                     <span>${additionalSubtotal.toFixed(2)}</span>
                   </div>
@@ -901,7 +901,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             {canSeePricing && (
               <div className="rounded-lg bg-gray-900 px-4 py-3 flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xs text-gray-400 dark:text-gray-500">
                     {isFlatRate && `PM: $${pmSubtotal.toFixed(2)}`}
                     {isFlatRate && additionalSubtotal > 0 && ' + '}
                     {additionalSubtotal > 0 && `Additional: $${additionalSubtotal.toFixed(2)}`}
@@ -912,26 +912,26 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               </div>
             )}
             {canSeePricing && (
-              <p className="text-xs text-gray-400 -mt-3 text-right">Taxes not included</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 -mt-3 text-right">Taxes not included</p>
             )}
 
             {/* Completion Notes */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Completion Notes
               </label>
               <textarea
                 value={completionNotes}
                 onChange={(e) => setCompletionNotes(e.target.value)}
                 rows={3}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                 placeholder="Notes about the work performed..."
               />
             </div>
 
             {/* Billing Contact */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Billing Contact
               </label>
               <div className="space-y-2">
@@ -939,21 +939,21 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                   type="text"
                   value={billingContactName}
                   onChange={(e) => setBillingContactName(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   placeholder="Name"
                 />
                 <input
                   type="email"
                   value={billingContactEmail}
                   onChange={(e) => setBillingContactEmail(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   placeholder="Email"
                 />
                 <input
                   type="tel"
                   value={billingContactPhone}
                   onChange={(e) => setBillingContactPhone(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   placeholder="Phone"
                 />
               </div>
@@ -961,18 +961,18 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
             {/* Photos */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Service Photos
               </label>
               {photos.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mb-2">
                   {photos.map((photo, i) => (
-                    <div key={photo.storage_path} className="relative aspect-square rounded-md overflow-hidden border border-gray-200 bg-gray-100">
+                    <div key={photo.storage_path} className="relative aspect-square rounded-md overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-700">
                       {photo.previewUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={photo.previewUrl} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">Loading...</div>
+                        <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 dark:text-gray-500">Loading...</div>
                       )}
                       <button
                         type="button"
@@ -999,7 +999,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors min-h-[44px]"
+                className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px]"
               >
                 {uploading ? 'Uploading...' : '+ Add Photo'}
               </button>
@@ -1017,7 +1017,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                 type="button"
                 onClick={handleSaveProgress}
                 disabled={saving || loading || uploading}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50 transition-colors min-h-[44px]"
+                className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px]"
               >
                 {saving ? 'Saving...' : 'Save Progress'}
               </button>
@@ -1034,8 +1034,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             </div>
           </form>
           {userRole === 'manager' && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500 mb-2">Manager: Reset ticket status</p>
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reset ticket status</p>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -1068,13 +1068,13 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
   if (ticket.status === 'skipped') {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
           Ticket Skipped
         </h2>
-        <p className="text-sm text-gray-500">This ticket was skipped and no work was performed.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">This ticket was skipped and no work was performed.</p>
         {!isTech && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
             <button
               onClick={() => handleReopen('unassigned')}
@@ -1095,39 +1095,39 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   // ══════════════════════════════════════════════
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-      <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+      <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
         Completion Details
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm mb-4">
         <div>
-          <span className="text-gray-500">Completed Date</span>
-          <p className="text-gray-900 font-medium">
+          <span className="text-gray-500 dark:text-gray-400">Completed Date</span>
+          <p className="text-gray-900 dark:text-white font-medium">
             {ticket.completed_date
               ? new Date(ticket.completed_date).toLocaleDateString()
               : '—'}
           </p>
         </div>
         <div>
-          <span className="text-gray-500">Hours Worked</span>
-          <p className="text-gray-900 font-medium">
+          <span className="text-gray-500 dark:text-gray-400">Hours Worked</span>
+          <p className="text-gray-900 dark:text-white font-medium">
             {ticket.hours_worked ?? '—'}
           </p>
         </div>
         {canSeePricing && (
           <>
             <div>
-              <span className="text-gray-500">Billing Amount</span>
-              <p className="text-gray-900 font-medium">
+              <span className="text-gray-500 dark:text-gray-400">Billing Amount</span>
+              <p className="text-gray-900 dark:text-white font-medium">
                 {ticket.billing_amount != null
                   ? `$${ticket.billing_amount.toFixed(2)}`
                   : '—'}
               </p>
             </div>
             <div>
-              <span className="text-gray-500">Billing Exported</span>
-              <p className="text-gray-900 font-medium">
+              <span className="text-gray-500 dark:text-gray-400">Billing Exported</span>
+              <p className="text-gray-900 dark:text-white font-medium">
                 {ticket.billing_exported ? 'Yes' : 'No'}
               </p>
             </div>
@@ -1137,19 +1137,19 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
       {/* PM Service Section (read-only) */}
       {ticket.parts_used && ticket.parts_used.length > 0 && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 mb-3">
-          <h3 className="text-xs font-semibold text-blue-800 uppercase tracking-wide mb-2">
+        <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20 p-3 mb-3">
+          <h3 className="text-xs font-semibold text-blue-800 dark:text-blue-300 uppercase tracking-wide mb-2">
             PM Service — Covered Under Agreement
           </h3>
           <div className="space-y-1">
             {ticket.parts_used.map((part, i) => (
-              <div key={`ro-pm-${i}`} className="text-sm text-gray-900">
+              <div key={`ro-pm-${i}`} className="text-sm text-gray-900 dark:text-white">
                 {part.description} — Qty: {part.quantity}
               </div>
             ))}
           </div>
           {canSeePricing && isFlatRate && flatRate != null && (
-            <div className="flex justify-between mt-2 pt-2 border-t border-blue-200 text-sm font-semibold text-blue-800">
+            <div className="flex justify-between mt-2 pt-2 border-t border-blue-200 dark:border-blue-800 text-sm font-semibold text-blue-800 dark:text-blue-300">
               <span>PM Service — Flat Rate</span>
               <span>${flatRate.toFixed(2)}</span>
             </div>
@@ -1159,12 +1159,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
       {/* Additional Work Section (read-only) */}
       {((ticket.additional_parts_used && ticket.additional_parts_used.length > 0) || (ticket.additional_hours_worked && ticket.additional_hours_worked > 0)) && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 mb-3">
-          <h3 className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-2">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/20 p-3 mb-3">
+          <h3 className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-2">
             Additional Work — Not Covered Under Agreement
           </h3>
           {ticket.additional_hours_worked != null && ticket.additional_hours_worked > 0 && (
-            <div className="text-sm text-gray-900 mb-1">
+            <div className="text-sm text-gray-900 dark:text-white mb-1">
               Additional Labor: {ticket.additional_hours_worked} hrs
               {canSeePricing && ` @ $${laborRate.toFixed(2)}/hr = $${(ticket.additional_hours_worked * laborRate).toFixed(2)}`}
             </div>
@@ -1172,7 +1172,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           {ticket.additional_parts_used && ticket.additional_parts_used.length > 0 && (
             <div className="space-y-1">
               {ticket.additional_parts_used.map((part, i) => (
-                <div key={`ro-addl-${i}`} className="text-sm text-gray-900">
+                <div key={`ro-addl-${i}`} className="text-sm text-gray-900 dark:text-white">
                   {part.description} — Qty: {part.quantity}
                   {canSeePricing && ` @ $${part.unit_price.toFixed(2)} = $${(part.quantity * part.unit_price).toFixed(2)}`}
                 </div>
@@ -1180,7 +1180,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             </div>
           )}
           {canSeePricing && (
-            <div className="flex justify-between mt-2 pt-2 border-t border-amber-200 text-sm font-semibold text-amber-900">
+            <div className="flex justify-between mt-2 pt-2 border-t border-amber-200 dark:border-amber-800 text-sm font-semibold text-amber-900 dark:text-amber-300">
               <span>Additional Work Subtotal</span>
               <span>
                 ${(
@@ -1201,13 +1201,13 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         </div>
       )}
       {canSeePricing && ticket.billing_amount != null && (
-        <p className="text-xs text-gray-400 text-right mb-3">Taxes not included</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 text-right mb-3">Taxes not included</p>
       )}
 
       {ticket.completion_notes && (
         <div className="mt-4">
-          <span className="text-sm text-gray-500">Notes</span>
-          <p className="text-sm text-gray-900 mt-1 whitespace-pre-wrap">
+          <span className="text-sm text-gray-500 dark:text-gray-400">Notes</span>
+          <p className="text-sm text-gray-900 dark:text-white mt-1 whitespace-pre-wrap">
             {ticket.completion_notes}
           </p>
         </div>
@@ -1216,9 +1216,9 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         <ReadOnlyPhotos photos={ticket.photos} />
       )}
       {ticket.customer_signature && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <span className="text-sm text-gray-500">Customer Signature</span>
-          <div className="mt-2 border border-gray-200 rounded-md bg-white p-2 inline-block">
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <span className="text-sm text-gray-500 dark:text-gray-400">Customer Signature</span>
+          <div className="mt-2 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 p-2 inline-block">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={ticket.customer_signature}
@@ -1227,14 +1227,14 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             />
           </div>
           {ticket.customer_signature_name && (
-            <p className="text-sm text-gray-900 font-medium mt-1">
+            <p className="text-sm text-gray-900 dark:text-white font-medium mt-1">
               {ticket.customer_signature_name}
             </p>
           )}
         </div>
       )}
       {/* Share Work Order — visible to all roles on completed/billed tickets */}
-      <div className="mt-5 pt-4 border-t border-gray-200">
+      <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
         {!workOrderFile ? (
           <button
             onClick={handlePrepareWorkOrder}
@@ -1253,7 +1253,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             </button>
             <button
               onClick={handleDownloadWorkOrder}
-              className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors min-h-[44px]"
+              className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 transition-colors min-h-[44px]"
             >
               Download
             </button>
@@ -1262,7 +1262,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         )}
       </div>
       {ticket.status === 'completed' && !isTech && (
-        <div className="mt-5 pt-4 border-t border-gray-200">
+        <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           <button
             onClick={() => handleReopen('in_progress')}
@@ -1274,8 +1274,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         </div>
       )}
       {ticket.status === 'billed' && userRole === 'manager' && (
-        <div className="mt-5 pt-4 border-t border-gray-200">
-          <p className="text-xs text-gray-500 mb-2">Manager: Reset ticket status</p>
+        <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reset ticket status</p>
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button

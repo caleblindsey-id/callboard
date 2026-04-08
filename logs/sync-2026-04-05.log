@@ -1,0 +1,74 @@
+2026-04-05 05:00:01,732 [INFO] ============================================================
+2026-04-05 05:00:01,732 [INFO] PM Scheduler — Nightly Synergy Sync starting
+2026-04-05 05:00:01,732 [INFO] ============================================================
+2026-04-05 05:00:03,175 [DEBUG] sync_log row created: id=28
+2026-04-05 05:00:03,175 [INFO] Connecting to SynergyERP via ODBC DSN 'ERPlinked'...
+2026-04-05 05:00:03,188 [INFO] Connected.
+2026-04-05 05:00:03,196 [INFO] Discovered 278 ERP tables.
+2026-04-05 05:00:03,196 [DEBUG] Tables: ['a80vm', 'abcdata', 'alertcostchange', 'alertdata', 'alertheader', 'alerttrailer', 'alerttype', 'altvend', 'apdeta', 'apdeth', 'apdetl', 'apdetm', 'appoh', 'appohh', 'appol', 'arproof', 'artermcode', 'arup', 'bomfle', 'bowork', 'brktbl', 'buyer', 'callnotes', 'ccodes', 'collagent', 'commhead', 'commodity', 'contlist', 'contnotes', 'contracth', 'contwt', 'costhist', 'cpicust', 'cpidet', 'cpihead', 'cslkeywrd', 'cslsales', 'cszone', 'ctwtaccum', 'ctwtaccumh', 'cust', 'custcat', 'custcont', 'custcrhist', 'custgrp', 'custnotes', 'custprdmsg', 'custshnote', 'custsls', 'custtax', 'deals', 'deptfle', 'deptslscur', 'divifle', 'docdeliv', 'entdby', 'fifolot', 'fifotrans', 'formbatch', 'formheader', 'formheaderdata', 'formline', 'formlinedata', 'formtotaldata', 'formtype', 'glmaster', 'invcost', 'invh', 'invl', 'invltag', 'invm', 'invs', 'invt', 'invtrans', 'itemhist', 'lastprice', 'matcode', 'msdfle', 'msdshist', 'nstkdesc', 'pickedby', 'poctfle', 'pohead', 'poheadh', 'poline', 'polineh', 'poltag', 'pom', 'pomiscchrg', 'pomsgh', 'ponstkh', 'prdkeywrd', 'prod', 'prodgroup', 'prodloc', 'prodsls', 'produda', 'prodwhse', 'prodwhstat', 'progaccess', 'progaccess_parameter', 'pserlno', 'pwsales', 'qoh', 'qol', 'qom', 'qordlkitl', 'qos', 'qot', 'rcontracth', 'rebatedtl', 'rebtnotes', 'replenh', 'replenl', 'reportcolumnheaders', 'reportdata', 'reportheader', 'rfpickq', 'rfpickqh', 'roh', 'rolnew', 'roltag', 'rom', 'ros', 'rot', 'saract', 'saractf', 'sardetl', 'sardetlh', 'shiplist', 'simpleviewcharts', 'simpleviewfilter', 'simpleviewfilterfields', 'simpleviewobj', 'sllstprice', 'slscurr', 'slsmsls', 'sorce', 'sordcash', 'sordcashh', 'sordlkith', 'sordlkitl', 'sordlot', 'sotibatch', 'sotiorderattachment', 'sotiorderdetail', 'sotiorderheader', 'sotiproductdetail', 'specmsg', 'specprice', 'sprodcatgy', 'sprodlot', 'sslsm', 'sslsmcomm', 'sslsmcommh', 'stagitem', 'table1', 'taxcode', 'txitemsaleshistorybycustomermonthsumpc1', 'txitemsaleshistorybycustomermonthsumpc1pivot', 'txitemsaleshistorybycustomermonthsumpc1pivotsum', 'txitemsaleshistseqmonths1', 'txitemsalesinperiodbuckets', 'txitemsalesperiodbucketssum0x', 'txitemsalesperiodbucketssumpercent', 'txitemsalesperiodbucketssumx', 'txitemsalesperiodbucketssumxx', 'txprodwhsetotalspinstk4venuom', 'upcxref', 'usercntrl', 'usrdefcat', 'vendgrp', 'vendrebate', 'vendtag', 'vendwhse', 'vwaccountspayable', 'vwaccountsreceivable', 'vwcustomer', 'vwcustomerdifferentbillto', 'vwcustomersalesorderhistory', 'vwinvoicehistory', 'vwinvoicehistorylines', 'vwlastprice', 'vwlostsales', 'vwopenorders', 'vwordership', 'vwordersourceanalysis', 'vwpricebook', 'vwproduct', 'vwproductinventory', 'vwproductprice', 'vwproductsales', 'vwpurchaseorders', 'vwrebates', 'vwsalesorder', 'vwsalesorder2', 'vwsalesperson', 'vwsalestotalsthisyearvslastyear', 'vwshiplist', 'vwsourcecomparison_avggrossprofit', 'vwsourcecomparison_avgsales', 'vwsourcecomparison_cost', 'vwsourcecomparison_grossprofit', 'vwsourcecomparison_invoice', 'vwsourcecomparison_sale', 'vwvendor', 'vwxaranalysis', 'vwxaranalysis2', 'vwxaranalysis_30', 'vwxaranalysis_45', 'vwxaranalysis_60', 'vwxaranalysis_90', 'vwxaranalysis_current', 'vwxardetail', 'vwxarlessthan30days', 'vwxbottom10customersbymerchandisedollars', 'vwxbottom10customersbyprofitdollars', 'vwxbottom10productsbymerchandisedollars', 'vwxbottom10productsbyprofitdollars', 'vwxbottom10salesmanbymerchandisedollars', 'vwxbottom10salesmanbyprofitdollars', 'vwxbottom10vendorsbymerchandisedollars', 'vwxbottom10vendorsbyprofitdollars', 'vwxchartdata', 'vwxdivisiontotalsbyprofitdollars', 'vwxproductanalysis', 'vwxproductanalysisdetail', 'vwxsaleshistory', 'vwxsaleshistory2', 'vwxtop10customersbymerchandisedollars', 'vwxtop10customersbyprofitdollars', 'vwxtop10productsbymerchandisedollars', 'vwxtop10productsbyprofitdollars', 'vwxtop10salesmanbymerchandisedollars', 'vwxtop10salesmanbyprofitdollars', 'vwxtop10vendorsbymerchandisedollars', 'vwxtop10vendorsbyprofitdollars', 'vwxwarehousetotalsbyprofitdollars', 'vxitemsaleshistbymonthcust', 'vxitemsaleshistorybycustomermonthsum', 'vxitemsaleshistorybycustomermonthsumpc1', 'vxitemsaleshistorybycustomermonthsumpc1pivot', 'vxitemsaleshistorybycustomermonthsumpc1pivotsum', 'vxitemsaleshistorybycustomermonthsumpc5', 'vxitemsaleshistorybymonthsum', 'vxitemsaleshistseqmonths1', 'vxitemsalesinperiodbucketssum', 'vxitemsalesinperiodbucketssumpercent', 'vxitemsalesperiodbucketssumxsum', 'vxpinsock', 'vxproductsalesmen2', 'vxprodwhsetotals', 'vxprodwhsetotalspinstk4', 'vxprodwhsetotalspinstk4venuom', 'vxwarehousestock', 'vxwarehousestocktotal', 'weeklysls', 'whinfo', 'wohfle', 'wohist', 'wohistl', 'wolfle', 'wos_t_machine', 'wos_t_machineruntime', 'wos_t_machresallocation', 'wos_t_machresource', 'wos_t_reports', 'wos_t_resource', 'wos_t_resusers', 'wos_t_resusers_1', 'wos_t_rptparm', 'wos_t_user', 'wos_t_womachinedata', 'wos_t_woschedule', 'wos_t_wosschedmod', 'wos_t_wosstatus', 'wos_t_wouserdata', 'zonefle']
+2026-04-05 05:00:03,196 [INFO] --- Syncing customers ---
+2026-04-05 05:00:03,358 [INFO]   Fetched 9341 active customer rows from Synergy (inactive/closed filtered at query level).
+2026-04-05 05:00:04,736 [DEBUG]   Upserted batch 1 (500 records) to 'customers'.
+2026-04-05 05:00:06,216 [DEBUG]   Upserted batch 2 (500 records) to 'customers'.
+2026-04-05 05:00:07,072 [DEBUG]   Upserted batch 3 (500 records) to 'customers'.
+2026-04-05 05:00:07,746 [DEBUG]   Upserted batch 4 (500 records) to 'customers'.
+2026-04-05 05:00:08,238 [DEBUG]   Upserted batch 5 (500 records) to 'customers'.
+2026-04-05 05:00:08,763 [DEBUG]   Upserted batch 6 (500 records) to 'customers'.
+2026-04-05 05:00:09,493 [DEBUG]   Upserted batch 7 (500 records) to 'customers'.
+2026-04-05 05:00:10,182 [DEBUG]   Upserted batch 8 (500 records) to 'customers'.
+2026-04-05 05:00:10,657 [DEBUG]   Upserted batch 9 (500 records) to 'customers'.
+2026-04-05 05:00:11,137 [DEBUG]   Upserted batch 10 (500 records) to 'customers'.
+2026-04-05 05:00:11,624 [DEBUG]   Upserted batch 11 (500 records) to 'customers'.
+2026-04-05 05:00:12,336 [DEBUG]   Upserted batch 12 (500 records) to 'customers'.
+2026-04-05 05:00:12,791 [DEBUG]   Upserted batch 13 (500 records) to 'customers'.
+2026-04-05 05:00:13,268 [DEBUG]   Upserted batch 14 (500 records) to 'customers'.
+2026-04-05 05:00:13,744 [DEBUG]   Upserted batch 15 (500 records) to 'customers'.
+2026-04-05 05:00:14,188 [DEBUG]   Upserted batch 16 (500 records) to 'customers'.
+2026-04-05 05:00:14,842 [DEBUG]   Upserted batch 17 (500 records) to 'customers'.
+2026-04-05 05:00:15,435 [DEBUG]   Upserted batch 18 (500 records) to 'customers'.
+2026-04-05 05:00:16,838 [DEBUG]   Upserted batch 19 (341 records) to 'customers'.
+2026-04-05 05:00:16,839 [INFO]   Customers synced: 9341
+2026-04-05 05:00:16,845 [INFO] --- Syncing technicians ---
+2026-04-05 05:00:16,848 [INFO]   Fetched 12 technician rows from Synergy.
+2026-04-05 05:00:17,495 [DEBUG]   Upserted batch 1 (12 records) to 'users'.
+2026-04-05 05:00:17,495 [INFO]   Technicians synced: 12
+2026-04-05 05:00:17,495 [INFO] --- Syncing ship-to locations ---
+2026-04-05 05:00:17,609 [INFO]   Fetched 7528 ship-to location rows from Synergy.
+2026-04-05 05:00:21,138 [INFO]   Customer map loaded: 9342 entries (paginated).
+2026-04-05 05:00:21,163 [DEBUG]   Skipped 103 ship-to locations with no matching customer in Supabase.
+2026-04-05 05:00:22,008 [DEBUG]   Upserted batch 1 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:22,715 [DEBUG]   Upserted batch 2 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:23,288 [DEBUG]   Upserted batch 3 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:23,761 [DEBUG]   Upserted batch 4 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:24,253 [DEBUG]   Upserted batch 5 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:24,747 [DEBUG]   Upserted batch 6 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:25,405 [DEBUG]   Upserted batch 7 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:25,902 [DEBUG]   Upserted batch 8 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:26,352 [DEBUG]   Upserted batch 9 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:26,802 [DEBUG]   Upserted batch 10 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:27,256 [DEBUG]   Upserted batch 11 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:27,704 [DEBUG]   Upserted batch 12 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:28,181 [DEBUG]   Upserted batch 13 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:28,758 [DEBUG]   Upserted batch 14 (500 records) to 'ship_to_locations'.
+2026-04-05 05:00:29,217 [DEBUG]   Upserted batch 15 (425 records) to 'ship_to_locations'.
+2026-04-05 05:00:29,217 [INFO]   Ship-to locations synced: 7425
+2026-04-05 05:00:29,219 [INFO] --- Syncing contacts ---
+2026-04-05 05:00:29,253 [INFO]   Fetched 1292 contact rows from Synergy.
+2026-04-05 05:00:32,285 [INFO]   Customer map loaded: 9342 entries (paginated).
+2026-04-05 05:00:32,289 [DEBUG]   Skipped 16 contacts with no matching customer in Supabase.
+2026-04-05 05:00:32,585 [DEBUG]   Cleared existing contacts before re-insert.
+2026-04-05 05:00:32,962 [DEBUG]   Upserted batch 1 (500 records) to 'contacts'.
+2026-04-05 05:00:33,283 [DEBUG]   Upserted batch 2 (500 records) to 'contacts'.
+2026-04-05 05:00:33,623 [DEBUG]   Upserted batch 3 (276 records) to 'contacts'.
+2026-04-05 05:00:33,624 [INFO]   Contacts synced: 1276
+2026-04-05 05:00:33,625 [INFO] --- Syncing products ---
+2026-04-05 05:00:33,744 [INFO]   Fetched 2607 product rows from Synergy.
+2026-04-05 05:00:34,285 [DEBUG]   Upserted batch 1 (500 records) to 'products'.
+2026-04-05 05:00:34,726 [DEBUG]   Upserted batch 2 (500 records) to 'products'.
+2026-04-05 05:00:35,204 [DEBUG]   Upserted batch 3 (500 records) to 'products'.
+2026-04-05 05:00:35,680 [DEBUG]   Upserted batch 4 (500 records) to 'products'.
+2026-04-05 05:00:36,162 [DEBUG]   Upserted batch 5 (500 records) to 'products'.
+2026-04-05 05:00:36,488 [DEBUG]   Upserted batch 6 (107 records) to 'products'.
+2026-04-05 05:00:36,489 [INFO]   Products synced: 2607
+2026-04-05 05:00:36,489 [DEBUG] ERP connection closed.
+2026-04-05 05:00:36,489 [INFO] Sync completed successfully. Total records synced: 20661

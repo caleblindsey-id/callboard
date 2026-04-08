@@ -22,9 +22,9 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
       <LaborRateSetting initialRate={laborRate} />
 
       {/* Users section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
             Users
           </h2>
           <button
@@ -35,9 +35,9 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
           </button>
         </div>
 
-        <div className="px-5 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+        <div className="px-5 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 flex items-center gap-2">
           <Info className="h-4 w-4 text-blue-500 shrink-0" />
-          <span className="text-xs text-blue-700">
+          <span className="text-xs text-blue-700 dark:text-blue-300">
             Auth accounts must be created separately in the Supabase dashboard.
           </span>
         </div>
@@ -45,16 +45,16 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-5 py-3 text-left font-medium text-gray-600">Name</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600">Email</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600">Role</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600">Hourly Rate</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600">Status</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600">Actions</th>
+              <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Name</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Email</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Role</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Hourly Rate</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {users.map((user) => (
                 <UserTableRow key={user.id} user={user} />
               ))}
@@ -64,60 +64,60 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
       </div>
 
       {/* Sync log section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
             Sync Log
           </h2>
         </div>
         {syncLog.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500">
+          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             No sync history.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-5 py-3 text-left font-medium text-gray-600">Type</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600">Started</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600">Completed</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600">Records</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600">Status</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600">Error</th>
+                <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Type</th>
+                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Started</th>
+                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Records</th>
+                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Error</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                 {syncLog.map((entry) => (
                   <tr key={entry.id}>
-                    <td className="px-5 py-3 text-gray-900 capitalize">
+                    <td className="px-5 py-3 text-gray-900 dark:text-white capitalize">
                       {entry.sync_type ?? '—'}
                     </td>
-                    <td className="px-5 py-3 text-gray-600 text-xs">
+                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400 text-xs">
                       {new Date(entry.started_at).toLocaleString()}
                     </td>
-                    <td className="px-5 py-3 text-gray-600 text-xs">
+                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400 text-xs">
                       {entry.completed_at
                         ? new Date(entry.completed_at).toLocaleString()
                         : '—'}
                     </td>
-                    <td className="px-5 py-3 text-gray-600">
+                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                       {entry.records_synced ?? '—'}
                     </td>
                     <td className="px-5 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           entry.status === 'success'
-                            ? 'bg-green-100 text-green-800'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
                             : entry.status === 'running'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-red-100 text-red-800'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
                         }`}
                       >
                         {entry.status}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-xs text-red-600 max-w-xs truncate">
+                    <td className="px-5 py-3 text-xs text-red-600 dark:text-red-400 max-w-xs truncate">
                       {entry.error_message ?? '—'}
                     </td>
                   </tr>
@@ -172,33 +172,33 @@ function UserTableRow({ user }: { user: UserRow }) {
 
   return (
     <tr>
-      <td className="px-5 py-3 text-gray-900 font-medium">{user.name}</td>
-      <td className="px-5 py-3 text-gray-600">{user.email}</td>
-      <td className="px-5 py-3 text-gray-600 capitalize">{user.role ?? '—'}</td>
+      <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">{user.name}</td>
+      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{user.email}</td>
+      <td className="px-5 py-3 text-gray-600 dark:text-gray-400 capitalize">{user.role ?? '—'}</td>
       <td className="px-5 py-3">
         {user.role === 'technician' ? (
           editingCost ? (
             <div className="flex items-center gap-1.5">
-              <span className="text-gray-500 text-sm">$</span>
+              <span className="text-gray-500 dark:text-gray-400 text-sm">$</span>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={hourlyCost}
                 onChange={(e) => setHourlyCost(e.target.value)}
-                className="w-20 rounded border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                className="w-20 rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
                 placeholder="0.00"
               />
               <button
                 onClick={handleSaveCost}
                 disabled={savingCost}
-                className="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
               >
                 {savingCost ? '...' : 'Save'}
               </button>
               <button
                 onClick={() => { setEditingCost(false); setHourlyCost(user.hourly_cost?.toString() ?? '') }}
-                className="text-xs text-gray-400 hover:text-gray-600"
+                className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600"
               >
                 Cancel
               </button>
@@ -206,21 +206,21 @@ function UserTableRow({ user }: { user: UserRow }) {
           ) : (
             <button
               onClick={() => setEditingCost(true)}
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900"
             >
               {user.hourly_cost != null ? `$${user.hourly_cost.toFixed(2)}/hr` : 'Set rate'}
             </button>
           )
         ) : (
-          <span className="text-sm text-gray-400">—</span>
+          <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
         )}
       </td>
       <td className="px-5 py-3">
         <span
           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
             user.active
-              ? 'bg-green-100 text-green-800'
-              : 'bg-gray-100 text-gray-600'
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
           }`}
         >
           {user.active ? 'Active' : 'Inactive'}
@@ -260,16 +260,16 @@ function LaborRateSetting({ initialRate }: { initialRate: string }) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-      <div className="px-5 py-4 border-b border-gray-200">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
           System Settings
         </h2>
       </div>
       <div className="px-5 py-4">
         <div className="flex items-end gap-3 max-w-sm">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Labor Rate ($/hr)
             </label>
             <input
@@ -278,7 +278,7 @@ function LaborRateSetting({ initialRate }: { initialRate: string }) {
               min="0"
               value={rate}
               onChange={(e) => { setRate(e.target.value); setSaved(false) }}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>
           <button
@@ -292,7 +292,7 @@ function LaborRateSetting({ initialRate }: { initialRate: string }) {
             <span className="text-sm text-green-600 font-medium">Saved</span>
           )}
         </div>
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
           Used to calculate suggested billing amounts on ticket completion.
         </p>
       </div>
@@ -346,43 +346,43 @@ function AddUserModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-lg shadow-lg border border-gray-200 p-6 max-w-md w-full mx-4">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 max-w-md w-full mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900">Add User</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Add User</h3>
+          <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as UserRole)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               <option value="technician">Technician</option>
               <option value="coordinator">Coordinator</option>
@@ -393,7 +393,7 @@ function AddUserModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
             >
               Cancel
             </button>

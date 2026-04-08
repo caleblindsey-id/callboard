@@ -91,9 +91,9 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
           PM Schedule
         </h2>
         {schedule && !editing && (
@@ -111,19 +111,19 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
       {!editing && schedule ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
-            <span className="text-gray-500">Frequency</span>
-            <p className="text-gray-900 font-medium">{describeSchedule(schedule)}</p>
+            <span className="text-gray-500 dark:text-gray-400">Frequency</span>
+            <p className="text-gray-900 dark:text-white font-medium">{describeSchedule(schedule)}</p>
           </div>
           <div>
-            <span className="text-gray-500">Billing Type</span>
-            <p className="text-gray-900 font-medium capitalize">
+            <span className="text-gray-500 dark:text-gray-400">Billing Type</span>
+            <p className="text-gray-900 dark:text-white font-medium capitalize">
               {schedule.billing_type?.replace('_', ' ') ?? '—'}
             </p>
           </div>
           {schedule.billing_type === 'flat_rate' && (
             <div>
-              <span className="text-gray-500">Flat Rate</span>
-              <p className="text-gray-900 font-medium">
+              <span className="text-gray-500 dark:text-gray-400">Flat Rate</span>
+              <p className="text-gray-900 dark:text-white font-medium">
                 {schedule.flat_rate != null ? `$${schedule.flat_rate.toFixed(2)}` : '—'}
               </p>
             </div>
@@ -132,11 +132,11 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
       ) : (
         <div className="space-y-3 max-w-md">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Frequency</label>
             <select
               value={intervalMonths}
               onChange={(e) => setIntervalMonths(parseInt(e.target.value))}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {INTERVAL_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -144,14 +144,14 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Starting month
-              <span className="text-gray-400 font-normal ml-1">(first month this PM runs)</span>
+              <span className="text-gray-400 dark:text-gray-500 font-normal ml-1">(first month this PM runs)</span>
             </label>
             <select
               value={anchorMonth}
               onChange={(e) => setAnchorMonth(parseInt(e.target.value))}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {MONTHS.map((m, i) => (
                 <option key={i + 1} value={i + 1}>{m}</option>
@@ -159,11 +159,11 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Billing Type</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Billing Type</label>
             <select
               value={billingType}
               onChange={(e) => setBillingType(e.target.value as BillingType)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {BILLING_TYPES.map((b) => (
                 <option key={b.value} value={b.value}>{b.label}</option>
@@ -172,14 +172,14 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
           </div>
           {billingType === 'flat_rate' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Flat Rate ($)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flat Rate ($)</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={flatRate}
                 onChange={(e) => setFlatRate(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
                 placeholder="0.00"
               />
             </div>
@@ -195,7 +195,7 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
             {schedule && (
               <button
                 onClick={() => setEditing(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
               >
                 Cancel
               </button>

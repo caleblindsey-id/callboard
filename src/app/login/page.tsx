@@ -40,10 +40,10 @@ export default function LoginPage() {
 
   return (
     <div className="w-full max-w-sm mx-4">
-      <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-8">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-8">
         <div className="flex items-center justify-center gap-2.5 mb-6">
-          <Wrench className="h-6 w-6 text-gray-700" />
-          <h1 className="text-xl font-semibold text-gray-900 tracking-tight">
+          <Wrench className="h-6 w-6 text-gray-700 dark:text-gray-300" />
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">
             PM Scheduler
           </h1>
         </div>
@@ -52,7 +52,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
             >
               Email
             </label>
@@ -62,7 +62,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-slate-500 dark:focus:ring-slate-400 focus:border-transparent"
               placeholder="you@example.com"
             />
           </div>
@@ -70,7 +70,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
             >
               Password
             </label>
@@ -80,13 +80,13 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-slate-500 dark:focus:ring-slate-400 focus:border-transparent"
               placeholder="Enter your password"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           )}
 
           <button

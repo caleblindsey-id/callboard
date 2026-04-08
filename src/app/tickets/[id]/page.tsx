@@ -47,15 +47,15 @@ export default async function TicketDetailPage({
         <div className="flex items-center gap-3">
           <Link
             href="/tickets"
-            className="text-gray-400 hover:text-gray-600 transition-colors p-3 -m-3 rounded-md"
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors p-3 -m-3 rounded-md"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+            <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
               Ticket Detail
             </h1>
-            <p className="text-sm text-gray-500 mt-0.5 truncate">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">
               WO-{ticket.work_order_number} — {ticket.customers?.name ?? 'Unknown Customer'} — {equipmentLabel}
             </p>
           </div>
@@ -66,31 +66,31 @@ export default async function TicketDetailPage({
       </div>
 
       {/* Read-only info */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
           Details
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
           <div>
-            <span className="text-gray-500">Customer</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Customer</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.customers?.name ?? '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Account Number</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Account Number</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.customers?.account_number ?? '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Equipment</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Equipment</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {equipmentLabel}
               {ticket.equipment_id && (
                 <Link
                   href={`/equipment/${ticket.equipment_id}`}
-                  className="inline-flex items-center ml-2 text-blue-600 hover:text-blue-800"
+                  className="inline-flex items-center ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                   title="View equipment details"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
@@ -99,52 +99,52 @@ export default async function TicketDetailPage({
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Serial Number</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Serial Number</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.equipment?.serial_number ?? '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">City</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">City</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.equipment?.ship_to_locations?.city ?? ticket.customers?.billing_city ?? '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Scheduled Date</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Scheduled Date</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.scheduled_date
                 ? new Date(ticket.scheduled_date).toLocaleDateString()
                 : '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Created</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Created</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {new Date(ticket.created_at).toLocaleDateString()}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Month / Year</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Month / Year</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.month}/{ticket.year}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">Assigned Technician</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">Assigned Technician</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.assigned_technician?.name ?? '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">AR Terms</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">AR Terms</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.customers?.ar_terms ?? '—'}
             </p>
           </div>
           <div>
-            <span className="text-gray-500">PO Required</span>
-            <p className="text-gray-900 font-medium">
+            <span className="text-gray-500 dark:text-gray-400">PO Required</span>
+            <p className="text-gray-900 dark:text-white font-medium">
               {ticket.customers?.po_required ? (
                 <span className="text-red-700 font-bold">YES — PO REQUIRED</span>
               ) : (

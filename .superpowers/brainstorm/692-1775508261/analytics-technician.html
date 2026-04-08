@@ -1,0 +1,221 @@
+<h2>Analytics — Technician Profile Page</h2>
+<p class="subtitle">The /analytics/[technicianId] deep-dive page. Shows everything about one tech's performance.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Desktop: /analytics/mike-jennings</div>
+  <div class="mockup-body" style="background:#f8fafc; padding:24px; font-family:system-ui,-apple-system,sans-serif;">
+
+    <!-- Back + Header -->
+    <div style="margin-bottom:20px;">
+      <div style="font-size:12px; color:#2563eb; margin-bottom:8px; cursor:pointer;">← Back to Analytics</div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:20px; font-weight:700; color:#0f172a;">Mike Jennings</div>
+          <div style="font-size:13px; color:#64748b;">Technician · Hourly cost: $25.00</div>
+        </div>
+        <div style="display:flex; gap:0; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+          <div style="padding:8px 16px; background:white; color:#64748b; font-size:13px; cursor:pointer;">Weekly</div>
+          <div style="padding:8px 16px; background:#2563eb; color:white; font-size:13px; font-weight:600;">Monthly</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scorecard Row -->
+    <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin-bottom:24px;">
+      <div style="background:white; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Tickets</div>
+        <div style="font-size:24px; font-weight:700; color:#0f172a;">18</div>
+        <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
+          <div style="font-size:11px; color:#64748b;">Target: 15</div>
+          <span style="background:#dcfce7; color:#16a34a; padding:1px 6px; border-radius:99px; font-size:10px; font-weight:600;">120%</span>
+        </div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Revenue</div>
+        <div style="font-size:24px; font-weight:700; color:#0f172a;">$4,820</div>
+        <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
+          <div style="font-size:11px; color:#64748b;">Target: $4,000</div>
+          <span style="background:#dcfce7; color:#16a34a; padding:1px 6px; border-radius:99px; font-size:10px; font-weight:600;">120%</span>
+        </div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Hours</div>
+        <div style="font-size:24px; font-weight:700; color:#0f172a;">32.5</div>
+        <div style="font-size:11px; color:#64748b; margin-top:4px;">Avg 1.8/ticket</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Revenue/Hr</div>
+        <div style="font-size:24px; font-weight:700; color:#0f172a;">$148</div>
+        <div style="font-size:11px; color:#16a34a; margin-top:4px;">↑ $12 vs last month</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Gross Profit</div>
+        <div style="font-size:24px; font-weight:700; color:#16a34a;">$4,008</div>
+        <div style="font-size:11px; color:#64748b; margin-top:4px;">Cost: $812</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Avg Completion</div>
+        <div style="font-size:24px; font-weight:700; color:#0f172a;">1.2d</div>
+        <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
+          <div style="font-size:11px; color:#64748b;">Target: 2d</div>
+          <span style="background:#dcfce7; color:#16a34a; padding:1px 6px; border-radius:99px; font-size:10px; font-weight:600;">Good</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two-column layout: Trend chart + Breakdown -->
+    <div style="display:grid; grid-template-columns:3fr 2fr; gap:16px; margin-bottom:24px;">
+
+      <!-- Trend Chart -->
+      <div style="background:white; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="padding:14px 18px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:14px; font-weight:700; color:#0f172a;">Monthly Trend</div>
+          <div style="display:flex; gap:0; border:1px solid #e2e8f0; border-radius:6px; overflow:hidden;">
+            <div style="padding:3px 10px; background:#2563eb; color:white; font-size:10px; font-weight:600;">Revenue</div>
+            <div style="padding:3px 10px; background:white; color:#64748b; font-size:10px;">Tickets</div>
+            <div style="padding:3px 10px; background:white; color:#64748b; font-size:10px;">Profit</div>
+          </div>
+        </div>
+        <div style="padding:20px 18px; display:flex; align-items:flex-end; gap:6px; height:160px;">
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+            <div style="font-size:9px; color:#64748b;">$3.2k</div>
+            <div style="width:100%; background:#bfdbfe; border-radius:3px 3px 0 0; height:65px;"></div>
+            <div style="font-size:9px; color:#94a3b8;">Jan</div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+            <div style="font-size:9px; color:#64748b;">$3.8k</div>
+            <div style="width:100%; background:#93c5fd; border-radius:3px 3px 0 0; height:80px;"></div>
+            <div style="font-size:9px; color:#94a3b8;">Feb</div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+            <div style="font-size:9px; color:#64748b;">$4.1k</div>
+            <div style="width:100%; background:#60a5fa; border-radius:3px 3px 0 0; height:95px;"></div>
+            <div style="font-size:9px; color:#94a3b8;">Mar</div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+            <div style="font-size:9px; color:#64748b;">$4.8k</div>
+            <div style="width:100%; background:#2563eb; border-radius:3px 3px 0 0; height:115px;"></div>
+            <div style="font-size:9px; color:#64748b; font-weight:600;">Apr</div>
+          </div>
+        </div>
+        <!-- Target line indicator -->
+        <div style="padding:0 18px 12px; display:flex; gap:12px; justify-content:center;">
+          <div style="display:flex; align-items:center; gap:4px; font-size:10px; color:#64748b;"><div style="width:8px; height:8px; background:#2563eb; border-radius:2px;"></div> Actual</div>
+          <div style="display:flex; align-items:center; gap:4px; font-size:10px; color:#64748b;"><div style="width:12px; height:0; border-top:2px dashed #f59e0b;"></div> Target ($4,000)</div>
+        </div>
+      </div>
+
+      <!-- Revenue Breakdown -->
+      <div style="background:white; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <div style="padding:14px 18px; border-bottom:1px solid #f1f5f9;">
+          <div style="font-size:14px; font-weight:700; color:#0f172a;">Revenue Breakdown</div>
+        </div>
+        <div style="padding:18px;">
+          <!-- Stacked bar -->
+          <div style="display:flex; height:32px; border-radius:6px; overflow:hidden; margin-bottom:16px;">
+            <div style="width:72%; background:#2563eb;" title="PM Flat Rate"></div>
+            <div style="width:18%; background:#f59e0b;" title="Additional Labor"></div>
+            <div style="width:10%; background:#8b5cf6;" title="Additional Parts"></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="width:10px; height:10px; background:#2563eb; border-radius:2px;"></div>
+                <span style="font-size:13px; color:#0f172a;">PM Flat Rate</span>
+              </div>
+              <span style="font-size:13px; font-weight:600; color:#0f172a;">$3,470</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="width:10px; height:10px; background:#f59e0b; border-radius:2px;"></div>
+                <span style="font-size:13px; color:#0f172a;">Additional Labor</span>
+              </div>
+              <span style="font-size:13px; font-weight:600; color:#0f172a;">$870</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="width:10px; height:10px; background:#8b5cf6; border-radius:2px;"></div>
+                <span style="font-size:13px; color:#0f172a;">Additional Parts</span>
+              </div>
+              <span style="font-size:13px; font-weight:600; color:#0f172a;">$480</span>
+            </div>
+          </div>
+          <div style="margin-top:16px; padding-top:12px; border-top:1px solid #f1f5f9;">
+            <div style="font-size:11px; color:#64748b;">Additional work rate</div>
+            <div style="font-size:18px; font-weight:700; color:#0f172a;">44% <span style="font-size:11px; color:#64748b; font-weight:400;">of tickets had add-on work</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Tickets Table -->
+    <div style="background:white; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+      <div style="padding:14px 18px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:14px; font-weight:700; color:#0f172a;">Recent Tickets</div>
+        <div style="font-size:12px; color:#2563eb; cursor:pointer;">View all →</div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <th style="text-align:left; padding:8px 18px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">WO</th>
+            <th style="text-align:left; padding:8px 10px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">Customer</th>
+            <th style="text-align:left; padding:8px 10px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">Date</th>
+            <th style="text-align:right; padding:8px 10px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">Hours</th>
+            <th style="text-align:right; padding:8px 10px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">Revenue</th>
+            <th style="text-align:right; padding:8px 10px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">Profit</th>
+            <th style="text-align:center; padding:8px 18px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:10px 18px; color:#2563eb; font-weight:600;">WO-47</td>
+            <td style="padding:10px 10px; color:#0f172a;">ABC Building Services</td>
+            <td style="padding:10px 10px; color:#64748b;">Apr 5</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a;">2.0</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a; font-weight:600;">$325</td>
+            <td style="padding:10px 10px; text-align:right; color:#16a34a;">$275</td>
+            <td style="padding:10px 18px; text-align:center;"><span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600;">Billed</span></td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:10px 18px; color:#2563eb; font-weight:600;">WO-44</td>
+            <td style="padding:10px 10px; color:#0f172a;">Metro Hospital Group</td>
+            <td style="padding:10px 10px; color:#64748b;">Apr 3</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a;">3.5</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a; font-weight:600;">$480</td>
+            <td style="padding:10px 10px; text-align:right; color:#16a34a;">$392</td>
+            <td style="padding:10px 18px; text-align:center;"><span style="background:#dbeafe; color:#2563eb; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600;">Completed</span></td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:10px 18px; color:#2563eb; font-weight:600;">WO-41</td>
+            <td style="padding:10px 10px; color:#0f172a;">Sunrise Senior Living</td>
+            <td style="padding:10px 10px; color:#64748b;">Apr 1</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a;">1.5</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a; font-weight:600;">$175</td>
+            <td style="padding:10px 10px; text-align:right; color:#16a34a;">$137</td>
+            <td style="padding:10px 18px; text-align:center;"><span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600;">Billed</span></td>
+          </tr>
+          <tr>
+            <td style="padding:10px 18px; color:#2563eb; font-weight:600;">WO-38</td>
+            <td style="padding:10px 10px; color:#0f172a;">CleanRight Janitorial</td>
+            <td style="padding:10px 10px; color:#64748b;">Mar 28</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a;">1.0</td>
+            <td style="padding:10px 10px; text-align:right; color:#0f172a; font-weight:600;">$150</td>
+            <td style="padding:10px 10px; text-align:right; color:#16a34a;">$125</td>
+            <td style="padding:10px 18px; text-align:center;"><span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600;">Billed</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;">
+  <h3>Page Sections</h3>
+  <ul style="font-size:14px; color:#cbd5e1; line-height:1.8;">
+    <li><strong>Scorecard row</strong> — 6 KPI cards with targets and vs-target badges where applicable</li>
+    <li><strong>Monthly trend chart</strong> — individual tech's revenue/tickets/profit over time with target line overlay</li>
+    <li><strong>Revenue breakdown</strong> — stacked bar showing PM flat rate vs additional labor vs additional parts. Plus "additional work rate" metric (upsell indicator)</li>
+    <li><strong>Recent tickets</strong> — last N tickets with WO link, customer, date, hours, revenue, profit, status. Click WO to go to ticket detail.</li>
+  </ul>
+</div>

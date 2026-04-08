@@ -63,10 +63,10 @@ export default function TrendChart({ title = 'Monthly Trend', data, activeMetric
   }))
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div className="px-5 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        <div className="flex border border-gray-200 rounded-md overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+        <div className="flex border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
           {metricTabs.map((tab) => (
             <button
               key={tab.key}
@@ -74,7 +74,7 @@ export default function TrendChart({ title = 'Monthly Trend', data, activeMetric
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                 activeMetric === tab.key
                   ? 'bg-slate-800 text-white'
-                  : 'bg-white text-gray-500 hover:bg-gray-50'
+                  : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
               }`}
             >
               {tab.label}

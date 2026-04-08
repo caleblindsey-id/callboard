@@ -28,10 +28,10 @@ export default function SyncStatusBanner() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex items-center gap-2 text-gray-400">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span className="text-sm">Loading sync status...</span>
+          <RefreshCw className="h-4 w-4 animate-spin text-gray-400 dark:text-gray-500" />
+          <span className="text-sm text-gray-400 dark:text-gray-500">Loading sync status...</span>
         </div>
       </div>
     )
@@ -39,8 +39,8 @@ export default function SyncStatusBanner() {
 
   if (!data?.last_sync) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <p className="text-sm text-gray-500">No sync history available.</p>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <p className="text-sm text-gray-500 dark:text-gray-400">No sync history available.</p>
       </div>
     )
   }
@@ -52,7 +52,7 @@ export default function SyncStatusBanner() {
     : 'In progress'
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {isSuccess ? (
@@ -61,23 +61,23 @@ export default function SyncStatusBanner() {
             <XCircle className="h-5 w-5 text-red-500" />
           )}
           <div>
-            <p className="text-sm font-medium text-gray-900">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
               Last Sync: {sync.sync_type}
             </p>
-            <p className="text-xs text-gray-500">{completedAt}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{completedAt}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           {sync.records_synced !== null && (
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
               {sync.records_synced} records
             </span>
           )}
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
               isSuccess
-                ? 'bg-green-100 text-green-800'
-                : 'bg-red-100 text-red-800'
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
             }`}
           >
             {sync.status}
@@ -85,7 +85,7 @@ export default function SyncStatusBanner() {
         </div>
       </div>
       {sync.error_message && (
-        <p className="mt-2 text-xs text-red-600">{sync.error_message}</p>
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{sync.error_message}</p>
       )}
     </div>
   )

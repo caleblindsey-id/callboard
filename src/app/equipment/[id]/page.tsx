@@ -44,15 +44,15 @@ export default async function EquipmentDetailPage({
       <div className="flex items-center gap-3">
         <Link
           href={isTech ? '/tickets' : '/equipment'}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
+          className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
             {[equipment.make, equipment.model].filter(Boolean).join(' ') || 'Equipment'}
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
             {equipment.customers?.name ?? 'No customer'} — {equipment.serial_number ?? 'No serial'}
           </p>
         </div>

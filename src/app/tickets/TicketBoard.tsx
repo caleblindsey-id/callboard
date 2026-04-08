@@ -155,14 +155,14 @@ export default function TicketBoard({
   return (
     <>
       {/* Filters — stacked on mobile, row on desktop */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
           <div className="w-full lg:w-auto">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Month</label>
             <select
               value={month}
               onChange={(e) => setMonth(parseInt(e.target.value))}
-              className="w-full lg:w-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {MONTHS.map((m, i) => (
                 <option key={i} value={i + 1}>{m}</option>
@@ -170,11 +170,11 @@ export default function TicketBoard({
             </select>
           </div>
           <div className="w-full lg:w-auto">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Year</label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Year</label>
             <select
               value={year}
               onChange={(e) => setYear(parseInt(e.target.value))}
-              className="w-full lg:w-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
                 <option key={y} value={y}>{y}</option>
@@ -183,11 +183,11 @@ export default function TicketBoard({
           </div>
           {isManager && (
             <div className="w-full lg:w-auto">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Technician</label>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Technician</label>
               <select
                 value={techFilter}
                 onChange={(e) => setTechFilter(e.target.value)}
-                className="w-full lg:w-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 <option value="">All Technicians</option>
                 {users.map((u) => (
@@ -197,11 +197,11 @@ export default function TicketBoard({
             </div>
           )}
           <div className="w-full lg:w-auto">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Status</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full lg:w-auto rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -224,7 +224,7 @@ export default function TicketBoard({
               </button>
               <button
                 onClick={() => setGenerateOpen(true)}
-                className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors min-h-[44px] lg:min-h-0"
+                className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 transition-colors min-h-[44px] lg:min-h-0"
               >
                 Generate {MONTHS[month - 1]} PMs
               </button>
@@ -235,21 +235,21 @@ export default function TicketBoard({
 
       {/* Error display */}
       {error && (
-        <div className="bg-red-50 rounded-lg border border-red-200 p-3">
-          <p className="text-sm text-red-800">{error}</p>
+        <div className="bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 p-3">
+          <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
         </div>
       )}
 
       {/* Bulk assign — managers only */}
       {isManager && selected.size > 0 && (
-        <div className="bg-blue-50 rounded-lg border border-blue-200 p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <span className="text-sm text-blue-800 font-medium">
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <span className="text-sm text-blue-800 dark:text-blue-300 font-medium">
             {selected.size} ticket{selected.size > 1 ? 's' : ''} selected
           </span>
           <select
             value={assignTo}
             onChange={(e) => setAssignTo(e.target.value)}
-            className="w-full sm:w-auto rounded-md border border-gray-300 px-3 py-2.5 sm:py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0"
+            className="w-full sm:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0"
           >
             <option value="">Assign to...</option>
             {users.map((u) => (
@@ -267,7 +267,7 @@ export default function TicketBoard({
             <button
               onClick={handleSkipSelected}
               disabled={bulkLoading}
-              className="flex-1 sm:flex-none px-3 py-2.5 sm:py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+              className="flex-1 sm:flex-none px-3 py-2.5 sm:py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               {bulkLoading ? 'Processing...' : 'Skip Selected'}
             </button>
@@ -276,39 +276,39 @@ export default function TicketBoard({
       )}
 
       {/* Ticket list */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {tickets.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500">
+          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             No tickets found for the selected filters.
           </div>
         ) : (
           <>
             {/* Mobile cards — hidden on desktop */}
-            <div className="lg:hidden divide-y divide-gray-100">
+            <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {tickets.map((ticket) => (
                 <div
                   key={ticket.id}
-                  className="px-4 py-3 cursor-pointer active:bg-gray-50"
+                  className="px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
                   onClick={() => router.push(`/tickets/${ticket.id}`)}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-slate-500">WO-{ticket.work_order_number}</span>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">WO-{ticket.work_order_number}</span>
                       <StatusBadge status={ticket.status} />
                     </div>
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-900 truncate">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {ticket.customers?.name ?? '—'}
                       </span>
-                      <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
+                      <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     {[ticket.equipment?.make, ticket.equipment?.model]
                       .filter(Boolean)
                       .join(' ') || '—'}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     Scheduled:{' '}
                     {ticket.scheduled_date
                       ? new Date(ticket.scheduled_date).toLocaleDateString()
@@ -326,31 +326,31 @@ export default function TicketBoard({
             <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
+                  <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                     {isManager && (
                       <th className="px-4 py-3 text-left">
                         <input
                           type="checkbox"
                           checked={selected.size === tickets.length && tickets.length > 0}
                           onChange={toggleAll}
-                          className="rounded border-gray-300"
+                          className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
                         />
                       </th>
                     )}
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">WO #</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Customer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Equipment</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">City</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Scheduled Date</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Technician</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">WO #</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">City</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Scheduled Date</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {tickets.map((ticket) => (
                     <tr
                       key={ticket.id}
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                       onClick={() => router.push(`/tickets/${ticket.id}`)}
                     >
                       {isManager && (
@@ -362,33 +362,33 @@ export default function TicketBoard({
                             type="checkbox"
                             checked={selected.has(ticket.id)}
                             onChange={() => toggleSelect(ticket.id)}
-                            className="rounded border-gray-300"
+                            className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
                           />
                         </td>
                       )}
-                      <td className="px-4 py-3 text-gray-600 font-medium">
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">
                         WO-{ticket.work_order_number}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={ticket.status} />
                       </td>
-                      <td className="px-4 py-3 text-gray-900">
+                      <td className="px-4 py-3 text-gray-900 dark:text-white">
                         {ticket.customers?.name ?? '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {[ticket.equipment?.make, ticket.equipment?.model]
                           .filter(Boolean)
                           .join(' ') || '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {ticket.equipment?.ship_to_locations?.city ?? ticket.customers?.billing_city ?? '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {ticket.scheduled_date
                           ? new Date(ticket.scheduled_date).toLocaleDateString()
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {ticket.users?.name ?? '—'}
                       </td>
                     </tr>

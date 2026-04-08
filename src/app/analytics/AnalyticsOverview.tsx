@@ -51,22 +51,22 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Technician Analytics</h1>
-          <p className="text-sm text-gray-500 mt-1">{data.period.label}</p>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Technician Analytics</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{data.period.label}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowTargets(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
           >
             <Target className="h-3.5 w-3.5" />
             Team Targets
           </button>
-          <div className="flex border border-gray-200 rounded-md overflow-hidden">
+          <div className="flex border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
             <button
               onClick={() => handlePeriodChange('weekly')}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                periodType === 'weekly' ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                periodType === 'weekly' ? 'bg-slate-800 text-white' : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
               }`}
             >
               Weekly
@@ -74,7 +74,7 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
             <button
               onClick={() => handlePeriodChange('monthly')}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                periodType === 'monthly' ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                periodType === 'monthly' ? 'bg-slate-800 text-white' : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
               }`}
             >
               Monthly

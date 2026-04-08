@@ -184,10 +184,10 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={handleClose} />
-      <div className="relative bg-white rounded-lg shadow-lg border border-gray-200 p-6 max-w-lg w-full mx-4">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 max-w-lg w-full mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900">New Ticket</h3>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">New Ticket</h3>
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -197,7 +197,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
         <form onSubmit={handleSubmit} className="space-y-3">
           {/* Customer combobox */}
           <div ref={comboRef} className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Customer <span className="text-red-500">*</span>
             </label>
             <input
@@ -211,45 +211,45 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
               onFocus={() => { if (customerResults.length > 0) setComboOpen(true) }}
               placeholder="Search by name or account number..."
               autoComplete="off"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
             {searching && (
-              <p className="text-xs text-gray-400 mt-1">Searching...</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Searching...</p>
             )}
             {comboOpen && customerResults.length > 0 && (
-              <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-auto text-sm">
+              <ul className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-56 overflow-auto text-sm">
                 {customerResults.map((c) => (
                   <li
                     key={c.id}
                     onMouseDown={() => selectCustomer(c)}
-                    className="px-3 py-2 cursor-pointer hover:bg-slate-50 flex justify-between items-center"
+                    className="px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-700 flex justify-between items-center"
                   >
-                    <span className="text-gray-900">{c.name}</span>
+                    <span className="text-gray-900 dark:text-white">{c.name}</span>
                     {c.account_number && (
-                      <span className="text-gray-400 text-xs ml-2 shrink-0">{c.account_number}</span>
+                      <span className="text-gray-400 dark:text-gray-500 text-xs ml-2 shrink-0">{c.account_number}</span>
                     )}
                   </li>
                 ))}
               </ul>
             )}
             {comboOpen && !searching && customerSearch.trim() && customerResults.length === 0 && (
-              <p className="text-xs text-gray-400 mt-1">No customers found.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">No customers found.</p>
             )}
           </div>
 
           {/* Equipment */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Equipment
             </label>
             {noEquipment ? (
-              <p className="text-sm text-gray-400 italic py-2">No equipment on file for this customer.</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 italic py-2">No equipment on file for this customer.</p>
             ) : (
               <select
                 value={equipmentId}
                 onChange={(e) => setEquipmentId(e.target.value)}
                 disabled={!customerSelected}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 disabled:text-gray-400"
+                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
               >
                 <option value="">
                   {!customerSelected
@@ -271,13 +271,13 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Month <span className="text-red-500">*</span>
               </label>
               <select
                 value={month}
                 onChange={(e) => setMonth(parseInt(e.target.value))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 {MONTHS.map((m, i) => (
                   <option key={i} value={i + 1}>{m}</option>
@@ -285,13 +285,13 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Year <span className="text-red-500">*</span>
               </label>
               <select
                 value={year}
                 onChange={(e) => setYear(parseInt(e.target.value))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -301,11 +301,11 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Technician</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Technician</label>
             <select
               value={technicianId}
               onChange={(e) => setTechnicianId(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               <option value="">Unassigned</option>
               {users.map((u) => (
@@ -315,12 +315,12 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Date</label>
             <input
               type="date"
               value={scheduledDate}
               onChange={(e) => setScheduledDate(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>
 
@@ -328,7 +328,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
             <button
               type="button"
               onClick={handleClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
             >
               Cancel
             </button>

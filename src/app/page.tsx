@@ -70,8 +70,8 @@ export default async function DashboardPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Dashboard</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           {monthName} {year} overview
         </p>
       </div>
@@ -84,15 +84,15 @@ export default async function DashboardPage() {
             <Link
               key={card.status}
               href={`/tickets?month=${month}&year=${year}&status=${card.status}`}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:border-gray-300 hover:shadow transition-all"
+              className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow transition-all"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600">
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
                   {card.label}
                 </span>
                 <Icon className={`h-5 w-5 ${card.color}`} />
               </div>
-              <p className="mt-2 text-xl sm:text-2xl font-semibold text-gray-900">
+              <p className="mt-2 text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
                 {counts[card.status]}
               </p>
             </Link>
@@ -101,49 +101,49 @@ export default async function DashboardPage() {
       </div>
 
       {/* Upcoming PMs */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-900">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">
             Upcoming PMs
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             {isTech
               ? `Your assigned and in-progress tickets for ${monthName}`
               : `Unassigned and assigned tickets for ${monthName}`}
           </p>
         </div>
         {upcoming.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500">
+          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             No upcoming PMs for this month.
           </div>
         ) : (
           <>
             {/* Mobile cards — hidden on desktop */}
-            <div className="lg:hidden divide-y divide-gray-100">
+            <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {upcoming.map((ticket) => (
                 <Link
                   key={ticket.id}
                   href={`/tickets/${ticket.id}`}
-                  className="block px-4 py-3 active:bg-gray-50"
+                  className="block px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700"
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-slate-500">WO-{ticket.work_order_number}</span>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">WO-{ticket.work_order_number}</span>
                       <StatusBadge status={ticket.status} />
                     </div>
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-900 truncate">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {ticket.customers?.name ?? '—'}
                       </span>
-                      <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
+                      <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     {[ticket.equipment?.make, ticket.equipment?.model]
                       .filter(Boolean)
                       .join(' ') || '—'}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     Scheduled:{' '}
                     {ticket.scheduled_date
                       ? new Date(ticket.scheduled_date).toLocaleDateString()
@@ -158,44 +158,44 @@ export default async function DashboardPage() {
             <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-5 py-3 text-left font-medium text-gray-600">
+                  <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
                       Status
                     </th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
                       Customer
                     </th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
                       Equipment
                     </th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
                       Scheduled Date
                     </th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
                       Technician
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {upcoming.map((ticket) => (
-                    <tr key={ticket.id} className="hover:bg-gray-50">
+                    <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-5 py-3">
                         <StatusBadge status={ticket.status} />
                       </td>
-                      <td className="px-5 py-3 text-gray-900">
+                      <td className="px-5 py-3 text-gray-900 dark:text-white">
                         {ticket.customers?.name ?? '—'}
                       </td>
-                      <td className="px-5 py-3 text-gray-600">
+                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                         {[ticket.equipment?.make, ticket.equipment?.model]
                           .filter(Boolean)
                           .join(' ') || '—'}
                       </td>
-                      <td className="px-5 py-3 text-gray-600">
+                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                         {ticket.scheduled_date
                           ? new Date(ticket.scheduled_date).toLocaleDateString()
                           : '—'}
                       </td>
-                      <td className="px-5 py-3 text-gray-600">
+                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                         {ticket.users?.name ?? '—'}
                       </td>
                     </tr>
@@ -209,7 +209,7 @@ export default async function DashboardPage() {
 
       {/* Sync status */}
       <div>
-        <h2 className="text-sm font-medium text-gray-600 mb-2">Sync Status</h2>
+        <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Sync Status</h2>
         <SyncStatusBanner />
       </div>
     </div>
