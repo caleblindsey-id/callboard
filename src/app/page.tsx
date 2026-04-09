@@ -9,6 +9,7 @@ import {
   Receipt,
   SkipForward,
   ChevronRight,
+  DollarSign,
 } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
 import SyncStatusBanner from '@/components/SyncStatusBanner'
@@ -59,6 +60,12 @@ export default async function DashboardPage() {
     counts[t.status]++
   }
 
+  const mtdRevenue = isTech
+    ? tickets
+        .filter((t) => t.status === 'completed' || t.status === 'billed')
+        .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
+    : null
+
   const upcoming = tickets.filter(
     (t) => isTech
       ? t.status === 'assigned' || t.status === 'in_progress'
@@ -98,6 +105,21 @@ export default async function DashboardPage() {
             </Link>
           )
         })}
+
+        {/* MTD Revenue — technicians only */}
+        {mtdRevenue !== null && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                MTD Revenue
+              </span>
+              <DollarSign className="h-5 w-5 text-emerald-500" />
+            </div>
+            <p className="mt-2 text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
+              ${mtdRevenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Upcoming PMs */}
