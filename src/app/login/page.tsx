@@ -20,17 +20,27 @@ export default function LoginPage() {
 
     const supabase = createClient()
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (authError) {
-        setError(authError.message)
+      if (authError || !user) {
+        setError(authError?.message ?? 'Sign in failed.')
         return
       }
 
-      router.push('/')
+      const { data: dbUser } = await supabase
+        .from('users')
+        .select('must_change_password')
+        .eq('id', user.id)
+        .single()
+
+      if (dbUser?.must_change_password) {
+        router.push('/change-password?forced=true')
+      } else {
+        router.push('/')
+      }
       router.refresh()
     } catch {
       setError('An unexpected error occurred. Please try again.')
