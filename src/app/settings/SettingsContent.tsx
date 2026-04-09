@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UserRow, UserRole, SyncLogRow } from '@/types/database'
+import { useUser } from '@/components/UserProvider'
 import { X } from 'lucide-react'
 
 interface SettingsContentProps {
@@ -135,10 +136,22 @@ export default function SettingsContent({ users, syncLog, laborRate }: SettingsC
 
 function UserTableRow({ user }: { user: UserRow }) {
   const router = useRouter()
+  const currentUser = useUser()
+  const isSuperAdmin = currentUser?.role === 'super_admin'
   const [loading, setLoading] = useState(false)
   const [editingCost, setEditingCost] = useState(false)
   const [hourlyCost, setHourlyCost] = useState(user.hourly_cost?.toString() ?? '')
   const [savingCost, setSavingCost] = useState(false)
+  const [savingRole, setSavingRole] = useState(false)
+
+  async function handleRoleChange(newRole: UserRole) {
+    if (newRole === user.role) return
+    setSavingRole(true)
+    const supabase = createClient()
+    await supabase.from('users').update({ role: newRole }).eq('id', user.id)
+    setSavingRole(false)
+    router.refresh()
+  }
 
   async function handleToggleActive() {
     setLoading(true)
@@ -167,7 +180,23 @@ function UserTableRow({ user }: { user: UserRow }) {
     <tr>
       <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">{user.name}</td>
       <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{user.email}</td>
-      <td className="px-5 py-3 text-gray-600 dark:text-gray-400 capitalize">{user.role ?? '—'}</td>
+      <td className="px-5 py-3">
+        {isSuperAdmin && currentUser?.id !== user.id ? (
+          <select
+            value={user.role ?? ''}
+            disabled={savingRole}
+            onChange={(e) => handleRoleChange(e.target.value as UserRole)}
+            className="rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:opacity-50"
+          >
+            <option value="technician">Technician</option>
+            <option value="coordinator">Coordinator</option>
+            <option value="manager">Manager</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+        ) : (
+          <span className="text-sm text-gray-600 dark:text-gray-400 capitalize">{user.role ?? '—'}</span>
+        )}
+      </td>
       <td className="px-5 py-3">
         {user.role === 'technician' ? (
           editingCost ? (
