@@ -497,6 +497,41 @@ export interface Database {
         Update: SyncLogUpdate
         Relationships: []
       }
+      service_tickets: {
+        Row: import('@/types/service-tickets').ServiceTicketRow
+        Insert: import('@/types/service-tickets').ServiceTicketInsert
+        Update: import('@/types/service-tickets').ServiceTicketUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'service_tickets_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'service_tickets_equipment_id_fkey'
+            columns: ['equipment_id']
+            isOneToOne: false
+            referencedRelation: 'equipment'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'service_tickets_assigned_technician_id_fkey'
+            columns: ['assigned_technician_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'service_tickets_created_by_id_fkey'
+            columns: ['created_by_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: {}
     Functions: {}
