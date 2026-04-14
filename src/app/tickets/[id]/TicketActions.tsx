@@ -1070,7 +1070,6 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 multiple
                 onChange={handlePhotoUpload}
                 className="hidden"
