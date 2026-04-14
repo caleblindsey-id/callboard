@@ -1322,7 +1322,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 multiple
                 onChange={handlePhotoUpload}
                 className="hidden"
