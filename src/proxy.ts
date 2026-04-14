@@ -2,16 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Pages technicians are allowed to access
-const TECH_ALLOWED_PAGES = ['/', '/tickets', '/login', '/change-password']
+const TECH_ALLOWED_PAGES = ['/', '/tickets', '/service', '/login', '/change-password']
 const TECH_ALLOWED_PAGE_PATTERNS = [
   /^\/tickets\/[^/]+$/,    // /tickets/[id]
   /^\/equipment\/[^/]+$/,  // /equipment/[id] — read-only for techs
+  /^\/service\/[^/]+$/,    // /service/[id] — own assigned service tickets
 ]
 
 // API routes technicians are allowed to access
 const TECH_ALLOWED_API_PATTERNS = [
-  /^\/api\/tickets\/[^/]+/,           // PATCH /api/tickets/[id] and POST /api/tickets/[id]/complete
-  /^\/api\/equipment\/[^/]+\/notes$/, // GET + POST /api/equipment/[id]/notes
+  /^\/api\/tickets\/[^/]+/,              // PATCH /api/tickets/[id] and POST /api/tickets/[id]/complete
+  /^\/api\/service-tickets(\/|$)/,       // GET /api/service-tickets + /api/service-tickets/[id]/*
+  /^\/api\/equipment\/[^/]+\/notes$/,    // GET + POST /api/equipment/[id]/notes
 ]
 
 function isTechAllowed(pathname: string): boolean {

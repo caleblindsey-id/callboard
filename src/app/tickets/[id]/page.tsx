@@ -8,6 +8,7 @@ import TicketActions from './TicketActions'
 import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { pmTicketToHistoryItem } from '@/types/service-tickets'
 import { getSetting } from '@/lib/db/settings'
 
 export default async function TicketDetailPage({
@@ -166,7 +167,7 @@ export default async function TicketDetailPage({
       {/* Service History */}
       {ticket.equipment_id && (
         <ServiceHistory
-          tickets={serviceHistory}
+          items={serviceHistory.map(pmTicketToHistoryItem)}
           showBilling={showBilling}
           collapsible
         />

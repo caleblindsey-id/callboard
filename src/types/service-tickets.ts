@@ -166,6 +166,38 @@ export const SERVICE_MANAGER_ONLY_TARGETS: ServiceTicketStatus[] = ['open', 'can
 
 // --- Unified Service History Item (for combined PM + service timelines) ---
 
+// Helper to convert PM ticket data to ServiceHistoryItem
+export function pmTicketToHistoryItem(t: {
+  id: string
+  work_order_number: number
+  status: string
+  completed_date: string | null
+  month: number
+  year: number
+  hours_worked: number | null
+  additional_hours_worked: number | null
+  parts_used: unknown[] | null
+  additional_parts_used: unknown[] | null
+  billing_amount: number | null
+  completion_notes: string | null
+}): ServiceHistoryItem {
+  const partsCount = (Array.isArray(t.parts_used) ? t.parts_used.length : 0)
+    + (Array.isArray(t.additional_parts_used) ? t.additional_parts_used.length : 0)
+  return {
+    id: t.id,
+    type: 'pm',
+    work_order_number: t.work_order_number,
+    status: t.status,
+    date: t.completed_date ?? null,
+    hours_worked: t.hours_worked,
+    additional_hours_worked: t.additional_hours_worked,
+    parts_count: partsCount,
+    billing_amount: t.billing_amount,
+    completion_notes: t.completion_notes,
+    technician_name: null,
+  }
+}
+
 export interface ServiceHistoryItem {
   id: string
   type: 'pm' | 'service'

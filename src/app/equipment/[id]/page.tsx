@@ -10,6 +10,7 @@ import ScheduleSection from './ScheduleSection'
 import DefaultProductsSection from './DefaultProductsSection'
 import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
+import { pmTicketToHistoryItem } from '@/types/service-tickets'
 
 export default async function EquipmentDetailPage({
   params,
@@ -74,7 +75,7 @@ export default async function EquipmentDetailPage({
         />
       )}
 
-      <ServiceHistory tickets={serviceHistory} showBilling={showBilling} />
+      <ServiceHistory items={serviceHistory.map(pmTicketToHistoryItem)} showBilling={showBilling} />
 
       <EquipmentNotes equipmentId={equipment.id} />
     </div>
