@@ -90,6 +90,11 @@ export type ServiceTicketRow = {
   work_order_number: number | null
   synergy_validated_at: string | null
   synergy_validation_status: 'valid' | 'invalid' | 'pending' | null
+  approval_token: string | null
+  approval_token_expires_at: string | null
+  estimate_signature: string | null
+  estimate_signature_name: string | null
+  decline_reason: string | null
   created_at: string
   updated_at: string
 }
