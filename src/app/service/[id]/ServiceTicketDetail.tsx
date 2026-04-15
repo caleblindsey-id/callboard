@@ -297,6 +297,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     setLoading(true)
     setError(null)
     try {
+      // Generate approval token
+      const tokenRes = await fetch(`/api/service-tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generate_approval_token: true }),
+      })
+      if (!tokenRes.ok) {
+        const errData = await tokenRes.json().catch(() => ({}))
+        throw new Error(errData.error || 'Failed to generate approval token')
+      }
+      const tokenData = await tokenRes.json()
+      const approvalUrl = `${window.location.origin}/approve/${tokenData.approval_token}`
+
+      // Generate estimate PDF
       const res = await fetch(`/api/service-tickets/${ticket.id}/estimate-pdf`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -305,11 +319,19 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       const blob = await res.blob()
       const filename = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ?? 'estimate.pdf'
 
-      // Open mailto with the estimate context — user attaches the downloaded PDF
+      // Build estimate summary for email body
+      const estimateSummary = ticket.estimate_amount != null
+        ? `\nEstimate Total: $${ticket.estimate_amount.toFixed(2)}\n`
+        : ''
+
+      // Open mailto with approval link + estimate context
       const woLabel = ticket.work_order_number ? `WO-${ticket.work_order_number}` : 'Service'
-      const subject = encodeURIComponent(`${woLabel} — Service Estimate from Imperial Dade`)
+      const customerName = ticket.customers?.name ?? 'Customer'
+      const subject = encodeURIComponent(`Service Estimate — ${woLabel} — ${customerName}`)
       const body = encodeURIComponent(
-        `Please find attached the service estimate for your review.\n\n` +
+        `Please find attached the service estimate for your review.\n${estimateSummary}\n` +
+        `To approve or decline this estimate online, visit:\n${approvalUrl}\n\n` +
+        `This link is valid for 7 days.\n\n` +
         `This estimate is subject to change. All prices are subject to applicable taxes.\n\n` +
         `If you have any questions, please don't hesitate to reach out.\n\n` +
         `Thank you,\nImperial Dade Service Department`
@@ -327,6 +349,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       URL.revokeObjectURL(url)
 
       setSuccessMsg('Email draft opened — attach the downloaded PDF to send.')
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate estimate')
     } finally {
@@ -702,6 +725,27 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 </InfoField>
               )}
 
+              {/* Customer approval display */}
+              {ticket.estimate_approved && ticket.estimate_signature && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                  <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                    Estimate Approved
+                  </div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Approved by {ticket.estimate_signature_name ?? 'Customer'}
+                    {ticket.estimate_approved_at && (
+                      <> on {new Date(ticket.estimate_approved_at).toLocaleDateString()}</>
+                    )}
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ticket.estimate_signature}
+                    alt="Customer signature"
+                    className="max-w-xs h-16 border border-gray-200 dark:border-gray-700 rounded bg-white"
+                  />
+                </div>
+              )}
+
               {/* Download / Email estimate */}
               <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                 <button
@@ -719,6 +763,55 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                   Email Estimate
                 </button>
               </div>
+
+              {/* Approval link display */}
+              {ticket.status === 'estimated' && ticket.approval_token && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  {ticket.approval_token_expires_at && new Date(ticket.approval_token_expires_at) > new Date() ? (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Approval Link</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${typeof window !== 'undefined' ? window.location.origin : ''}/approve/${ticket.approval_token}`}
+                          className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-xs w-full focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/approve/${ticket.approval_token}`)
+                            setSuccessMsg('Approval link copied to clipboard')
+                          }}
+                          className="px-3 py-2 text-xs font-medium text-slate-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 transition-colors shrink-0"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleEmailEstimate}
+                        disabled={loading}
+                        className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                      >
+                        Resend Approval Link
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-red-600 dark:text-red-400">Approval link expired</p>
+                      <button
+                        type="button"
+                        onClick={handleEmailEstimate}
+                        disabled={loading}
+                        className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                      >
+                        Resend Approval Link
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -738,6 +831,28 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 className="px-4 py-3 sm:py-2 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
               >
                 Decline
+              </button>
+            </div>
+          )}
+
+          {/* Decline reason */}
+          {ticket.status === 'declined' && ticket.decline_reason && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <InfoField label="Decline Reason">
+                <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
+              </InfoField>
+            </div>
+          )}
+
+          {/* Reopen & Revise for declined tickets */}
+          {ticket.status === 'declined' && (
+            <div className="mt-3">
+              <button
+                onClick={handleReopen}
+                disabled={loading}
+                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                Reopen &amp; Revise Estimate
               </button>
             </div>
           )}
@@ -1113,7 +1228,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager Actions</p>
             <div className="flex flex-wrap gap-2">
-              {ticket.status !== 'open' && ticket.status !== 'canceled' && (
+              {ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined' && (
                 <button
                   onClick={handleReopen}
                   disabled={loading}
