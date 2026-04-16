@@ -29,6 +29,8 @@ interface BillingTicket {
   technicianName: string
   completedDate: string
   hoursWorked: number | null
+  machineHours: number | null
+  dateCode: string | null
   completionNotes: string | null
   partsUsed: PartLine[]
   additionalPartsUsed: PartLine[]
@@ -378,6 +380,18 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
           {ticket.hoursWorked != null ? String(ticket.hoursWorked) : '—'}
         </Text>
       </View>
+      {ticket.machineHours != null && (
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Machine Hours:</Text>
+          <Text style={styles.fieldValue}>{String(ticket.machineHours)}</Text>
+        </View>
+      )}
+      {ticket.dateCode && (
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Date Code:</Text>
+          <Text style={styles.fieldValue}>{ticket.dateCode}</Text>
+        </View>
+      )}
       <View style={styles.fieldRow}>
         <Text style={styles.fieldLabel}>Notes:</Text>
         <Text style={styles.fieldValue}>{dash(ticket.completionNotes)}</Text>

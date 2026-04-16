@@ -33,6 +33,8 @@ export async function POST(
         status,
         completed_date,
         hours_worked,
+        machine_hours,
+        date_code,
         completion_notes,
         parts_used,
         additional_parts_used,
@@ -169,6 +171,8 @@ export async function POST(
           })
         : '—',
       hoursWorked: raw.hours_worked as number | null,
+      machineHours: raw.machine_hours as number | null,
+      dateCode: raw.date_code as string | null,
       completionNotes: raw.completion_notes as string | null,
       pmParts: mapParts(raw.parts_used as RawPart[] ?? []),
       additionalParts: mapParts(raw.additional_parts_used as RawPart[] ?? []),

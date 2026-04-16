@@ -176,6 +176,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
     ticket.additional_hours_worked != null ? String(ticket.additional_hours_worked) : ''
   )
 
+  const [machineHours, setMachineHours] = useState(
+    ticket.machine_hours != null ? String(ticket.machine_hours) : ''
+  )
+  const [dateCode, setDateCode] = useState(ticket.date_code ?? '')
+
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
   const [poNumber, setPoNumber] = useState(ticket.po_number ?? '')
@@ -405,6 +410,16 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   async function handleComplete(e: React.FormEvent) {
     e.preventDefault()
 
+    if (!machineHours || isNaN(parseFloat(machineHours))) {
+      setError('Machine hours are required.')
+      return
+    }
+
+    if (!dateCode.trim()) {
+      setError('Date code is required.')
+      return
+    }
+
     if (!signatureImage || !signatureName.trim()) {
       setError('Customer signature and printed name are required.')
       return
@@ -431,6 +446,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           billingContactName: billingContactName || undefined,
           billingContactEmail: billingContactEmail || undefined,
           billingContactPhone: billingContactPhone || undefined,
+          machineHours: parseFloat(machineHours),
+          dateCode: dateCode.trim(),
         }),
       })
       if (!res.ok) {
@@ -465,6 +482,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           billing_contact_name: billingContactName || null,
           billing_contact_email: billingContactEmail || null,
           billing_contact_phone: billingContactPhone || null,
+          machine_hours: parseFloat(machineHours) || null,
+          date_code: dateCode.trim() || null,
         }),
       })
       if (!res.ok) {
@@ -991,6 +1010,37 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                 className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                 placeholder="0.00"
               />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Machine Hours <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  required
+                  value={machineHours}
+                  onChange={(e) => setMachineHours(e.target.value)}
+                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  placeholder="e.g. 1247.5"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={dateCode}
+                  onChange={(e) => setDateCode(e.target.value)}
+                  className="rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  placeholder="e.g. 26W15"
+                />
+              </div>
             </div>
 
             {/* ── SECTION 1: PM Service ── */}

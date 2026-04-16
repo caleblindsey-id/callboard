@@ -19,6 +19,8 @@ interface CompleteTicketBody {
   billingContactPhone?: string
   additionalPartsUsed?: PartUsed[]
   additionalHoursWorked?: number
+  machineHours: number
+  dateCode: string
 }
 
 export async function POST(
@@ -29,7 +31,7 @@ export async function POST(
     const { id } = await params
     const body = await request.json() as CompleteTicketBody
 
-    const { completedDate, hoursWorked, partsUsed, completionNotes, billingAmount, customerSignature, customerSignatureName, photos, poNumber, billingContactName, billingContactEmail, billingContactPhone, additionalPartsUsed, additionalHoursWorked } = body
+    const { completedDate, hoursWorked, partsUsed, completionNotes, billingAmount, customerSignature, customerSignatureName, photos, poNumber, billingContactName, billingContactEmail, billingContactPhone, additionalPartsUsed, additionalHoursWorked, machineHours, dateCode } = body
 
     if (!completedDate || hoursWorked === undefined || billingAmount === undefined) {
       return NextResponse.json(
@@ -41,6 +43,20 @@ export async function POST(
     if (!customerSignature || !customerSignatureName) {
       return NextResponse.json(
         { error: 'Customer signature and printed name are required' },
+        { status: 400 }
+      )
+    }
+
+    if (machineHours === undefined || machineHours === null) {
+      return NextResponse.json(
+        { error: 'Machine hours are required' },
+        { status: 400 }
+      )
+    }
+
+    if (!dateCode || !dateCode.trim()) {
+      return NextResponse.json(
+        { error: 'Date code is required' },
         { status: 400 }
       )
     }
@@ -124,6 +140,8 @@ export async function POST(
       billingContactPhone: billingContactPhone ?? null,
       additionalPartsUsed: finalAdditionalParts,
       additionalHoursWorked: finalAdditionalHours,
+      machineHours,
+      dateCode: dateCode.trim(),
     })
 
     return NextResponse.json(updated)

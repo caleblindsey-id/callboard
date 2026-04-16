@@ -26,6 +26,8 @@ interface WorkOrderTicket {
   technicianName: string
   completedDate: string
   hoursWorked: number | null
+  machineHours: number | null
+  dateCode: string | null
   completionNotes: string | null
   pmParts: PartLine[]
   additionalParts: PartLine[]
@@ -273,6 +275,18 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
             {ticket.hoursWorked != null ? String(ticket.hoursWorked) : '—'}
           </Text>
         </View>
+        {ticket.machineHours != null && (
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Machine Hours:</Text>
+            <Text style={styles.fieldValue}>{String(ticket.machineHours)}</Text>
+          </View>
+        )}
+        {ticket.dateCode && (
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Date Code:</Text>
+            <Text style={styles.fieldValue}>{ticket.dateCode}</Text>
+          </View>
+        )}
         <View style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>Notes:</Text>
           <Text style={styles.fieldValue}>{dash(ticket.completionNotes)}</Text>
