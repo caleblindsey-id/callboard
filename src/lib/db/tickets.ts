@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PmTicketRow, PmTicketUpdate, TicketStatus, PartUsed, TicketPhoto, BillingType } from '@/types/database'
 
 export type TicketWithJoins = PmTicketRow & {
-  customers: { name: string; billing_city: string | null } | null
+  customers: { name: string; billing_city: string | null; po_required: boolean } | null
   equipment: { make: string | null; model: string | null; ship_to_locations: { city: string | null } | null } | null
   users: { name: string } | null
 }
@@ -28,7 +28,7 @@ export async function getTickets(filters?: {
     .from('pm_tickets')
     .select(`
       *,
-      customers(name, billing_city),
+      customers(name, billing_city, po_required),
       equipment(make, model, ship_to_locations(city)),
       users!assigned_technician_id(name)
     `)
