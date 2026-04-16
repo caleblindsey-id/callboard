@@ -8,6 +8,7 @@ import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge from '@/components/StatusBadge'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import CreateTicketModal from './CreateTicketModal'
+import SkipDialog from './SkipDialog'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -55,6 +56,7 @@ export default function TicketBoard({
   const [generateOpen, setGenerateOpen] = useState(false)
   const [generateLoading, setGenerateLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [skipOpen, setSkipOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function applyFilters() {
@@ -107,28 +109,15 @@ export default function TicketBoard({
     }
   }
 
-  async function handleSkipSelected() {
+  function handleSkipSelected() {
     if (selected.size === 0) return
-    setBulkLoading(true)
-    setError(null)
-    try {
-      const promises = Array.from(selected).map((ticketId) =>
-        fetch(`/api/tickets/${ticketId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'skipped' }),
-        })
-      )
-      const results = await Promise.all(promises)
-      const failed = results.filter((r) => !r.ok)
-      if (failed.length > 0) {
-        setError(`${failed.length} ticket(s) could not be skipped (may already be in progress)`)
-      }
-      setSelected(new Set())
-      router.refresh()
-    } finally {
-      setBulkLoading(false)
-    }
+    setSkipOpen(true)
+  }
+
+  function handleSkipDone() {
+    setSkipOpen(false)
+    setSelected(new Set())
+    router.refresh()
   }
 
   async function handleGenerate() {
@@ -414,6 +403,14 @@ export default function TicketBoard({
         open={createOpen}
         onClose={() => setCreateOpen(false)}
       />
+
+      {skipOpen && (
+        <SkipDialog
+          tickets={tickets.filter((t) => selected.has(t.id))}
+          onClose={() => setSkipOpen(false)}
+          onDone={handleSkipDone}
+        />
+      )}
     </>
   )
 }
