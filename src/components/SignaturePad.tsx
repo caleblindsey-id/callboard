@@ -12,7 +12,12 @@ export default function SignaturePad({ onSignatureChange, initialName = '' }: Si
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const padRef = useRef<SignaturePadLib | null>(null)
   const [name, setName] = useState(initialName)
+  const nameRef = useRef(initialName)
   const [hasSigned, setHasSigned] = useState(false)
+
+  useEffect(() => {
+    nameRef.current = name
+  }, [name])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -27,7 +32,7 @@ export default function SignaturePad({ onSignatureChange, initialName = '' }: Si
       setHasSigned(!pad.isEmpty())
       onSignatureChange({
         image: pad.isEmpty() ? null : pad.toDataURL('image/png'),
-        name,
+        name: nameRef.current,
       })
     })
 
