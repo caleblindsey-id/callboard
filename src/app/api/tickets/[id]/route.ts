@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { updateTicket } from '@/lib/db/tickets'
+import { updateAnchorMonth } from '@/lib/db/schedules'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { PmTicketRow, TicketStatus } from '@/types/database'
 
@@ -139,6 +140,28 @@ export async function PATCH(
             }
           : { status: 'unassigned' as const }
         const updated = await updateTicket(id, updateData as any)
+        return NextResponse.json(updated)
+      }
+
+      // Skipping with optional reschedule
+      if (nextStatus === 'skipped') {
+        const updated = await updateTicket(id, { status: 'skipped' })
+
+        // If a reschedule month was provided, update the schedule's anchor
+        const rescheduleMonth = Number(raw.reschedule_month)
+        if (rescheduleMonth >= 1 && rescheduleMonth <= 12) {
+          const supabaseForSchedule = await createClient()
+          const { data: ticketData } = await supabaseForSchedule
+            .from('pm_tickets')
+            .select('pm_schedule_id')
+            .eq('id', id)
+            .single()
+
+          if (ticketData?.pm_schedule_id) {
+            await updateAnchorMonth(ticketData.pm_schedule_id, rescheduleMonth)
+          }
+        }
+
         return NextResponse.json(updated)
       }
 

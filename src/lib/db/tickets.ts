@@ -5,6 +5,7 @@ export type TicketWithJoins = PmTicketRow & {
   customers: { name: string; billing_city: string | null; po_required: boolean } | null
   equipment: { make: string | null; model: string | null; ship_to_locations: { city: string | null } | null } | null
   users: { name: string } | null
+  pm_schedules: { interval_months: number; anchor_month: number } | null
 }
 
 export type TicketDetail = PmTicketRow & {
@@ -30,7 +31,8 @@ export async function getTickets(filters?: {
       *,
       customers(name, billing_city, po_required),
       equipment(make, model, ship_to_locations(city)),
-      users!assigned_technician_id(name)
+      users!assigned_technician_id(name),
+      pm_schedules(interval_months, anchor_month)
     `)
     .order('created_at', { ascending: false })
 
