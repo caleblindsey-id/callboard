@@ -4,7 +4,6 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { BillingDocument } from '@/lib/pdf/billing-template'
 import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
-import { updateAnchorMonth } from '@/lib/db/schedules'
 import { MANAGER_ROLES } from '@/lib/auth'
 
 // ============================================================
@@ -380,21 +379,6 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to mark tickets as exported. No PDF was generated.' },
         { status: 500 }
       )
-    }
-
-    // --- Recalculate anchor_month for each schedule ---
-    // When a PM is completed late (e.g., generated for April, completed in May),
-    // the next service should be based on the completion month, not the original.
-    for (const raw of rawTickets as RawTicket[]) {
-      if (!raw.completed_date || !raw.pm_schedule_id) continue
-      // Parse with midday anchor to avoid UTC midnight timezone edge cases
-      const completedMonth = new Date(raw.completed_date + 'T12:00:00Z').getUTCMonth() + 1
-      try {
-        await updateAnchorMonth(raw.pm_schedule_id, completedMonth)
-      } catch (err) {
-        // Log but don't fail the billing — anchor update is non-critical
-        console.error(`[billing/pdf] Failed to update anchor for schedule ${raw.pm_schedule_id}:`, err)
-      }
     }
 
     // --- Render PDF ---
