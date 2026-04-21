@@ -105,7 +105,7 @@ export async function POST(
             .reduce((sum, p) => sum + (p.quantity * p.unit_price), 0)
           finalBillingAmount = laborTotal + partsTotal
         } else {
-          // time_and_materials: bill everything
+          // non_warranty: bill everything
           const laborTotal = hours_worked * laborRate
           const partsTotal = finalParts.reduce(
             (sum, p) => sum + (p.quantity * p.unit_price), 0

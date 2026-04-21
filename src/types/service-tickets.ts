@@ -16,7 +16,7 @@ export type ServiceTicketStatus =
   | 'canceled'
 
 export type ServiceBillingType =
-  | 'time_and_materials'
+  | 'non_warranty'
   | 'warranty'
   | 'partial_warranty'
 

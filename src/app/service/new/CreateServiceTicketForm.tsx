@@ -41,7 +41,7 @@ export function CreateServiceTicketForm() {
 
   // --- Ticket fields ---
   const [ticketType, setTicketType] = useState<ServiceTicketType>('inside')
-  const [billingType, setBillingType] = useState<ServiceBillingType>('time_and_materials')
+  const [billingType, setBillingType] = useState<ServiceBillingType>('non_warranty')
   const [priority, setPriority] = useState<ServicePriority>('standard')
   const [problemDescription, setProblemDescription] = useState('')
 
@@ -508,7 +508,7 @@ export function CreateServiceTicketForm() {
                   onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
                   className={inputClass}
                 >
-                  <option value="time_and_materials">Time &amp; Materials</option>
+                  <option value="non_warranty">Non-Warranty</option>
                   <option value="warranty">Warranty</option>
                   <option value="partial_warranty">Partial Warranty</option>
                 </select>

@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ticket_type must be inside or outside' }, { status: 400 })
     }
 
-    if (body.billing_type && !['time_and_materials', 'warranty', 'partial_warranty'].includes(body.billing_type)) {
+    if (body.billing_type && !['non_warranty', 'warranty', 'partial_warranty'].includes(body.billing_type)) {
       return NextResponse.json({ error: 'Invalid billing_type' }, { status: 400 })
     }
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       assigned_technician_id: body.assigned_technician_id || null,
       created_by_id: user.id,
       ticket_type,
-      billing_type: body.billing_type || 'time_and_materials',
+      billing_type: body.billing_type || 'non_warranty',
       priority: body.priority || 'standard',
       problem_description,
       contact_name: body.contact_name || null,

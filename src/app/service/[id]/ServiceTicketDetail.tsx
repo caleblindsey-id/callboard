@@ -40,7 +40,7 @@ const ticketTypeConfig: Record<string, { label: string; classes: string }> = {
 }
 
 const billingTypeLabels: Record<string, string> = {
-  time_and_materials: 'T&M',
+  non_warranty: 'Non-Warranty',
   warranty: 'Warranty',
   partial_warranty: 'Partial Warranty',
 }

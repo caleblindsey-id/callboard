@@ -237,7 +237,7 @@ export async function PATCH(
 
       // Compute total — exclude warranty-covered parts for warranty billing
       const laborTotal = hours * laborRate
-      const billingType = current.billing_type ?? 'time_and_materials'
+      const billingType = current.billing_type ?? 'non_warranty'
       const partsTotal = billingType === 'warranty'
         ? 0
         : parts
