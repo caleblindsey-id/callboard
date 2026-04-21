@@ -74,18 +74,26 @@ export async function POST(
       }
     }
 
+    // synergy_product_id is stored inconsistently: equipment default parts hold
+    // products.id (PK), tech-entered parts hold Number(products.synergy_id).
+    // Match on either and index both into the map so lookup works uniformly.
     const productDescMap = new Map<number, string>()
     const productNumMap = new Map<number, string>()
     if (productIdSet.size > 0) {
+      const ids = Array.from(productIdSet)
       const { data: products } = await supabase
         .from('products')
-        .select('synergy_id, number, description')
-        .in('synergy_id', Array.from(productIdSet).map(String))
+        .select('id, synergy_id, number, description')
+        .or(`id.in.(${ids.join(',')}),synergy_id.in.(${ids.map(String).join(',')})`)
 
       for (const p of products ?? []) {
-        if (p.synergy_id) {
-          if (p.description) productDescMap.set(Number(p.synergy_id), p.description)
-          if (p.number) productNumMap.set(Number(p.synergy_id), p.number)
+        if (p.description) {
+          if (p.id != null) productDescMap.set(p.id, p.description)
+          if (p.synergy_id) productDescMap.set(Number(p.synergy_id), p.description)
+        }
+        if (p.number) {
+          if (p.id != null) productNumMap.set(p.id, p.number)
+          if (p.synergy_id) productNumMap.set(Number(p.synergy_id), p.number)
         }
       }
     }

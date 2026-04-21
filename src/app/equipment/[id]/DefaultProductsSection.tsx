@@ -72,7 +72,10 @@ export default function DefaultProductsSection({
   }, [])
 
   function selectProduct(p: ProductSearchResult) {
-    if (products.some((dp) => dp.synergy_product_id === p.id)) {
+    // synergy_product_id must hold Number(products.synergy_id) so the billing/work-order
+    // PDF lookup (which queries products.synergy_id) resolves the product number.
+    const id = Number(p.synergy_id)
+    if (products.some((dp) => dp.synergy_product_id === id || dp.synergy_product_id === p.id)) {
       setSearch('')
       setComboOpen(false)
       return
@@ -80,7 +83,7 @@ export default function DefaultProductsSection({
     setProducts((prev) => [
       ...prev,
       {
-        synergy_product_id: p.id,
+        synergy_product_id: id,
         quantity: 1,
         description: `${p.number} - ${p.description ?? ''}`.trim(),
       },

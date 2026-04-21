@@ -216,8 +216,10 @@ export default function AddEquipmentModal({
   }, [])
 
   function selectProduct(p: ProductSearchResult) {
-    // Don't add duplicates
-    if (defaultProducts.some((dp) => dp.synergy_product_id === p.id)) {
+    // synergy_product_id must hold Number(products.synergy_id) so the billing/work-order
+    // PDF lookup (which queries products.synergy_id) resolves the product number.
+    const id = Number(p.synergy_id)
+    if (defaultProducts.some((dp) => dp.synergy_product_id === id || dp.synergy_product_id === p.id)) {
       setProductSearch('')
       setProductComboOpen(false)
       return
@@ -225,7 +227,7 @@ export default function AddEquipmentModal({
     setDefaultProducts((prev) => [
       ...prev,
       {
-        synergy_product_id: p.id,
+        synergy_product_id: id,
         quantity: 1,
         description: `${p.number} - ${p.description ?? ''}`.trim(),
       },
