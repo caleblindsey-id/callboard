@@ -6,9 +6,10 @@ import { ChevronRight, ChevronDown, AlertOctagon } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
+import CreditHoldBadge from '@/components/CreditHoldBadge'
 import { daysOverdue } from '@/lib/overdue'
-import ConfirmDialog from '@/components/ConfirmDialog'
 import CreateTicketModal from './CreateTicketModal'
+import GeneratePmModal from './GeneratePmModal'
 import SkipDialog from './SkipDialog'
 
 const MONTHS = [
@@ -86,6 +87,7 @@ function TicketList({
                   </span>
                   <StatusBadge status={ticket.status} />
                   {showOverdueBadges && <OverdueBadge days={days} />}
+                  {ticket.customers?.credit_hold && <CreditHoldBadge />}
                 </div>
                 <div className="flex items-center gap-1 min-w-0">
                   <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -173,7 +175,10 @@ function TicketList({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
-                    {ticket.customers?.name ?? '—'}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{ticket.customers?.name ?? '—'}</span>
+                      {ticket.customers?.credit_hold && <CreditHoldBadge />}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                     {[ticket.equipment?.make, ticket.equipment?.model]
@@ -227,7 +232,6 @@ export default function TicketBoard({
   const [assignTo, setAssignTo] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
-  const [generateLoading, setGenerateLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [skipOpen, setSkipOpen] = useState(false)
   const [skipSource, setSkipSource] = useState<'month' | 'overdue'>('month')
@@ -317,25 +321,9 @@ export default function TicketBoard({
     router.refresh()
   }
 
-  async function handleGenerate() {
-    setGenerateLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/tickets/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, year }),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        setError(data.error ?? 'Failed to generate tickets')
-        return
-      }
-      router.push(`/tickets?month=${month}&year=${year}`)
-    } finally {
-      setGenerateLoading(false)
-      setGenerateOpen(false)
-    }
+  function handleGenerated() {
+    setGenerateOpen(false)
+    router.push(`/tickets?month=${month}&year=${year}`)
   }
 
   return (
@@ -536,14 +524,13 @@ export default function TicketBoard({
         </div>
       )}
 
-      <ConfirmDialog
+      <GeneratePmModal
         open={generateOpen}
-        title="Generate PM Tickets"
-        message={`This will create PM tickets for all active schedules in ${MONTHS[month - 1]} ${year}. Existing tickets for this month will not be duplicated.`}
-        confirmLabel="Generate"
-        onConfirm={handleGenerate}
-        onCancel={() => setGenerateOpen(false)}
-        loading={generateLoading}
+        month={month}
+        year={year}
+        monthLabel={MONTHS[month - 1]}
+        onClose={() => setGenerateOpen(false)}
+        onGenerated={handleGenerated}
       />
 
       <CreateTicketModal

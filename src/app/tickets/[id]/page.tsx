@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
+import CreditHoldBadge from '@/components/CreditHoldBadge'
 import TicketActions from './TicketActions'
 import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
@@ -64,6 +65,15 @@ export default async function TicketDetailPage({
           <StatusBadge status={ticket.status} />
         </div>
       </div>
+
+      {ticket.customers?.credit_hold && (
+        <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
+          <CreditHoldBadge />
+          <span className="text-sm text-red-800 dark:text-red-300 font-semibold">
+            This customer is on credit hold. Verify with office before dispatching or billing.
+          </span>
+        </div>
+      )}
 
       {/* Read-only info */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">

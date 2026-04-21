@@ -15,10 +15,21 @@ function scheduleMatchesMonth(schedule: PmScheduleRow, month: number): boolean {
   return offset % interval_months === 0
 }
 
+type ScheduleWithEquipment = PmScheduleRow & {
+  equipment: (EquipmentRow & {
+    customers: { id: number; name: string; credit_hold: boolean } | null
+  }) | null
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { month: number; year: number }
-    const { month, year } = body
+    const body = await request.json() as {
+      month: number
+      year: number
+      preview?: boolean
+      skipCreditHoldCustomerIds?: number[]
+    }
+    const { month, year, preview = false, skipCreditHoldCustomerIds = [] } = body
 
     if (!month || !year || month < 1 || month > 12) {
       return NextResponse.json(
@@ -42,15 +53,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Fetch all active schedules with their equipment
+    // Fetch all active schedules with their equipment and customer (for credit hold check)
     const { data: rawSchedules, error: schedulesError } = await supabase
       .from('pm_schedules')
-      .select('*, equipment(*)')
+      .select('*, equipment(*, customers(id, name, credit_hold))')
       .eq('active', true)
 
     if (schedulesError) throw schedulesError
 
-    const schedules = rawSchedules as (PmScheduleRow & { equipment: EquipmentRow | null })[]
+    const schedules = rawSchedules as ScheduleWithEquipment[]
 
     // Fetch all existing tickets for this month/year in one query to avoid N+1
     const { data: existingTickets, error: existingError } = await supabase
@@ -66,15 +77,19 @@ export async function POST(request: NextRequest) {
       (existingTickets ?? []).map(t => t.equipment_id).filter(Boolean)
     )
 
+    const skipCreditHoldSet = new Set<number>(skipCreditHoldCustomerIds)
+
     const ticketsToCreate: PmTicketInsert[] = []
+    const creditHoldCustomers = new Map<number, { id: number; name: string; equipmentCount: number }>()
     let skipped = 0
+    let skippedCreditHold = 0
 
     for (const schedule of schedules) {
       if (!scheduleMatchesMonth(schedule, month)) {
         continue
       }
 
-      const equipment = schedule.equipment as EquipmentRow | null
+      const equipment = schedule.equipment
       // Skip if no equipment or equipment is deactivated
       if (!equipment || !equipment.active) {
         skipped++
@@ -91,6 +106,28 @@ export async function POST(request: NextRequest) {
       if (existingEquipmentIds.has(schedule.equipment_id)) {
         skipped++
         continue
+      }
+
+      // Track credit hold customers — always collected for preview response
+      const customer = equipment.customers
+      if (customer?.credit_hold) {
+        const existing = creditHoldCustomers.get(customer.id)
+        if (existing) {
+          existing.equipmentCount++
+        } else {
+          creditHoldCustomers.set(customer.id, {
+            id: customer.id,
+            name: customer.name,
+            equipmentCount: 1,
+          })
+        }
+
+        // If caller asked to skip this credit-hold customer, skip (non-preview only)
+        if (!preview && skipCreditHoldSet.has(customer.id)) {
+          skipped++
+          skippedCreditHold++
+          continue
+        }
       }
 
       // Determine initial status based on whether equipment has a default technician
@@ -114,6 +151,18 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Preview mode: don't insert, just report what would happen
+    if (preview) {
+      return NextResponse.json({
+        preview: true,
+        wouldCreate: ticketsToCreate.length,
+        skipped,
+        creditHoldCustomers: Array.from(creditHoldCustomers.values()).sort((a, b) =>
+          a.name.localeCompare(b.name)
+        ),
+      })
+    }
+
     let created: PmTicketRow[] = []
 
     if (ticketsToCreate.length > 0) {
@@ -129,6 +178,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       created: created.length,
       skipped,
+      skippedCreditHold,
       tickets: created,
     })
   } catch (err) {

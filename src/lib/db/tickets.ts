@@ -3,14 +3,14 @@ import { PmTicketRow, PmTicketUpdate, TicketStatus, PartUsed, TicketPhoto, Billi
 import { OVERDUE_ELIGIBLE_STATUSES } from '@/lib/overdue'
 
 export type TicketWithJoins = PmTicketRow & {
-  customers: { name: string; billing_city: string | null; po_required: boolean; ar_terms: string | null } | null
+  customers: { name: string; billing_city: string | null; po_required: boolean; ar_terms: string | null; credit_hold: boolean } | null
   equipment: { make: string | null; model: string | null; ship_to_locations: { city: string | null } | null } | null
   users: { name: string } | null
   pm_schedules: { interval_months: number; anchor_month: number } | null
 }
 
 export type TicketDetail = PmTicketRow & {
-  customers: { name: string; account_number: string | null; billing_city: string | null; po_required: boolean; ar_terms: string | null } | null
+  customers: { name: string; account_number: string | null; billing_city: string | null; po_required: boolean; ar_terms: string | null; credit_hold: boolean } | null
   equipment: { make: string | null; model: string | null; serial_number: string | null; default_products: { synergy_product_id: number; quantity: number; description: string }[]; ship_to_locations: { city: string | null } | null } | null
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
@@ -32,7 +32,7 @@ export async function getTickets(filters?: {
     .from('pm_tickets')
     .select(`
       *,
-      customers(name, billing_city, po_required, ar_terms),
+      customers(name, billing_city, po_required, ar_terms, credit_hold),
       equipment(make, model, ship_to_locations(city)),
       users!assigned_technician_id(name),
       pm_schedules(interval_months, anchor_month)
@@ -103,7 +103,7 @@ export async function getTicket(id: string): Promise<TicketDetail | null> {
     .from('pm_tickets')
     .select(`
       *,
-      customers(name, account_number, billing_city, po_required, ar_terms),
+      customers(name, account_number, billing_city, po_required, ar_terms, credit_hold),
       equipment(make, model, serial_number, default_products, ship_to_locations(city)),
       assigned_technician:users!assigned_technician_id(name),
       created_by:users!created_by_id(name),
