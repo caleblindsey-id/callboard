@@ -8,6 +8,17 @@ interface PartLine {
   productNumber: string | null
   description: string
   quantity: number
+  unitPrice?: number
+}
+
+interface PricingSummary {
+  billingType: 'flat_rate' | 'time_and_materials' | 'contract'
+  flatRate: number | null
+  pmHours: number | null
+  additionalHours: number | null
+  laborRatePerHour: number
+  pmPartsPriced: boolean
+  grandTotal: number
 }
 
 interface WorkOrderTicket {
@@ -35,6 +46,7 @@ interface WorkOrderTicket {
   customerSignature: string | null
   customerSignatureName: string | null
   photoUrls: string[]
+  pricing?: PricingSummary | null
 }
 
 interface WorkOrderDocumentProps {
@@ -184,6 +196,69 @@ const styles = StyleSheet.create({
     borderTopColor: '#e0e0e0',
     paddingTop: 6,
   },
+  // ── Pricing Summary ──
+  pricingTable: {
+    marginTop: 4,
+    borderWidth: 0.5,
+    borderColor: '#cccccc',
+  },
+  pricingHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#cccccc',
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e8e8e8',
+  },
+  pricingColDesc: { flex: 3, color: '#111111' },
+  pricingColQty: { width: 40, textAlign: 'right', color: '#111111' },
+  pricingColRate: { width: 70, textAlign: 'right', color: '#111111' },
+  pricingColTotal: { width: 70, textAlign: 'right', color: '#111111' },
+  pricingTotalRow: {
+    flexDirection: 'row',
+    backgroundColor: '#111111',
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+  },
+  pricingTotalLabel: {
+    flex: 1,
+    color: '#ffffff',
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 10,
+  },
+  pricingTotalValue: {
+    width: 80,
+    textAlign: 'right',
+    color: '#ffffff',
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 10,
+  },
+  disclaimerBox: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#b91c1c',
+    backgroundColor: '#fef2f2',
+    padding: 8,
+  },
+  disclaimerHeading: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 9,
+    color: '#b91c1c',
+    marginBottom: 3,
+    letterSpacing: 0.5,
+  },
+  disclaimerBody: {
+    fontSize: 8,
+    color: '#7f1d1d',
+    lineHeight: 1.4,
+  },
 })
 
 // ============================================================
@@ -192,6 +267,112 @@ const styles = StyleSheet.create({
 
 function dash(value: string | null | undefined): string {
   return value?.trim() || '—'
+}
+
+function money(n: number): string {
+  return `$${n.toFixed(2)}`
+}
+
+function PricingSummarySection({
+  pricing,
+  pmParts,
+  additionalParts,
+  hoursWorked,
+  additionalHoursWorked,
+}: {
+  pricing: PricingSummary
+  pmParts: PartLine[]
+  additionalParts: PartLine[]
+  hoursWorked: number | null
+  additionalHoursWorked: number | null
+}) {
+  const isFlatRate = pricing.billingType === 'flat_rate'
+  const laborRate = pricing.laborRatePerHour
+
+  // Rows for the priced line items.
+  type Row = { desc: string; qty?: number; rate?: number; total: number }
+  const rows: Row[] = []
+
+  if (isFlatRate) {
+    if (pricing.flatRate != null) {
+      rows.push({ desc: 'PM Service — Flat Rate', total: pricing.flatRate })
+    }
+    for (const p of additionalParts) {
+      const rate = p.unitPrice ?? 0
+      rows.push({
+        desc: p.description + (p.productNumber ? ` (${p.productNumber})` : ''),
+        qty: p.quantity,
+        rate,
+        total: rate * p.quantity,
+      })
+    }
+    const addlHrs = additionalHoursWorked ?? 0
+    if (addlHrs > 0) {
+      rows.push({
+        desc: `Additional Labor`,
+        qty: addlHrs,
+        rate: laborRate,
+        total: addlHrs * laborRate,
+      })
+    }
+  } else {
+    // T&M or contract: itemize everything.
+    for (const p of [...pmParts, ...additionalParts]) {
+      const rate = p.unitPrice ?? 0
+      rows.push({
+        desc: p.description + (p.productNumber ? ` (${p.productNumber})` : ''),
+        qty: p.quantity,
+        rate,
+        total: rate * p.quantity,
+      })
+    }
+    const totalHrs = (hoursWorked ?? 0) + (additionalHoursWorked ?? 0)
+    if (totalHrs > 0) {
+      rows.push({
+        desc: 'Labor',
+        qty: totalHrs,
+        rate: laborRate,
+        total: totalHrs * laborRate,
+      })
+    }
+  }
+
+  return (
+    <View>
+      <Text style={styles.sectionLabel}>Pricing Summary</Text>
+      <View style={styles.pricingTable}>
+        <View style={styles.pricingHeaderRow}>
+          <Text style={[styles.pricingColDesc, styles.tableHeaderText]}>Description</Text>
+          <Text style={[styles.pricingColQty, styles.tableHeaderText]}>Qty</Text>
+          <Text style={[styles.pricingColRate, styles.tableHeaderText]}>Rate</Text>
+          <Text style={[styles.pricingColTotal, styles.tableHeaderText]}>Total</Text>
+        </View>
+        {rows.length === 0 ? (
+          <Text style={styles.noPartsText}>No charges</Text>
+        ) : (
+          rows.map((r, idx) => (
+            <View key={idx} style={styles.pricingRow}>
+              <Text style={styles.pricingColDesc}>{r.desc}</Text>
+              <Text style={styles.pricingColQty}>{r.qty != null ? String(r.qty) : '—'}</Text>
+              <Text style={styles.pricingColRate}>{r.rate != null ? money(r.rate) : '—'}</Text>
+              <Text style={styles.pricingColTotal}>{money(r.total)}</Text>
+            </View>
+          ))
+        )}
+        <View style={styles.pricingTotalRow}>
+          <Text style={styles.pricingTotalLabel}>Grand Total</Text>
+          <Text style={styles.pricingTotalValue}>{money(pricing.grandTotal)}</Text>
+        </View>
+      </View>
+      <View style={styles.disclaimerBox}>
+        <Text style={styles.disclaimerHeading}>NOT A FINAL INVOICE</Text>
+        <Text style={styles.disclaimerBody}>
+          This document is for customer reference only. Final amounts are subject
+          to change and do not include applicable taxes.
+        </Text>
+      </View>
+    </View>
+  )
 }
 
 // ============================================================
@@ -352,6 +533,17 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
               </View>
             )}
           </View>
+        )}
+
+        {/* Pricing Summary */}
+        {ticket.pricing && (
+          <PricingSummarySection
+            pricing={ticket.pricing}
+            pmParts={ticket.pmParts}
+            additionalParts={ticket.additionalParts}
+            hoursWorked={ticket.hoursWorked}
+            additionalHoursWorked={ticket.additionalHoursWorked}
+          />
         )}
 
         {/* Customer Signature */}

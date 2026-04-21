@@ -39,12 +39,13 @@ export async function POST(
         parts_used,
         additional_parts_used,
         additional_hours_worked,
+        billing_amount,
         customer_signature,
         customer_signature_name,
         photos,
         assigned_technician_id,
-        customers(name, account_number, billing_address, billing_city, billing_state, billing_zip),
-        equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
+        customers(name, account_number, billing_address, billing_city, billing_state, billing_zip, show_pricing_on_pm_pdf),
+        equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip), pm_schedules(flat_rate, billing_type, active)),
         technician:users!assigned_technician_id(name)
       `)
       .eq('id', id)
@@ -109,6 +110,7 @@ export async function POST(
           part.description ||
           'Unknown part',
         quantity: part.quantity,
+        unitPrice: typeof part.unit_price === 'number' ? part.unit_price : 0,
       }))
     }
 
@@ -128,8 +130,18 @@ export async function POST(
 
     // Build service location
     const shipTo = (raw.equipment as Record<string, unknown>)?.ship_to_locations as { address?: string; city?: string; state?: string; zip?: string } | null
-    const customer = raw.customers as { name: string; account_number: string | null; billing_address: string | null; billing_city: string | null; billing_state: string | null; billing_zip: string | null } | null
-    const equipment = raw.equipment as { make: string | null; model: string | null; serial_number: string | null; location_on_site: string | null; contact_name: string | null; contact_email: string | null; contact_phone: string | null } | null
+    const customer = raw.customers as { name: string; account_number: string | null; billing_address: string | null; billing_city: string | null; billing_state: string | null; billing_zip: string | null; show_pricing_on_pm_pdf: boolean } | null
+    const equipment = raw.equipment as { make: string | null; model: string | null; serial_number: string | null; location_on_site: string | null; contact_name: string | null; contact_email: string | null; contact_phone: string | null; pm_schedules: Array<{ flat_rate: number | null; billing_type: string | null; active: boolean }> | { flat_rate: number | null; billing_type: string | null; active: boolean } | null } | null
+
+    // Pick the active PM schedule for this equipment (Supabase returns array
+    // for a child table; some responses collapse to a single object).
+    const rawSchedules = equipment?.pm_schedules
+    const scheduleList = Array.isArray(rawSchedules)
+      ? rawSchedules
+      : rawSchedules
+        ? [rawSchedules]
+        : []
+    const activeSchedule = scheduleList.find((s) => s.active) ?? scheduleList[0] ?? null
 
     let serviceLocation: string | null = null
     if (shipTo && (shipTo.address || shipTo.city)) {
@@ -155,6 +167,40 @@ export async function POST(
       logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
     } catch {
       // Logo not found — will render without it
+    }
+
+    // Build pricing section data — only when the customer has opted in.
+    let pricing: {
+      billingType: 'flat_rate' | 'time_and_materials' | 'contract'
+      flatRate: number | null
+      pmHours: number | null
+      additionalHours: number | null
+      laborRatePerHour: number
+      pmPartsPriced: boolean
+      grandTotal: number
+    } | null = null
+
+    if (customer?.show_pricing_on_pm_pdf && raw.billing_amount != null) {
+      const { data: laborSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'labor_rate_per_hour')
+        .single()
+      const laborRatePerHour = Number(laborSetting?.value) || 75
+
+      const billingType =
+        (activeSchedule?.billing_type as 'flat_rate' | 'time_and_materials' | 'contract' | null) ?? 'flat_rate'
+      const isFlatRate = billingType === 'flat_rate'
+
+      pricing = {
+        billingType,
+        flatRate: isFlatRate ? (activeSchedule?.flat_rate ?? null) : null,
+        pmHours: raw.hours_worked as number | null,
+        additionalHours: raw.additional_hours_worked as number | null,
+        laborRatePerHour,
+        pmPartsPriced: !isFlatRate,
+        grandTotal: Number(raw.billing_amount),
+      }
     }
 
     const ticket = {
@@ -188,6 +234,7 @@ export async function POST(
       customerSignature: raw.customer_signature as string | null,
       customerSignatureName: raw.customer_signature_name as string | null,
       photoUrls,
+      pricing,
     }
 
     // Render PDF

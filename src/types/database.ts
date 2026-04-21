@@ -70,6 +70,7 @@ export type CustomerRow = {
   billing_zip: string | null
   po_required: boolean
   active: boolean
+  show_pricing_on_pm_pdf: boolean
   synced_at: string | null
 }
 

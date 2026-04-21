@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import ActiveToggle from './ActiveToggle'
+import ShowPricingToggle from './ShowPricingToggle'
 
 export default async function CustomerDetailPage({
   params,
@@ -81,6 +82,13 @@ export default async function CustomerDetailPage({
               {customer.billing_address ?? '—'}
             </p>
           </div>
+        </div>
+
+        <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
+          <ShowPricingToggle
+            customerId={customer.id}
+            showPricing={customer.show_pricing_on_pm_pdf}
+          />
         </div>
       </div>
 
