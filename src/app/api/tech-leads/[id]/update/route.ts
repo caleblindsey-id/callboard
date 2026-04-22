@@ -86,7 +86,7 @@ export async function POST(
         break
       }
       case 'cancel': {
-        if (lead.status !== 'approved') {
+        if (lead.status !== 'approved' && lead.status !== 'match_pending') {
           return NextResponse.json(
             { error: `Cannot cancel a lead in status '${lead.status}'. Only approved-but-not-earned leads may be cancelled.` },
             { status: 400 }

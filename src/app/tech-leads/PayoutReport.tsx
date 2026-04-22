@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
+import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 
 interface Props {
   leads: TechLeadWithJoins[]
@@ -92,20 +93,28 @@ export default function PayoutReport({ leads }: Props) {
 
   function exportCsv() {
     const header = [
-      'Tech', 'Customer', 'Equipment', 'Bonus amount',
+      'Tech', 'Lead type', 'Customer', 'Equipment', 'Bonus amount',
       'Earned date', 'Status', 'Paid date', 'Payout period',
+      'Synergy order #',
     ]
-    const rows = inRange.map(l => [
-      l.submitter?.name ?? '',
-      l.customers?.name ?? l.customer_name_text ?? '',
-      [l.equipment?.make, l.equipment?.model, l.equipment?.serial_number ? `SN ${l.equipment.serial_number}` : '']
-        .filter(Boolean).join(' / '),
-      l.bonus_amount ?? '',
-      l.earned_at ? l.earned_at.slice(0, 10) : '',
-      l.status,
-      l.paid_at ? l.paid_at.slice(0, 10) : '',
-      l.payout_period ?? '',
-    ])
+    const rows = inRange.map(l => {
+      const equipmentLabel = l.lead_type === 'equipment_sale'
+        ? (l.sale_equipment_tier ?? l.proposed_equipment_tier ?? '')
+        : [l.equipment?.make, l.equipment?.model, l.equipment?.serial_number ? `SN ${l.equipment.serial_number}` : '']
+            .filter(Boolean).join(' / ')
+      return [
+        l.submitter?.name ?? '',
+        l.lead_type === 'equipment_sale' ? 'Equipment sale' : 'PM',
+        l.customers?.name ?? l.customer_name_text ?? '',
+        equipmentLabel,
+        l.bonus_amount ?? '',
+        l.earned_at ? l.earned_at.slice(0, 10) : '',
+        l.status,
+        l.paid_at ? l.paid_at.slice(0, 10) : '',
+        l.payout_period ?? '',
+        l.sale_synergy_order_number ?? '',
+      ]
+    })
     const csv = [header, ...rows].map(r => r.map(escapeCsv).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -266,9 +275,11 @@ export default function PayoutReport({ leads }: Props) {
                       {l.customers?.name ?? l.customer_name_text ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                      {l.equipment
-                        ? [l.equipment.make, l.equipment.model].filter(Boolean).join(' ')
-                        : l.equipment_description}
+                      {l.lead_type === 'equipment_sale'
+                        ? `${tierLabel(l.sale_equipment_tier ?? l.proposed_equipment_tier)}${l.sale_synergy_order_number ? ` · Synergy #${l.sale_synergy_order_number}` : ''}`
+                        : l.equipment
+                          ? [l.equipment.make, l.equipment.model].filter(Boolean).join(' ')
+                          : l.equipment_description}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white whitespace-nowrap">
                       {formatMoney(l.bonus_amount)}

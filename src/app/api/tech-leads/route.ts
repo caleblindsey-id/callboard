@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
-import type { TechLeadFrequency, TechLeadInsert } from '@/types/database'
+import type {
+  TechLeadFrequency,
+  TechLeadInsert,
+  TechLeadType,
+  EquipmentSaleTier,
+} from '@/types/database'
+import { EQUIPMENT_SALE_TIERS, EQUIPMENT_SALE_WINDOW_DAYS, tierLabel } from '@/lib/tech-leads/bonus-tiers'
 
 const VALID_FREQUENCIES: TechLeadFrequency[] = [
   'monthly',
@@ -11,11 +17,18 @@ const VALID_FREQUENCIES: TechLeadFrequency[] = [
   'annual',
 ]
 
+const VALID_TIERS: EquipmentSaleTier[] = Object.keys(EQUIPMENT_SALE_TIERS) as EquipmentSaleTier[]
+
 type CreateBody = {
+  lead_type?: TechLeadType
   customer_id?: number | null
   customer_name_text?: string | null
-  equipment_description: string
+  // PM branch
+  equipment_description?: string
   proposed_pm_frequency?: TechLeadFrequency | null
+  // Equipment-sale branch
+  proposed_equipment_tier?: EquipmentSaleTier | null
+  // Shared
   notes?: string | null
 }
 
@@ -35,42 +48,60 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as CreateBody
-    const {
-      customer_id = null,
-      customer_name_text = null,
-      equipment_description,
-      proposed_pm_frequency = null,
-      notes = null,
-    } = body
-
-    if (!equipment_description?.trim()) {
-      return NextResponse.json(
-        { error: 'Equipment description is required.' },
-        { status: 400 }
-      )
+    const leadType: TechLeadType = body.lead_type ?? 'pm'
+    if (leadType !== 'pm' && leadType !== 'equipment_sale') {
+      return NextResponse.json({ error: 'Invalid lead_type.' }, { status: 400 })
     }
-    const hasExisting = typeof customer_id === 'number' && customer_id > 0
-    const hasFreeText = !!customer_name_text?.trim()
+
+    const hasExisting = typeof body.customer_id === 'number' && body.customer_id > 0
+    const hasFreeText = !!body.customer_name_text?.trim()
     if (hasExisting === hasFreeText) {
       return NextResponse.json(
         { error: 'Provide either an existing customer or a new customer name — not both, not neither.' },
         { status: 400 }
       )
     }
-    if (proposed_pm_frequency && !VALID_FREQUENCIES.includes(proposed_pm_frequency)) {
-      return NextResponse.json(
-        { error: 'Invalid proposed_pm_frequency.' },
-        { status: 400 }
-      )
-    }
 
     const insert: TechLeadInsert = {
       submitted_by: user.id,
-      equipment_description: equipment_description.trim(),
-      customer_id: hasExisting ? customer_id : null,
-      customer_name_text: hasFreeText ? customer_name_text!.trim() : null,
-      proposed_pm_frequency: proposed_pm_frequency ?? null,
-      notes: notes?.trim() || null,
+      lead_type: leadType,
+      customer_id: hasExisting ? body.customer_id! : null,
+      customer_name_text: hasFreeText ? body.customer_name_text!.trim() : null,
+      notes: body.notes?.trim() || null,
+      equipment_description: '', // set per branch below
+    }
+
+    if (leadType === 'pm') {
+      if (!body.equipment_description?.trim()) {
+        return NextResponse.json(
+          { error: 'Equipment description is required.' },
+          { status: 400 }
+        )
+      }
+      if (body.proposed_pm_frequency && !VALID_FREQUENCIES.includes(body.proposed_pm_frequency)) {
+        return NextResponse.json(
+          { error: 'Invalid proposed_pm_frequency.' },
+          { status: 400 }
+        )
+      }
+      insert.equipment_description = body.equipment_description.trim()
+      insert.proposed_pm_frequency = body.proposed_pm_frequency ?? null
+    } else {
+      // equipment_sale
+      if (!body.proposed_equipment_tier || !VALID_TIERS.includes(body.proposed_equipment_tier)) {
+        return NextResponse.json(
+          { error: 'A valid equipment tier is required.' },
+          { status: 400 }
+        )
+      }
+      insert.proposed_equipment_tier = body.proposed_equipment_tier
+      // equipment_description is NOT NULL in the table; mirror the tier label plus
+      // any tech notes for legacy queries that still read the column.
+      insert.equipment_description = tierLabel(body.proposed_equipment_tier)
+      // 90-day window — sweep in the nightly scan flips stale rows to expired.
+      const expires = new Date()
+      expires.setUTCDate(expires.getUTCDate() + EQUIPMENT_SALE_WINDOW_DAYS)
+      insert.expires_at = expires.toISOString()
     }
 
     const supabase = await createClient()

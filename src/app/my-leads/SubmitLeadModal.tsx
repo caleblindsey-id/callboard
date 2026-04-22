@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { X } from 'lucide-react'
-import type { TechLeadFrequency } from '@/types/database'
+import type { EquipmentSaleTier, TechLeadFrequency, TechLeadType } from '@/types/database'
+import { EQUIPMENT_SALE_TIER_LIST } from '@/lib/tech-leads/bonus-tiers'
 
 interface CustomerOption {
   id: number
@@ -28,6 +29,9 @@ const FREQUENCIES: { value: TechLeadFrequency; label: string; eligible: boolean 
 export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps) {
   const router = useRouter()
 
+  // Lead type toggle (new in V2)
+  const [leadType, setLeadType] = useState<TechLeadType>('pm')
+
   // Customer selection
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerOption[]>([])
@@ -39,17 +43,22 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
   const comboRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Lead content
+  // PM lead fields
   const [equipmentDescription, setEquipmentDescription] = useState('')
   const [frequency, setFrequency] = useState<TechLeadFrequency | ''>('')
-  const [notes, setNotes] = useState('')
 
+  // Equipment-sale lead fields
+  const [equipmentTier, setEquipmentTier] = useState<EquipmentSaleTier | ''>('')
+
+  // Shared
+  const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Reset when the modal opens
   useEffect(() => {
     if (!open) return
+    setLeadType('pm')
     setCustomerSearch('')
     setCustomerResults([])
     setCustomerId(null)
@@ -58,6 +67,7 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
     setNewCustomerName('')
     setEquipmentDescription('')
     setFrequency('')
+    setEquipmentTier('')
     setNotes('')
     setError(null)
   }, [open])
@@ -113,9 +123,33 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
       setError('Enter the new customer name.')
       return
     }
-    if (!equipmentDescription.trim()) {
-      setError('Describe the equipment.')
-      return
+
+    let body: Record<string, unknown>
+    if (leadType === 'pm') {
+      if (!equipmentDescription.trim()) {
+        setError('Describe the equipment.')
+        return
+      }
+      body = {
+        lead_type: 'pm',
+        customer_id: newCustomerMode ? null : customerId,
+        customer_name_text: newCustomerMode ? newCustomerName.trim() : null,
+        equipment_description: equipmentDescription.trim(),
+        proposed_pm_frequency: frequency || null,
+        notes: notes.trim() || null,
+      }
+    } else {
+      if (!equipmentTier) {
+        setError('Pick the equipment tier.')
+        return
+      }
+      body = {
+        lead_type: 'equipment_sale',
+        customer_id: newCustomerMode ? null : customerId,
+        customer_name_text: newCustomerMode ? newCustomerName.trim() : null,
+        proposed_equipment_tier: equipmentTier,
+        notes: notes.trim() || null,
+      }
     }
 
     setSubmitting(true)
@@ -123,17 +157,11 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
       const res = await fetch('/api/tech-leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: newCustomerMode ? null : customerId,
-          customer_name_text: newCustomerMode ? newCustomerName.trim() : null,
-          equipment_description: equipmentDescription.trim(),
-          proposed_pm_frequency: frequency || null,
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify(body),
       })
-      const body = await res.json().catch(() => ({}))
+      const respBody = await res.json().catch(() => ({}))
       if (!res.ok) {
-        throw new Error(body?.error || 'Failed to submit lead.')
+        throw new Error(respBody?.error || 'Failed to submit lead.')
       }
       onClose()
       router.refresh()
@@ -164,6 +192,46 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+          {/* Lead type toggle */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Lead type <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setLeadType('pm')}
+                className={`min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  leadType === 'pm'
+                    ? 'bg-slate-900 dark:bg-slate-700 text-white border-slate-900 dark:border-slate-700'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                }`}
+              >
+                PM Lead
+              </button>
+              <button
+                type="button"
+                onClick={() => setLeadType('equipment_sale')}
+                className={`min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  leadType === 'equipment_sale'
+                    ? 'bg-slate-900 dark:bg-slate-700 text-white border-slate-900 dark:border-slate-700'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                }`}
+              >
+                Equipment Sale Lead
+              </button>
+            </div>
+            {leadType === 'pm' ? (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Customer is adding equipment to a PM schedule. Bonus = first PM&apos;s flat rate (monthly, bi-monthly, or quarterly only).
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Customer has aging equipment you want replaced. Bonus pays when we sell a qualifying replacement within 90 days.
+              </p>
+            )}
+          </div>
 
           {/* Customer */}
           <div ref={comboRef} className="relative">
@@ -238,43 +306,73 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
             )}
           </div>
 
-          {/* Equipment */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Equipment <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={equipmentDescription}
-              onChange={e => setEquipmentDescription(e.target.value)}
-              rows={3}
-              placeholder="Make, model, serial #, location on site..."
-              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
+          {leadType === 'pm' ? (
+            <>
+              {/* Equipment description (PM only) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Equipment <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={equipmentDescription}
+                  onChange={e => setEquipmentDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Make, model, serial #, location on site..."
+                  className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+              </div>
 
-          {/* Frequency */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Proposed PM frequency
-            </label>
-            <select
-              value={frequency}
-              onChange={e => setFrequency(e.target.value as TechLeadFrequency)}
-              className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              <option value="">Not sure / leave to manager</option>
-              {FREQUENCIES.map(f => (
-                <option key={f.value} value={f.value}>
-                  {f.label}{!f.eligible ? ' — no bonus' : ''}
-                </option>
-              ))}
-            </select>
-            {selectedFreq && !selectedFreq.eligible && (
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                Semi-annual and annual PMs are not eligible for a lead bonus.
-              </p>
-            )}
-          </div>
+              {/* Frequency */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Proposed PM frequency
+                </label>
+                <select
+                  value={frequency}
+                  onChange={e => setFrequency(e.target.value as TechLeadFrequency)}
+                  className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                >
+                  <option value="">Not sure / leave to manager</option>
+                  {FREQUENCIES.map(f => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}{!f.eligible ? ' — no bonus' : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedFreq && !selectedFreq.eligible && (
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    Semi-annual and annual PMs are not eligible for a lead bonus.
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Equipment tier (Equipment sale only) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Equipment tier <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={equipmentTier}
+                  onChange={e => setEquipmentTier(e.target.value as EquipmentSaleTier)}
+                  className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                >
+                  <option value="">Select tier…</option>
+                  {EQUIPMENT_SALE_TIER_LIST.map(t => (
+                    <option key={t.value} value={t.value}>
+                      {t.label} — ${t.amount}
+                    </option>
+                  ))}
+                </select>
+                {equipmentTier === 'cord_electric' && (
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    Excludes vacuums, fans, and extractors under 10 gallon.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Notes */}
           <div>
@@ -283,7 +381,9 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}
-              placeholder="Anything the office should know..."
+              placeholder={leadType === 'equipment_sale'
+                ? 'Make, model, serial #, location, condition…'
+                : 'Anything the office should know...'}
               className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>

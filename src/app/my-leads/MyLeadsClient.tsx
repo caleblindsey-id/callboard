@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { TechLeadStatus } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
+import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import SubmitLeadModal from './SubmitLeadModal'
 
 interface Props {
@@ -12,20 +13,24 @@ interface Props {
 
 const STATUS_LABEL: Record<TechLeadStatus, string> = {
   pending: 'Pending review',
-  approved: 'Approved — waiting on first PM',
+  approved: 'Approved — waiting on match',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
   earned: 'Earned',
   paid: 'Paid',
+  match_pending: 'Match awaiting confirmation',
+  expired: 'Expired',
 }
 
 const STATUS_STYLE: Record<TechLeadStatus, string> = {
-  pending:   'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  approved:  'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  rejected:  'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-  cancelled: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-  earned:    'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  paid:      'bg-emerald-200 text-emerald-900 dark:bg-emerald-800/60 dark:text-emerald-200',
+  pending:       'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  approved:      'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+  rejected:      'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+  cancelled:     'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  earned:        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  paid:          'bg-emerald-200 text-emerald-900 dark:bg-emerald-800/60 dark:text-emerald-200',
+  match_pending: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300',
+  expired:       'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-300',
 }
 
 function formatDate(iso: string): string {
@@ -67,9 +72,12 @@ export default function MyLeadsClient({ leads }: Props) {
         <ul className="space-y-3">
           {leads.map(lead => {
             const customer = lead.customers?.name || lead.customer_name_text || '—'
-            const subLine = [lead.equipment_description, lead.proposed_pm_frequency]
-              .filter(Boolean)
-              .join(' · ')
+            const isEquipmentSale = lead.lead_type === 'equipment_sale'
+            const subLine = isEquipmentSale
+              ? [`Equipment sale: ${tierLabel(lead.proposed_equipment_tier)}`].join(' · ')
+              : [lead.equipment_description, lead.proposed_pm_frequency]
+                  .filter(Boolean)
+                  .join(' · ')
             return (
               <li
                 key={lead.id}

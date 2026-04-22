@@ -15,10 +15,23 @@ export type BillingType = 'flat_rate' | 'time_and_materials' | 'contract'
 
 export type TechLeadType = 'pm' | 'equipment_sale'
 
-export type TechLeadStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'earned' | 'paid'
+export type TechLeadStatus =
+  | 'pending' | 'approved' | 'rejected' | 'cancelled'
+  | 'earned' | 'paid'
+  | 'match_pending' | 'expired'
 
 // Proposed-frequency options a tech can pick on the submit form.
 export type TechLeadFrequency = 'monthly' | 'bi-monthly' | 'quarterly' | 'semi-annual' | 'annual'
+
+// Equipment-sale bonus tiers. Rate card lives in src/lib/tech-leads/bonus-tiers.ts.
+export type EquipmentSaleTier =
+  | 'ride_on_scrubber'
+  | 'walk_behind_scrubber'
+  | 'hot_water_pw'
+  | 'cold_water_pw'
+  | 'cord_electric'
+
+export type EquipmentSaleCandidateStatus = 'pending' | 'confirmed' | 'dismissed'
 
 // Schedule interval_months values that earn a bonus (monthly, bi-monthly, quarterly).
 export const BONUS_ELIGIBLE_INTERVAL_MONTHS = [1, 2, 3] as const
@@ -296,6 +309,11 @@ export type TechLeadRow = {
   customer_name_text: string | null
   equipment_description: string
   proposed_pm_frequency: TechLeadFrequency | null
+  // V2 equipment-sale fields (migration 039). NULL for PM leads.
+  proposed_equipment_tier: EquipmentSaleTier | null
+  sale_equipment_tier: EquipmentSaleTier | null
+  sale_synergy_order_number: number | null
+  expires_at: string | null
   notes: string | null
   status: TechLeadStatus
   approved_by: string | null
@@ -311,6 +329,27 @@ export type TechLeadRow = {
   payout_period: string | null
   created_at: string
   updated_at: string
+}
+
+export type EquipmentSaleOrderLine = {
+  prod_code: string
+  description: string | null
+  qty: number | null
+  unit_price: number | null
+  comdty_code: string | null
+}
+
+export type EquipmentSaleLeadCandidateRow = {
+  id: string
+  tech_lead_id: string
+  synergy_order_number: number
+  synergy_order_date: string
+  synergy_order_total: number | null
+  order_lines: EquipmentSaleOrderLine[]
+  status: EquipmentSaleCandidateStatus
+  detected_at: string
+  reviewed_by: string | null
+  reviewed_at: string | null
 }
 
 // ============================================================
@@ -371,8 +410,17 @@ export type SyncLogInsert = Omit<SyncLogRow, 'id'>
 export type TechLeadInsert = Pick<TechLeadRow, 'submitted_by' | 'equipment_description'> &
   Partial<Pick<TechLeadRow,
     'lead_type' | 'submitted_at' | 'customer_id' | 'customer_name_text' |
-    'proposed_pm_frequency' | 'notes' | 'status'
+    'proposed_pm_frequency' | 'proposed_equipment_tier' | 'expires_at' |
+    'notes' | 'status'
   >>
+
+export type EquipmentSaleLeadCandidateInsert = Pick<EquipmentSaleLeadCandidateRow,
+  'tech_lead_id' | 'synergy_order_number' | 'synergy_order_date'
+> & Partial<Pick<EquipmentSaleLeadCandidateRow,
+  'synergy_order_total' | 'order_lines' | 'status' | 'detected_at'
+>>
+
+export type EquipmentSaleLeadCandidateUpdate = Partial<Omit<EquipmentSaleLeadCandidateRow, 'id' | 'tech_lead_id'>>
 
 // ============================================================
 // Update types (all fields optional)
@@ -693,6 +741,27 @@ export interface Database {
           },
         ]
       }
+      equipment_sale_lead_candidates: {
+        Row: EquipmentSaleLeadCandidateRow
+        Insert: EquipmentSaleLeadCandidateInsert
+        Update: EquipmentSaleLeadCandidateUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'equipment_sale_lead_candidates_tech_lead_id_fkey'
+            columns: ['tech_lead_id']
+            isOneToOne: false
+            referencedRelation: 'tech_leads'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'equipment_sale_lead_candidates_reviewed_by_fkey'
+            columns: ['reviewed_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: {
       parts_order_queue: {
@@ -700,6 +769,7 @@ export interface Database {
         Relationships: []
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     Functions: {}
     Enums: {
       user_role: UserRole
