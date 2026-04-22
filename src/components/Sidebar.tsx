@@ -24,12 +24,12 @@ const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
   { label: 'Preventive Maintenance', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
-  { label: 'Equipment', icon: Wrench, route: '/equipment' },
-  { label: 'Customers', icon: Building2, route: '/customers' },
-  { label: 'Prospects', icon: UserRoundSearch, route: '/prospects' },
-  { label: 'Products', icon: Package, route: '/products' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
   { label: 'Billing', icon: FileText, route: '/billing' },
+  { label: 'Equipment', icon: Wrench, route: '/equipment' },
+  { label: 'Prospects', icon: UserRoundSearch, route: '/prospects' },
+  { label: 'Customers', icon: Building2, route: '/customers' },
+  { label: 'Products', icon: Package, route: '/products' },
   { label: 'Analytics', icon: BarChart3, route: '/analytics' },
 ]
 
