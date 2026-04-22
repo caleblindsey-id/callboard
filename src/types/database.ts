@@ -13,6 +13,16 @@ export type TicketStatus = 'unassigned' | 'assigned' | 'in_progress' | 'complete
 
 export type BillingType = 'flat_rate' | 'time_and_materials' | 'contract'
 
+export type TechLeadType = 'pm' | 'equipment_sale'
+
+export type TechLeadStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'earned' | 'paid'
+
+// Proposed-frequency options a tech can pick on the submit form.
+export type TechLeadFrequency = 'monthly' | 'bi-monthly' | 'quarterly' | 'semi-annual' | 'annual'
+
+// Schedule interval_months values that earn a bonus (monthly, bi-monthly, quarterly).
+export const BONUS_ELIGIBLE_INTERVAL_MONTHS = [1, 2, 3] as const
+
 export type SyncType = 'customers' | 'contacts' | 'products' | 'full'
 
 export type SyncStatus = 'running' | 'success' | 'failed'
@@ -277,6 +287,32 @@ export type SyncLogRow = {
   error_message: string | null
 }
 
+export type TechLeadRow = {
+  id: string
+  lead_type: TechLeadType
+  submitted_by: string
+  submitted_at: string
+  customer_id: number | null
+  customer_name_text: string | null
+  equipment_description: string
+  proposed_pm_frequency: TechLeadFrequency | null
+  notes: string | null
+  status: TechLeadStatus
+  approved_by: string | null
+  approved_at: string | null
+  rejected_reason: string | null
+  cancelled_reason: string | null
+  equipment_id: string | null
+  bonus_amount: number | null
+  earned_at: string | null
+  earned_from_ticket_id: string | null
+  paid_at: string | null
+  paid_by: string | null
+  payout_period: string | null
+  created_at: string
+  updated_at: string
+}
+
 // ============================================================
 // Helper: make some keys optional
 // ============================================================
@@ -330,6 +366,14 @@ export type SettingsRow = {
 
 export type SyncLogInsert = Omit<SyncLogRow, 'id'>
 
+// Tech lead insert — caller supplies submitter + content; everything else is
+// auto-defaulted or set later by approve / earn / pay flows.
+export type TechLeadInsert = Pick<TechLeadRow, 'submitted_by' | 'equipment_description'> &
+  Partial<Pick<TechLeadRow,
+    'lead_type' | 'submitted_at' | 'customer_id' | 'customer_name_text' |
+    'proposed_pm_frequency' | 'notes' | 'status'
+  >>
+
 // ============================================================
 // Update types (all fields optional)
 // ============================================================
@@ -349,6 +393,8 @@ export type PmScheduleUpdate = Partial<Omit<PmScheduleRow, 'id' | 'created_at'>>
 export type PmTicketUpdate = Partial<Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>>
 
 export type SyncLogUpdate = Partial<Omit<SyncLogRow, 'id'>>
+
+export type TechLeadUpdate = Partial<Omit<TechLeadRow, 'id' | 'created_at' | 'updated_at'>>
 
 // ============================================================
 // Supabase Database type
@@ -592,6 +638,55 @@ export interface Database {
           {
             foreignKeyName: 'service_tickets_created_by_id_fkey'
             columns: ['created_by_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      tech_leads: {
+        Row: TechLeadRow
+        Insert: TechLeadInsert
+        Update: TechLeadUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'tech_leads_submitted_by_fkey'
+            columns: ['submitted_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'tech_leads_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'tech_leads_approved_by_fkey'
+            columns: ['approved_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'tech_leads_equipment_id_fkey'
+            columns: ['equipment_id']
+            isOneToOne: false
+            referencedRelation: 'equipment'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'tech_leads_earned_from_ticket_id_fkey'
+            columns: ['earned_from_ticket_id']
+            isOneToOne: false
+            referencedRelation: 'pm_tickets'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'tech_leads_paid_by_fkey'
+            columns: ['paid_by']
             isOneToOne: false
             referencedRelation: 'users'
             referencedColumns: ['id']

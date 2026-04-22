@@ -16,6 +16,7 @@ import {
   LogOut,
   UserRoundSearch,
   KeyRound,
+  Award,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
@@ -25,6 +26,7 @@ const allNavItems = [
   { label: 'Preventive Maintenance', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
+  { label: 'Tech Leads', icon: Award, route: '/tech-leads' },
   { label: 'Billing', icon: FileText, route: '/billing' },
   { label: 'Equipment', icon: Wrench, route: '/equipment' },
   { label: 'Prospects', icon: UserRoundSearch, route: '/prospects' },
@@ -41,6 +43,7 @@ const techNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
   { label: 'My PMs', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
+  { label: 'My Leads', icon: Award, route: '/my-leads' },
 ]
 
 interface SidebarProps {
