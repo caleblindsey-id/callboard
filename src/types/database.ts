@@ -49,6 +49,52 @@ export interface PartRequest {
   synergy_product_id?: number | null
   po_number?: string
   status: 'requested' | 'ordered' | 'received'
+  // Vendor the part comes from (free-text, surfaced on the Parts Queue page).
+  vendor?: string
+  // Parts Queue lifecycle metadata — optional; pre-036 rows won't have these.
+  requested_at?: string
+  ordered_at?: string
+  received_at?: string
+  ordered_by?: string
+  received_by?: string
+  // Office can cancel a request that shouldn't be ordered (wrong part, warranty
+  // covered direct, customer withdrew). Stays on the parent ticket as a struck-
+  // through line with the reason, but drops off the queue.
+  cancelled?: boolean
+  cancel_reason?: string
+}
+
+// ============================================================
+// Parts Queue view row — one row per part request across PM + service.
+// Backed by the parts_order_queue view (migration 036). Read-only.
+// ============================================================
+
+export type PartsQueueSource = 'pm' | 'service'
+
+export type PartsQueueRow = {
+  source: PartsQueueSource
+  ticket_id: string
+  work_order_number: number | null
+  part_index: number
+  customer_id: number | null
+  customer_name: string | null
+  assigned_technician_id: string | null
+  assigned_technician_name: string | null
+  synergy_order_number: string | null
+  requested_at: string
+  description: string | null
+  quantity: number | null
+  vendor: string | null
+  product_number: string | null
+  synergy_product_id: number | null
+  po_number: string | null
+  status: 'requested' | 'ordered' | 'received'
+  cancelled: boolean
+  cancel_reason: string | null
+  ordered_at: string | null
+  received_at: string | null
+  ordered_by: string | null
+  received_by: string | null
 }
 
 // ============================================================
@@ -553,7 +599,12 @@ export interface Database {
         ]
       }
     }
-    Views: {}
+    Views: {
+      parts_order_queue: {
+        Row: PartsQueueRow
+        Relationships: []
+      }
+    }
     Functions: {}
     Enums: {
       user_role: UserRole

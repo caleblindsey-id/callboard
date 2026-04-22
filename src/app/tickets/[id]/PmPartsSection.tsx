@@ -38,8 +38,9 @@ export default function PmPartsSection({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const receivedCount = parts.filter(p => p.status === 'received').length
-  const allReceived = parts.length > 0 && receivedCount === parts.length
+  const activeParts = parts.filter(p => !p.cancelled)
+  const receivedCount = activeParts.filter(p => p.status === 'received').length
+  const allReceived = activeParts.length > 0 && receivedCount === activeParts.length
 
   async function patchTicket(body: Record<string, unknown>) {
     const res = await fetch(`/api/tickets/${ticketId}`, {
@@ -63,6 +64,7 @@ export default function PmPartsSection({
         quantity: parseInt(newQty) || 1,
         ...(newProductNumber.trim() ? { product_number: newProductNumber.trim() } : {}),
         status: 'requested',
+        requested_at: new Date().toISOString(),
       }
       const updated = [...parts, newPart]
       await patchTicket({ parts_requested: updated })
@@ -195,9 +197,9 @@ export default function PmPartsSection({
         <Package className="h-4 w-4 text-gray-500 dark:text-gray-400 shrink-0" />
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
           Parts Requested
-          {parts.length > 0 && (
+          {activeParts.length > 0 && (
             <span className="ml-2 text-gray-500 dark:text-gray-400 font-normal">
-              ({receivedCount}/{parts.length} received)
+              ({receivedCount}/{activeParts.length} received)
             </span>
           )}
         </h2>
@@ -216,7 +218,7 @@ export default function PmPartsSection({
               <div key={i} className="flex flex-col gap-2 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm text-gray-900 dark:text-white font-medium">{part.description}</span>
+                    <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{part.description}</span>
                     {part.product_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                     )}
@@ -224,12 +226,19 @@ export default function PmPartsSection({
                     {part.po_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
                     )}
+                    {part.cancelled && part.cancel_reason && (
+                      <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">Cancelled — {part.cancel_reason}</div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-medium uppercase ${STATUS_TEXT[part.status]}`}>
-                      {part.status}
-                    </span>
-                    {part.status === 'requested' && (
+                    {part.cancelled ? (
+                      <span className="text-xs font-medium uppercase text-red-600 dark:text-red-400">Cancelled</span>
+                    ) : (
+                      <span className={`text-xs font-medium uppercase ${STATUS_TEXT[part.status]}`}>
+                        {part.status}
+                      </span>
+                    )}
+                    {!part.cancelled && part.status === 'requested' && (
                       <button
                         onClick={() => handleDeletePart(i)}
                         disabled={saving}
@@ -239,7 +248,7 @@ export default function PmPartsSection({
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    {!isTech && part.status === 'requested' && (
+                    {!part.cancelled && !isTech && part.status === 'requested' && (
                       <button
                         onClick={() => handleUpdatePartStatus(i, 'ordered')}
                         disabled={saving || !synergyOrderSaved || !part.product_number?.trim()}
@@ -255,7 +264,7 @@ export default function PmPartsSection({
                         Mark Ordered
                       </button>
                     )}
-                    {!isTech && part.status === 'ordered' && (
+                    {!part.cancelled && !isTech && part.status === 'ordered' && (
                       <button
                         onClick={() => handleUpdatePartStatus(i, 'received')}
                         disabled={saving}
@@ -264,7 +273,7 @@ export default function PmPartsSection({
                         Mark Received
                       </button>
                     )}
-                    {canReset && (part.status === 'ordered' || part.status === 'received') && (
+                    {!part.cancelled && canReset && (part.status === 'ordered' || part.status === 'received') && (
                       <button
                         onClick={() => handleResetPartStatus(i)}
                         disabled={saving}
@@ -278,7 +287,7 @@ export default function PmPartsSection({
                 </div>
 
                 {/* Synergy item # picker — office staff only, required to mark ordered */}
-                {!isTech && (
+                {!part.cancelled && !isTech && (
                   <div className="ml-0 sm:ml-4">
                     <PartSynergyPicker
                       productNumber={part.product_number}
@@ -290,7 +299,7 @@ export default function PmPartsSection({
                 )}
 
                 {/* PO # input — office staff only, after ordered */}
-                {!isTech && (part.status === 'ordered' || part.status === 'received') && (
+                {!part.cancelled && !isTech && (part.status === 'ordered' || part.status === 'received') && (
                   <div className="flex items-center gap-2 ml-0 sm:ml-4">
                     <label className="text-xs text-gray-500 dark:text-gray-400 shrink-0">PO #:</label>
                     <input

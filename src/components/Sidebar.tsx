@@ -9,6 +9,7 @@ import {
   Headset,
   Building2,
   Package,
+  PackageSearch,
   FileText,
   BarChart3,
   Settings,
@@ -27,6 +28,7 @@ const allNavItems = [
   { label: 'Customers', icon: Building2, route: '/customers' },
   { label: 'Prospects', icon: UserRoundSearch, route: '/prospects' },
   { label: 'Products', icon: Package, route: '/products' },
+  { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
   { label: 'Billing', icon: FileText, route: '/billing' },
   { label: 'Analytics', icon: BarChart3, route: '/analytics' },
 ]

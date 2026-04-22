@@ -384,6 +384,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       quantity: parseInt(newPartQty) || 1,
       product_number: newPartNumber.trim() || undefined,
       status: 'requested',
+      requested_at: new Date().toISOString(),
     }
     const updatedParts = [...partsRequested, newPart]
     await apiAction(async () => {
@@ -1065,7 +1066,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     <div key={i} className="flex flex-col gap-2 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm text-gray-900 dark:text-white font-medium">{part.description}</span>
+                          <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{part.description}</span>
                           {part.product_number && isTech && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                           )}
@@ -1073,12 +1074,19 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                           {part.po_number && isTech && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
                           )}
+                          {part.cancelled && part.cancel_reason && (
+                            <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">Cancelled — {part.cancel_reason}</div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-medium uppercase ${statusColors[part.status] ?? ''}`}>
-                            {part.status}
-                          </span>
-                          {isStaff && part.status === 'requested' && (
+                          {part.cancelled ? (
+                            <span className="text-xs font-medium uppercase text-red-600 dark:text-red-400">Cancelled</span>
+                          ) : (
+                            <span className={`text-xs font-medium uppercase ${statusColors[part.status] ?? ''}`}>
+                              {part.status}
+                            </span>
+                          )}
+                          {!part.cancelled && isStaff && part.status === 'requested' && (
                             <button
                               onClick={() => handleUpdatePartStatus(i, 'ordered')}
                               disabled={loading || !synergyOrderNumber.trim() || !part.product_number?.trim()}
@@ -1094,7 +1102,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                               Mark Ordered
                             </button>
                           )}
-                          {isStaff && part.status === 'ordered' && (
+                          {!part.cancelled && isStaff && part.status === 'ordered' && (
                             <button
                               onClick={() => handleUpdatePartStatus(i, 'received')}
                               disabled={loading}
@@ -1103,7 +1111,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                               Mark Received
                             </button>
                           )}
-                          {isManager && (part.status === 'ordered' || part.status === 'received') && (
+                          {!part.cancelled && isManager && (part.status === 'ordered' || part.status === 'received') && (
                             <button
                               onClick={() => handleResetPartStatus(i)}
                               disabled={loading}
@@ -1116,7 +1124,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                         </div>
                       </div>
                       {/* Synergy item # picker — staff only, required to mark ordered */}
-                      {isStaff && (
+                      {!part.cancelled && isStaff && (
                         <div className="ml-0 sm:ml-4">
                           <PartSynergyPicker
                             productNumber={part.product_number}
@@ -1128,7 +1136,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                       )}
 
                       {/* PO number input — staff can enter when marking ordered or after */}
-                      {isStaff && (part.status === 'ordered' || part.status === 'received') && (
+                      {!part.cancelled && isStaff && (part.status === 'ordered' || part.status === 'received') && (
                         <div className="flex items-center gap-2 ml-0 sm:ml-4">
                           <label className="text-xs text-gray-500 dark:text-gray-400 shrink-0">PO #:</label>
                           <input
