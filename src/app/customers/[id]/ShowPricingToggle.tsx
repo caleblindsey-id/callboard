@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 interface ShowPricingToggleProps {
   customerId: number
@@ -15,13 +14,24 @@ export default function ShowPricingToggle({ customerId, showPricing }: ShowPrici
 
   async function handleToggle() {
     setLoading(true)
-    const supabase = createClient()
-    await supabase
-      .from('customers')
-      .update({ show_pricing_on_pm_pdf: !showPricing })
-      .eq('id', customerId)
-    setLoading(false)
-    router.refresh()
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ show_pricing_on_pm_pdf: !showPricing }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}))
+        alert(payload.error ?? 'Could not update pricing setting.')
+        return
+      }
+      router.refresh()
+    } catch (err) {
+      console.error('ShowPricingToggle error:', err)
+      alert('Could not update pricing setting.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

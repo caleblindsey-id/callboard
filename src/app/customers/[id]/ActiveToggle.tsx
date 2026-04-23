@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 interface ActiveToggleProps {
   customerId: number
@@ -15,13 +14,24 @@ export default function ActiveToggle({ customerId, isActive }: ActiveToggleProps
 
   async function handleToggle() {
     setLoading(true)
-    const supabase = createClient()
-    await supabase
-      .from('customers')
-      .update({ active: !isActive })
-      .eq('id', customerId)
-    setLoading(false)
-    router.refresh()
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !isActive }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}))
+        alert(payload.error ?? 'Could not update customer status.')
+        return
+      }
+      router.refresh()
+    } catch (err) {
+      console.error('ActiveToggle error:', err)
+      alert('Could not update customer status.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
