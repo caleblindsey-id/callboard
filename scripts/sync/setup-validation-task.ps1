@@ -1,4 +1,4 @@
-# WrenchDesk — Register Synergy Order Validation in Task Scheduler
+# WrenchDesk - Register Synergy Order Validation in Task Scheduler
 # Run once as administrator to set up the nightly validation job.
 
 $taskName       = "WrenchDesk - Validate Synergy Orders"
@@ -44,4 +44,4 @@ Register-ScheduledTask `
     -User $env:USERNAME `
     -RunLevel Highest
 
-Write-Host "Task '$taskName' registered successfully — runs daily at 5:30 AM."
+Write-Host "Task '$taskName' registered successfully - runs daily at 5:30 AM."
