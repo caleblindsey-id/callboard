@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, ChevronDown, AlertOctagon } from 'lucide-react'
+import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
@@ -37,6 +37,7 @@ interface TicketBoardProps {
   userRole: import('@/types/database').UserRole | null
   initialStatus?: string
   overdueMode?: boolean
+  skipRequestedMode?: boolean
 }
 
 interface TicketListProps {
@@ -217,6 +218,7 @@ export default function TicketBoard({
   userRole,
   initialStatus = '',
   overdueMode = false,
+  skipRequestedMode = false,
 }: TicketBoardProps) {
   const isManager = !!userRole && MANAGER_ROLES.includes(userRole)
   const router = useRouter()
@@ -340,8 +342,23 @@ export default function TicketBoard({
         </div>
       )}
 
-      {/* Filters — hidden when viewing overdue-only */}
-      {!overdueMode && (
+      {skipRequestedMode && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <span>Skip Requests — all months ({tickets.length}).</span>
+          </div>
+          <button
+            onClick={() => router.push('/tickets')}
+            className="text-xs font-medium underline hover:no-underline"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Filters — hidden when viewing overdue-only or skip-requested-only */}
+      {!overdueMode && !skipRequestedMode && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
             <div className="w-full lg:w-auto">

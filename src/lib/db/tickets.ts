@@ -125,6 +125,25 @@ export async function getOverdueTicketCount(filters?: {
   return count ?? 0
 }
 
+export async function getSkipRequestedCount(filters?: {
+  technicianId?: string
+}): Promise<number> {
+  const supabase = await createClient()
+
+  let query = supabase
+    .from('pm_tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'skip_requested')
+
+  if (filters?.technicianId) {
+    query = query.eq('assigned_technician_id', filters.technicianId)
+  }
+
+  const { count, error } = await query
+  if (error) throw error
+  return count ?? 0
+}
+
 export async function getTicket(id: string): Promise<TicketDetail | null> {
   const supabase = await createClient()
 

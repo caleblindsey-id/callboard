@@ -7,13 +7,14 @@ import TicketBoard from './TicketBoard'
 export default async function TicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; year?: string; tech?: string; status?: string; overdue?: string }>
+  searchParams: Promise<{ month?: string; year?: string; tech?: string; status?: string; overdue?: string; skipRequested?: string }>
 }) {
   const params = await searchParams
   const now = new Date()
   const month = params.month ? parseInt(params.month) : now.getMonth() + 1
   const year = params.year ? parseInt(params.year) : now.getFullYear()
   const overdueMode = params.overdue === '1'
+  const skipRequestedMode = params.skipRequested === '1'
 
   const user = await getCurrentUser()
   const isTech = isTechnician(user?.role ?? null)
@@ -33,14 +34,25 @@ export default async function TicketsPage({
     overdueFilters!.technicianId = params.tech
   }
 
+  const skipRequestedFilters: Parameters<typeof getTickets>[0] = { status: 'skip_requested' }
+  if (isTech && user) {
+    skipRequestedFilters!.technicianId = user.id
+  } else if (params.tech) {
+    skipRequestedFilters!.technicianId = params.tech
+  }
+
   let monthTickets: Awaited<ReturnType<typeof getTickets>> = []
   let overdueTickets: Awaited<ReturnType<typeof getTickets>> = []
   let users: Awaited<ReturnType<typeof getUsers>> = []
   let fetchError = false
   try {
     ;[monthTickets, overdueTickets, users] = await Promise.all([
-      overdueMode ? Promise.resolve([]) : getTickets(monthFilters),
-      getTickets(overdueFilters),
+      overdueMode
+        ? Promise.resolve([])
+        : skipRequestedMode
+          ? getTickets(skipRequestedFilters)
+          : getTickets(monthFilters),
+      skipRequestedMode ? Promise.resolve([]) : getTickets(overdueFilters),
       getUsers(true),
     ])
   } catch {
@@ -69,6 +81,7 @@ export default async function TicketsPage({
         userRole={user?.role ?? null}
         initialStatus={params.status ?? ''}
         overdueMode={overdueMode}
+        skipRequestedMode={skipRequestedMode}
       />
     </div>
   )

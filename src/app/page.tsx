@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getTickets, getOverdueTicketCount } from '@/lib/db/tickets'
+import { getTickets, getOverdueTicketCount, getSkipRequestedCount } from '@/lib/db/tickets'
 import { getServiceTicketCounts, getPartsToOrderCount, getPartsOnOrderCount, getPartsReadyForPickupCount } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import {
@@ -48,13 +48,14 @@ export default async function DashboardPage() {
   const user = await getCurrentUser()
   const isTech = isTechnician(user?.role ?? null)
 
-  const [tickets, overdueCount, serviceCounts, partsToOrderCount, partsOnOrderCount, partsReadyForPickupCount] = await Promise.all([
+  const [tickets, overdueCount, skipRequestedCount, serviceCounts, partsToOrderCount, partsOnOrderCount, partsReadyForPickupCount] = await Promise.all([
     getTickets({
       month,
       year,
       ...(isTech && user ? { technicianId: user.id } : {}),
     }),
     getOverdueTicketCount(isTech && user ? { technicianId: user.id } : {}),
+    getSkipRequestedCount(isTech && user ? { technicianId: user.id } : {}),
     getServiceTicketCounts(isTech && user ? user.id : undefined),
     isTech ? Promise.resolve(0) : getPartsToOrderCount(),
     isTech ? Promise.resolve(0) : getPartsOnOrderCount(),
@@ -124,6 +125,36 @@ export default async function DashboardPage() {
                 {overdueCount}
               </span>
               <ChevronRight className="h-5 w-5 text-red-400 dark:text-red-500" />
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* Skip Requests Pending — cross-month, surfaces regardless of month filter */}
+      {skipRequestedCount > 0 && (
+        <Link
+          href="/tickets?skipRequested=1"
+          className="block bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 p-4 hover:border-amber-300 dark:hover:border-amber-700 hover:shadow transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  Skip Requests Pending
+                </span>
+              </div>
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+                {isTech
+                  ? 'Skip requests you submitted that are awaiting manager action.'
+                  : 'Skip requests awaiting review. Surfaces across all month filters.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300">
+                {skipRequestedCount}
+              </span>
+              <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
             </div>
           </div>
         </Link>
