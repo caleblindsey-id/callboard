@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Menu, Wrench } from 'lucide-react'
 import Sidebar from './Sidebar'
+import { APP_NAME } from '@/lib/branding'
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -27,7 +28,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
           <Wrench className="h-4 w-4 text-gray-300" />
           <span className="text-sm font-semibold text-white tracking-tight">
-            PM Scheduler
+            {APP_NAME}
           </span>
         </div>
       </header>

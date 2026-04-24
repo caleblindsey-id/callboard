@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Wrench } from 'lucide-react'
+import { APP_NAME } from '@/lib/branding'
 
 function ChangePasswordForm() {
   const router = useRouter()
@@ -58,7 +59,7 @@ function ChangePasswordForm() {
         <div className="flex items-center justify-center gap-2.5 mb-2">
           <Wrench className="h-6 w-6 text-gray-700 dark:text-gray-300" />
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">
-            PM Scheduler
+            {APP_NAME}
           </h1>
         </div>
 

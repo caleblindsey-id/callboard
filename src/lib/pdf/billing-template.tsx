@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
+import { APP_NAME } from '@/lib/branding'
 
 // ============================================================
 // Types
@@ -529,7 +530,7 @@ export function BillingDocument({ tickets, month, year, exportedAt }: BillingDoc
 
           {/* Footer */}
           <Text style={styles.footer} fixed>
-            For entry into SynergyERP — Reference document  |  PM Scheduler  |  Generated {exportedAt}
+            For entry into SynergyERP — Reference document  |  {APP_NAME}  |  Generated {exportedAt}
           </Text>
         </Page>
       ))}

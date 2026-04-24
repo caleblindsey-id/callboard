@@ -5,6 +5,7 @@ import './globals.css'
 import LayoutShell from '@/components/LayoutShell'
 import { UserProvider } from '@/components/UserProvider'
 import { getCurrentUser } from '@/lib/auth'
+import { APP_NAME } from '@/lib/branding'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -17,8 +18,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'PM Scheduler',
-  description: 'Preventive maintenance scheduling and tracking',
+  title: APP_NAME,
+  description: 'Service operations for distributors — PMs, service tickets, estimates, leads, and tech KPIs',
 }
 
 export default async function RootLayout({

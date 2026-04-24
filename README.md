@@ -1,6 +1,8 @@
-# PM Scheduler
+# WrenchDesk
 
-Preventive maintenance scheduling and billing tool for commercial cleaning equipment — built to replace EasyBee and integrate with Synergy ERP.
+Service operations platform for equipment distributors — PMs, service tickets, itemized estimates, leads, parts orders, and tech KPIs. Integrates with Synergy ERP.
+
+> **History:** Launched March 2026 as "PM Scheduler" (a replacement for EasyBee). Renamed to WrenchDesk in April 2026 to reflect its full service-department scope.
 
 ## Tech Stack
 
@@ -24,7 +26,7 @@ Preventive maintenance scheduling and billing tool for commercial cleaning equip
 
 ```bash
 git clone <your-repo-url>
-cd pm-scheduler
+cd wrenchdesk
 ```
 
 ### 2. Install dependencies
@@ -104,8 +106,9 @@ See Phase 4 of the implementation plan — the sync script and its README are bu
 ## Project Structure
 
 ```
-pm-scheduler/
+wrenchdesk/
 ├── src/app/              # Next.js App Router pages and API routes
+├── src/lib/branding.ts   # App name / tagline constants
 ├── supabase/
 │   ├── migrations/       # SQL migration files — run in order via Supabase SQL Editor
 │   └── seed.sql          # Development seed data

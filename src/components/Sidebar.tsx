@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { APP_NAME } from '@/lib/branding'
 import {
   LayoutDashboard,
   ClipboardList,
@@ -88,7 +89,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           <div className="flex items-center gap-2.5">
             <Wrench className="h-5 w-5 text-gray-300" />
             <span className="text-base font-semibold text-white tracking-tight">
-              PM Scheduler
+              {APP_NAME}
             </span>
           </div>
         </div>

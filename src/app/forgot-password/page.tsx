@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Wrench } from 'lucide-react'
+import { APP_NAME } from '@/lib/branding'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -39,7 +40,7 @@ export default function ForgotPasswordPage() {
           <div className="flex items-center justify-center gap-2.5 mb-6">
             <Wrench className="h-6 w-6 text-gray-700 dark:text-gray-300" />
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white tracking-tight">
-              PM Scheduler
+              {APP_NAME}
             </h1>
           </div>
 
