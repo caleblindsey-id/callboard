@@ -1,6 +1,6 @@
-# PM Scheduler — Nightly Synergy Sync
+# WrenchDesk — Nightly Synergy Sync
 
-Reads customers, contacts, and products from SynergyERP (MySQL 5.5) and upserts them to the PM Scheduler's Supabase database via REST API. Runs nightly at 5 AM, after Synergy's own overnight refresh completes (~2 AM start, ~2 hour run).
+Reads customers, contacts, and products from SynergyERP (MySQL 5.5) and upserts them to the WrenchDesk Supabase database via REST API. Runs nightly at 5 AM, after Synergy's own overnight refresh completes (~2 AM start, ~2 hour run).
 
 ---
 
@@ -8,7 +8,7 @@ Reads customers, contacts, and products from SynergyERP (MySQL 5.5) and upserts 
 
 - Python 3.9 or later
 - ODBC DSN `ERPlinked` configured on this workstation (already set up)
-- Supabase project with the PM Scheduler schema applied
+- Supabase project with the WrenchDesk schema applied
 - Required Python packages:
 
 ```
@@ -68,32 +68,40 @@ The script exits with code `0` on success and `1` if any sync type fails. Check 
 
 ## Windows Task Scheduler Setup
 
-1. Open **Task Scheduler** (search in Start menu)
-2. Click **Create Basic Task** in the right panel
-3. **Name:** `PM Scheduler Nightly Sync`
-4. **Description:** Syncs customers, contacts, and products from SynergyERP to Supabase
-5. **Trigger:** Daily at **5:00 AM**
-6. **Action:** Start a program
-   - **Program/script:** `powershell.exe`
-   - **Arguments:**
-     ```
-     -ExecutionPolicy Bypass -File "C:\Users\Caleb Lindsey\Desktop\pm-scheduler\scripts\sync\run-sync.ps1"
-     ```
-   - **Start in:** `C:\Users\Caleb Lindsey\Desktop\pm-scheduler`
-7. Click **Finish**
-8. Right-click the new task → **Properties** → **General** tab:
-   - Check "Run whether user is logged on or not" if you want it to run even when logged out
-   - Check "Run with highest privileges" if the ODBC connection requires elevated access
+**Preferred:** run the setup scripts (auto-detects paths, handles legacy cleanup):
 
-To test the task immediately: right-click it in Task Scheduler → **Run**.
+```powershell
+# Right-click each and "Run as administrator" (or run from an elevated PowerShell)
+.\setup-task-scheduler.ps1         # 5:00 AM nightly Synergy sync
+.\setup-validation-task.ps1        # 5:30 AM parts/order validation
+.\setup-equipment-sale-scan-task.ps1  # 5:35 AM equipment-sale lead scan
+```
+
+Each script:
+- Removes any pre-rename `PM Scheduler - *` task with the matching role
+- Registers the task as `WrenchDesk - *` pointing at the current folder location
+- Uses `$PSScriptRoot` so it works from whatever path you run it from — re-run after folder renames without code changes
+
+**Manual fallback** (only if the setup scripts won't run):
+
+1. Open **Task Scheduler**
+2. Click **Create Basic Task**
+3. **Name:** `WrenchDesk - Nightly Synergy Sync`
+4. **Trigger:** Daily at **5:00 AM**
+5. **Action → Start a program:**
+   - **Program/script:** `powershell.exe`
+   - **Arguments:** `-ExecutionPolicy Bypass -File "<absolute path to>\scripts\sync\run-sync.ps1"`
+   - **Start in:** the folder containing the repo
+
+Test with right-click → **Run**.
 
 ---
 
 ## Checking Sync Status
 
-- **Logs directory:** `pm-scheduler/logs/sync-YYYY-MM-DD.log` — one file per day, written by both the script and the PowerShell wrapper
+- **Logs directory:** `<repo root>/logs/sync-YYYY-MM-DD.log` — one file per day, written by both the script and the PowerShell wrapper
 - **Supabase sync_log table:** Each run writes a row with `sync_type`, `started_at`, `completed_at`, `records_synced`, `status`, and `error_message`
-- **App dashboard:** The Sync Status Banner in the PM Scheduler app reads from the `sync_log` table
+- **App dashboard:** The Sync Status Banner in the WrenchDesk app reads from the `sync_log` table
 
 ---
 

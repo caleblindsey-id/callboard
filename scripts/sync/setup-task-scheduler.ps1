@@ -1,8 +1,16 @@
-# PM Scheduler — Register nightly sync in Windows Task Scheduler
+# WrenchDesk — Register nightly sync in Windows Task Scheduler
 # RIGHT-CLICK this file and select "Run as administrator"
 
-$taskName = "PM Scheduler - Nightly Synergy Sync"
+$taskName = "WrenchDesk - Nightly Synergy Sync"
+$legacyTaskName = "PM Scheduler - Nightly Synergy Sync"
 $scriptPath = "$PSScriptRoot\run-sync.ps1"
+
+# Clean up legacy task from the pre-rename era if present
+$legacy = Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+if ($legacy) {
+    Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false
+    Write-Host "Removed legacy task '$legacyTaskName'." -ForegroundColor Yellow
+}
 
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
