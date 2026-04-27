@@ -11,6 +11,7 @@ const TECH_ALLOWED_PAGE_PATTERNS = [
 
 // API routes technicians are allowed to access
 const TECH_ALLOWED_API_PATTERNS = [
+  /^\/api\/auth\//,                      // Self-service auth (change-password) — all roles
   /^\/api\/tickets\/[^/]+/,              // PATCH /api/tickets/[id] and POST /api/tickets/[id]/complete
   /^\/api\/service-tickets(\/|$)/,       // GET /api/service-tickets + /api/service-tickets/[id]/*
   /^\/api\/equipment\/[^/]+\/notes$/,    // GET + POST /api/equipment/[id]/notes
