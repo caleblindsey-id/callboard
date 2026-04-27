@@ -288,3 +288,23 @@ export async function bulkAssignTechnician(
   if (error) throw error
   return data as PmTicketRow[]
 }
+
+export async function bulkSoftDeleteTickets(
+  ticketIds: string[],
+  userId: string
+): Promise<{ id: string }[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('pm_tickets')
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by_id: userId,
+    })
+    .in('id', ticketIds)
+    .is('deleted_at', null)
+    .select('id')
+
+  if (error) throw error
+  return (data ?? []) as { id: string }[]
+}

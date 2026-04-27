@@ -280,6 +280,8 @@ export default function TicketBoard({
   const [skipSource, setSkipSource] = useState<'month' | 'overdue'>('month')
   const [error, setError] = useState<string | null>(null)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   async function handleRestore(id: string) {
     setRestoringId(id)
@@ -364,6 +366,31 @@ export default function TicketBoard({
       router.refresh()
     } finally {
       setBulkLoading(false)
+    }
+  }
+
+  async function handleConfirmBulkDelete() {
+    const ids = skipSource === 'overdue' ? overdueSelected : selected
+    if (ids.size === 0) return
+    setBulkDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/tickets/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: Array.from(ids) }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'Failed to delete tickets')
+        return
+      }
+      setSelected(new Set())
+      setOverdueSelected(new Set())
+      setBulkDeleteOpen(false)
+      router.refresh()
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -558,6 +585,14 @@ export default function TicketBoard({
             >
               {bulkLoading ? 'Processing...' : 'Skip Selected'}
             </button>
+            <button
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={bulkLoading || bulkDeleting}
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Selected
+            </button>
           </div>
         </div>
       )}
@@ -647,6 +682,44 @@ export default function TicketBoard({
           onClose={() => setSkipOpen(false)}
           onDone={handleSkipDone}
         />
+      )}
+
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 max-w-md w-full">
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 h-10 w-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                    Delete {activeSelected.size} ticket{activeSelected.size === 1 ? '' : 's'}?
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    They&apos;ll be hidden from boards, billing, and PDFs, and won&apos;t be regenerated. You can restore them later from the Deleted view.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={bulkDeleting}
+                className="px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmBulkDelete}
+                disabled={bulkDeleting}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+              >
+                {bulkDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
