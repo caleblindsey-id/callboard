@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PartRequest } from '@/types/database'
+import { PartRequest, TicketStatus } from '@/types/database'
 import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 
 interface PmPartsSectionProps {
   ticketId: string
@@ -12,7 +13,10 @@ interface PmPartsSectionProps {
   initialSynergyOrderNumber: string | null
   isTech: boolean
   canReset: boolean
+  status: TicketStatus
 }
+
+const ENTRY_ALLOWED_STATUSES: TicketStatus[] = ['assigned', 'in_progress']
 
 const STATUS_TEXT: Record<PartRequest['status'], string> = {
   requested: 'text-yellow-600 dark:text-yellow-400',
@@ -26,18 +30,16 @@ export default function PmPartsSection({
   initialSynergyOrderNumber,
   isTech,
   canReset,
+  status,
 }: PmPartsSectionProps) {
   const router = useRouter()
   const [parts, setParts] = useState<PartRequest[]>(initialPartsRequested)
   const [synergyOrderNumber, setSynergyOrderNumber] = useState(initialSynergyOrderNumber ?? '')
   const [synergyOrderSaved, setSynergyOrderSaved] = useState(!!initialSynergyOrderNumber)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newDesc, setNewDesc] = useState('')
-  const [newQty, setNewQty] = useState('1')
-  const [newProductNumber, setNewProductNumber] = useState('')
-  const [newVendorItemCode, setNewVendorItemCode] = useState('')
+  const [draftParts, setDraftParts] = useState<PartEntry[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const canRequestParts = ENTRY_ALLOWED_STATUSES.includes(status)
 
   const activeParts = parts.filter(p => !p.cancelled)
   const receivedCount = activeParts.filter(p => p.status === 'received').length
@@ -55,30 +57,32 @@ export default function PmPartsSection({
     }
   }
 
-  async function handleAddPart() {
-    if (!newDesc.trim()) return
+  async function handleRequestDraftPart(index: number) {
+    const entry = draftParts[index]
+    if (!entry || !entry.description.trim() || entry.alreadyRequested) return
     setSaving(true)
     setError(null)
     try {
       const newPart: PartRequest = {
-        description: newDesc.trim(),
-        quantity: parseInt(newQty) || 1,
-        ...(newProductNumber.trim() ? { product_number: newProductNumber.trim() } : {}),
-        ...(newVendorItemCode.trim() ? { vendor_item_code: newVendorItemCode.trim() } : {}),
+        description: entry.description.trim(),
+        quantity: entry.quantity || 1,
+        ...(entry.productNumber?.trim() ? { product_number: entry.productNumber.trim() } : {}),
+        ...(entry.synergyProductId != null ? { synergy_product_id: entry.synergyProductId } : {}),
+        ...(entry.vendorItemCode?.trim() ? { vendor_item_code: entry.vendorItemCode.trim() } : {}),
         status: 'requested',
         requested_at: new Date().toISOString(),
       }
       const updated = [...parts, newPart]
       await patchTicket({ parts_requested: updated })
       setParts(updated)
-      setNewDesc('')
-      setNewQty('1')
-      setNewProductNumber('')
-      setNewVendorItemCode('')
-      setShowAddForm(false)
+      setDraftParts(prev => {
+        const u = [...prev]
+        if (u[index]) u[index] = { ...u[index], alreadyRequested: true }
+        return u
+      })
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error adding part')
+      setError(err instanceof Error ? err.message : 'Error requesting part')
     } finally {
       setSaving(false)
     }
@@ -350,64 +354,19 @@ export default function PmPartsSection({
           </div>
         )}
 
-        {/* Add part form */}
-        {showAddForm ? (
-          <div className="mt-3 space-y-2 max-w-lg">
-            <input
-              type="text"
-              value={newDesc}
-              onChange={e => setNewDesc(e.target.value)}
-              placeholder="Part description"
-              autoFocus
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+        {/* Request part — product-search entry, only while ticket is active */}
+        {canRequestParts && (
+          <div className="mt-3">
+            <PartsEntryList
+              parts={draftParts}
+              setParts={setDraftParts}
+              showPricing={true}
+              showWarranty={false}
+              showVendorItemCode={true}
+              label="Request a Part"
+              onRequestPart={handleRequestDraftPart}
             />
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={newQty}
-                onChange={e => setNewQty(e.target.value)}
-                min="1"
-                placeholder="Qty"
-                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              />
-              <input
-                type="text"
-                value={newProductNumber}
-                onChange={e => setNewProductNumber(e.target.value)}
-                placeholder="Synergy item # (optional)"
-                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              />
-            </div>
-            <input
-              type="text"
-              value={newVendorItemCode}
-              onChange={e => setNewVendorItemCode(e.target.value)}
-              placeholder="Vendor item # (optional)"
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleAddPart}
-                disabled={saving || !newDesc.trim()}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
-              >
-                {saving ? 'Adding…' : 'Add Part'}
-              </button>
-              <button
-                onClick={() => { setShowAddForm(false); setNewDesc(''); setNewQty('1'); setNewProductNumber(''); setNewVendorItemCode('') }}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-        ) : (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="text-sm font-medium text-slate-700 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white py-2 min-h-[44px] flex items-center mt-2"
-          >
-            + Request Part
-          </button>
         )}
 
         {/* Synergy Order # — office staff only */}

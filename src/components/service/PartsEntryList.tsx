@@ -27,6 +27,9 @@ export interface PartEntry {
   searchResults: ProductResult[]
   searching: boolean
   warrantyCovered: boolean
+  // Optional manufacturer / vendor part number. Only surfaced when the parent
+  // opts in via showVendorItemCode (PM ticket parts requests use this).
+  vendorItemCode?: string | null
   // Local flag flipped after the row has been sent to the parts-requested
   // queue via onRequestPart. Not persisted.
   alreadyRequested?: boolean
@@ -44,6 +47,7 @@ export function emptyPart(): PartEntry {
     searchResults: [],
     searching: false,
     warrantyCovered: false,
+    vendorItemCode: null,
   }
 }
 
@@ -80,13 +84,15 @@ interface PartsEntryListProps {
   showPricing: boolean
   showWarranty: boolean
   label?: string
+  // Surface an optional vendor / manufacturer part # input on each row.
+  showVendorItemCode?: boolean
   // When provided, each row renders a "Request" button that hands the entry
   // off to the caller (which creates a PartRequest on the ticket). The caller
   // is responsible for flipping `alreadyRequested` on success.
   onRequestPart?: (index: number) => Promise<void>
 }
 
-export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', onRequestPart }: PartsEntryListProps) {
+export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', showVendorItemCode = false, onRequestPart }: PartsEntryListProps) {
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
 
@@ -307,6 +313,24 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                     />
                     Warranty
                   </label>
+                )}
+                {showVendorItemCode && (
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Vendor #</label>
+                    <input
+                      type="text"
+                      value={part.vendorItemCode ?? ''}
+                      onChange={(e) => {
+                        setParts((prev) => {
+                          const u = [...prev]
+                          u[i] = { ...u[i], vendorItemCode: e.target.value }
+                          return u
+                        })
+                      }}
+                      placeholder="optional"
+                      className="w-32 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-2 h-[44px] sm:h-[34px] text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    />
+                  </div>
                 )}
                 {onRequestPart && (
                   part.alreadyRequested ? (

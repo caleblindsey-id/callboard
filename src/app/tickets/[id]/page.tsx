@@ -208,6 +208,7 @@ export default async function TicketDetailPage({
         initialSynergyOrderNumber={ticket.synergy_order_number ?? null}
         isTech={isTechnician(user?.role ?? null)}
         canReset={RESET_ROLES.includes(user?.role ?? ('' as never))}
+        status={ticket.status}
       />
 
       {/* Action section */}
