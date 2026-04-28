@@ -57,6 +57,8 @@ export function cancelPart(
   return postUpdate({ source, ticket_id, part_index, action: 'cancel', reason })
 }
 
+// Reserved for a future "Cancelled" tab UI surface — the server route handles
+// the action end-to-end already; only the trigger UI hasn't shipped.
 export function reopenPart(
   source: PartsQueueSource,
   ticket_id: string,

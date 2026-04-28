@@ -88,6 +88,8 @@ export interface PartRequest {
   // through line with the reason, but drops off the queue.
   cancelled?: boolean
   cancel_reason?: string
+  cancelled_at?: string
+  cancelled_by?: string
 }
 
 // ============================================================

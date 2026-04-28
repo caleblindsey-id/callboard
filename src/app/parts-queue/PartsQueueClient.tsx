@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, XCircle } from 'lucide-react'
@@ -100,7 +100,15 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const receivedCutoffMs = Date.now() - RECEIVED_WINDOW_MS
+  // Refresh the cutoff every 5 min so a long-lived session doesn't silently
+  // drop parts that aged out, and so the value stays stable between unrelated
+  // re-renders (memos below depend on it).
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 5 * 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  const receivedCutoffMs = useMemo(() => now - RECEIVED_WINDOW_MS, [now])
 
   const tabCounts = useMemo(() => {
     let toOrder = 0
@@ -169,20 +177,20 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
     }
   }
 
-  function flash(key: string) {
+  const flash = useCallback((key: string) => {
     setFlashedRow(key)
     window.setTimeout(() => {
       setFlashedRow(cur => (cur === key ? null : cur))
     }, 1200)
-  }
+  }, [])
 
-  function applyUpdate(row: PartsQueueRow, part: PartRequest) {
+  const applyUpdate = useCallback((row: PartsQueueRow, part: PartRequest) => {
     const next = partToRow(row, part)
     setRows(rs => rs.map(r => (rowKey(r) === rowKey(row) ? next : r)))
     flash(rowKey(row))
-  }
+  }, [flash])
 
-  async function handleFieldBlur(row: PartsQueueRow, field: keyof PartRequest, value: string) {
+  const handleFieldBlur = useCallback(async (row: PartsQueueRow, field: keyof PartRequest, value: string) => {
     const trimmed = value.trim()
     const current = (row[field as keyof PartsQueueRow] ?? '') as string
     if (trimmed === (current ?? '')) return
@@ -199,9 +207,9 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
-  }
+  }, [applyUpdate, router])
 
-  async function handleMarkOrdered(row: PartsQueueRow) {
+  const handleMarkOrdered = useCallback(async (row: PartsQueueRow) => {
     const key = rowKey(row)
     setPendingRow(key)
     setError(null)
@@ -214,9 +222,9 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
-  }
+  }, [applyUpdate])
 
-  async function handleMarkReceived(row: PartsQueueRow) {
+  const handleMarkReceived = useCallback(async (row: PartsQueueRow) => {
     const key = rowKey(row)
     setPendingRow(key)
     setError(null)
@@ -228,9 +236,9 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
-  }
+  }, [applyUpdate])
 
-  async function handleConfirmCancel(reason: string) {
+  const handleConfirmCancel = useCallback(async (reason: string) => {
     if (!cancelTarget) return
     const row = cancelTarget
     const key = rowKey(row)
@@ -246,12 +254,13 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
-  }
+  }, [cancelTarget, applyUpdate])
 
   const canEditFields = tab !== 'received'
   const canMarkOrdered = tab === 'to_order'
   const canMarkReceived = tab === 'ordered'
-  const canCancel = tab !== 'received'
+  // canCancel is now derived per-row inline (status-aware) instead of tab-driven —
+  // see the row-render block.
 
   return (
     <div className="space-y-4">
@@ -320,13 +329,16 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
               {tab === 'received' && (
                 <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               )}
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th scope="col" className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={13} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td
+                  colSpan={11 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
+                  className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
+                >
                   {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
                   {tab === 'ordered' && 'Nothing on order right now.'}
                   {tab === 'received' && `No parts received in the last ${RECEIVED_WINDOW_DAYS} days.`}
@@ -433,14 +445,17 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
                         {canMarkReceived && (
                           <button
                             type="button"
-                            disabled={isPending}
+                            disabled={isPending || !row.product_number?.trim()}
                             onClick={() => handleMarkReceived(row)}
-                            className="px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400 border border-green-300 dark:border-green-600 rounded hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-40 transition-colors"
+                            title={!row.product_number?.trim() ? 'Enter Synergy # first' : 'Mark received'}
+                            className="px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400 border border-green-300 dark:border-green-600 rounded hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                           >
                             Mark Received
                           </button>
                         )}
-                        {canCancel && (
+                        {/* Cancel is gated on row status (not just tab) so a
+                            received row never shows an enabled cancel button. */}
+                        {!row.cancelled && row.status !== 'received' && (
                           <button
                             type="button"
                             disabled={isPending}
@@ -519,10 +534,11 @@ function SortHeader({
   const active = sortKey === colKey
   const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
   return (
-    <th className="px-3 py-2 text-left font-semibold">
+    <th scope="col" className="px-3 py-2 text-left font-semibold">
       <button
         type="button"
         onClick={() => onClick(colKey)}
+        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
         className={`inline-flex items-center gap-1 hover:text-gray-800 dark:hover:text-gray-200 transition-colors ${
           active ? 'text-gray-800 dark:text-gray-200' : ''
         }`}
