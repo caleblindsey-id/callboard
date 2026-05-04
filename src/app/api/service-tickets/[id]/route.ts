@@ -425,6 +425,21 @@ export async function PATCH(
       filtered.parts_received = allReceived
     }
 
+    // Validate equipment_id belongs to this ticket's customer (prevents cross-customer linking)
+    if (filtered.equipment_id != null) {
+      const { data: equip } = await supabase
+        .from('equipment')
+        .select('customer_id')
+        .eq('id', filtered.equipment_id as string)
+        .maybeSingle()
+      if (!equip || equip.customer_id !== current.customer_id) {
+        return NextResponse.json(
+          { error: 'Equipment does not belong to this ticket\'s customer' },
+          { status: 422 }
+        )
+      }
+    }
+
     const updated = await updateServiceTicket(id, filtered)
     return NextResponse.json(updated)
   } catch (err) {

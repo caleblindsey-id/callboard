@@ -146,17 +146,17 @@ export function CreateServiceTicketForm() {
   useEffect(() => {
     setEquipment([])
     setEquipmentLoaded(false)
-    if (!customerId) {
-      setEquipmentId('')
-      setUnknownEquipment(false)
-      setEqMake('')
-      setEqModel('')
-      setEqSerial('')
-      setEqDescription('')
-      setEqLocation('')
-      setEqConflictId(null)
-      return
-    }
+    // Always clear new-equipment state when customer changes — even between two non-null
+    // customers — so conflict links from the previous customer don't persist.
+    setEquipmentId('')
+    setUnknownEquipment(false)
+    setEqMake('')
+    setEqModel('')
+    setEqSerial('')
+    setEqDescription('')
+    setEqLocation('')
+    setEqConflictId(null)
+    if (!customerId) return
     const supabase = createClient()
     let query = supabase
       .from('equipment')
@@ -532,11 +532,11 @@ export function CreateServiceTicketForm() {
             {(unknownEquipment || noEquipment) && (
               <div className="space-y-3">
                 <p className="text-sm text-amber-700 dark:text-amber-300">
-                  This equipment isn&apos;t on file yet — register it below. A profile will be created and linked to this ticket so service history is tracked.
+                  This equipment isn&apos;t on file yet — register it below. A profile will be created and linked to this ticket so service history is tracked. At least a make or model is required.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className={labelClass}>Make <span className="text-red-500">*</span></label>
+                    <label className={labelClass}>Make</label>
                     <input
                       type="text"
                       value={eqMake}
@@ -546,7 +546,7 @@ export function CreateServiceTicketForm() {
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Model <span className="text-red-500">*</span></label>
+                    <label className={labelClass}>Model</label>
                     <input
                       type="text"
                       value={eqModel}

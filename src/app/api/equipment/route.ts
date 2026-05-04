@@ -3,6 +3,10 @@ import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeSerial, serialsMatch } from '@/lib/equipment'
 
+const MAX_SHORT = 200
+const MAX_LONG = 1000
+const MAX_EMAIL = 320
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -24,10 +28,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
     }
 
+    // Helper: trim string fields and enforce max length
+    const str = (key: string, maxLen: number = MAX_SHORT) => {
+      const v = body[key]
+      if (typeof v !== 'string' || !v.trim()) return null
+      const trimmed = v.trim()
+      if (trimmed.length > maxLen) {
+        return trimmed.slice(0, maxLen)
+      }
+      return trimmed
+    }
+    const intOrNull = (key: string) => {
+      const v = body[key]
+      if (v === null || v === undefined) return null
+      const n = typeof v === 'number' ? v : parseInt(String(v), 10)
+      return Number.isFinite(n) ? n : null
+    }
+
     const serialRaw = typeof body.serial_number === 'string' ? body.serial_number : null
     const normalizedSerial = normalizeSerial(serialRaw)
+    const shipToIdNum = intOrNull('ship_to_location_id')
 
     const supabase = createAdminClient()
+
+    // Validate ship_to_location belongs to the same customer (prevents cross-customer location tagging)
+    if (shipToIdNum !== null) {
+      const { data: shipTo } = await supabase
+        .from('ship_to_locations')
+        .select('customer_id')
+        .eq('id', shipToIdNum)
+        .maybeSingle()
+      if (!shipTo || shipTo.customer_id !== customerIdNum) {
+        return NextResponse.json(
+          { error: 'Ship-to location does not belong to this customer.' },
+          { status: 422 }
+        )
+      }
+    }
 
     // Serial uniqueness check (same logic as AddEquipmentModal)
     if (normalizedSerial) {
@@ -52,30 +89,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const str = (key: string) => {
-      const v = body[key]
-      return typeof v === 'string' && v.trim() ? v.trim() : null
-    }
-    const intOrNull = (key: string) => {
-      const v = body[key]
-      if (v === null || v === undefined) return null
-      const n = typeof v === 'number' ? v : parseInt(String(v), 10)
-      return Number.isFinite(n) ? n : null
-    }
-
     const { data: equipment, error: insertError } = await supabase
       .from('equipment')
       .insert({
         customer_id: customerIdNum,
-        ship_to_location_id: intOrNull('ship_to_location_id'),
+        ship_to_location_id: shipToIdNum,
         make: str('make'),
         model: str('model'),
         serial_number: normalizedSerial,
-        description: str('description'),
+        description: str('description', MAX_LONG),
         location_on_site: str('location_on_site'),
         contact_name: str('contact_name'),
-        contact_email: str('contact_email'),
-        contact_phone: str('contact_phone'),
+        contact_email: str('contact_email', MAX_EMAIL),
+        contact_phone: str('contact_phone', 50),
         active: true,
       })
       .select()
@@ -87,6 +113,9 @@ export async function POST(request: NextRequest) {
           { error: 'This customer already has active equipment with that serial number.' },
           { status: 409 }
         )
+      }
+      if (insertError.code === '23503') {
+        return NextResponse.json({ error: 'Customer not found.' }, { status: 422 })
       }
       console.error('equipment POST insert error:', insertError)
       return NextResponse.json({ error: 'Failed to create equipment.' }, { status: 500 })
