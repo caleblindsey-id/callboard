@@ -202,8 +202,8 @@ export async function PATCH(
       // Manual approve/decline requires a note for the record. The customer-
       // facing /api/approve/[token] route is the only path that's allowed to
       // transition an estimated ticket without a note. Auto-approval (under
-      // $100) hits this validator with nextStatus='estimated' and rewrites
-      // the status afterward, so the guard correctly skips it.
+      // the customer's threshold) hits this validator with nextStatus='estimated'
+      // and rewrites the status afterward, so the guard correctly skips it.
       if (
         currentStatus === 'estimated' &&
         (nextStatus === 'approved' || nextStatus === 'declined')
@@ -361,17 +361,19 @@ export async function PATCH(
 
       filtered.estimate_amount = total
 
-      // Auto-approve only fires on the actual open → estimated transition;
+      // Auto-approve only fires on the initial open → estimated transition;
       // post-submission revisions don't re-trigger auto-approval (a manager
       // could otherwise drop a revised total below the threshold to bypass
       // customer approval). Threshold is per-customer; $0 means never auto-approve.
-      if (filtered.status === 'estimated') {
+      // Fail-safe: if the customer lookup fails, threshold falls back to 0 (never
+      // auto-approve) rather than 100, so a lookup failure can't silently approve.
+      if (current.status === 'open' && filtered.status === 'estimated') {
         const { data: cust } = await supabase
           .from('customers')
           .select('auto_approve_threshold')
           .eq('id', current.customer_id)
           .single()
-        const threshold = Number(cust?.auto_approve_threshold ?? 100)
+        const threshold = Number(cust?.auto_approve_threshold ?? 0)
         if (threshold > 0 && total < threshold) {
           filtered.status = 'approved'
           filtered.estimate_approved = true
