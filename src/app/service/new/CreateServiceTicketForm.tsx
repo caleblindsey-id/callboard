@@ -50,6 +50,7 @@ export function CreateServiceTicketForm() {
   const [ticketType, setTicketType] = useState<ServiceTicketType>('inside')
   const [billingType, setBillingType] = useState<ServiceBillingType>('non_warranty')
   const [priority, setPriority] = useState<ServicePriority>('standard')
+  const [laborRateType, setLaborRateType] = useState('standard')
   const [problemDescription, setProblemDescription] = useState('')
 
   // --- Diagnostic fee (optional — captured when already billed in Synergy) ---
@@ -267,6 +268,14 @@ export function CreateServiceTicketForm() {
       setError('Problem description is required.')
       return
     }
+    if (!contactName.trim()) {
+      setError('Contact name is required.')
+      return
+    }
+    if (!contactEmail.trim() && !contactPhone.trim()) {
+      setError('Provide at least a contact email or phone number.')
+      return
+    }
 
     // When registering new equipment, require at least a make or model
     if ((unknownEquipment || noEquipment) && !eqMake.trim() && !eqModel.trim()) {
@@ -320,6 +329,7 @@ export function CreateServiceTicketForm() {
       ticket_type: ticketType,
       billing_type: billingType,
       priority,
+      labor_rate_type: laborRateType,
       problem_description: problemDescription.trim(),
       contact_name: contactName || undefined,
       contact_email: contactEmail || undefined,
@@ -643,8 +653,8 @@ export function CreateServiceTicketForm() {
               </div>
             </div>
 
-            {/* Billing Type */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Billing Type / Priority / Labor Rate */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className={labelClass}>Billing Type</label>
                 <select
@@ -658,7 +668,6 @@ export function CreateServiceTicketForm() {
                 </select>
               </div>
 
-              {/* Priority */}
               <div>
                 <label className={labelClass}>Priority</label>
                 <select
@@ -669,6 +678,19 @@ export function CreateServiceTicketForm() {
                   <option value="standard">Standard</option>
                   <option value="emergency">Emergency</option>
                   <option value="low">Low</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>Labor Rate</label>
+                <select
+                  value={laborRateType}
+                  onChange={(e) => setLaborRateType(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="standard">Standard</option>
+                  <option value="industrial">Industrial</option>
+                  <option value="vacuum">Vacuum</option>
                 </select>
               </div>
             </div>
@@ -730,7 +752,9 @@ export function CreateServiceTicketForm() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className={labelClass}>Name</label>
+                <label className={labelClass}>
+                  Name <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   value={contactName}
@@ -760,6 +784,9 @@ export function CreateServiceTicketForm() {
                 />
               </div>
             </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              At least an email or phone number is required.
+            </p>
           </div>
 
           {/* --- Service Address (outside only) --- */}

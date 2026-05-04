@@ -6,9 +6,17 @@ import { getSetting, setSetting } from '@/lib/db/settings'
 // Any future setting must be added here explicitly.
 const ALLOWED_KEYS = new Set([
   'labor_rate_per_hour',
+  'industrial_labor_rate_per_hour',
+  'vacuum_labor_rate_per_hour',
   'company_name',
   'service_email',
   'service_phone',
+])
+
+const NUMERIC_RATE_KEYS = new Set([
+  'labor_rate_per_hour',
+  'industrial_labor_rate_per_hour',
+  'vacuum_labor_rate_per_hour',
 ])
 
 const VALUE_MAX_LEN = 500
@@ -56,11 +64,11 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'value must be a string under 500 chars' }, { status: 400 })
     }
 
-    // labor_rate_per_hour: validate as a non-negative number
-    if (key === 'labor_rate_per_hour') {
+    // Labor rate keys must be non-negative numbers
+    if (NUMERIC_RATE_KEYS.has(key)) {
       const n = parseFloat(value)
       if (!Number.isFinite(n) || n < 0) {
-        return NextResponse.json({ error: 'labor_rate_per_hour must be a non-negative number' }, { status: 400 })
+        return NextResponse.json({ error: `${key} must be a non-negative number` }, { status: 400 })
       }
     }
 

@@ -15,7 +15,7 @@ import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
-import { getSetting } from '@/lib/db/settings'
+import { getLaborRate } from '@/lib/db/settings'
 import { describeSchedule, formatMonthYear } from '@/lib/utils/schedule'
 
 export default async function TicketDetailPage({
@@ -28,10 +28,9 @@ export default async function TicketDetailPage({
   // Techs are filtered out via the isTechnician check below.
   //
   // Service history depends on the ticket (needs equipment_id), so it can't
-  // sit in the top-level Promise.all alongside user / laborRate. We kick off
+  // sit in the top-level Promise.all alongside user. We kick off
   // a chained fetch that starts as soon as the ticket lands — total wait is
-  // max(ticket+history, user, laborRate) instead of (ticket+history) plus
-  // user/laborRate sequentially.
+  // max(ticket+history, user) instead of sequential.
   const ticketAndHistoryPromise = getTicket(id, { includeDeleted: true }).then(
     async (t) => {
       if (!t || !t.equipment_id) return { ticket: t, serviceHistory: [] as Awaited<ReturnType<typeof getEquipmentServiceHistory>> }
@@ -40,10 +39,9 @@ export default async function TicketDetailPage({
     }
   )
 
-  const [{ ticket, serviceHistory }, user, laborRateStr] = await Promise.all([
+  const [{ ticket, serviceHistory }, user] = await Promise.all([
     ticketAndHistoryPromise,
     getCurrentUser(),
-    getSetting('labor_rate_per_hour'),
   ])
 
   if (!ticket) notFound()
@@ -61,7 +59,7 @@ export default async function TicketDetailPage({
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user?.role ?? null) && RESET_ROLES.includes(user?.role ?? ('' as never))
 
-  const laborRate = laborRateStr ? parseFloat(laborRateStr) : 75
+  const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
 
   const showBilling = !isTechnician(user?.role ?? null)
 

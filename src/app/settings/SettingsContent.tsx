@@ -10,6 +10,8 @@ interface SettingsContentProps {
   users: UserRow[]
   syncLog: SyncLogRow[]
   laborRate: string
+  industrialLaborRate: string
+  vacuumLaborRate: string
   companyName: string
   serviceEmail: string
   servicePhone: string
@@ -19,6 +21,8 @@ export default function SettingsContent({
   users,
   syncLog,
   laborRate,
+  industrialLaborRate,
+  vacuumLaborRate,
   companyName,
   serviceEmail,
   servicePhone,
@@ -29,7 +33,11 @@ export default function SettingsContent({
   return (
     <>
       {/* System Settings */}
-      <LaborRateSetting initialRate={laborRate} />
+      <LaborRatesSetting
+        initialRate={laborRate}
+        initialIndustrialRate={industrialLaborRate}
+        initialVacuumRate={vacuumLaborRate}
+      />
 
       {/* Customer PDF Branding */}
       <PdfBrandingSetting
@@ -294,7 +302,15 @@ function UserTableRow({ user }: { user: UserRow }) {
   )
 }
 
-function LaborRateSetting({ initialRate }: { initialRate: string }) {
+function LaborRateInput({
+  label,
+  settingKey,
+  initialRate,
+}: {
+  label: string
+  settingKey: string
+  initialRate: string
+}) {
   const [rate, setRate] = useState(initialRate)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -306,7 +322,7 @@ function LaborRateSetting({ initialRate }: { initialRate: string }) {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'labor_rate_per_hour', value: rate }),
+        body: JSON.stringify({ key: settingKey, value: rate }),
       })
       if (res.ok) setSaved(true)
     } finally {
@@ -315,40 +331,72 @@ function LaborRateSetting({ initialRate }: { initialRate: string }) {
   }
 
   return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        {label}
+      </label>
+      <div className="flex items-center gap-3">
+        <div className="relative w-36">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 dark:text-gray-400">$</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={rate}
+            onChange={(e) => { setRate(e.target.value); setSaved(false) }}
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 pl-6 pr-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+        <span className="text-sm text-gray-500 dark:text-gray-400">/hr</span>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-3 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+        {saved && (
+          <span className="text-sm text-green-600 dark:text-green-400 font-medium">Saved</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LaborRatesSetting({
+  initialRate,
+  initialIndustrialRate,
+  initialVacuumRate,
+}: {
+  initialRate: string
+  initialIndustrialRate: string
+  initialVacuumRate: string
+}) {
+  return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
       <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-          System Settings
+          Labor Rates
         </h2>
       </div>
-      <div className="px-5 py-4">
-        <div className="flex items-end gap-3 max-w-sm">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Labor Rate ($/hr)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={rate}
-              onChange={(e) => { setRate(e.target.value); setSaved(false) }}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-          {saved && (
-            <span className="text-sm text-green-600 font-medium">Saved</span>
-          )}
-        </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Used to calculate suggested billing amounts on ticket completion.
+      <div className="px-5 py-4 space-y-4">
+        <LaborRateInput
+          label="Standard"
+          settingKey="labor_rate_per_hour"
+          initialRate={initialRate}
+        />
+        <LaborRateInput
+          label="Industrial"
+          settingKey="industrial_labor_rate_per_hour"
+          initialRate={initialIndustrialRate}
+        />
+        <LaborRateInput
+          label="Vacuum"
+          settingKey="vacuum_labor_rate_per_hour"
+          initialRate={initialVacuumRate}
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Used to calculate billing amounts on ticket completion. Select the rate type per ticket at creation time.
         </p>
       </div>
     </div>

@@ -9,7 +9,7 @@ import {
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
-import { getSetting } from '@/lib/db/settings'
+import { getLaborRate } from '@/lib/db/settings'
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -46,6 +46,7 @@ const STAFF_ALLOWED_FIELDS = [
   'picked_up_at',
   'generate_approval_token',
   'manual_decision_note',
+  'labor_rate_type',
 ] as const
 
 // Fields techs can update
@@ -112,6 +113,11 @@ export async function PATCH(
       Object.entries(raw).filter(([key]) => allowedFields.includes(key))
     )
 
+    if (filtered.labor_rate_type !== undefined &&
+        !['standard', 'industrial', 'vacuum'].includes(filtered.labor_rate_type as string)) {
+      return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
+    }
+
     if (Object.keys(filtered).length === 0) {
       return NextResponse.json(
         { error: 'No recognized fields in request body' },
@@ -160,7 +166,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, photos')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos')
       .eq('id', id)
       .single()
 
@@ -315,11 +321,12 @@ export async function PATCH(
     const estimateInputsChanged =
       filtered.estimate_parts !== undefined ||
       filtered.estimate_labor_hours !== undefined ||
-      filtered.status === 'estimated'
+      filtered.status === 'estimated' ||
+      filtered.labor_rate_type !== undefined
 
     if (estimateInputsChanged) {
-      const rateStr = await getSetting('labor_rate_per_hour')
-      const laborRate = rateStr ? parseFloat(rateStr) : 75
+      const rateType = (filtered.labor_rate_type as string | undefined) ?? current.labor_rate_type ?? 'standard'
+      const laborRate = await getLaborRate(rateType)
 
       // Use the new value if supplied, otherwise fall back to the existing
       // ticket's stored value (one extra read in the rare revision case).

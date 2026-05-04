@@ -1,6 +1,6 @@
 import { getServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getSetting } from '@/lib/db/settings'
+import { getLaborRate } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -24,10 +24,9 @@ export default async function ServiceTicketPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [ticket, user, laborRateStr] = await Promise.all([
+  const [ticket, user] = await Promise.all([
     getServiceTicket(id),
     getCurrentUser(),
-    getSetting('labor_rate_per_hour'),
   ])
 
   if (!user) redirect('/login')
@@ -38,7 +37,7 @@ export default async function ServiceTicketPage({
     redirect('/')
   }
 
-  const laborRate = laborRateStr ? parseFloat(laborRateStr) : 75
+  const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
 
   const equipmentLabel = ticket.equipment
     ? [ticket.equipment.make, ticket.equipment.model].filter(Boolean).join(' ')

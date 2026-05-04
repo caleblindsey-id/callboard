@@ -50,6 +50,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   const [year, setYear] = useState(now.getFullYear())
   const [technicianId, setTechnicianId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
+  const [laborRateType, setLaborRateType] = useState('standard')
 
   // Load users when modal opens
   useEffect(() => {
@@ -163,6 +164,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
         year,
         assigned_technician_id: technicianId || undefined,
         scheduled_date: scheduledDate || undefined,
+        labor_rate_type: laborRateType,
       }),
     })
 
@@ -338,6 +340,21 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
               onChange={(e) => setScheduledDate(e.target.value)}
               className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Labor Rate
+            </label>
+            <select
+              value={laborRateType}
+              onChange={(e) => setLaborRateType(e.target.value)}
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              <option value="standard">Standard</option>
+              <option value="industrial">Industrial</option>
+              <option value="vacuum">Vacuum</option>
+            </select>
           </div>
 
           <div className="flex justify-end gap-3 pt-2">

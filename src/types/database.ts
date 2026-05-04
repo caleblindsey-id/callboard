@@ -275,6 +275,7 @@ export type PmTicketRow = {
   review_reason: string | null
   reviewed_by_id: string | null
   reviewed_at: string | null
+  labor_rate_type: string
   created_at: string
   updated_at: string
 }
@@ -453,7 +454,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'parts_requested' | 'synergy_order_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'parts_requested' | 'synergy_order_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type'
 >
 
 export type SettingsRow = {

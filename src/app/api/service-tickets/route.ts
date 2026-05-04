@@ -33,6 +33,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid priority' }, { status: 400 })
     }
 
+    if (body.labor_rate_type && !['standard', 'industrial', 'vacuum'].includes(body.labor_rate_type)) {
+      return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
+    }
+
     const customerIdInt = parseInt(customer_id)
     const shipToLocationId = body.ship_to_location_id
       ? parseInt(String(body.ship_to_location_id), 10)
@@ -103,6 +107,7 @@ export async function POST(request: NextRequest) {
       diagnostic_invoice_number: body.diagnostic_invoice_number
         ? String(body.diagnostic_invoice_number).trim() || null
         : null,
+      labor_rate_type: body.labor_rate_type || 'standard',
     }
 
     const { data, error } = await supabase

@@ -17,9 +17,14 @@ export async function POST(request: NextRequest) {
       year: number
       assigned_technician_id?: string
       scheduled_date?: string
+      labor_rate_type?: string
     }
 
-    const { equipment_id, customer_id, month, year, assigned_technician_id, scheduled_date } = body
+    const { equipment_id, customer_id, month, year, assigned_technician_id, scheduled_date, labor_rate_type } = body
+
+    if (labor_rate_type && !['standard', 'industrial', 'vacuum'].includes(labor_rate_type)) {
+      return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
+    }
 
     if (!customer_id || !Number.isInteger(customer_id) || customer_id < 1 || !month || !year) {
       return NextResponse.json(
@@ -116,6 +121,7 @@ export async function POST(request: NextRequest) {
         po_number: blanketPo,
         scheduled_date: scheduled_date ?? null,
         created_by_id: user?.id ?? null,
+        labor_rate_type: labor_rate_type || 'standard',
       })
       .select()
       .single()

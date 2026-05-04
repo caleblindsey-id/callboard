@@ -7,7 +7,7 @@ import React from 'react'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { BillingDocument } from '@/lib/pdf/billing-template'
 import { createClient } from '@/lib/supabase/server'
-import { getSetting } from '@/lib/db/settings'
+import { getSetting, getLaborRate } from '@/lib/db/settings'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
 import { MONTHS } from '@/lib/pm-schedule-options'
@@ -120,6 +120,7 @@ interface RawTicket {
   customer_signature: string | null
   customer_signature_name: string | null
   photos: Array<{ storage_path: string; uploaded_at: string }> | null
+  labor_rate_type: string | null
 }
 
 // ============================================================
@@ -205,6 +206,7 @@ export async function POST(request: NextRequest) {
         billing_contact_name,
         billing_contact_email,
         billing_contact_phone,
+        labor_rate_type,
         customers(name, account_number, ar_terms, billing_address, billing_city, billing_state, billing_zip, po_required),
         equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
         technician:users!assigned_technician_id(name),
@@ -303,15 +305,22 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // --- Fetch labor rate + company name from settings ---
-    const [laborRateStr, companyName] = await Promise.all([
-      getSetting('labor_rate_per_hour'),
+    // --- Fetch all labor rates + company name from settings ---
+    const [standardRate, industrialRate, vacuumRate, companyName] = await Promise.all([
+      getLaborRate('standard'),
+      getLaborRate('industrial'),
+      getLaborRate('vacuum'),
       getSetting('company_name'),
     ])
-    const laborRate = laborRateStr ? parseFloat(laborRateStr) : 75
+    const laborRateByType: Record<string, number> = {
+      standard: standardRate,
+      industrial: industrialRate,
+      vacuum: vacuumRate,
+    }
 
     // --- Map raw tickets to BillingTicket[] ---
     const tickets: BillingTicket[] = (rawTickets as RawTicket[]).map((raw) => {
+      const laborRate = laborRateByType[raw.labor_rate_type ?? 'standard'] ?? standardRate
       const partsUsed: PartLine[] = (raw.parts_used ?? []).map((part) => ({
         productNumber:
           (typeof part.synergy_product_id === 'number' &&

@@ -6,6 +6,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { CustomerWorkOrderDocument } from '@/lib/pdf/work-order-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { getLaborRate } from '@/lib/db/settings'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -45,6 +46,7 @@ export async function POST(
         customer_signature_name,
         photos,
         assigned_technician_id,
+        labor_rate_type,
         customers(name, account_number, billing_address, billing_city, billing_state, billing_zip, show_pricing_on_pm_pdf),
         equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
         schedule:pm_schedules!pm_schedule_id(flat_rate, billing_type),
@@ -205,12 +207,7 @@ export async function POST(
       ?? customer?.show_pricing_on_pm_pdf
       ?? false
     if (showPricing && raw.billing_amount != null) {
-      const { data: laborSetting } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'labor_rate_per_hour')
-        .single()
-      const laborRatePerHour = Number(laborSetting?.value) || 75
+      const laborRatePerHour = await getLaborRate((raw as { labor_rate_type?: string | null }).labor_rate_type ?? 'standard')
 
       const billingType =
         (activeSchedule?.billing_type as 'flat_rate' | 'time_and_materials' | 'contract' | null) ?? 'flat_rate'
