@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const ALLOWED_FIELDS = ['active', 'show_pricing_on_pm_pdf'] as const
-type AllowedField = (typeof ALLOWED_FIELDS)[number]
+const BOOLEAN_FIELDS = ['active', 'show_pricing_on_pm_pdf'] as const
+const NUMBER_FIELDS = ['auto_approve_threshold'] as const
+type BooleanField = (typeof BOOLEAN_FIELDS)[number]
+type NumberField = (typeof NUMBER_FIELDS)[number]
 
 export async function PATCH(
   request: NextRequest,
@@ -25,8 +27,9 @@ export async function PATCH(
     }
 
     const body = (await request.json()) as Record<string, unknown>
-    const update: Partial<Record<AllowedField, boolean>> = {}
-    for (const field of ALLOWED_FIELDS) {
+    const update: Partial<Record<BooleanField, boolean> & Record<NumberField, number>> = {}
+
+    for (const field of BOOLEAN_FIELDS) {
       if (field in body) {
         if (typeof body[field] !== 'boolean') {
           return NextResponse.json(
@@ -37,6 +40,20 @@ export async function PATCH(
         update[field] = body[field] as boolean
       }
     }
+
+    for (const field of NUMBER_FIELDS) {
+      if (field in body) {
+        const val = body[field]
+        if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) {
+          return NextResponse.json(
+            { error: `Field '${field}' must be a non-negative number.` },
+            { status: 400 }
+          )
+        }
+        update[field] = val
+      }
+    }
+
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 })
     }

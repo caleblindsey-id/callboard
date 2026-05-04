@@ -146,6 +146,7 @@ export type CustomerRow = {
   po_required: boolean
   active: boolean
   show_pricing_on_pm_pdf: boolean
+  auto_approve_threshold: number
   synced_at: string | null
 }
 

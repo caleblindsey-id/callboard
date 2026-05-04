@@ -160,7 +160,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, parts_requested, estimate_amount, billing_type, photos')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, photos')
       .eq('id', id)
       .single()
 
@@ -363,13 +363,21 @@ export async function PATCH(
 
       // Auto-approve only fires on the actual open → estimated transition;
       // post-submission revisions don't re-trigger auto-approval (a manager
-      // could otherwise drop a revised total below $100 to bypass customer
-      // approval).
-      if (filtered.status === 'estimated' && total < 100) {
-        filtered.status = 'approved'
-        filtered.estimate_approved = true
-        filtered.estimate_approved_at = new Date().toISOString()
-        filtered.auto_approved = true
+      // could otherwise drop a revised total below the threshold to bypass
+      // customer approval). Threshold is per-customer; $0 means never auto-approve.
+      if (filtered.status === 'estimated') {
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('auto_approve_threshold')
+          .eq('id', current.customer_id)
+          .single()
+        const threshold = Number(cust?.auto_approve_threshold ?? 100)
+        if (threshold > 0 && total < threshold) {
+          filtered.status = 'approved'
+          filtered.estimate_approved = true
+          filtered.estimate_approved_at = new Date().toISOString()
+          filtered.auto_approved = true
+        }
       }
     }
 

@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import ActiveToggle from './ActiveToggle'
 import ShowPricingToggle from './ShowPricingToggle'
+import AutoApproveThresholdInput from './AutoApproveThresholdInput'
 
 export default async function CustomerDetailPage({
   params,
@@ -88,6 +89,13 @@ export default async function CustomerDetailPage({
           <ShowPricingToggle
             customerId={customer.id}
             showPricing={customer.show_pricing_on_pm_pdf}
+          />
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <AutoApproveThresholdInput
+            customerId={customer.id}
+            threshold={customer.auto_approve_threshold}
           />
         </div>
       </div>
