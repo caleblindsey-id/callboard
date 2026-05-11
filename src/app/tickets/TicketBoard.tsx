@@ -8,6 +8,7 @@ import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import { daysOverdue } from '@/lib/overdue'
+import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
 import CreateTicketModal from './CreateTicketModal'
 import GeneratePmModal from './GeneratePmModal'
 import SkipDialog from './SkipDialog'
@@ -53,6 +54,26 @@ interface TicketListProps {
   deletedMode?: boolean
   onRestore?: (id: string) => void
   restoringId?: string | null
+}
+
+function LocationBlock({ ticket }: { ticket: TicketWithJoins }) {
+  const { name, street } = formatShipToLines(resolveTicketShipTo(ticket))
+  const fallback = ticket.customers?.billing_city ?? null
+  if (!name && !street) {
+    return <span className="text-sm text-gray-500 dark:text-gray-400">{fallback ?? '—'}</span>
+  }
+  return (
+    <div className="min-w-0">
+      {name && (
+        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{name}</div>
+      )}
+      {street && (
+        <div className={`text-xs text-gray-500 dark:text-gray-400 truncate ${name ? 'mt-0.5' : ''}`}>
+          {street}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function TicketList({
@@ -120,7 +141,10 @@ function TicketList({
                   .filter(Boolean)
                   .join(' ') || '—'}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <div className="mt-1">
+                <LocationBlock ticket={ticket} />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {showOverdueBadges
                   ? `Scheduled: ${MONTHS[ticket.month - 1]} ${ticket.year}`
                   : `Scheduled: ${
@@ -129,9 +153,6 @@ function TicketList({
                         : '—'
                     }`}{' '}
                 · Tech: {ticket.users?.name ?? '—'}
-                {(ticket.equipment?.ship_to_locations?.city || ticket.customers?.billing_city) && (
-                  <> · City: {ticket.equipment?.ship_to_locations?.city ?? ticket.customers?.billing_city}</>
-                )}
               </p>
               {deletedMode && isManager && onRestore && (
                 <button
@@ -169,7 +190,7 @@ function TicketList({
               <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">City</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Location</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
                 {showOverdueBadges ? 'Scheduled' : 'Scheduled Date'}
               </th>
@@ -227,8 +248,8 @@ function TicketList({
                       .filter(Boolean)
                       .join(' ') || '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                    {ticket.equipment?.ship_to_locations?.city ?? ticket.customers?.billing_city ?? '—'}
+                  <td className="px-4 py-3 max-w-[260px]">
+                    <LocationBlock ticket={ticket} />
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                     {showOverdueBadges
