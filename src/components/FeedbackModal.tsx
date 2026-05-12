@@ -25,9 +25,9 @@ export default function FeedbackModal({ onClose, initialAttachment }: FeedbackMo
   const pathname = usePathname()
   const [category, setCategory] = useState<Category>('bug')
   const [body, setBody] = useState('')
-  const [attachment, setAttachment] = useState<{ blob: Blob; previewUrl: string } | null>(() =>
+  const [attachment, setAttachment] = useState<{ blob: Blob; previewUrl: string; kind: 'screenshot' | 'upload' } | null>(() =>
     initialAttachment
-      ? { blob: initialAttachment, previewUrl: URL.createObjectURL(initialAttachment) }
+      ? { blob: initialAttachment, previewUrl: URL.createObjectURL(initialAttachment), kind: 'screenshot' }
       : null
   )
   const [attachError, setAttachError] = useState<string | null>(null)
@@ -59,7 +59,7 @@ export default function FeedbackModal({ onClose, initialAttachment }: FeedbackMo
     }
     try {
       const blob = await compressImage(file)
-      setAttachment({ blob, previewUrl: URL.createObjectURL(blob) })
+      setAttachment({ blob, previewUrl: URL.createObjectURL(blob), kind: 'upload' })
     } catch (e) {
       setAttachError(e instanceof Error ? e.message : 'Could not read photo.')
     }
@@ -222,36 +222,43 @@ export default function FeedbackModal({ onClose, initialAttachment }: FeedbackMo
               <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 Screenshot or photo <span className="font-normal normal-case text-gray-400">(optional)</span>
               </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
+                /* @ts-ignore — capture attribute is mobile-only and not in the TS DOM lib */
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+              />
               {!attachment ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-sm font-medium text-gray-600 transition hover:border-gray-400 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    Attach
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
-                    /* @ts-ignore — capture attribute is mobile-only and not in the TS DOM lib */
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-                  />
-                </>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-sm font-medium text-gray-600 transition hover:border-gray-400 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  Attach
+                </button>
               ) : (
                 <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-white/10 dark:bg-white/5">
                   <img
                     src={attachment.previewUrl}
-                    alt="Attached"
+                    alt={attachment.kind === 'screenshot' ? 'Screenshot of this page' : 'Attached photo'}
                     className="h-14 w-14 rounded object-cover"
                   />
-                  <div className="flex-1 text-xs text-gray-600 dark:text-gray-300">
-                    Attached
+                  <div className="flex-1">
+                    <div className="text-xs font-medium text-gray-800 dark:text-gray-200">
+                      {attachment.kind === 'screenshot' ? 'Screenshot of this page' : 'Attached photo'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="mt-0.5 text-[11px] text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Replace with a photo
+                    </button>
                   </div>
                   <button
                     type="button"
