@@ -241,6 +241,14 @@ export default async function TicketDetailPage({
                 </p>
               </div>
               <div>
+                <span className="text-gray-500 dark:text-gray-400">PM Flat Rate</span>
+                <p className="text-gray-900 dark:text-white font-medium">
+                  {ticket.schedule.billing_type === 'flat_rate' && ticket.schedule.flat_rate != null
+                    ? `$${ticket.schedule.flat_rate.toFixed(2)}`
+                    : '—'}
+                </p>
+              </div>
+              <div>
                 <span className="text-gray-500 dark:text-gray-400">Last Service</span>
                 <p className="text-gray-900 dark:text-white font-medium">
                   {formatMonthYear(ticket.lastServiceMonth, ticket.lastServiceYear)}
