@@ -135,6 +135,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
 
+  // ACE labor — tech-payout labor on no-charge work, captured at completion.
+  const [aceLaborOpen, setAceLaborOpen] = useState(false)
+  const [aceHours, setAceHours] = useState('')
+  const [aceReason, setAceReason] = useState('')
+
   // Photos
   const [photos, setPhotos] = useState<Array<TicketPhoto & { previewUrl?: string }>>(
     ticket.photos && ticket.photos.length > 0 ? ticket.photos : []
@@ -565,6 +570,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       return
     }
 
+    if (aceLaborOpen) {
+      const aceH = parseFloat(aceHours)
+      if (!Number.isFinite(aceH) || aceH <= 0) {
+        setError('ACE hours must be greater than 0, or remove the ACE Labor section.')
+        return
+      }
+      if (!aceReason.trim()) {
+        setError('ACE Labor reason is required.')
+        return
+      }
+    }
+
     await apiAction(async () => {
       const res = await fetch(`/api/service-tickets/${ticket.id}/complete`, {
         method: 'POST',
@@ -577,6 +594,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           customer_signature: signatureImage || null,
           customer_signature_name: signatureName.trim() || null,
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
+          ace_labor: aceLaborOpen && parseFloat(aceHours) > 0
+            ? { hours: parseFloat(aceHours), reason: aceReason.trim() }
+            : null,
         }),
       })
       if (!res.ok) {
@@ -1761,6 +1781,65 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                 placeholder="Notes about the work performed..."
               />
+            </div>
+
+            {/* ── ACE Labor (tech payout — not on customer invoice) ── */}
+            <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/40 dark:bg-purple-900/15 p-4">
+              {!aceLaborOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setAceLaborOpen(true)}
+                  className="text-sm font-medium text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-200"
+                >
+                  + Add ACE Labor
+                </button>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-semibold text-purple-800 dark:text-purple-300 uppercase tracking-wide">
+                      ACE Labor — Pending Manager Approval
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => { setAceLaborOpen(false); setAceHours(''); setAceReason('') }}
+                      className="text-xs text-purple-700 dark:text-purple-300 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    Tech-payout labor on no-charge work. Does not appear on the customer invoice.
+                  </p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        ACE Hours
+                      </label>
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        value={aceHours}
+                        onChange={(e) => setAceHours(e.target.value)}
+                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Reason
+                      </label>
+                      <textarea
+                        value={aceReason}
+                        onChange={(e) => setAceReason(e.target.value)}
+                        rows={2}
+                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="Why this is ACE-eligible (visible to your manager)..."
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Customer Signature — not required for inside (shop) tickets */}

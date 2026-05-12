@@ -20,6 +20,7 @@ import {
   KeyRound,
   Award,
   ScrollText,
+  Clock,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
@@ -30,6 +31,7 @@ const allNavItems = [
   { label: 'Service Tickets', icon: Headset, route: '/service' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
   { label: 'Tech Leads', icon: Award, route: '/tech-leads' },
+  { label: 'ACE Labor', icon: Clock, route: '/ace-labor' },
   { label: 'Billing', icon: FileText, route: '/billing' },
   { label: 'Equipment', icon: Wrench, route: '/equipment' },
   { label: 'Prospects', icon: UserRoundSearch, route: '/prospects' },

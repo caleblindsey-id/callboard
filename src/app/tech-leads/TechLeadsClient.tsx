@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { TechLeadStatus, TechLeadType } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
+import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import LeadReviewModal from './LeadReviewModal'
@@ -17,6 +18,7 @@ type TypeFilter = 'all' | TechLeadType
 interface Props {
   leads: TechLeadWithJoins[]
   candidatesByLead: Record<string, CandidateWithLead[]>
+  aceEntries: AceLaborEntryWithJoins[]
 }
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -74,7 +76,7 @@ function leadTypeLabel(type: TechLeadType): string {
   return type === 'equipment_sale' ? 'Equipment sale' : 'PM'
 }
 
-export default function TechLeadsClient({ leads, candidatesByLead }: Props) {
+export default function TechLeadsClient({ leads, candidatesByLead, aceEntries }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<TabKey>('pending')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
@@ -187,7 +189,7 @@ export default function TechLeadsClient({ leads, candidatesByLead }: Props) {
       </div>
 
       {tab === 'payout' ? (
-        <PayoutReport leads={typeFiltered} />
+        <PayoutReport leads={typeFiltered} aceEntries={aceEntries} />
       ) : tab === 'match' ? (
         <MatchCandidatesTab
           leads={filtered}

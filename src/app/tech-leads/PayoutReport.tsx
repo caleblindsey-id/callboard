@@ -3,10 +3,12 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
+import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 
 interface Props {
   leads: TechLeadWithJoins[]
+  aceEntries: AceLaborEntryWithJoins[]
 }
 
 function firstOfMonth(year: number, monthIndex: number): string {
@@ -48,7 +50,7 @@ function escapeCsv(v: string | number | null): string {
   return s
 }
 
-export default function PayoutReport({ leads }: Props) {
+export default function PayoutReport({ leads, aceEntries }: Props) {
   const router = useRouter()
 
   const now = new Date()
@@ -59,7 +61,9 @@ export default function PayoutReport({ leads }: Props) {
   const [to, setTo]     = useState<string>(lastOfMonth(defaultYear, defaultMonth))
   const [includePaid, setIncludePaid] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selectedAce, setSelectedAce] = useState<Set<string>>(new Set())
   const [submitting, setSubmitting] = useState(false)
+  const [submittingAce, setSubmittingAce] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -83,6 +87,33 @@ export default function PayoutReport({ leads }: Props) {
     .filter(l => selected.has(l.id))
     .reduce((s, l) => s + (l.bonus_amount ?? 0), 0)
 
+  // ACE labor: filter by approved_at, same date range. Approved = unpaid;
+  // paid is gated by the same includePaid checkbox so the manager can see
+  // the full picture without ACE living off in its own pseudo-mode.
+  const aceInRange = useMemo(() => {
+    const fromTs = new Date(from + 'T00:00:00Z').getTime()
+    const toTs   = new Date(to   + 'T23:59:59Z').getTime()
+    return aceEntries.filter(e => {
+      if (e.status !== 'approved' && !(includePaid && e.status === 'paid')) return false
+      if (!e.approved_at) return false
+      const t = new Date(e.approved_at).getTime()
+      return t >= fromTs && t <= toTs
+    })
+  }, [aceEntries, from, to, includePaid])
+
+  function aceBillableValue(e: AceLaborEntryWithJoins): number {
+    const rate = Number(e.rate_value_at_approval ?? 0) || 0
+    const hrs  = Number(e.hours) || 0
+    return rate * hrs
+  }
+
+  const aceApprovedInRange = aceInRange.filter(e => e.status === 'approved')
+  const allAceSelected = aceApprovedInRange.length > 0 && aceApprovedInRange.every(e => selectedAce.has(e.id))
+  const selectedAceSum = aceApprovedInRange
+    .filter(e => selectedAce.has(e.id))
+    .reduce((s, e) => s + aceBillableValue(e), 0)
+  const aceTotalValue = aceInRange.reduce((s, e) => s + aceBillableValue(e), 0)
+
   function toggleAll() {
     if (allSelected) {
       setSelected(new Set())
@@ -98,38 +129,85 @@ export default function PayoutReport({ leads }: Props) {
     setSelected(next)
   }
 
+  function toggleAllAce() {
+    if (allAceSelected) {
+      setSelectedAce(new Set())
+    } else {
+      setSelectedAce(new Set(aceApprovedInRange.map(e => e.id)))
+    }
+  }
+
+  function toggleOneAce(id: string) {
+    const next = new Set(selectedAce)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedAce(next)
+  }
+
   function exportCsv() {
     const header = [
-      'Tech', 'Lead type', 'Customer', 'Equipment', 'Bonus amount',
+      'Source',
+      'Tech', 'Lead type', 'Customer', 'Equipment',
+      'Hours', 'Hourly rate', 'Billable value', 'Bonus amount',
       'Earned date', 'Status', 'Paid date', 'Payout period',
-      'Synergy order #',
+      'Synergy order #', 'ACE reason',
     ]
-    const rows = inRange.map(l => {
+    const leadRows = inRange.map(l => {
       const equipmentLabel = l.lead_type === 'equipment_sale'
         ? (l.sale_equipment_tier ?? l.proposed_equipment_tier ?? '')
         : [l.equipment?.make, l.equipment?.model, l.equipment?.serial_number ? `SN ${l.equipment.serial_number}` : '']
             .filter(Boolean).join(' / ')
       return [
+        l.lead_type === 'equipment_sale' ? 'Equipment sale' : 'PM',
         l.submitter?.name ?? '',
         l.lead_type === 'equipment_sale' ? 'Equipment sale' : 'PM',
         l.customers?.name ?? l.customer_name_text ?? '',
         equipmentLabel,
+        '', '', '',                          // Hours / Hourly rate / Billable value (n/a for bonuses)
         l.bonus_amount ?? '',
         l.earned_at ? l.earned_at.slice(0, 10) : '',
         l.status,
         l.paid_at ? l.paid_at.slice(0, 10) : '',
         l.payout_period ?? '',
         l.sale_synergy_order_number ?? '',
-      ]
+        '',                                  // ACE reason (n/a)
+      ] as (string | number | null)[]
     })
-    const csv = [header, ...rows].map(r => r.map(escapeCsv).join(',')).join('\n')
+    const aceRows = aceInRange.map(e => {
+      const ticketLabel = e.pm_ticket
+        ? `PM ${e.pm_ticket.work_order_number ?? e.pm_ticket.id.slice(0, 8)}`
+        : e.service_ticket
+          ? `Service ${e.service_ticket.work_order_number ?? e.service_ticket.id.slice(0, 8)}`
+          : ''
+      const customer = e.pm_ticket?.customers?.name ?? e.service_ticket?.customers?.name ?? ''
+      const rate = Number(e.rate_value_at_approval ?? 0) || 0
+      const hrs = Number(e.hours) || 0
+      return [
+        'ACE labor',
+        e.tech?.name ?? '',
+        `ACE labor (${e.labor_rate_type})`,
+        customer,
+        ticketLabel,
+        hrs.toFixed(2),
+        rate.toFixed(2),
+        (rate * hrs).toFixed(2),
+        '',                                  // Bonus amount (n/a)
+        e.approved_at ? e.approved_at.slice(0, 10) : '',
+        e.status,
+        e.paid_at ? e.paid_at.slice(0, 10) : '',
+        e.payout_period ?? '',
+        '',                                  // Synergy order # (n/a)
+        e.reason ?? '',
+      ] as (string | number | null)[]
+    })
+    const csv = [header, ...leadRows, ...aceRows].map(r => r.map(escapeCsv).join(',')).join('\n')
     // UTF-8 BOM so Excel on Windows auto-detects encoding and renders accented
     // characters in customer/tech names correctly.
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `tech-lead-bonuses_${from}_to_${to}.csv`
+    a.download = `tech-payouts_${from}_to_${to}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -164,6 +242,39 @@ export default function PayoutReport({ leads }: Props) {
       setError(e instanceof Error ? e.message : 'Failed to mark leads paid.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function aceMarkPaid() {
+    const ids = Array.from(selectedAce)
+    if (ids.length === 0) {
+      setError('Select at least one ACE entry to mark paid.')
+      return
+    }
+    const period = toPayoutPeriod(to)
+    const confirmed = window.confirm(
+      `Mark ${ids.length} ACE labor entr${ids.length === 1 ? 'y' : 'ies'} paid in period ${period}? Billable value: $${selectedAceSum.toFixed(2)}.`
+    )
+    if (!confirmed) return
+
+    setSubmittingAce(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/ace-labor/payout/mark-paid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entry_ids: ids, payout_period: period }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || 'Failed to mark ACE entries paid.')
+      setMessage(`Marked ${ids.length} ACE entr${ids.length === 1 ? 'y' : 'ies'} paid (period ${period}).`)
+      setSelectedAce(new Set())
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to mark ACE entries paid.')
+    } finally {
+      setSubmittingAce(false)
     }
   }
 
@@ -312,6 +423,106 @@ export default function PayoutReport({ leads }: Props) {
           </table>
         </div>
       )}
+
+      {/* ── ACE Labor section — same date range, separate mark-paid path ── */}
+      <div className="pt-4 mt-2 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">ACE Labor</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Approved entries in this range · <strong>{aceInRange.length}</strong> · billable value <strong>${aceTotalValue.toFixed(2)}</strong>
+              {selectedAce.size > 0 && (
+                <> · selected <strong>{selectedAce.size}</strong> · ${selectedAceSum.toFixed(2)}</>
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={aceMarkPaid}
+            disabled={submittingAce || selectedAce.size === 0}
+            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md disabled:opacity-50"
+          >
+            {submittingAce ? 'Marking…' : `Mark ACE paid (${selectedAce.size})`}
+          </button>
+        </div>
+
+        {aceInRange.length === 0 ? (
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400">No ACE labor approved in this range.</p>
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-900/40">
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={allAceSelected}
+                      onChange={toggleAllAce}
+                      disabled={aceApprovedInRange.length === 0}
+                      className="rounded border-gray-300 dark:border-gray-600"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Tech</th>
+                  <th className="px-4 py-3">Ticket</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3 text-right">Hours</th>
+                  <th className="px-4 py-3">Rate type</th>
+                  <th className="px-4 py-3 text-right">Hourly rate</th>
+                  <th className="px-4 py-3 text-right">Billable value</th>
+                  <th className="px-4 py-3">Approved</th>
+                  <th className="px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {aceInRange.map(e => {
+                  const canSelect = e.status === 'approved'
+                  const ticketLabel = e.pm_ticket
+                    ? `PM ${e.pm_ticket.work_order_number ?? e.pm_ticket.id.slice(0, 8)}`
+                    : e.service_ticket
+                      ? `Service ${e.service_ticket.work_order_number ?? e.service_ticket.id.slice(0, 8)}`
+                      : '—'
+                  const customer = e.pm_ticket?.customers?.name ?? e.service_ticket?.customers?.name ?? '—'
+                  const rate = Number(e.rate_value_at_approval ?? 0) || 0
+                  const hrs = Number(e.hours) || 0
+                  return (
+                    <tr key={e.id}>
+                      <td className="px-4 py-3">
+                        {canSelect ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedAce.has(e.id)}
+                            onChange={() => toggleOneAce(e.id)}
+                            className="rounded border-gray-300 dark:border-gray-600"
+                          />
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-gray-900 dark:text-white whitespace-nowrap">{e.tech?.name ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">{ticketLabel}</td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{customer}</td>
+                      <td className="px-4 py-3 text-right text-gray-900 dark:text-white whitespace-nowrap">{hrs.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300 capitalize">{e.labor_rate_type}</td>
+                      <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300 whitespace-nowrap">${rate.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white whitespace-nowrap">${(rate * hrs).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">{formatDate(e.approved_at)}</td>
+                      <td className="px-4 py-3">
+                        {e.status === 'paid' ? (
+                          <span className="text-xs text-emerald-700 dark:text-emerald-400">
+                            Paid {e.payout_period ? `(${e.payout_period})` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-amber-700 dark:text-amber-400">Approved, unpaid</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

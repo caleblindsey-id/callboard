@@ -40,6 +40,48 @@ export type SyncType = 'customers' | 'contacts' | 'products' | 'full'
 
 export type SyncStatus = 'running' | 'success' | 'failed'
 
+// ACE labor: tech-submitted labor on no-charge tickets, paid out monthly.
+export type LaborRateType = 'standard' | 'industrial' | 'vacuum'
+
+export type AceLaborStatus = 'pending' | 'approved' | 'rejected' | 'paid'
+
+// `type` (not interface) so it satisfies Supabase's Record<string, unknown>
+// constraint when used as a Tables Row.
+export type AceLaborEntry = {
+  id: string
+  pm_ticket_id: string | null
+  service_ticket_id: string | null
+  tech_id: string
+  hours: number
+  labor_rate_type: LaborRateType
+  reason: string
+  status: AceLaborStatus
+  submitted_at: string
+  approved_by_id: string | null
+  approved_at: string | null
+  rejected_reason: string | null
+  rate_value_at_approval: number | null
+  paid_at: string | null
+  paid_by_id: string | null
+  payout_period: string | null
+  updated_by_id: string | null
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type AceLaborEntryRow = AceLaborEntry
+export type AceLaborEntryInsert =
+  Pick<AceLaborEntryRow, 'tech_id' | 'hours' | 'labor_rate_type' | 'reason'> &
+  Partial<Pick<
+    AceLaborEntryRow,
+    | 'pm_ticket_id' | 'service_ticket_id' | 'status' | 'submitted_at'
+    | 'approved_by_id' | 'approved_at' | 'rejected_reason' | 'rate_value_at_approval'
+    | 'paid_at' | 'paid_by_id' | 'payout_period'
+    | 'updated_by_id' | 'created_by_id'
+  >>
+export type AceLaborEntryUpdate = Partial<Omit<AceLaborEntryRow, 'id' | 'created_at' | 'updated_at'>>
+
 // ============================================================
 // JSONB Part type
 // ============================================================
@@ -841,6 +883,12 @@ export interface Database {
         Row: EquipmentLocationHistoryRow
         Insert: Omit<EquipmentLocationHistoryRow, 'id' | 'changed_at'> & { changed_at?: string }
         Update: never
+        Relationships: []
+      }
+      ace_labor_entries: {
+        Row: AceLaborEntryRow
+        Insert: AceLaborEntryInsert
+        Update: AceLaborEntryUpdate
         Relationships: []
       }
     }

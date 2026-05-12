@@ -15,6 +15,7 @@ interface CompleteServiceTicketBody {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   warranty_labor_covered?: boolean
+  ace_labor?: { hours: number; reason: string } | null
 }
 
 function isNonNegativeNumber(v: unknown): v is number {
@@ -29,7 +30,22 @@ export async function POST(
     const { id } = await params
     const body = await request.json() as CompleteServiceTicketBody
 
-    const { completed_at, hours_worked, parts_used, completion_notes, customer_signature, customer_signature_name, photos } = body
+    const { completed_at, hours_worked, parts_used, completion_notes, customer_signature, customer_signature_name, photos, ace_labor } = body
+
+    if (ace_labor != null) {
+      if (!isNonNegativeNumber(ace_labor.hours) || ace_labor.hours <= 0) {
+        return NextResponse.json(
+          { error: 'ACE labor hours must be greater than 0' },
+          { status: 400 }
+        )
+      }
+      if (typeof ace_labor.reason !== 'string' || !ace_labor.reason.trim()) {
+        return NextResponse.json(
+          { error: 'ACE labor reason is required' },
+          { status: 400 }
+        )
+      }
+    }
 
     if (!completed_at || hours_worked === undefined) {
       return NextResponse.json(
@@ -132,6 +148,57 @@ export async function POST(
       photos: photos ?? [],
       warranty_labor_covered: body.warranty_labor_covered,
     })
+
+    // ACE labor — see PM /complete for the upsert pattern (audit-stable on
+    // re-completion, blocks overwrite of approved/paid entries).
+    if (ace_labor != null) {
+      const { data: existing, error: existingErr } = await supabase
+        .from('ace_labor_entries')
+        .select('id, status')
+        .eq('service_ticket_id', id)
+        .maybeSingle()
+      if (existingErr) {
+        console.error(`[complete] ACE lookup failed for service ticket ${id}:`, existingErr)
+      } else if (existing && (existing.status === 'approved' || existing.status === 'paid')) {
+        return NextResponse.json(
+          { error: 'ACE labor entry already approved/paid; cannot be changed here.' },
+          { status: 409 }
+        )
+      } else if (existing) {
+        const { error: updErr } = await supabase
+          .from('ace_labor_entries')
+          .update({
+            hours: ace_labor.hours,
+            reason: ace_labor.reason.trim(),
+            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            status: 'pending',
+            rejected_reason: null,
+            approved_by_id: null,
+            approved_at: null,
+            rate_value_at_approval: null,
+            submitted_at: new Date().toISOString(),
+            updated_by_id: user.id,
+          })
+          .eq('id', existing.id)
+        if (updErr) console.error(`[complete] ACE update failed for service ticket ${id}:`, updErr)
+      } else {
+        // tech_id must point at the assigned technician, not the user
+        // submitting completion. See PM /complete for full rationale.
+        const aceTechId = current.assigned_technician_id ?? user.id
+        const { error: insErr } = await supabase
+          .from('ace_labor_entries')
+          .insert({
+            service_ticket_id: id,
+            tech_id: aceTechId,
+            hours: ace_labor.hours,
+            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            reason: ace_labor.reason.trim(),
+            status: 'pending',
+            created_by_id: user.id,
+          })
+        if (insErr) console.error(`[complete] ACE insert failed for service ticket ${id}:`, insErr)
+      }
+    }
 
     return NextResponse.json(updated)
   } catch (err) {

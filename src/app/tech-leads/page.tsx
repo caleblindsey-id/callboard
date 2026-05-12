@@ -1,5 +1,6 @@
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getAllLeads } from '@/lib/db/tech-leads'
+import { getEntriesByStatus } from '@/lib/db/ace-labor'
 import { getPendingCandidatesForLeads } from '@/lib/db/equipment-sale-candidates'
 import TechLeadsClient from './TechLeadsClient'
 
@@ -7,7 +8,10 @@ export const dynamic = 'force-dynamic'
 
 export default async function TechLeadsPage() {
   await requireRole(...MANAGER_ROLES)
-  const leads = await getAllLeads()
+  const [leads, aceEntries] = await Promise.all([
+    getAllLeads(),
+    getEntriesByStatus(['approved', 'paid']),
+  ])
 
   // Pull pending candidates for equipment-sale leads that might have matches.
   const matchableLeadIds = leads
@@ -20,10 +24,10 @@ export default async function TechLeadsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Tech Leads</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Review tech-submitted PM + equipment-sale leads, confirm Synergy sale matches, and run monthly bonus payouts.
+          Review tech-submitted PM + equipment-sale leads, confirm Synergy sale matches, and run monthly bonus payouts. ACE labor payouts appear in the report below.
         </p>
       </div>
-      <TechLeadsClient leads={leads} candidatesByLead={candidatesByLead} />
+      <TechLeadsClient leads={leads} candidatesByLead={candidatesByLead} aceEntries={aceEntries} />
     </div>
   )
 }

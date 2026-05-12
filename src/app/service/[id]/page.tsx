@@ -7,6 +7,8 @@ import { ArrowLeft } from 'lucide-react'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import { ServiceTicketDetail } from './ServiceTicketDetail'
 import AuditHistorySection from '@/components/AuditHistorySection'
+import AceLaborCard from '@/components/AceLaborCard'
+import { getEntryByTicket } from '@/lib/db/ace-labor'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
 
 const WORKFLOW_STEPS: ServiceTicketStatus[] = ['open', 'estimated', 'approved', 'in_progress', 'completed', 'billed']
@@ -39,6 +41,7 @@ export default async function ServiceTicketPage({
   }
 
   const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
+  const aceEntry = await getEntryByTicket('service', ticket.id)
 
   const equipmentLabel = ticket.equipment
     ? [ticket.equipment.make, ticket.equipment.model].filter(Boolean).join(' ')
@@ -120,6 +123,8 @@ export default async function ServiceTicketPage({
         userId={user.id}
         laborRate={laborRate}
       />
+
+      <AceLaborCard entry={aceEntry} userRole={user.role} userId={user.id} />
 
       <AuditHistorySection entityType="service_tickets" entityId={ticket.id} />
     </div>

@@ -22,6 +22,7 @@ interface CompleteTicketBody {
   additionalHoursWorked?: number
   machineHours: number
   dateCode: string
+  aceLabor?: { hours: number; reason: string } | null
 }
 
 function isNonNegativeNumber(v: unknown): v is number {
@@ -41,7 +42,24 @@ export async function POST(
       customerSignature, customerSignatureName, photos, poNumber,
       billingContactName, billingContactEmail, billingContactPhone,
       additionalPartsUsed, additionalHoursWorked, machineHours, dateCode,
+      aceLabor,
     } = body
+
+    // Validate ACE labor payload if provided.
+    if (aceLabor != null) {
+      if (!isNonNegativeNumber(aceLabor.hours) || aceLabor.hours <= 0) {
+        return NextResponse.json(
+          { error: 'ACE labor hours must be greater than 0' },
+          { status: 400 }
+        )
+      }
+      if (typeof aceLabor.reason !== 'string' || !aceLabor.reason.trim()) {
+        return NextResponse.json(
+          { error: 'ACE labor reason is required' },
+          { status: 400 }
+        )
+      }
+    }
 
     if (!completedDate || hoursWorked === undefined) {
       return NextResponse.json(
@@ -206,6 +224,66 @@ export async function POST(
       dateCode: dateCode.trim(),
       showPricing: showPricingSnapshot,
     })
+
+    // ACE labor (tech-payout). One row per ticket — partial unique index on
+    // pm_ticket_id enforces it. On re-completion (after manager reset) we let
+    // the tech overwrite a pending/rejected entry, but refuse if the entry
+    // has already been approved or paid (audit-stable).
+    if (aceLabor != null) {
+      const { data: existing, error: existingErr } = await supabase
+        .from('ace_labor_entries')
+        .select('id, status')
+        .eq('pm_ticket_id', id)
+        .maybeSingle()
+      if (existingErr) {
+        console.error(`[complete] ACE lookup failed for ticket ${id}:`, existingErr)
+      } else if (existing && (existing.status === 'approved' || existing.status === 'paid')) {
+        return NextResponse.json(
+          { error: 'ACE labor entry already approved/paid; cannot be changed here.' },
+          { status: 409 }
+        )
+      } else if (existing) {
+        const { error: updErr } = await supabase
+          .from('ace_labor_entries')
+          .update({
+            hours: aceLabor.hours,
+            reason: aceLabor.reason.trim(),
+            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            status: 'pending',
+            rejected_reason: null,
+            approved_by_id: null,
+            approved_at: null,
+            rate_value_at_approval: null,
+            submitted_at: new Date().toISOString(),
+            updated_by_id: user.id,
+          })
+          .eq('id', existing.id)
+        if (updErr) {
+          console.error(`[complete] ACE update failed for ticket ${id}:`, updErr)
+        }
+      } else {
+        // tech_id must point at the assigned technician, not the user
+        // submitting completion. A manager completing on a tech's behalf
+        // should still attribute the ACE entry to the tech for payout and
+        // for the self-approval guard to work. Fall back to the current
+        // user only when the ticket is unassigned (edge case).
+        const aceTechId = current.assigned_technician_id ?? user.id
+        const { error: insErr } = await supabase
+          .from('ace_labor_entries')
+          .insert({
+            pm_ticket_id: id,
+            tech_id: aceTechId,
+            hours: aceLabor.hours,
+            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            reason: aceLabor.reason.trim(),
+            status: 'pending',
+            created_by_id: user.id,
+          })
+        if (insErr) {
+          console.error(`[complete] ACE insert failed for ticket ${id}:`, insErr)
+        }
+      }
+    }
 
     // Slide billing period to completion month if work happened in a different month
     const completedMonth = completionDate.getUTCMonth() + 1

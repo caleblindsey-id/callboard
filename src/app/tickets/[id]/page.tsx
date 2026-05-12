@@ -14,9 +14,11 @@ import ChangeLocationSection from './ChangeLocationSection'
 import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import AuditHistorySection from '@/components/AuditHistorySection'
+import AceLaborCard from '@/components/AceLaborCard'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
 import { getLaborRate } from '@/lib/db/settings'
+import { getEntryByTicket } from '@/lib/db/ace-labor'
 import { describeSchedule, formatMonthYear } from '@/lib/utils/schedule'
 
 export default async function TicketDetailPage({
@@ -61,6 +63,7 @@ export default async function TicketDetailPage({
   const canRestore = !isTechnician(user?.role ?? null) && RESET_ROLES.includes(user?.role ?? ('' as never))
 
   const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
+  const aceEntry = await getEntryByTicket('pm', ticket.id)
 
   const showBilling = !isTechnician(user?.role ?? null)
 
@@ -318,6 +321,9 @@ export default async function TicketDetailPage({
           />
         </>
       )}
+
+      {/* ACE Labor card (visible to manager always; to tech if they own the entry) */}
+      <AceLaborCard entry={aceEntry} userRole={user?.role ?? null} userId={user?.id ?? null} />
 
       {/* Service History */}
       {ticket.equipment_id && (
