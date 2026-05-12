@@ -89,14 +89,14 @@ export function renderEstimateApprovalEmail(
                 <tr>
                   <td style="background:#0f172a;border-radius:6px;">
                     <a href="${escapeAttr(approvalUrl)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">
-                      Review estimate
+                      Review your estimate
                     </a>
                   </td>
                 </tr>
               </table>
               <p style="margin:0 0 16px;color:#52525b;font-size:13px;">
-                Or copy this link into your browser:<br />
-                <a href="${escapeAttr(approvalUrl)}" style="color:#0f172a;word-break:break-all;">${escapeHtml(approvalUrl)}</a>
+                Button not working?
+                <a href="${escapeAttr(approvalUrl)}" style="color:#0f172a;text-decoration:underline;">Open the estimate</a>.
               </p>
               <p style="margin:0 0 16px;color:#52525b;font-size:13px;">
                 This link is valid for 7 days. The estimate is subject to change and all prices are subject to applicable taxes.

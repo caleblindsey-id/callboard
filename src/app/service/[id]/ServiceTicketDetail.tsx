@@ -1031,13 +1031,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                         <input
                           type="text"
                           readOnly
-                          value={`${getPublicAppUrl()}/approve/${ticket.approval_token}`}
+                          value={`${getPublicAppUrl()}/e/${ticket.approval_token}`}
                           className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-xs w-full focus:outline-none"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(`${getPublicAppUrl()}/approve/${ticket.approval_token}`)
+                            navigator.clipboard.writeText(`${getPublicAppUrl()}/e/${ticket.approval_token}`)
                             setSuccessMsg('Approval link copied to clipboard')
                           }}
                           className="px-3 py-2 text-xs font-medium text-slate-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 transition-colors shrink-0"

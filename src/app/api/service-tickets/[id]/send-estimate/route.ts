@@ -1,5 +1,6 @@
 export const runtime = 'nodejs'
 
+import { randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
@@ -64,7 +65,9 @@ export async function POST(
 
     // Persist a fresh approval token before sending so the URL in the email is
     // backed by a row in the DB, no matter what happens during/after the send.
-    const approvalToken = crypto.randomUUID()
+    // 12-char base64url token — short enough to read at a glance, still 72 bits
+    // of entropy (well past brute-force for a 7-day TTL).
+    const approvalToken = randomBytes(9).toString('base64url')
     const approvalTokenExpiresAt = new Date(Date.now() + APPROVAL_TOKEN_TTL_MS).toISOString()
 
     // Status-guarded UPDATE with .select() so we can detect concurrent
@@ -120,7 +123,7 @@ export async function POST(
         { status: 500 }
       )
     }
-    const approvalUrl = `${appUrl}/approve/${approvalToken}`
+    const approvalUrl = `${appUrl}/e/${approvalToken}`
 
     const email = renderEstimateApprovalEmail({
       ticket: {

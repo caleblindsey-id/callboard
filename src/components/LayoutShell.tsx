@@ -14,7 +14,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
     pathname === '/login' ||
     pathname === '/forgot-password' ||
     pathname === '/change-password' ||
-    pathname.startsWith('/approve/')
+    pathname.startsWith('/e/')
   ) {
     return <>{children}</>
   }

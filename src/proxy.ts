@@ -41,7 +41,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth check for public routes
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/auth/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve')) {
+  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/auth/') || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve')) {
     return supabaseResponse
   }
 
