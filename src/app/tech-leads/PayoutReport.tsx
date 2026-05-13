@@ -6,6 +6,7 @@ import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import ConfirmDialog from './ConfirmDialog'
+import { formatMoney, formatDate } from '@/lib/format'
 
 interface Props {
   leads: TechLeadWithJoins[]
@@ -25,16 +26,6 @@ function lastOfMonth(year: number, monthIndex: number): string {
 function toPayoutPeriod(isoDate: string): string {
   // isoDate is YYYY-MM-DD (local/UTC-stripped); we just take the first 7.
   return isoDate.slice(0, 7)
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatMoney(n: number | null): string {
-  if (n == null) return '—'
-  return `$${n.toFixed(2)}`
 }
 
 function escapeCsv(v: string | number | null): string {

@@ -13,6 +13,7 @@ import {
   updatePartFields,
 } from '@/lib/parts-queue'
 import CancelPartDialog from './CancelPartDialog'
+import { formatDateTime } from '@/lib/format'
 
 type Tab = 'to_order' | 'ordered' | 'received'
 type SortKey =
@@ -56,12 +57,6 @@ function partToRow(row: PartsQueueRow, part: PartRequest): PartsQueueRow {
     received_by: part.received_by ?? null,
     requested_at: part.requested_at ?? row.requested_at,
   }
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
 }
 
 function formatDay(iso: string | null | undefined): string {
@@ -415,12 +410,12 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
                     </td>
                     {tab === 'ordered' && (
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                        {formatDate(row.ordered_at)}
+                        {formatDateTime(row.ordered_at)}
                       </td>
                     )}
                     {tab === 'received' && (
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                        {formatDate(row.received_at)}
+                        {formatDateTime(row.received_at)}
                       </td>
                     )}
                     <td className="px-3 py-2 whitespace-nowrap text-right">

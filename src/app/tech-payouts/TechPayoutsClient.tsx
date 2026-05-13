@@ -12,6 +12,7 @@ import LeadReviewModal from '../tech-leads/LeadReviewModal'
 import CreateEquipmentFromLeadModal from '../tech-leads/CreateEquipmentFromLeadModal'
 import PayoutReport from '../tech-leads/PayoutReport'
 import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
+import { formatMoney, formatDate } from '@/lib/format'
 
 type TabKey = 'pending' | 'pending_ace' | 'approved' | 'match' | 'earned' | 'paid' | 'closed' | 'payout'
 type TypeFilter = 'all' | TechLeadType
@@ -45,16 +46,6 @@ function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJo
     case 'closed':   return leads.filter(l => l.status === 'rejected' || l.status === 'cancelled' || l.status === 'expired')
     default:         return []
   }
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatMoney(n: number | null): string {
-  if (n == null) return '—'
-  return `$${n.toFixed(2)}`
 }
 
 function statusBadge(status: TechLeadStatus): string {

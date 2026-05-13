@@ -6,21 +6,12 @@ import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import ConfirmMatchModal from './ConfirmMatchModal'
 import ConfirmDialog from './ConfirmDialog'
+import { formatMoney, formatDate } from '@/lib/format'
 
 interface Props {
   leads: TechLeadWithJoins[]
   candidatesByLead: Record<string, CandidateWithLead[]>
   onRefresh: () => void
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatMoney(n: number | null): string {
-  if (n == null) return '—'
-  return `$${Number(n).toFixed(2)}`
 }
 
 export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh }: Props) {

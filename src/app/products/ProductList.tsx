@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { ProductRow } from '@/types/database'
+import { formatDate } from '@/lib/format'
 
 interface ProductListProps {
   products: ProductRow[]
@@ -10,11 +11,6 @@ interface ProductListProps {
 function formatCurrency(value: number | null): string {
   if (value === null) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export default function ProductList({ products }: ProductListProps) {

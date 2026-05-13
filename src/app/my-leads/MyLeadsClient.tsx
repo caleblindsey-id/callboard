@@ -6,6 +6,7 @@ import type { TechLeadStatus } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import SubmitLeadModal from './SubmitLeadModal'
+import { formatMoney, formatDate } from '@/lib/format'
 
 interface Props {
   leads: TechLeadWithJoins[]
@@ -31,16 +32,6 @@ const STATUS_STYLE: Record<TechLeadStatus, string> = {
   paid:          'bg-emerald-200 text-emerald-900 dark:bg-emerald-800/60 dark:text-emerald-200',
   match_pending: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300',
   expired:       'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-300',
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatMoney(amount: number | null): string {
-  if (amount == null) return '—'
-  return `$${amount.toFixed(2)}`
 }
 
 export default function MyLeadsClient({ leads }: Props) {

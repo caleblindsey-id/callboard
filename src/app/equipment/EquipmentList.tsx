@@ -5,18 +5,10 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import type { EquipmentListItem } from './page'
 import AddEquipmentModal from './AddEquipmentModal'
+import { formatDate } from '@/lib/format'
 
 interface EquipmentListProps {
   equipment: EquipmentListItem[]
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—'
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
 }
 
 function formatNextService(dateStr: string | null): { text: string; className: string } {
