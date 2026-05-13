@@ -5,6 +5,7 @@ import { updateAnchorMonth } from '@/lib/db/schedules'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/database'
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
+import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 
 // Only allow these fields to be updated via PATCH. `skip_previous_status` is
 // intentionally excluded — it's set server-side inside the skip-request branch
@@ -105,6 +106,20 @@ export async function PATCH(
         ...p,
         unit_price: 0,
       }))
+    }
+
+    // photos validation: scoped to this ticket id, known image type only.
+    if (filtered.photos !== undefined) {
+      if (!Array.isArray(filtered.photos)) {
+        return NextResponse.json({ error: 'photos must be an array' }, { status: 400 })
+      }
+      const expectedPrefix = `${id}/`
+      for (const p of filtered.photos as Array<{ storage_path?: unknown }>) {
+        const check = validatePhotoStoragePath(p?.storage_path, expectedPrefix)
+        if (!check.ok) {
+          return NextResponse.json({ error: check.error }, { status: 400 })
+        }
+      }
     }
 
     // Synergy item # gate: any part past 'requested' must have product_number set

@@ -10,6 +10,7 @@ import {
   ServicePartUsed,
 } from '@/types/service-tickets'
 import { getLaborRate } from '@/lib/db/settings'
+import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -158,6 +159,21 @@ export async function PATCH(
         }
         if (!Number.isFinite(price) || price < 0) {
           return NextResponse.json({ error: 'Each estimate part unit_price must be non-negative' }, { status: 400 })
+        }
+      }
+    }
+
+    // photos validation: each entry must be a known image type scoped to this
+    // ticket id. Prevents stored XSS via a malicious `.svg` served by signed URL.
+    if (filtered.photos !== undefined) {
+      if (!Array.isArray(filtered.photos)) {
+        return NextResponse.json({ error: 'photos must be an array' }, { status: 400 })
+      }
+      const expectedPrefix = `${id}/`
+      for (const p of filtered.photos as Array<{ storage_path?: unknown }>) {
+        const check = validatePhotoStoragePath(p?.storage_path, expectedPrefix)
+        if (!check.ok) {
+          return NextResponse.json({ error: check.error }, { status: 400 })
         }
       }
     }

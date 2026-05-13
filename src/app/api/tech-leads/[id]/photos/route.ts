@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import type { TicketPhoto } from '@/types/database'
 
 const MAX_PHOTOS_PER_LEAD = 12
@@ -35,14 +36,14 @@ export async function PATCH(
     const expectedPrefix = `leads/${id}/`
     const incoming: TicketPhoto[] = []
     for (const p of body.photos) {
-      const path = typeof p?.storage_path === 'string' ? p.storage_path : ''
-      if (!path.startsWith(expectedPrefix) || path.length > 256) {
-        return NextResponse.json(
-          { error: 'Invalid photo path.' },
-          { status: 400 }
-        )
+      const check = validatePhotoStoragePath(p?.storage_path, expectedPrefix)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
       }
-      incoming.push({ storage_path: path, uploaded_at: new Date().toISOString() })
+      incoming.push({
+        storage_path: p.storage_path as string,
+        uploaded_at: new Date().toISOString(),
+      })
     }
 
     // Ownership check: only the submitter or a manager+ may attach photos.

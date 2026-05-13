@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 
 const VALID_CATEGORIES = new Set(['bug', 'idea', 'question'])
 const MAX_BODY = 4000
@@ -37,14 +38,16 @@ export async function POST(request: NextRequest) {
     const userAgent =
       typeof raw.user_agent === 'string' && raw.user_agent.length <= MAX_UA ? raw.user_agent : null
 
-    // Validate attachment path ownership: must start with `${user.id}/`
+    // Validate attachment path: must be a known image type under `${user.id}/`.
+    // Extension + prefix + traversal guard prevents stored XSS via a malicious
+    // `.svg` / `.html` upload that would otherwise be served via signed URL.
     let attachmentPath: string | null = null
     if (typeof raw.attachment_path === 'string' && raw.attachment_path.length > 0) {
-      const path = raw.attachment_path
-      if (!path.startsWith(`${user.id}/`) || path.includes('..')) {
-        return NextResponse.json({ error: 'Invalid attachment path.' }, { status: 400 })
+      const check = validatePhotoStoragePath(raw.attachment_path, `${user.id}/`)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
       }
-      attachmentPath = path
+      attachmentPath = raw.attachment_path
     }
 
     const supabase = createAdminClient()
