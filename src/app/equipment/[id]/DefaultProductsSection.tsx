@@ -1,16 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { DefaultProduct } from '@/types/database'
+import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import { Plus, Minus, Trash2 } from 'lucide-react'
-
-interface ProductSearchResult {
-  id: number
-  synergy_id: string
-  number: string
-  description: string | null
-}
 
 interface DefaultProductsSectionProps {
   equipmentId: string
@@ -26,39 +19,19 @@ export default function DefaultProductsSection({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Product search state
-  const [search, setSearch] = useState('')
-  const [results, setResults] = useState<ProductSearchResult[]>([])
-  const [comboOpen, setComboOpen] = useState(false)
-  const [searching, setSearching] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Product search state (shared hook — see src/lib/hooks/useProductSearch.ts)
+  const {
+    query: search,
+    setQuery: setSearch,
+    results,
+    loading: searching,
+    comboOpen,
+    setComboOpen,
+    clear: clearSearch,
+  } = useProductSearch()
   const comboRef = useRef<HTMLDivElement>(null)
 
   const hasChanges = JSON.stringify(products) !== JSON.stringify(initialProducts)
-
-  // Debounced product search
-  useEffect(() => {
-    if (!search.trim()) {
-      setResults([])
-      setComboOpen(false)
-      return
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(async () => {
-      setSearching(true)
-      const supabase = createClient()
-      const q = search.trim().replace(/[,()]/g, ' ')
-      const { data } = await supabase
-        .from('products')
-        .select('id, synergy_id, number, description')
-        .or(`number.ilike.%${q}%,description.ilike.%${q}%`)
-        .order('number')
-        .limit(25)
-      setResults((data as ProductSearchResult[]) ?? [])
-      setComboOpen(true)
-      setSearching(false)
-    }, 300)
-  }, [search])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -69,15 +42,14 @@ export default function DefaultProductsSection({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [setComboOpen])
 
   function selectProduct(p: ProductSearchResult) {
     // synergy_product_id must hold Number(products.synergy_id) so the billing/work-order
     // PDF lookup (which queries products.synergy_id) resolves the product number.
     const id = Number(p.synergy_id)
     if (products.some((dp) => dp.synergy_product_id === id || dp.synergy_product_id === p.id)) {
-      setSearch('')
-      setComboOpen(false)
+      clearSearch()
       return
     }
     setProducts((prev) => [
@@ -88,8 +60,7 @@ export default function DefaultProductsSection({
         description: `${p.number} - ${p.description ?? ''}`.trim(),
       },
     ])
-    setSearch('')
-    setComboOpen(false)
+    clearSearch()
     setSaved(false)
   }
 

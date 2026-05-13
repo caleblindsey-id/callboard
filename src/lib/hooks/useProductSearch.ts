@@ -1,0 +1,99 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+
+/**
+ * Shape returned by the products combobox search.
+ * Matches the prior inline interfaces in AddEquipmentModal and
+ * the equipment detail DefaultProductsSection.
+ */
+export interface ProductSearchResult {
+  id: number
+  synergy_id: string
+  number: string
+  description: string | null
+}
+
+export interface UseProductSearchReturn {
+  /** Current search input value. */
+  query: string
+  /** Update the search input. Triggers a debounced fetch. */
+  setQuery: (value: string) => void
+  /** Latest debounced query string used for the most recent fetch. */
+  debouncedQuery: string
+  /** Latest result set from the products table. */
+  results: ProductSearchResult[]
+  /** True while the debounced fetch is in flight. */
+  loading: boolean
+  /** True when the combobox dropdown should be visible. */
+  comboOpen: boolean
+  /** Manually open/close the combobox dropdown (e.g. on input focus). */
+  setComboOpen: (open: boolean) => void
+  /** Reset the input + results + dropdown state. Call after picking a product. */
+  clear: () => void
+}
+
+/**
+ * Debounced product search hook. Extracted from AddEquipmentModal and
+ * DefaultProductsSection — both previously hand-rolled the same debounce
+ * + supabase query + PostgREST-OR-injection guard.
+ *
+ * Behavior contract (must match the prior inline implementations):
+ *   - Empty/whitespace query => clear results, close dropdown
+ *   - Non-empty query => 300ms debounce, then fetch up to 25 products
+ *     matching `number ilike` or `description ilike`
+ *   - Strip `,` `(` `)` from the query before splicing into `.or()`
+ *   - On fetch resolution, open the dropdown (regardless of result count)
+ */
+export function useProductSearch(): UseProductSearchReturn {
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [results, setResults] = useState<ProductSearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [comboOpen, setComboOpen] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([])
+      setComboOpen(false)
+      return
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true)
+      const supabase = createClient()
+      // Strip PostgREST filter-syntax chars before injecting into .or().
+      const q = query.trim().replace(/[,()]/g, ' ')
+      const { data } = await supabase
+        .from('products')
+        .select('id, synergy_id, number, description')
+        .or(`number.ilike.%${q}%,description.ilike.%${q}%`)
+        .order('number')
+        .limit(25)
+        .returns<ProductSearchResult[]>()
+      setResults(data ?? [])
+      setDebouncedQuery(q)
+      setComboOpen(true)
+      setLoading(false)
+    }, 300)
+  }, [query])
+
+  function clear() {
+    setQuery('')
+    setResults([])
+    setComboOpen(false)
+  }
+
+  return {
+    query,
+    setQuery,
+    debouncedQuery,
+    results,
+    loading,
+    comboOpen,
+    setComboOpen,
+    clear,
+  }
+}

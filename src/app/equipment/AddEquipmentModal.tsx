@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { BillingType, DefaultProduct } from '@/types/database'
 import { formatPhoneNumber } from '@/lib/phone'
 import { normalizeSerial, serialsMatch } from '@/lib/equipment'
+import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import { X, Plus, Minus, Trash2 } from 'lucide-react'
 
 type DuplicateMatch = {
@@ -23,13 +24,6 @@ interface CustomerOption {
 interface TechnicianOption {
   id: string
   name: string
-}
-
-interface ProductSearchResult {
-  id: number
-  synergy_id: string
-  number: string
-  description: string | null
 }
 
 const MONTHS = [
@@ -100,13 +94,17 @@ export default function AddEquipmentModal({
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([])
   const [defaultTechId, setDefaultTechId] = useState('')
 
-  // Default Products
+  // Default Products — search state lives in the shared useProductSearch hook
   const [defaultProducts, setDefaultProducts] = useState<DefaultProduct[]>([])
-  const [productSearch, setProductSearch] = useState('')
-  const [productResults, setProductResults] = useState<ProductSearchResult[]>([])
-  const [productComboOpen, setProductComboOpen] = useState(false)
-  const [productSearching, setProductSearching] = useState(false)
-  const productDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const {
+    query: productSearch,
+    setQuery: setProductSearch,
+    results: productResults,
+    loading: productSearching,
+    comboOpen: productComboOpen,
+    setComboOpen: setProductComboOpen,
+    clear: clearProductSearch,
+  } = useProductSearch()
   const productComboRef = useRef<HTMLDivElement>(null)
 
   // PM Schedule
@@ -181,30 +179,6 @@ export default function AddEquipmentModal({
       })
   }, [customerId])
 
-  // Debounced product search
-  useEffect(() => {
-    if (!productSearch.trim()) {
-      setProductResults([])
-      setProductComboOpen(false)
-      return
-    }
-    if (productDebounceRef.current) clearTimeout(productDebounceRef.current)
-    productDebounceRef.current = setTimeout(async () => {
-      setProductSearching(true)
-      const supabase = createClient()
-      const q = productSearch.trim().replace(/[,()]/g, ' ')
-      const { data } = await supabase
-        .from('products')
-        .select('id, synergy_id, number, description')
-        .or(`number.ilike.%${q}%,description.ilike.%${q}%`)
-        .order('number')
-        .limit(25)
-      setProductResults((data as ProductSearchResult[]) ?? [])
-      setProductComboOpen(true)
-      setProductSearching(false)
-    }, 300)
-  }, [productSearch])
-
   // Close product dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -214,15 +188,14 @@ export default function AddEquipmentModal({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [setProductComboOpen])
 
   function selectProduct(p: ProductSearchResult) {
     // synergy_product_id must hold Number(products.synergy_id) so the billing/work-order
     // PDF lookup (which queries products.synergy_id) resolves the product number.
     const id = Number(p.synergy_id)
     if (defaultProducts.some((dp) => dp.synergy_product_id === id || dp.synergy_product_id === p.id)) {
-      setProductSearch('')
-      setProductComboOpen(false)
+      clearProductSearch()
       return
     }
     setDefaultProducts((prev) => [
@@ -233,8 +206,7 @@ export default function AddEquipmentModal({
         description: `${p.number} - ${p.description ?? ''}`.trim(),
       },
     ])
-    setProductSearch('')
-    setProductComboOpen(false)
+    clearProductSearch()
   }
 
   function updateProductQuantity(idx: number, delta: number) {
@@ -272,9 +244,7 @@ export default function AddEquipmentModal({
     setContactPhone('')
     setDefaultTechId('')
     setDefaultProducts([])
-    setProductSearch('')
-    setProductResults([])
-    setProductComboOpen(false)
+    clearProductSearch()
     setAddSchedule(false)
     setIntervalMonths(3)
     setAnchorMonth(1)
