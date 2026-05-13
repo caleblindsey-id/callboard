@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, ADMIN_ROLES, MANAGER_ROLES } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAllSalesReps } from '@/lib/db/sales-reps'
+import type { SalesRepKind } from '@/types/database'
 
 const EMAIL_MAX = 320
 const NAME_MAX = 200
+const TITLE_MAX = 200
+const VALID_KINDS: readonly SalesRepKind[] = ['rep', 'sales_manager', 'branch_manager']
 
 function isValidEmail(s: string): boolean {
   // Mirror the DB CHECK ('%@%.%') with a slightly stricter client-side gate.
@@ -32,9 +35,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const body = await request.json() as { name?: unknown; email?: unknown }
+    const body = await request.json() as {
+      name?: unknown
+      email?: unknown
+      kind?: unknown
+      title?: unknown
+    }
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const kindRaw = typeof body.kind === 'string' ? body.kind : 'rep'
+    const title = typeof body.title === 'string' ? body.title.trim().slice(0, TITLE_MAX) : ''
 
     if (!name || name.length > NAME_MAX) {
       return NextResponse.json({ error: `Name is required and must be ≤ ${NAME_MAX} chars` }, { status: 400 })
@@ -42,6 +52,10 @@ export async function POST(request: NextRequest) {
     if (!isValidEmail(email)) {
       return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
     }
+    if (!VALID_KINDS.includes(kindRaw as SalesRepKind)) {
+      return NextResponse.json({ error: 'Invalid kind' }, { status: 400 })
+    }
+    const kind = kindRaw as SalesRepKind
 
     const admin = createAdminClient()
     const { data, error } = await admin
@@ -49,6 +63,8 @@ export async function POST(request: NextRequest) {
       .insert({
         name,
         email,
+        kind,
+        title: title || null,
         active: true,
         created_by_id: user.id,
         updated_by_id: user.id,

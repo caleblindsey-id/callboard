@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, ADMIN_ROLES } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { SalesRepKind } from '@/types/database'
 
 const EMAIL_MAX = 320
 const NAME_MAX = 200
+const TITLE_MAX = 200
+const VALID_KINDS: readonly SalesRepKind[] = ['rep', 'sales_manager', 'branch_manager']
 
 function isValidEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && s.length <= EMAIL_MAX
@@ -23,6 +26,8 @@ export async function PATCH(
     const body = await request.json() as {
       name?: unknown
       email?: unknown
+      kind?: unknown
+      title?: unknown
       active?: unknown
     }
 
@@ -48,6 +53,23 @@ export async function PATCH(
         return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
       }
       update.email = email
+    }
+
+    if (body.kind !== undefined) {
+      if (typeof body.kind !== 'string' || !VALID_KINDS.includes(body.kind as SalesRepKind)) {
+        return NextResponse.json({ error: 'Invalid kind' }, { status: 400 })
+      }
+      update.kind = body.kind
+    }
+
+    if (body.title !== undefined) {
+      if (body.title === null || body.title === '') {
+        update.title = null
+      } else if (typeof body.title === 'string') {
+        update.title = body.title.trim().slice(0, TITLE_MAX) || null
+      } else {
+        return NextResponse.json({ error: 'title must be a string or null' }, { status: 400 })
+      }
     }
 
     if (body.active !== undefined) {

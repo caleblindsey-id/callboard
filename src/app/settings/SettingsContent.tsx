@@ -2,7 +2,19 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserRow, UserRole, SyncLogRow, SalesRep } from '@/types/database'
+import { UserRow, UserRole, SyncLogRow, SalesRep, SalesRepKind } from '@/types/database'
+
+const KIND_LABEL: Record<SalesRepKind, string> = {
+  branch_manager: 'Branch Manager',
+  sales_manager: 'Sales Manager',
+  rep: 'Sales Rep',
+}
+
+const KIND_BADGE: Record<SalesRepKind, string> = {
+  branch_manager: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
+  sales_manager: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+  rep: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+}
 import { useUser } from '@/components/UserProvider'
 import { X } from 'lucide-react'
 
@@ -682,6 +694,8 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [kind, setKind] = useState<SalesRepKind>('rep')
+  const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -692,7 +706,12 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
     const res = await fetch('/api/sales-reps', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), email: email.trim() }),
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim(),
+        kind,
+        title: title.trim() || null,
+      }),
     })
     const data = await res.json().catch(() => ({}))
     setSubmitting(false)
@@ -702,6 +721,8 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
     }
     setName('')
     setEmail('')
+    setKind('rep')
+    setTitle('')
     setAdding(false)
     router.refresh()
   }
@@ -729,7 +750,7 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
 
       {adding && (
         <form onSubmit={handleAdd} className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[200px]">
+          <div className="flex-1 min-w-[180px]">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
             <input
               type="text"
@@ -739,13 +760,35 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
               className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>
-          <div className="flex-1 min-w-[240px]">
+          <div className="flex-1 min-w-[220px]">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+          </div>
+          <div className="min-w-[140px]">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as SalesRepKind)}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              <option value="rep">Sales Rep</option>
+              <option value="sales_manager">Sales Manager</option>
+              <option value="branch_manager">Branch Manager</option>
+            </select>
+          </div>
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Title <span className="text-gray-400">(optional)</span></label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Sales Rep"
               className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
           </div>
@@ -759,7 +802,7 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
             </button>
             <button
               type="button"
-              onClick={() => { setAdding(false); setName(''); setEmail(''); setError(null) }}
+              onClick={() => { setAdding(false); setName(''); setEmail(''); setKind('rep'); setTitle(''); setError(null) }}
               className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
             >
               Cancel
@@ -782,6 +825,8 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
               <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Name</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Email</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Role</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Title</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
               </tr>
@@ -803,6 +848,8 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(rep.name)
   const [email, setEmail] = useState(rep.email)
+  const [kind, setKind] = useState<SalesRepKind>(rep.kind)
+  const [title, setTitle] = useState(rep.title ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -826,11 +873,17 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
   async function handleSaveEdit() {
     const trimmedName = name.trim()
     const trimmedEmail = email.trim()
+    const trimmedTitle = title.trim()
     if (!trimmedName || !trimmedEmail) {
       setError('Name and email are required')
       return
     }
-    const ok = await patch({ name: trimmedName, email: trimmedEmail })
+    const ok = await patch({
+      name: trimmedName,
+      email: trimmedEmail,
+      kind,
+      title: trimmedTitle || null,
+    })
     if (ok) {
       setEditing(false)
       router.refresh()
@@ -875,6 +928,26 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
             className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
           />
         </td>
+        <td className="px-5 py-3">
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as SalesRepKind)}
+            className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          >
+            <option value="rep">Sales Rep</option>
+            <option value="sales_manager">Sales Manager</option>
+            <option value="branch_manager">Branch Manager</option>
+          </select>
+        </td>
+        <td className="px-5 py-3">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="(optional)"
+            className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+        </td>
         <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-sm">—</td>
         <td className="px-5 py-3">
           <div className="flex flex-col gap-1">
@@ -887,7 +960,7 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
                 {busy ? '...' : 'Save'}
               </button>
               <button
-                onClick={() => { setEditing(false); setName(rep.name); setEmail(rep.email); setError(null) }}
+                onClick={() => { setEditing(false); setName(rep.name); setEmail(rep.email); setKind(rep.kind); setTitle(rep.title ?? ''); setError(null) }}
                 className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700"
               >
                 Cancel
@@ -904,6 +977,12 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
     <tr>
       <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">{rep.name}</td>
       <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{rep.email}</td>
+      <td className="px-5 py-3">
+        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${KIND_BADGE[rep.kind]}`}>
+          {KIND_LABEL[rep.kind]}
+        </span>
+      </td>
+      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{rep.title ?? '—'}</td>
       <td className="px-5 py-3">
         <span
           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${

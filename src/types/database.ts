@@ -83,11 +83,17 @@ export type AceLaborEntryInsert =
 export type AceLaborEntryUpdate = Partial<Omit<AceLaborEntryRow, 'id' | 'created_at' | 'updated_at'>>
 
 // Sales reps: outside reps a manager can forward an approved equipment lead
-// to. Not CallBoard users — only an email destination.
+// to. Not CallBoard users — only an email destination. `kind` distinguishes
+// reps from sales/branch managers, who can also be CC'd or be the primary
+// recipient (with an "assign to one of your reps" framing).
+export type SalesRepKind = 'rep' | 'sales_manager' | 'branch_manager'
+
 export type SalesRep = {
   id: string
   name: string
   email: string
+  kind: SalesRepKind
+  title: string | null
   active: boolean
   updated_by_id: string | null
   created_by_id: string | null
@@ -96,8 +102,8 @@ export type SalesRep = {
 }
 
 export type SalesRepInsert = Pick<SalesRep, 'name' | 'email'> &
-  Partial<Pick<SalesRep, 'active' | 'updated_by_id' | 'created_by_id'>>
-export type SalesRepUpdate = Partial<Pick<SalesRep, 'name' | 'email' | 'active' | 'updated_by_id'>>
+  Partial<Pick<SalesRep, 'kind' | 'title' | 'active' | 'updated_by_id' | 'created_by_id'>>
+export type SalesRepUpdate = Partial<Pick<SalesRep, 'name' | 'email' | 'kind' | 'title' | 'active' | 'updated_by_id'>>
 
 // ============================================================
 // JSONB Part type
@@ -418,12 +424,14 @@ export type TechLeadRow = {
   // Machine photos uploaded at submission. Stored under
   // `leads/{tech_lead_id}/{uuid}.jpg` in the shared `ticket-photos` bucket.
   photos: TicketPhoto[]
-  // Rep-forward audit (migration 064). Set when the lead is approved via
-  // /api/tech-leads/[id]/approve-and-email. Idempotency guard against
-  // duplicate sends.
+  // Rep-forward audit (migration 064 + 066). Set when the lead is approved
+  // via /api/tech-leads/[id]/approve-and-email. emailed_to_rep_at is the
+  // idempotency guard against duplicate sends; emailed_cc_ids is the list of
+  // managers CC'd on the send.
   emailed_to_rep_id: string | null
   emailed_to_rep_at: string | null
   email_rep_message_id: string | null
+  emailed_cc_ids: string[]
   created_at: string
   updated_at: string
 }
