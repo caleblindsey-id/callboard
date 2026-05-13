@@ -13,6 +13,7 @@ import PartSynergyPicker from '@/components/PartSynergyPicker'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
+import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
@@ -159,6 +160,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   // Equipment registration (for tickets with denormalized equipment fields)
   const [registeringEquipment, setRegisteringEquipment] = useState(false)
 
+  // Auto-save (in-progress completion fields) — mirrors the PM pattern in
+  // src/app/tickets/[id]/TicketActions.tsx (saveProgress + 3s debounce).
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasInitialized = useRef(false)
+  const flushRef = useRef<() => void>(() => {})
+
   // Contact edit state — staff can update name/email/phone after submission
   const [editingContact, setEditingContact] = useState(false)
   const [contactDraftName, setContactDraftName] = useState(ticket.contact_name ?? '')
@@ -278,7 +287,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         estimate_parts: toServicePartUsed(estimateParts),
         diagnosis_notes: diagnosisNotes || null,
       })
-      if (result.status === 'approved') {
+      if (result.status === SERVICE_STATUS.APPROVED) {
         setSuccessMsg('Estimate auto-approved (under $100)')
       }
       setShowEstimateForm(false)
@@ -406,6 +415,82 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       await patchTicket({ status: 'in_progress' })
     })
   }
+
+  // ── Auto-save (in-progress completion fields) ──
+  // Mirrors src/app/tickets/[id]/TicketActions.tsx saveProgress / debounce
+  // pattern. PATCHes the same fields techs can update mid-job so a refresh
+  // or in-app nav doesn't drop their work.
+  async function saveProgress(opts?: { keepalive?: boolean }) {
+    setSaving(true)
+    setError(null)
+    setSaveSuccess(false)
+    try {
+      const res = await fetch(`/api/service-tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: opts?.keepalive ?? false,
+        body: JSON.stringify({
+          hours_worked: parseFloat(hoursWorked) || null,
+          completion_notes: completionNotes || null,
+          parts_used: completionParts.length > 0 ? toServicePartUsed(completionParts) : [],
+          photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to save progress')
+      }
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Auto-save: debounce 3 seconds after any completion-form field change
+  // while the ticket is in_progress.
+  useEffect(() => {
+    if (ticket.status !== 'in_progress') return
+    if (!hasInitialized.current) {
+      hasInitialized.current = true
+      return
+    }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => {
+      saveProgress()
+    }, 3000)
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoursWorked, completionNotes, completionParts, photos])
+
+  // Keep the unmount-flush closure pointing at the latest state.
+  useEffect(() => {
+    flushRef.current = () => {
+      if (!autoSaveTimer.current) return
+      clearTimeout(autoSaveTimer.current)
+      autoSaveTimer.current = null
+      void saveProgress({ keepalive: true })
+    }
+  })
+
+  // Flush any pending debounce on unmount (in-app nav).
+  useEffect(() => () => flushRef.current(), [])
+
+  // Warn on hard navigation while a save is pending.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (autoSaveTimer.current) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [])
 
   async function handleRequestEstimatePart(index: number) {
     const entry = estimateParts[index]
@@ -921,8 +1006,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       </Card>
 
       {/* ── Section 4: Diagnosis & Estimate ── */}
-      {(ticket.status === 'open' || ticket.status === 'estimated' || ticket.status === 'approved' ||
-        ticket.status === 'declined' || ticket.estimate_amount != null) && (
+      {(ticket.status === SERVICE_STATUS.OPEN || ticket.status === SERVICE_STATUS.ESTIMATED || ticket.status === SERVICE_STATUS.APPROVED ||
+        ticket.status === SERVICE_STATUS.DECLINED || ticket.estimate_amount != null) && (
         <Card title="Diagnosis & Estimate">
           {/* Show existing estimate breakdown */}
           {ticket.estimate_amount != null && (
@@ -936,7 +1021,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                         <span className="ml-1 text-xs">(auto &lt; $100)</span>
                       )}
                     </span>
-                  ) : ticket.status === 'declined' ? (
+                  ) : ticket.status === SERVICE_STATUS.DECLINED ? (
                     <span className="text-red-600 dark:text-red-400">Declined</span>
                   ) : (
                     <span className="text-yellow-600 dark:text-yellow-400">Pending Approval</span>
@@ -1007,7 +1092,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               )}
 
               {/* Manual decision note — staff override approve/decline path */}
-              {ticket.manual_decision_note && (ticket.status === 'approved' || ticket.status === 'declined') && (
+              {ticket.manual_decision_note && (ticket.status === SERVICE_STATUS.APPROVED || ticket.status === SERVICE_STATUS.DECLINED) && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     Manual Decision Note
@@ -1042,7 +1127,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               </div>
 
               {/* Approval link display */}
-              {ticket.status === 'estimated' && ticket.approval_token && (
+              {ticket.status === SERVICE_STATUS.ESTIMATED && ticket.approval_token && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                   {ticket.approval_token_expires_at && new Date(ticket.approval_token_expires_at) > new Date() ? (
                     <div className="space-y-2">
@@ -1095,7 +1180,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           {/* Estimate action buttons for staff (approve/decline).
               Both paths require a note explaining who told us — shown via
               an inline-expand textarea before the action commits. */}
-          {ticket.status === 'estimated' && isStaff && (
+          {ticket.status === SERVICE_STATUS.ESTIMATED && isStaff && (
             <div className="mt-3">
               {manualDecisionMode === null ? (
                 <div className="flex flex-wrap gap-2">
@@ -1177,7 +1262,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* Decline reason */}
-          {ticket.status === 'declined' && ticket.decline_reason && (
+          {ticket.status === SERVICE_STATUS.DECLINED && ticket.decline_reason && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <InfoField label="Decline Reason">
                 <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
@@ -1186,7 +1271,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* Reopen & Revise for declined tickets */}
-          {ticket.status === 'declined' && (
+          {ticket.status === SERVICE_STATUS.DECLINED && (
             <div className="mt-3">
               <button
                 onClick={handleReopen}
@@ -1253,7 +1338,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* Submit estimate form — techs or staff when ticket is open */}
-          {ticket.status === 'open' && (
+          {ticket.status === SERVICE_STATUS.OPEN && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               {!showEstimateForm ? (
                 <button
@@ -1564,7 +1649,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       <Card title="Actions">
         <div className="space-y-3">
           {/* Open: Start Work (skip estimate for warranty/pre-approved) */}
-          {ticket.status === 'open' && (ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty') && (
+          {ticket.status === SERVICE_STATUS.OPEN && (ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty') && (
             <button
               onClick={handleStartWork}
               disabled={loading}
@@ -1575,7 +1660,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* Approved: Start Work */}
-          {ticket.status === 'approved' && (
+          {ticket.status === SERVICE_STATUS.APPROVED && (
             <>
               {partsRequested.length > 0 && !allPartsReceived ? (
                 <div className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
@@ -1594,7 +1679,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* In Progress: Complete Ticket */}
-          {ticket.status === 'in_progress' && !showCompletionForm && (
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && (
             <button
               onClick={() => setShowCompletionForm(true)}
               className="w-full sm:w-auto px-4 py-3 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
@@ -1604,7 +1689,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* Completed: Mark Billed (staff only) */}
-          {ticket.status === 'completed' && isStaff && (
+          {ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
             <div className="space-y-2">
               {!synergyOrderNumber.trim() && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -1622,7 +1707,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
 
           {/* Inside ticket pickup toggle */}
-          {ticket.ticket_type === 'inside' && ticket.status === 'completed' && isStaff && (
+          {ticket.ticket_type === 'inside' && ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
             <button
               onClick={handleTogglePickup}
               disabled={loading}
@@ -1675,7 +1760,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       </Card>
 
       {/* ── Section 7: Completion Form ── */}
-      {ticket.status === 'in_progress' && showCompletionForm && (
+      {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
         <Card title="Complete Ticket">
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Hours Worked */}
@@ -1854,19 +1939,27 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             )}
 
             {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading || uploading}
-              className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
-            >
-              {loading ? 'Completing...' : 'Mark Complete'}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={loading || uploading || saving}
+                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                {loading ? 'Completing...' : 'Mark Complete'}
+              </button>
+              {saving && (
+                <span className="text-sm text-gray-500 dark:text-gray-400">Saving...</span>
+              )}
+              {saveSuccess && !saving && (
+                <span className="text-sm text-green-600">Saved</span>
+              )}
+            </div>
           </form>
         </Card>
       )}
 
       {/* ── Section 8: Billing Summary (read-only, completed/billed) ── */}
-      {(ticket.status === 'completed' || ticket.status === 'billed') && (
+      {(ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED) && (
         <Card title="Billing Summary">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
             <InfoField label="Billing Amount">
@@ -1946,7 +2039,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       )}
 
       {/* Completion details for techs (no billing) */}
-      {(ticket.status === 'completed' || ticket.status === 'billed') && isTech && (
+      {(ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED) && isTech && (
         <Card title="Completion Details">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
             <InfoField label="Hours Worked">

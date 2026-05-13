@@ -7,6 +7,7 @@ import { UserRow } from '@/types/database'
 import { ServiceTicketWithJoins, ServiceTicketStatus, ServicePriority, ServiceTicketType } from '@/types/service-tickets'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import { SERVICE_STATUS } from '@/lib/constants/service-status'
 
 const STATUS_OPTIONS: { value: '' | ServiceTicketStatus; label: string }[] = [
   { value: '', label: 'All Statuses' },
@@ -291,7 +292,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                     </span>
                     {(() => {
                       const age = ticketAgeDays(ticket.created_at)
-                      const isStale = age > 7 && (ticket.status === 'open' || ticket.status === 'estimated')
+                      const isStale = age > 7 && (ticket.status === SERVICE_STATUS.OPEN || ticket.status === SERVICE_STATUS.ESTIMATED)
                       return (
                         <span className={`text-xs ${isStale ? 'text-red-500 dark:text-red-400 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
                           {age}d ago
@@ -360,7 +361,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                       </td>
                       {(() => {
                         const age = ticketAgeDays(ticket.created_at)
-                        const isStale = age > 7 && (ticket.status === 'open' || ticket.status === 'estimated')
+                        const isStale = age > 7 && (ticket.status === SERVICE_STATUS.OPEN || ticket.status === SERVICE_STATUS.ESTIMATED)
                         return (
                           <td className={`px-4 py-3 ${isStale ? 'text-red-500 dark:text-red-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
                             {new Date(ticket.created_at).toLocaleDateString()}
