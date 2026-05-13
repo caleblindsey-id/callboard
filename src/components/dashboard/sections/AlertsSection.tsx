@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertOctagon, AlertTriangle, ChevronRight, Flag, CreditCard, Clock } from 'lucide-react'
+import { AlertOctagon, AlertTriangle, ChevronRight, Flag, CreditCard, Clock, Award } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
 import {
   getOverdueTicketCount,
@@ -9,6 +9,7 @@ import {
 import {
   getCreditHoldCount,
   getStaleEstimatesCount,
+  getPendingPayoutApprovalsCount,
 } from '@/lib/db/dashboard-metrics'
 
 export default async function AlertsSection() {
@@ -18,12 +19,14 @@ export default async function AlertsSection() {
     needsReviewCount,
     creditHoldCount,
     staleEstimatesCount,
+    pendingPayoutApprovalsCount,
   ] = await Promise.all([
     getOverdueTicketCount(),
     getSkipRequestedCount(),
     getNeedsReviewCount(),
     getCreditHoldCount(),
     getStaleEstimatesCount(14),
+    getPendingPayoutApprovalsCount(),
   ])
 
   const hasAlerts =
@@ -31,7 +34,8 @@ export default async function AlertsSection() {
     needsReviewCount > 0 ||
     skipRequestedCount > 0 ||
     creditHoldCount > 0 ||
-    staleEstimatesCount > 0
+    staleEstimatesCount > 0 ||
+    pendingPayoutApprovalsCount > 0
 
   if (!hasAlerts) return null
 
@@ -140,6 +144,33 @@ export default async function AlertsSection() {
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
                   {skipRequestedCount}
+                </span>
+                <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {pendingPayoutApprovalsCount > 0 && (
+          <Link
+            href="/tech-payouts"
+            className="block bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 p-4 hover:border-amber-300 dark:hover:border-amber-700 hover:shadow transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Award className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                    Tech Payouts
+                  </span>
+                </div>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+                  Tech leads and ACE labor awaiting your approval.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
+                  {pendingPayoutApprovalsCount}
                 </span>
                 <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
               </div>

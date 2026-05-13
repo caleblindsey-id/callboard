@@ -283,3 +283,26 @@ export async function getTechLeadBonusLeaderboard(limit = 5): Promise<TechLeadBo
     .sort((a, b) => b.amount - a.amount)
     .slice(0, limit)
 }
+
+// --- Alert: Pending Payout Approvals ------------------------------------
+// Combined count of pending tech_leads and pending ace_labor_entries. Drives
+// the dashboard "Tech Payouts" alert; both flows resolve on /tech-payouts.
+
+export async function getPendingPayoutApprovalsCount(): Promise<number> {
+  const supabase = await createClient()
+
+  const [leadsRes, aceRes] = await Promise.all([
+    supabase
+      .from('tech_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+    supabase
+      .from('ace_labor_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+  ])
+  if (leadsRes.error) throw leadsRes.error
+  if (aceRes.error) throw aceRes.error
+  return (leadsRes.count ?? 0) + (aceRes.count ?? 0)
+}
+
