@@ -286,6 +286,7 @@ export type PmScheduleRow = {
   equipment_id: string | null
   interval_months: number
   anchor_month: number
+  starting_year: number
   billing_type: BillingType | null
   flat_rate: number | null
   active: boolean
@@ -522,7 +523,7 @@ export type EquipmentInsert = MakeOptional<
 
 export type PmScheduleInsert = MakeOptional<
   Omit<PmScheduleRow, 'id' | 'created_at'>,
-  'active' | 'equipment_id' | 'interval_months' | 'anchor_month' | 'billing_type' | 'flat_rate'
+  'active' | 'equipment_id' | 'interval_months' | 'anchor_month' | 'starting_year' | 'billing_type' | 'flat_rate'
 >
 
 export type PmTicketInsert = MakeOptional<

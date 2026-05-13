@@ -19,6 +19,7 @@ interface ScheduleSectionProps {
 
 type BackfillSummary =
   | { kind: 'skipped' }
+  | { kind: 'skipped_too_old' }
   | { kind: 'ok'; created: number; flagged: number; months: { month: number; year: number }[] }
   | { kind: 'partial'; error: string; created: number }
 
@@ -31,9 +32,22 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
 
   const [intervalMonths, setIntervalMonths] = useState(schedule?.interval_months ?? 3)
   const [anchorMonth, setAnchorMonth] = useState(schedule?.anchor_month ?? 1)
+  const [startingYear, setStartingYear] = useState(schedule?.starting_year ?? new Date().getFullYear())
   const [billingType, setBillingType] = useState<BillingType>(schedule?.billing_type ?? 'flat_rate')
   const [flatRate, setFlatRate] = useState(schedule?.flat_rate?.toString() ?? '')
   const [skipBackfill, setSkipBackfill] = useState(false)
+
+  // Starting-year dropdown: current year +1 down through current year -2,
+  // descending. If an existing schedule's starting_year falls outside that
+  // window (legacy row), include it so the dropdown doesn't silently shift.
+  const currentYear = new Date().getFullYear()
+  const startingYearOptions = (() => {
+    const base = [currentYear + 1, currentYear, currentYear - 1, currentYear - 2]
+    if (schedule && !base.includes(schedule.starting_year)) {
+      return [...base, schedule.starting_year].sort((a, b) => b - a)
+    }
+    return base
+  })()
 
   async function handleSave() {
     setLoading(true)
@@ -43,6 +57,7 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
     const payload = {
       interval_months: intervalMonths,
       anchor_month: anchorMonth,
+      starting_year: startingYear,
       billing_type: billingType,
       flat_rate: billingType === 'flat_rate' ? parseFloat(flatRate) || null : null,
     }
@@ -81,6 +96,8 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
       const bf = data?.backfill
       if (bf?.skipped_by_user) {
         setBackfillSummary({ kind: 'skipped' })
+      } else if (bf?.skipped_too_old) {
+        setBackfillSummary({ kind: 'skipped_too_old' })
       } else if (bf?.error) {
         setBackfillSummary({ kind: 'partial', error: bf.error, created: bf.created ?? 0 })
       } else if (bf) {
@@ -125,6 +142,12 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
           }`}
         >
           {backfillSummary.kind === 'skipped' && 'Schedule created. Backfill skipped.'}
+          {backfillSummary.kind === 'skipped_too_old' && (
+            <>
+              Schedule created. Backfill skipped — first PM date is more than 3 months ago. Generate
+              any needed prior months manually from the Tickets board.
+            </>
+          )}
           {backfillSummary.kind === 'ok' && (
             <>
               Schedule created. Backfilled {backfillSummary.created} PM ticket
@@ -149,6 +172,7 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
           <div>
             <span className="text-gray-500 dark:text-gray-400">Frequency</span>
             <p className="text-gray-900 dark:text-white font-medium">{describeSchedule(schedule.interval_months, schedule.anchor_month)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Started {schedule.starting_year}</p>
           </div>
           <div>
             <span className="text-gray-500 dark:text-gray-400">Billing Type</span>
@@ -193,6 +217,26 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
                 <option key={i + 1} value={i + 1}>{m}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Starting year
+              <span className="text-gray-400 dark:text-gray-500 font-normal ml-1">(year this PM cycle began)</span>
+            </label>
+            <select
+              value={startingYear}
+              onChange={(e) => setStartingYear(parseInt(e.target.value))}
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              {startingYearOptions.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            {!schedule && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Backfill only runs when the first PM date is within the last 3 months.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Billing Type</label>

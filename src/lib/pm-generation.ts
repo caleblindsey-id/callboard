@@ -93,6 +93,35 @@ export function backfillMonths(
   return out
 }
 
+// Pure: list every cycle-matching month from (startYear, startMonth) through
+// (endYear, endMonth), inclusive. Spans year boundaries — used by the
+// starting_year-aware backfill in POST /api/pm-schedules where the user can
+// pick a starting_year that puts the first PM in the prior calendar year
+// (within the 3-month recency window enforced by the route).
+export function monthsInRange(
+  startYear: number,
+  startMonth: number,
+  endYear: number,
+  endMonth: number,
+  anchorMonth: number,
+  intervalMonths: number
+): { month: number; year: number }[] {
+  const out: { month: number; year: number }[] = []
+  let y = startYear
+  let m = startMonth
+  while (y < endYear || (y === endYear && m <= endMonth)) {
+    if (scheduleMatchesMonth({ anchor_month: anchorMonth, interval_months: intervalMonths }, m)) {
+      out.push({ month: m, year: y })
+    }
+    m++
+    if (m > 12) {
+      m = 1
+      y++
+    }
+  }
+  return out
+}
+
 export async function generatePmTickets(
   args: GeneratePmTicketsArgs
 ): Promise<GeneratePmTicketsResult> {
