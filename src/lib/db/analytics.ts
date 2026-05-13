@@ -322,12 +322,30 @@ export async function getTeamAnalytics(
       .is('deleted_at', null)
       .gte('completed_date', priorRange.start)
       .lte('completed_date', priorRange.end + 'T23:59:59Z'),
-    supabase
-      .from('pm_tickets')
-      .select('assigned_technician_id, status')
-      .is('deleted_at', null)
-      .eq('month', curDate.getUTCMonth() + 1)
-      .eq('year', curDate.getUTCFullYear()),
+    // AN-25: completion-rate denominator query.
+    //
+    // Monthly view: anchor on the pm_tickets.month/year columns — those are
+    // populated for every ticket and define the scheduled month explicitly.
+    //
+    // Weekly view: the month/year filter wrongly pulls every ticket in the
+    // calendar month, so a tech with 60 monthly tickets but only 5 due this
+    // week looked like 5/60 instead of 5/eligible-this-week. The correct
+    // denominator is tickets that were eligible to be completed in the week —
+    // scheduled on or before the week's end AND not already completed before
+    // the week began. We filter further in-memory after the fetch.
+    (periodType === 'weekly'
+      ? supabase
+          .from('pm_tickets')
+          .select('assigned_technician_id, status, scheduled_date, completed_date')
+          .is('deleted_at', null)
+          .lte('scheduled_date', range.end)
+          .or(`completed_date.is.null,completed_date.gte.${range.start}`)
+      : supabase
+          .from('pm_tickets')
+          .select('assigned_technician_id, status, scheduled_date, completed_date')
+          .is('deleted_at', null)
+          .eq('month', curDate.getUTCMonth() + 1)
+          .eq('year', curDate.getUTCFullYear())),
     supabase
       .from('technician_targets')
       .select('*')
@@ -485,10 +503,25 @@ export async function getTeamAnalytics(
       totalRevenue: teamRevenue,
       grossProfit: teamGrossProfit,
       avgHoursPerTicket: teamTickets > 0 ? teamHours / teamTickets : null,
+      // AN-23: sum-weighted mean of completion days across the team, not the
+      // arithmetic mean of per-tech averages. Computed directly from the raw
+      // completed-ticket rows (same source aggregateTechMetrics uses) so a tech
+      // who closed 1 ticket doesn't get the same weight as a tech who closed 50.
       avgCompletionDays: (() => {
-        const withDays = techRows.filter((r) => r.avgCompletionDays != null)
-        if (withDays.length === 0) return null
-        return withDays.reduce((s, r) => s + r.avgCompletionDays!, 0) / withDays.length
+        const teamCompleted = (currentTickets ?? []).filter(
+          (t) => t.status === 'completed' || t.status === 'billed'
+        )
+        let teamDaySum = 0
+        let teamDayCount = 0
+        for (const t of teamCompleted) {
+          if (t.completed_date && t.scheduled_date) {
+            teamDaySum +=
+              (new Date(t.completed_date).getTime() - new Date(t.scheduled_date).getTime()) /
+              (1000 * 60 * 60 * 24)
+            teamDayCount++
+          }
+        }
+        return teamDayCount > 0 ? teamDaySum / teamDayCount : null
       })(),
     },
     priorKpis: {
@@ -542,16 +575,33 @@ export async function getTechnicianAnalytics(
 
   if (tickErr) throw tickErr
 
-  // Also fetch non-completed tickets for this month (completion rate)
+  // Also fetch non-completed tickets for this period (completion rate denominator).
+  //
+  // AN-25: For monthly we keep the month/year anchor — same as the team query.
+  // For weekly we anchor on scheduled_date <= range.end (tickets eligible to
+  // complete in the week). The old month/year filter pulled all 4-5 weeks of
+  // the calendar month into a single week's denominator, deflating completion
+  // rate for any tech with weekly traffic.
   const curDate = new Date(range.start + 'T12:00:00Z')
-  const { data: allStatusTickets } = await supabase
-    .from('pm_tickets')
-    .select('assigned_technician_id, status')
-    .is('deleted_at', null)
-    .eq('assigned_technician_id', techId)
-    .eq('month', curDate.getUTCMonth() + 1)
-    .eq('year', curDate.getUTCFullYear())
-    .not('status', 'in', '("completed","billed")')
+  const allStatusQuery =
+    periodType === 'weekly'
+      ? supabase
+          .from('pm_tickets')
+          .select('assigned_technician_id, status')
+          .is('deleted_at', null)
+          .eq('assigned_technician_id', techId)
+          .lte('scheduled_date', range.end)
+          .or(`completed_date.is.null,completed_date.gte.${range.start}`)
+          .not('status', 'in', '("completed","billed")')
+      : supabase
+          .from('pm_tickets')
+          .select('assigned_technician_id, status')
+          .is('deleted_at', null)
+          .eq('assigned_technician_id', techId)
+          .eq('month', curDate.getUTCMonth() + 1)
+          .eq('year', curDate.getUTCFullYear())
+          .not('status', 'in', '("completed","billed")')
+  const { data: allStatusTickets } = await allStatusQuery
 
   const rawTickets = (allTickets ?? []) as RawTicket[]
 
@@ -576,7 +626,17 @@ export async function getTechnicianAnalytics(
     (t) => t.completed_date && t.completed_date >= yoyRange.start && t.completed_date <= yoyRange.end + 'T23:59:59Z'
   )
   const hasYoy = yoyFiltered.length > 0
-  const yoyMetrics = hasYoy ? aggregateTechMetrics(yoyFiltered.map((t) => ({ ...t })), techId, tech.hourly_cost) : null
+  // AN-22: When the current period has zero completions but the trailing 12 months
+  // contain activity, suppress the YoY row. Returning the LY metrics here would
+  // pair a 0-numerator current against a positive prior — the consumer's delta()
+  // renders that as "-100%", which reads as a real decline rather than "no current
+  // activity to compare." Null is the agreed sentinel for "no current activity".
+  const trailingHasActivity = rawTickets.some((t) => t.status === 'completed' || t.status === 'billed')
+  const currentHasCompletions = currentMetrics.ticketsCompleted > 0
+  const yoyMetrics =
+    hasYoy && (currentHasCompletions || !trailingHasActivity)
+      ? aggregateTechMetrics(yoyFiltered.map((t) => ({ ...t })), techId, tech.hourly_cost)
+      : null
 
   // Trend data (last 12 months)
   const trend: TrendPoint[] = []
