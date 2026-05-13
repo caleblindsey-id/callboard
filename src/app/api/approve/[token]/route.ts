@@ -101,15 +101,15 @@ export async function POST(
     .eq('approval_token', token)
     .single()
 
-  if (fetchError || !ticket) {
+  // Collapse "not found" and "expired" into a single 404 so the response
+  // can't be used to confirm whether a token was ever valid. The "already
+  // responded to" branch stays user-helpful — by then the attacker already
+  // knows the token was real.
+  const expired =
+    ticket?.approval_token_expires_at &&
+    new Date(ticket.approval_token_expires_at) < new Date()
+  if (fetchError || !ticket || expired) {
     return NextResponse.json({ error: 'This link is no longer valid.' }, { status: 404 })
-  }
-
-  if (ticket.approval_token_expires_at && new Date(ticket.approval_token_expires_at) < new Date()) {
-    return NextResponse.json(
-      { error: 'This link has expired. Please contact us for a new one.' },
-      { status: 410 }
-    )
   }
 
   if (ticket.status !== 'estimated') {
