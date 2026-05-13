@@ -10,6 +10,7 @@ function ChangePasswordForm() {
   const searchParams = useSearchParams()
   const forced = searchParams.get('forced') === 'true'
 
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -27,6 +28,10 @@ function ChangePasswordForm() {
       setError('Password must be at least 8 characters.')
       return
     }
+    if (!forced && !currentPassword) {
+      setError('Enter your current password.')
+      return
+    }
 
     setLoading(true)
 
@@ -34,7 +39,11 @@ function ChangePasswordForm() {
       const res = await fetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: newPassword }),
+        body: JSON.stringify(
+          forced
+            ? { password: newPassword }
+            : { password: newPassword, current_password: currentPassword }
+        ),
       })
 
       const data = await res.json()
@@ -70,6 +79,24 @@ function ChangePasswordForm() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!forced && (
+            <div>
+              <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Current Password
+              </label>
+              <input
+                id="currentPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-slate-500 dark:focus:ring-slate-400 focus:border-transparent"
+                placeholder="Your current password"
+              />
+            </div>
+          )}
+
           <div>
             <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               New Password
