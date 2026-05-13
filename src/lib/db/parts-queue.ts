@@ -20,8 +20,9 @@ export async function getPartsQueue(): Promise<PartsQueueRow[]> {
   const { data, error } = await supabase
     .from('parts_order_queue')
     .select(QUEUE_COLUMNS)
+    .returns<PartsQueueRow[]>()
     .order('requested_at', { ascending: true })
 
   if (error) throw error
-  return (data ?? []) as unknown as PartsQueueRow[]
+  return data ?? []
 }
