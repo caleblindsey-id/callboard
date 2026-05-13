@@ -17,22 +17,28 @@ interface ScheduleSectionProps {
   schedule: PmScheduleRow | null
 }
 
+type BackfillSummary =
+  | { kind: 'skipped' }
+  | { kind: 'ok'; created: number; flagged: number; months: { month: number; year: number }[] }
+  | { kind: 'partial'; error: string; created: number }
+
 export default function ScheduleSection({ equipmentId, schedule }: ScheduleSectionProps) {
   const router = useRouter()
   const [editing, setEditing] = useState(!schedule)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [backfillSummary, setBackfillSummary] = useState<BackfillSummary | null>(null)
 
   const [intervalMonths, setIntervalMonths] = useState(schedule?.interval_months ?? 3)
   const [anchorMonth, setAnchorMonth] = useState(schedule?.anchor_month ?? 1)
   const [billingType, setBillingType] = useState<BillingType>(schedule?.billing_type ?? 'flat_rate')
   const [flatRate, setFlatRate] = useState(schedule?.flat_rate?.toString() ?? '')
+  const [skipBackfill, setSkipBackfill] = useState(false)
 
   async function handleSave() {
     setLoading(true)
     setError(null)
-
-    const supabase = createClient()
+    setBackfillSummary(null)
 
     const payload = {
       interval_months: intervalMonths,
@@ -42,6 +48,8 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
     }
 
     if (schedule) {
+      // Edit path: direct client update (unchanged — no backfill logic).
+      const supabase = createClient()
       const { error: updateError } = await supabase
         .from('pm_schedules')
         .update(payload)
@@ -53,16 +61,35 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
         return
       }
     } else {
-      const { error: insertError } = await supabase.from('pm_schedules').insert({
-        equipment_id: equipmentId,
-        ...payload,
-        active: true,
+      // Create path: route through API so backfill can run server-side.
+      const res = await fetch('/api/pm-schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          equipment_id: equipmentId,
+          ...payload,
+          skip_backfill: skipBackfill,
+        }),
       })
-
-      if (insertError) {
-        setError(insertError.message)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data?.error ?? 'Failed to create schedule')
         setLoading(false)
         return
+      }
+
+      const bf = data?.backfill
+      if (bf?.skipped_by_user) {
+        setBackfillSummary({ kind: 'skipped' })
+      } else if (bf?.error) {
+        setBackfillSummary({ kind: 'partial', error: bf.error, created: bf.created ?? 0 })
+      } else if (bf) {
+        setBackfillSummary({
+          kind: 'ok',
+          created: bf.created ?? 0,
+          flagged: bf.flagged ?? 0,
+          months: bf.months ?? [],
+        })
       }
     }
 
@@ -88,6 +115,34 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
       </div>
 
       {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+
+      {backfillSummary && (
+        <div
+          className={`text-sm rounded-md px-3 py-2 mb-3 border ${
+            backfillSummary.kind === 'partial'
+              ? 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-900/30 dark:border-amber-800/60 dark:text-amber-200'
+              : 'bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-700/40 dark:border-slate-600 dark:text-slate-200'
+          }`}
+        >
+          {backfillSummary.kind === 'skipped' && 'Schedule created. Backfill skipped.'}
+          {backfillSummary.kind === 'ok' && (
+            <>
+              Schedule created. Backfilled {backfillSummary.created} PM ticket
+              {backfillSummary.created === 1 ? '' : 's'}
+              {backfillSummary.flagged > 0
+                ? ` (${backfillSummary.flagged} flagged for review)`
+                : ''}
+              .
+            </>
+          )}
+          {backfillSummary.kind === 'partial' && (
+            <>
+              Schedule created, but backfill failed partway: {backfillSummary.error}. Generate
+              missing months manually from the Tickets board.
+            </>
+          )}
+        </div>
+      )}
 
       {!editing && schedule ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -164,6 +219,22 @@ export default function ScheduleSection({ equipmentId, schedule }: ScheduleSecti
                 placeholder="0.00"
               />
             </div>
+          )}
+          {!schedule && (
+            <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 select-none">
+              <input
+                type="checkbox"
+                checked={skipBackfill}
+                onChange={(e) => setSkipBackfill(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-slate-700 focus:ring-slate-500"
+              />
+              <span>
+                Skip backfill
+                <span className="text-gray-500 dark:text-gray-400 font-normal ml-1">
+                  (PMs already done outside CallBoard — don&apos;t auto-generate for prior months)
+                </span>
+              </span>
+            </label>
           )}
           <div className="flex gap-3">
             <button
