@@ -2,12 +2,13 @@ import { getUsers } from '@/lib/db/users'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { getSetting } from '@/lib/db/settings'
+import { getAllSalesReps } from '@/lib/db/sales-reps'
 import { SyncLogRow } from '@/types/database'
 import SettingsContent from './SettingsContent'
 
 export default async function SettingsPage() {
   await requireRole('super_admin')
-  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, companyName, serviceEmail, servicePhone] = await Promise.all([
+  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, companyName, serviceEmail, servicePhone, salesReps] = await Promise.all([
     getUsers(),
     getSyncLog(),
     getSetting('labor_rate_per_hour'),
@@ -16,6 +17,7 @@ export default async function SettingsPage() {
     getSetting('company_name'),
     getSetting('service_email'),
     getSetting('service_phone'),
+    getAllSalesReps(),
   ])
 
   return (
@@ -35,6 +37,7 @@ export default async function SettingsPage() {
         companyName={companyName ?? ''}
         serviceEmail={serviceEmail ?? ''}
         servicePhone={servicePhone ?? ''}
+        salesReps={salesReps}
       />
     </div>
   )

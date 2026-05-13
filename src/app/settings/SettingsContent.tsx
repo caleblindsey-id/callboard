@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserRow, UserRole, SyncLogRow } from '@/types/database'
+import { UserRow, UserRole, SyncLogRow, SalesRep } from '@/types/database'
 import { useUser } from '@/components/UserProvider'
 import { X } from 'lucide-react'
 
@@ -15,6 +15,7 @@ interface SettingsContentProps {
   companyName: string
   serviceEmail: string
   servicePhone: string
+  salesReps: SalesRep[]
 }
 
 export default function SettingsContent({
@@ -26,6 +27,7 @@ export default function SettingsContent({
   companyName,
   serviceEmail,
   servicePhone,
+  salesReps,
 }: SettingsContentProps) {
   const router = useRouter()
   const [modalOpen, setModalOpen] = useState(false)
@@ -45,6 +47,9 @@ export default function SettingsContent({
         initialServiceEmail={serviceEmail}
         initialServicePhone={servicePhone}
       />
+
+      {/* Sales Reps — destination list for forwarded equipment leads */}
+      <SalesRepsSection salesReps={salesReps} />
 
       {/* Users section */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -669,5 +674,275 @@ function AddUserModal({
         )}
       </div>
     </div>
+  )
+}
+
+function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
+  const router = useRouter()
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    const res = await fetch('/api/sales-reps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), email: email.trim() }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setSubmitting(false)
+    if (!res.ok) {
+      setError(data.error ?? 'Failed to add sales rep')
+      return
+    }
+    setName('')
+    setEmail('')
+    setAdding(false)
+    router.refresh()
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+            Sales Reps
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Reps a manager can forward an approved equipment lead to via email. Not CallBoard users.
+          </p>
+        </div>
+        {!adding && (
+          <button
+            onClick={() => { setAdding(true); setError(null) }}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
+          >
+            Add Rep
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <form onSubmit={handleAdd} className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+          </div>
+          <div className="flex-1 min-w-[240px]">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-3 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50"
+            >
+              {submitting ? 'Adding...' : 'Add'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAdding(false); setName(''); setEmail(''); setError(null) }}
+              className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && (
+            <p className="basis-full text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
+        </form>
+      )}
+
+      {salesReps.length === 0 ? (
+        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          No sales reps yet. Add one above to start forwarding equipment leads.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Name</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Email</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {salesReps.map((rep) => (
+                <SalesRepRow key={rep.id} rep={rep} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SalesRepRow({ rep }: { rep: SalesRep }) {
+  const router = useRouter()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(rep.name)
+  const [email, setEmail] = useState(rep.email)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function patch(body: Record<string, unknown>): Promise<boolean> {
+    setError(null)
+    setBusy(true)
+    const res = await fetch(`/api/sales-reps/${rep.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'Failed to update sales rep')
+      return false
+    }
+    return true
+  }
+
+  async function handleSaveEdit() {
+    const trimmedName = name.trim()
+    const trimmedEmail = email.trim()
+    if (!trimmedName || !trimmedEmail) {
+      setError('Name and email are required')
+      return
+    }
+    const ok = await patch({ name: trimmedName, email: trimmedEmail })
+    if (ok) {
+      setEditing(false)
+      router.refresh()
+    }
+  }
+
+  async function handleToggleActive() {
+    const ok = await patch({ active: !rep.active })
+    if (ok) router.refresh()
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete sales rep "${rep.name}"? This cannot be undone.`)) return
+    setError(null)
+    setBusy(true)
+    const res = await fetch(`/api/sales-reps/${rep.id}`, { method: 'DELETE' })
+    setBusy(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'Failed to delete sales rep')
+      return
+    }
+    router.refresh()
+  }
+
+  if (editing) {
+    return (
+      <tr>
+        <td className="px-5 py-3">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+        </td>
+        <td className="px-5 py-3">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+        </td>
+        <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-sm">—</td>
+        <td className="px-5 py-3">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveEdit}
+                disabled={busy}
+                className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 disabled:opacity-50"
+              >
+                {busy ? '...' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setEditing(false); setName(rep.name); setEmail(rep.email); setError(null) }}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+            {error && <span className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</span>}
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr>
+      <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">{rep.name}</td>
+      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{rep.email}</td>
+      <td className="px-5 py-3">
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            rep.active
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+          }`}
+        >
+          {rep.active ? 'Active' : 'Inactive'}
+        </span>
+      </td>
+      <td className="px-5 py-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setEditing(true)}
+              disabled={busy}
+              className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 disabled:opacity-50"
+            >
+              Edit
+            </button>
+            <button
+              onClick={handleToggleActive}
+              disabled={busy}
+              className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 disabled:opacity-50"
+            >
+              {busy ? '...' : rep.active ? 'Deactivate' : 'Activate'}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={busy}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          </div>
+          {error && <span className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</span>}
+        </div>
+      </td>
+    </tr>
   )
 }

@@ -82,6 +82,23 @@ export type AceLaborEntryInsert =
   >>
 export type AceLaborEntryUpdate = Partial<Omit<AceLaborEntryRow, 'id' | 'created_at' | 'updated_at'>>
 
+// Sales reps: outside reps a manager can forward an approved equipment lead
+// to. Not CallBoard users — only an email destination.
+export type SalesRep = {
+  id: string
+  name: string
+  email: string
+  active: boolean
+  updated_by_id: string | null
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type SalesRepInsert = Pick<SalesRep, 'name' | 'email'> &
+  Partial<Pick<SalesRep, 'active' | 'updated_by_id' | 'created_by_id'>>
+export type SalesRepUpdate = Partial<Pick<SalesRep, 'name' | 'email' | 'active' | 'updated_by_id'>>
+
 // ============================================================
 // JSONB Part type
 // ============================================================
@@ -889,6 +906,12 @@ export interface Database {
         Row: AceLaborEntryRow
         Insert: AceLaborEntryInsert
         Update: AceLaborEntryUpdate
+        Relationships: []
+      }
+      sales_reps: {
+        Row: SalesRep
+        Insert: SalesRepInsert
+        Update: SalesRepUpdate
         Relationships: []
       }
     }
