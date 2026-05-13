@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
+import ConfirmDialog from './ConfirmDialog'
 
 interface Props {
   leads: TechLeadWithJoins[]
@@ -66,6 +67,9 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
   const [submittingAce, setSubmittingAce] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  // Inline confirm replacements for window.confirm.
+  const [confirmMarkPaidOpen, setConfirmMarkPaidOpen] = useState(false)
+  const [confirmAceMarkPaidOpen, setConfirmAceMarkPaidOpen] = useState(false)
 
   const inRange = useMemo(() => {
     // UTC anchoring on both boundaries so the range matches the UTC dates the
@@ -212,18 +216,22 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
     URL.revokeObjectURL(url)
   }
 
-  async function markPaid() {
-    const ids = Array.from(selected)
-    if (ids.length === 0) {
+  function markPaid() {
+    if (selected.size === 0) {
       setError('Select at least one lead to mark paid.')
       return
     }
-    const period = toPayoutPeriod(to)
-    const confirmed = window.confirm(
-      `Mark ${ids.length} lead${ids.length === 1 ? '' : 's'} paid in period ${period}? Total: $${selectedSum.toFixed(2)}.`
-    )
-    if (!confirmed) return
+    setError(null)
+    setConfirmMarkPaidOpen(true)
+  }
 
+  async function performMarkPaid() {
+    const ids = Array.from(selected)
+    if (ids.length === 0) {
+      setConfirmMarkPaidOpen(false)
+      return
+    }
+    const period = toPayoutPeriod(to)
     setSubmitting(true)
     setError(null)
     setMessage(null)
@@ -242,21 +250,26 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
       setError(e instanceof Error ? e.message : 'Failed to mark leads paid.')
     } finally {
       setSubmitting(false)
+      setConfirmMarkPaidOpen(false)
     }
   }
 
-  async function aceMarkPaid() {
-    const ids = Array.from(selectedAce)
-    if (ids.length === 0) {
+  function aceMarkPaid() {
+    if (selectedAce.size === 0) {
       setError('Select at least one ACE entry to mark paid.')
       return
     }
-    const period = toPayoutPeriod(to)
-    const confirmed = window.confirm(
-      `Mark ${ids.length} ACE labor entr${ids.length === 1 ? 'y' : 'ies'} paid in period ${period}? Billable value: $${selectedAceSum.toFixed(2)}.`
-    )
-    if (!confirmed) return
+    setError(null)
+    setConfirmAceMarkPaidOpen(true)
+  }
 
+  async function performAceMarkPaid() {
+    const ids = Array.from(selectedAce)
+    if (ids.length === 0) {
+      setConfirmAceMarkPaidOpen(false)
+      return
+    }
+    const period = toPayoutPeriod(to)
     setSubmittingAce(true)
     setError(null)
     setMessage(null)
@@ -275,6 +288,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
       setError(e instanceof Error ? e.message : 'Failed to mark ACE entries paid.')
     } finally {
       setSubmittingAce(false)
+      setConfirmAceMarkPaidOpen(false)
     }
   }
 
@@ -523,6 +537,26 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmMarkPaidOpen}
+        title="Mark leads paid?"
+        message={`Mark ${selected.size} lead${selected.size === 1 ? '' : 's'} paid in period ${toPayoutPeriod(to)}? Total: $${selectedSum.toFixed(2)}.`}
+        confirmLabel="Mark paid"
+        busy={submitting}
+        onCancel={() => setConfirmMarkPaidOpen(false)}
+        onConfirm={performMarkPaid}
+      />
+
+      <ConfirmDialog
+        open={confirmAceMarkPaidOpen}
+        title="Mark ACE labor paid?"
+        message={`Mark ${selectedAce.size} ACE labor entr${selectedAce.size === 1 ? 'y' : 'ies'} paid in period ${toPayoutPeriod(to)}? Billable value: $${selectedAceSum.toFixed(2)}.`}
+        confirmLabel="Mark paid"
+        busy={submittingAce}
+        onCancel={() => setConfirmAceMarkPaidOpen(false)}
+        onConfirm={performAceMarkPaid}
+      />
     </div>
   )
 }

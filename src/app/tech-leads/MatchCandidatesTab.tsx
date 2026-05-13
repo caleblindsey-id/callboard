@@ -5,6 +5,7 @@ import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import ConfirmMatchModal from './ConfirmMatchModal'
+import ConfirmDialog from './ConfirmDialog'
 
 interface Props {
   leads: TechLeadWithJoins[]
@@ -27,13 +28,12 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
   const [activeProposedTier, setActiveProposedTier] = useState<TechLeadWithJoins['proposed_equipment_tier']>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Inline replacement for window.confirm — null = closed.
+  const [pendingDismissLeadId, setPendingDismissLeadId] = useState<string | null>(null)
 
   const leadsWithCandidates = leads.filter(l => (candidatesByLead[l.id] ?? []).length > 0)
 
-  async function dismissAll(leadId: string) {
-    if (!window.confirm('Dismiss ALL candidates on this lead? The lead will go back to Approved and wait for new matches.')) {
-      return
-    }
+  async function performDismissAll(leadId: string) {
     setBusyId(leadId)
     setError(null)
     try {
@@ -45,6 +45,7 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
       setError(e instanceof Error ? e.message : 'Failed to dismiss candidates.')
     } finally {
       setBusyId(null)
+      setPendingDismissLeadId(null)
     }
   }
 
@@ -84,7 +85,7 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => dismissAll(lead.id)}
+                  onClick={() => setPendingDismissLeadId(lead.id)}
                   disabled={isBusy}
                   className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                 >
@@ -151,6 +152,19 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
         proposedTier={activeProposedTier}
         onClose={() => setActiveCandidate(null)}
         onDone={() => { setActiveCandidate(null); onRefresh() }}
+      />
+
+      <ConfirmDialog
+        open={pendingDismissLeadId !== null}
+        title="Dismiss all candidates?"
+        message="Dismiss ALL candidates on this lead? The lead will go back to Approved and wait for new matches."
+        confirmLabel="Dismiss all"
+        confirmVariant="danger"
+        busy={pendingDismissLeadId !== null && busyId === pendingDismissLeadId}
+        onCancel={() => setPendingDismissLeadId(null)}
+        onConfirm={() => {
+          if (pendingDismissLeadId) performDismissAll(pendingDismissLeadId)
+        }}
       />
     </div>
   )

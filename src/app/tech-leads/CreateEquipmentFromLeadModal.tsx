@@ -79,6 +79,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!lead) return
@@ -98,6 +99,8 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setFlatRate('')
     setError(null)
     setSubmitting(false)
+    // Focus dialog so onKeyDown captures Escape.
+    dialogRef.current?.focus()
   }, [lead])
 
   // Customer search (only when needed)
@@ -198,12 +201,22 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      ref={dialogRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-center justify-center outline-none"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-equipment-from-lead-title"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !submitting) onClose()
+      }}
+    >
       <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full max-w-2xl mx-4 max-h-[95vh] overflow-y-auto">
         <div className="sticky top-0 bg-white dark:bg-gray-800 px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div>
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Create equipment from lead</h3>
+            <h3 id="create-equipment-from-lead-title" className="text-base font-semibold text-gray-900 dark:text-white">Create equipment from lead</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Submitted by {lead.submitter?.name ?? '—'}
             </p>

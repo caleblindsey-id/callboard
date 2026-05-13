@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import type { EquipmentSaleTier } from '@/types/database'
 import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
@@ -17,11 +17,14 @@ export default function ConfirmMatchModal({ candidate, proposedTier, onClose, on
   const [tier, setTier] = useState<EquipmentSaleTier | 'not_eligible' | ''>('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!candidate) return
     setTier(proposedTier ?? '')
     setError(null)
+    // Move focus to the dialog so onKeyDown receives Escape immediately.
+    dialogRef.current?.focus()
   }, [candidate, proposedTier])
 
   if (!candidate) return null
@@ -66,11 +69,21 @@ export default function ConfirmMatchModal({ candidate, proposedTier, onClose, on
     : null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div
+      ref={dialogRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center outline-none"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-match-title"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !submitting) onClose()
+      }}
+    >
       <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
       <div className="relative bg-white dark:bg-gray-800 sm:rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full sm:max-w-md sm:mx-4 rounded-t-xl">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+          <h3 id="confirm-match-title" className="text-base font-semibold text-gray-900 dark:text-white">
             Confirm match · Synergy #{candidate.synergy_order_number}
           </h3>
           <button
