@@ -12,6 +12,7 @@ type Body = {
   location_on_site?: string | null
   interval_months: number
   anchor_month: number
+  starting_year?: number
   billing_type: BillingType
   flat_rate?: number | null
 }
@@ -48,6 +49,14 @@ export async function POST(
     }
     if (!body.anchor_month || body.anchor_month < 1 || body.anchor_month > 12) {
       return NextResponse.json({ error: 'anchor_month must be 1–12.' }, { status: 400 })
+    }
+    // starting_year is optional — when omitted, the pm_schedules default
+    // (current year) applies. Validate when supplied.
+    if (
+      body.starting_year !== undefined &&
+      (!Number.isInteger(body.starting_year) || body.starting_year < 2000 || body.starting_year > 2100)
+    ) {
+      return NextResponse.json({ error: 'starting_year must be between 2000 and 2100.' }, { status: 400 })
     }
     if (!VALID_BILLING_TYPES.includes(body.billing_type)) {
       return NextResponse.json({ error: 'Invalid billing_type.' }, { status: 400 })
@@ -136,6 +145,7 @@ export async function POST(
         equipment_id: equipmentRow.id,
         interval_months: body.interval_months,
         anchor_month: body.anchor_month,
+        ...(body.starting_year !== undefined ? { starting_year: body.starting_year } : {}),
         billing_type: body.billing_type,
         flat_rate: body.billing_type === 'flat_rate' ? body.flat_rate ?? null : null,
         active: true,

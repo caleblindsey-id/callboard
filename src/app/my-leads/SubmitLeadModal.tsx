@@ -35,6 +35,11 @@ const FREQUENCIES: { value: TechLeadFrequency; label: string; eligible: boolean 
   { value: 'annual', label: 'Annual', eligible: false },
 ]
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps) {
   const router = useRouter()
 
@@ -52,8 +57,14 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
   const comboRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // PM lead fields
-  const [equipmentDescription, setEquipmentDescription] = useState('')
+  // PM lead fields — structured equipment (072+).
+  const now = new Date()
+  const [make, setMake] = useState('')
+  const [model, setModel] = useState('')
+  const [serialNumber, setSerialNumber] = useState('')
+  const [locationOnSite, setLocationOnSite] = useState('')
+  const [startMonth, setStartMonth] = useState<number>(now.getMonth() + 1)
+  const [startYear, setStartYear] = useState<number>(now.getFullYear())
   const [frequency, setFrequency] = useState<TechLeadFrequency | ''>('')
 
   // Equipment-sale lead fields
@@ -91,7 +102,13 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
     setComboOpen(false)
     setNewCustomerMode(false)
     setNewCustomerName('')
-    setEquipmentDescription('')
+    setMake('')
+    setModel('')
+    setSerialNumber('')
+    setLocationOnSite('')
+    const fresh = new Date()
+    setStartMonth(fresh.getMonth() + 1)
+    setStartYear(fresh.getFullYear())
     setFrequency('')
     setEquipmentTier('')
     setContactName('')
@@ -221,15 +238,36 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
 
     let body: Record<string, unknown>
     if (leadType === 'pm') {
-      if (!equipmentDescription.trim()) {
-        setError('Describe the equipment.')
+      if (!make.trim()) {
+        setError('Equipment make is required.')
+        return
+      }
+      if (!model.trim()) {
+        setError('Equipment model is required.')
+        return
+      }
+      if (!serialNumber.trim()) {
+        setError('Serial number is required.')
+        return
+      }
+      if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) {
+        setError('Pick a proposed start month.')
+        return
+      }
+      if (!Number.isInteger(startYear) || startYear < 2000 || startYear > 2100) {
+        setError('Enter a valid proposed start year.')
         return
       }
       body = {
         lead_type: 'pm',
         customer_id: newCustomerMode ? null : customerId,
         customer_name_text: newCustomerMode ? newCustomerName.trim() : null,
-        equipment_description: equipmentDescription.trim(),
+        make: make.trim(),
+        model: model.trim(),
+        serial_number: serialNumber.trim(),
+        location_on_site: locationOnSite.trim() || null,
+        proposed_start_month: startMonth,
+        proposed_start_year: startYear,
         proposed_pm_frequency: frequency || null,
         notes: notes.trim() || null,
         contact_name: contactName.trim(),
@@ -511,18 +549,100 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
 
           {leadType === 'pm' ? (
             <>
-              {/* Equipment description (PM only) */}
+              {/* Structured equipment fields (PM only) */}
+              <div className="space-y-2 rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Equipment</h4>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Make <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={make}
+                    onChange={e => setMake(e.target.value)}
+                    placeholder="e.g., Tennant"
+                    autoComplete="off"
+                    maxLength={200}
+                    className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Model <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={e => setModel(e.target.value)}
+                    placeholder="e.g., T16"
+                    autoComplete="off"
+                    maxLength={200}
+                    className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Serial number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={serialNumber}
+                    onChange={e => setSerialNumber(e.target.value)}
+                    placeholder="From the data plate"
+                    autoComplete="off"
+                    maxLength={200}
+                    className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Location on-site
+                  </label>
+                  <input
+                    type="text"
+                    value={locationOnSite}
+                    onChange={e => setLocationOnSite(e.target.value)}
+                    placeholder="Warehouse, dock 3, etc."
+                    autoComplete="off"
+                    maxLength={200}
+                    className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+              </div>
+
+              {/* Proposed start month/year (required) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Equipment <span className="text-red-500">*</span>
+                  Proposed start <span className="text-red-500">*</span>
                 </label>
-                <textarea
-                  value={equipmentDescription}
-                  onChange={e => setEquipmentDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Make, model, serial #, location on site..."
-                  className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={startMonth}
+                    onChange={e => setStartMonth(parseInt(e.target.value, 10))}
+                    aria-label="Proposed start month"
+                    className="min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  >
+                    {MONTHS.map((label, idx) => (
+                      <option key={idx + 1} value={idx + 1}>{label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={2000}
+                    max={2100}
+                    value={startYear}
+                    onChange={e => {
+                      const parsed = parseInt(e.target.value, 10)
+                      if (Number.isFinite(parsed)) setStartYear(parsed)
+                    }}
+                    aria-label="Proposed start year"
+                    className="min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  When should the office plan to start the PM cycle?
+                </p>
               </div>
 
               {/* Frequency */}

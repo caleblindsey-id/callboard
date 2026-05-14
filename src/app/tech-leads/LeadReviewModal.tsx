@@ -256,9 +256,28 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
             </>
           ) : (
             <>
-              <Field label="Equipment">
-                <p className="whitespace-pre-wrap break-words">{lead.equipment_description}</p>
-              </Field>
+              {(lead.make || lead.model || lead.serial_number || lead.location_on_site) ? (
+                <>
+                  {lead.make && <Field label="Make">{lead.make}</Field>}
+                  {lead.model && <Field label="Model">{lead.model}</Field>}
+                  {lead.serial_number && <Field label="Serial #">{lead.serial_number}</Field>}
+                  {lead.location_on_site && (
+                    <Field label="Location on-site">{lead.location_on_site}</Field>
+                  )}
+                </>
+              ) : (
+                <Field label="Equipment">
+                  <p className="whitespace-pre-wrap break-words">{lead.equipment_description}</p>
+                </Field>
+              )}
+              {(lead.proposed_start_month != null || lead.proposed_start_year != null) && (
+                <Field label="Proposed start">
+                  {lead.proposed_start_month != null
+                    ? new Date(2000, lead.proposed_start_month - 1, 1).toLocaleString('en-US', { month: 'long' })
+                    : '—'}
+                  {lead.proposed_start_year != null ? ` ${lead.proposed_start_year}` : ''}
+                </Field>
+              )}
               {lead.proposed_pm_frequency && (
                 <Field label="Proposed frequency">{lead.proposed_pm_frequency}</Field>
               )}

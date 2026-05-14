@@ -423,6 +423,15 @@ export type TechLeadRow = {
   customer_name_text: string | null
   equipment_description: string
   proposed_pm_frequency: TechLeadFrequency | null
+  // Structured equipment fields (migration 073). Required on PM leads
+  // submitted from 2026-05-14 onward; NULL on legacy PM rows and on
+  // equipment_sale rows.
+  make: string | null
+  model: string | null
+  serial_number: string | null
+  location_on_site: string | null
+  proposed_start_month: number | null
+  proposed_start_year: number | null
   // V2 equipment-sale fields (migration 039). NULL for PM leads.
   proposed_equipment_tier: EquipmentSaleTier | null
   sale_equipment_tier: EquipmentSaleTier | null
@@ -571,7 +580,9 @@ export type TechLeadInsert = Pick<TechLeadRow, 'submitted_by' | 'equipment_descr
     'lead_type' | 'submitted_at' | 'customer_id' | 'customer_name_text' |
     'proposed_pm_frequency' | 'proposed_equipment_tier' | 'expires_at' |
     'notes' | 'status' |
-    'contact_name' | 'contact_email' | 'contact_phone' | 'photos'
+    'contact_name' | 'contact_email' | 'contact_phone' | 'photos' |
+    'make' | 'model' | 'serial_number' | 'location_on_site' |
+    'proposed_start_month' | 'proposed_start_year'
   >>
 
 export type EquipmentSaleLeadCandidateInsert = Pick<EquipmentSaleLeadCandidateRow,

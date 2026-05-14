@@ -74,6 +74,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
   const now = new Date()
   const [intervalMonths, setIntervalMonths] = useState<number>(3)
   const [anchorMonth, setAnchorMonth] = useState<number>(now.getMonth() + 1)
+  const [startingYear, setStartingYear] = useState<number>(now.getFullYear())
   const [billingType, setBillingType] = useState<BillingType>('flat_rate')
   const [flatRate, setFlatRate] = useState<string>('')
 
@@ -88,13 +89,18 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setCustomerSearch('')
     setCustomerResults([])
     setComboOpen(false)
-    setMake('')
-    setModel('')
-    setSerialNumber('')
-    setDescription(lead.equipment_description.slice(0, 200)) // pre-fill from the tech's description
-    setLocationOnSite('')
+    // Structured fields (migration 073) win when present; fall back to the
+    // legacy free-text equipment_description for pre-073 PM leads.
+    const hasStructured = !!(lead.make || lead.model || lead.serial_number)
+    setMake(lead.make ?? '')
+    setModel(lead.model ?? '')
+    setSerialNumber(lead.serial_number ?? '')
+    setLocationOnSite(lead.location_on_site ?? '')
+    setDescription(hasStructured ? '' : lead.equipment_description.slice(0, 200))
     setIntervalMonths(proposedToInterval(lead.proposed_pm_frequency))
-    setAnchorMonth(new Date().getMonth() + 1)
+    const today = new Date()
+    setAnchorMonth(lead.proposed_start_month ?? today.getMonth() + 1)
+    setStartingYear(lead.proposed_start_year ?? today.getFullYear())
     setBillingType('flat_rate')
     setFlatRate('')
     setError(null)
@@ -185,6 +191,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           location_on_site: locationOnSite.trim() || null,
           interval_months: intervalMonths,
           anchor_month: anchorMonth,
+          starting_year: startingYear,
           billing_type: billingType,
           flat_rate: flatRateNum,
         }),
@@ -366,6 +373,28 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
                     <option key={i} value={i + 1}>{m}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+            {(lead.proposed_start_month != null || lead.proposed_start_year != null) && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Tech proposed start: {lead.proposed_start_month != null ? MONTHS[lead.proposed_start_month - 1] : '—'}
+                {lead.proposed_start_year != null ? ` ${lead.proposed_start_year}` : ''}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Starting year</label>
+                <input
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  value={startingYear}
+                  onChange={e => {
+                    const parsed = parseInt(e.target.value, 10)
+                    if (Number.isFinite(parsed)) setStartingYear(parsed)
+                  }}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mt-3">

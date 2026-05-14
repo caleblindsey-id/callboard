@@ -27,6 +27,10 @@ const CUSTOMER_NAME_MAX = 200
 const CONTACT_NAME_MAX = 200
 const CONTACT_EMAIL_MAX = 320
 const CONTACT_PHONE_MAX = 40
+// Structured equipment fields (migration 073). Mirror DB CHECKs.
+const EQUIPMENT_FIELD_MAX = 200
+const PROPOSED_START_YEAR_MIN = 2000
+const PROPOSED_START_YEAR_MAX = 2100
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -34,7 +38,15 @@ type CreateBody = {
   lead_type?: TechLeadType
   customer_id?: number | null
   customer_name_text?: string | null
-  // PM branch
+  // PM branch — structured equipment (migration 073).
+  make?: string | null
+  model?: string | null
+  serial_number?: string | null
+  location_on_site?: string | null
+  proposed_start_month?: number | null
+  proposed_start_year?: number | null
+  // Legacy free-text description. Optional now — server composes from
+  // structured fields when not supplied so the DB NOT NULL stays satisfied.
   equipment_description?: string
   proposed_pm_frequency?: TechLeadFrequency | null
   // Equipment-sale branch
@@ -44,6 +56,23 @@ type CreateBody = {
   contact_name?: string | null
   contact_email?: string | null
   contact_phone?: string | null
+}
+
+// Compose the legacy `equipment_description` blob from the structured fields
+// so downstream consumers (rep email, /my-leads sub-line) keep rendering.
+function composeEquipmentDescription(parts: {
+  make: string
+  model: string
+  serial: string
+  location: string | null
+}): string {
+  const segments = [
+    `Make: ${parts.make}`,
+    `Model: ${parts.model}`,
+    `Serial: ${parts.serial}`,
+  ]
+  if (parts.location) segments.push(`Location: ${parts.location}`)
+  return segments.join(' | ').slice(0, EQUIPMENT_DESCRIPTION_MAX)
 }
 
 // POST /api/tech-leads — tech submits a lead. Office users (super_admin/manager)
@@ -111,9 +140,34 @@ export async function POST(request: NextRequest) {
     }
 
     if (leadType === 'pm') {
-      if (!body.equipment_description?.trim()) {
+      const make = body.make?.trim() ?? ''
+      const model = body.model?.trim() ?? ''
+      const serial = body.serial_number?.trim() ?? ''
+      const location = body.location_on_site?.trim() ?? ''
+      if (!make) {
+        return NextResponse.json({ error: 'Equipment make is required.' }, { status: 400 })
+      }
+      if (!model) {
+        return NextResponse.json({ error: 'Equipment model is required.' }, { status: 400 })
+      }
+      if (!serial) {
+        return NextResponse.json({ error: 'Equipment serial number is required.' }, { status: 400 })
+      }
+      const startMonth = body.proposed_start_month
+      const startYear = body.proposed_start_year
+      if (!Number.isInteger(startMonth) || startMonth! < 1 || startMonth! > 12) {
         return NextResponse.json(
-          { error: 'Equipment description is required.' },
+          { error: 'Proposed start month must be between 1 and 12.' },
+          { status: 400 }
+        )
+      }
+      if (
+        !Number.isInteger(startYear) ||
+        startYear! < PROPOSED_START_YEAR_MIN ||
+        startYear! > PROPOSED_START_YEAR_MAX
+      ) {
+        return NextResponse.json(
+          { error: `Proposed start year must be between ${PROPOSED_START_YEAR_MIN} and ${PROPOSED_START_YEAR_MAX}.` },
           { status: 400 }
         )
       }
@@ -123,7 +177,18 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
-      insert.equipment_description = body.equipment_description.trim().slice(0, EQUIPMENT_DESCRIPTION_MAX)
+      insert.make = make.slice(0, EQUIPMENT_FIELD_MAX)
+      insert.model = model.slice(0, EQUIPMENT_FIELD_MAX)
+      insert.serial_number = serial.slice(0, EQUIPMENT_FIELD_MAX)
+      insert.location_on_site = location ? location.slice(0, EQUIPMENT_FIELD_MAX) : null
+      insert.proposed_start_month = startMonth!
+      insert.proposed_start_year = startYear!
+      insert.equipment_description = composeEquipmentDescription({
+        make: insert.make!,
+        model: insert.model!,
+        serial: insert.serial_number!,
+        location: insert.location_on_site,
+      })
       insert.proposed_pm_frequency = body.proposed_pm_frequency ?? null
     } else {
       // equipment_sale
