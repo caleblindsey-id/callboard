@@ -748,8 +748,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
   // ── Computed ──
 
-  const partsReceivedCount = partsRequested.filter((p) => p.status === 'received').length
-  const allPartsReceived = partsRequested.length > 0 && partsReceivedCount === partsRequested.length
+  // Cancelled parts drop out of the waiting/ready calculation — they
+  // remain visible (struck-through) but don't count toward the denominator.
+  // Mirrors the server-side parts_received derivation in
+  // api/parts-queue/update/route.ts and api/service-tickets/[id]/route.ts.
+  const livePartsRequested = partsRequested.filter((p) => !p.cancelled)
+  const partsReceivedCount = livePartsRequested.filter((p) => p.status === 'received').length
+  const allPartsReceived = livePartsRequested.length > 0 && partsReceivedCount === livePartsRequested.length
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
@@ -1447,7 +1452,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
       {/* ── Section 5: Parts Requested ── */}
       {(partsRequested.length > 0 || (ticket.status !== 'completed' && ticket.status !== 'billed' && ticket.status !== 'canceled')) && (
-        <Card title={`Parts Requested${partsRequested.length > 0 ? ` (${partsReceivedCount}/${partsRequested.length} received)` : ''}`}>
+        <Card title={`Parts Requested${livePartsRequested.length > 0 ? ` (${partsReceivedCount}/${livePartsRequested.length} received)` : ''}`}>
           {partsRequested.length > 0 && (
             <>
               {allPartsReceived && (
@@ -1662,9 +1667,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           {/* Approved: Start Work */}
           {ticket.status === SERVICE_STATUS.APPROVED && (
             <>
-              {partsRequested.length > 0 && !allPartsReceived ? (
+              {livePartsRequested.length > 0 && !allPartsReceived ? (
                 <div className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
-                  Waiting on parts ({partsReceivedCount}/{partsRequested.length} received)
+                  Waiting on parts ({partsReceivedCount}/{livePartsRequested.length} received)
                 </div>
               ) : (
                 <button
