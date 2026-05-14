@@ -19,9 +19,10 @@ const MAX_BODY = 4000
 interface FeedbackModalProps {
   onClose: () => void
   initialAttachment?: Blob | null
+  captureFailed?: boolean
 }
 
-export default function FeedbackModal({ onClose, initialAttachment }: FeedbackModalProps) {
+export default function FeedbackModal({ onClose, initialAttachment, captureFailed = false }: FeedbackModalProps) {
   const pathname = usePathname()
   const [category, setCategory] = useState<Category>('bug')
   const [body, setBody] = useState('')
@@ -233,14 +234,21 @@ export default function FeedbackModal({ onClose, initialAttachment }: FeedbackMo
                 onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               />
               {!attachment ? (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-sm font-medium text-gray-600 transition hover:border-gray-400 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
-                >
-                  <Paperclip className="h-4 w-4" />
-                  Attach
-                </button>
+                <>
+                  {captureFailed && (
+                    <div className="mb-2 text-[11px] text-gray-500 dark:text-gray-400">
+                      Couldn&apos;t auto-capture this page — attach a screenshot or photo manually.
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-3 py-3 text-sm font-medium text-gray-600 transition hover:border-gray-400 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    Attach
+                  </button>
+                </>
               ) : (
                 <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-white/10 dark:bg-white/5">
                   <img
