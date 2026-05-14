@@ -86,8 +86,11 @@ def supabase_patch_by_id(table: str, row_id: str, data: dict) -> None:
 # ============================================================
 
 EXCLUDED_SERVICE_STATUSES = ("canceled", "declined")
-# For PM tickets, stop chasing once the ticket is billed or skipped.
-EXCLUDED_PM_STATUSES = ("skipped",)
+# For PM tickets, stop chasing once the ticket is billed or skipped. Billed
+# tickets surface as invalid when their Synergy order has been archived out of
+# `roh`, but there's no action the office can take post-billing so they're
+# pure noise in the queue.
+EXCLUDED_PM_STATUSES = ("skipped", "billed")
 
 
 def fetch_candidates(table: str, excluded_statuses: tuple[str, ...]) -> list[dict]:
