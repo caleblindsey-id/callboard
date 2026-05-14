@@ -44,16 +44,43 @@ $pythonExe  = "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\py
 $valScript  = Join-Path $scriptDir "validate-synergy-orders.py"
 $logFile    = Join-Path $logsDir "validation-$(Get-Date -Format 'yyyy-MM-dd').log"
 
-Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Starting Synergy order validation..." | Tee-Object -FilePath $logFile -Append
+# Capture Python's combined stdout/stderr into a temp file via OS-level
+# redirection, then append to the day log. Avoids Windows PowerShell 5.1's
+# Tee-Object handle-release race that made earlier wrapper attempts collide
+# on validation-YYYY-MM-DD.log.
+$ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+$header = "$ts Starting Synergy order validation..."
+Write-Host $header
+Add-Content -Path $logFile -Value $header
 
-& $pythonExe $valScript 2>&1 | Tee-Object -FilePath $logFile -Append
+$tmpOut = [System.IO.Path]::GetTempFileName()
+$tmpErr = [System.IO.Path]::GetTempFileName()
+$proc = Start-Process -FilePath $pythonExe -ArgumentList "`"$valScript`"" `
+    -RedirectStandardOutput $tmpOut `
+    -RedirectStandardError $tmpErr `
+    -NoNewWindow -Wait -PassThru
+$exitCode = $proc.ExitCode
 
-$exitCode = $LASTEXITCODE
+foreach ($tmp in @($tmpOut, $tmpErr)) {
+    if (Test-Path $tmp) {
+        $content = Get-Content $tmp -Raw
+        if ($content) {
+            Write-Host -NoNewline $content
+            Add-Content -Path $logFile -Value $content -NoNewline
+        }
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+    }
+}
 
+$ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 if ($exitCode -ne 0) {
-    Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Validation finished with exit code $exitCode (check log for details)." | Tee-Object -FilePath $logFile -Append
+    $msg = "$ts Validation finished with exit code $exitCode (check log for details)."
+    Write-Host $msg
+    Add-Content -Path $logFile -Value $msg
     exit $exitCode
 } else {
-    Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Validation completed successfully." | Tee-Object -FilePath $logFile -Append
+    $msg = "$ts Validation completed successfully."
+    Write-Host $msg
+    Add-Content -Path $logFile -Value $msg
     exit 0
 }

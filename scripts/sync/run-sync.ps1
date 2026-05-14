@@ -6,7 +6,10 @@
 
 $ErrorActionPreference = "Stop"
 $scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptDir
+# Two parents up: scripts/sync -> scripts -> callboard root. Previous one-level
+# resolution wrote wrapper log lines to callboard/scripts/logs/ while the
+# Python child wrote to callboard/logs/ - two split log dirs for one job.
+$projectRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 
 # ----------------------------------------------------------------
 # Create logs directory if it doesn't exist
@@ -46,16 +49,43 @@ $pythonExe  = "C:\Users\Caleb Lindsey\AppData\Local\Python\pythoncore-3.14-64\py
 $syncScript = Join-Path $scriptDir "synergy-sync.py"
 $logFile    = Join-Path $logsDir "sync-$(Get-Date -Format 'yyyy-MM-dd').log"
 
-Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Starting PM Scheduler nightly sync..." | Tee-Object -FilePath $logFile -Append
+# Capture Python's combined stdout/stderr into temp files via OS-level
+# redirection, then append to the day log. Avoids Windows PowerShell 5.1's
+# Tee-Object handle-release race when two Tees touch the same file in one
+# script.
+$ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+$header = "$ts Starting PM Scheduler nightly sync..."
+Write-Host $header
+Add-Content -Path $logFile -Value $header
 
-& $pythonExe $syncScript 2>&1 | Tee-Object -FilePath $logFile -Append
+$tmpOut = [System.IO.Path]::GetTempFileName()
+$tmpErr = [System.IO.Path]::GetTempFileName()
+$proc = Start-Process -FilePath $pythonExe -ArgumentList "`"$syncScript`"" `
+    -RedirectStandardOutput $tmpOut `
+    -RedirectStandardError $tmpErr `
+    -NoNewWindow -Wait -PassThru
+$exitCode = $proc.ExitCode
 
-$exitCode = $LASTEXITCODE
+foreach ($tmp in @($tmpOut, $tmpErr)) {
+    if (Test-Path $tmp) {
+        $content = Get-Content $tmp -Raw
+        if ($content) {
+            Write-Host -NoNewline $content
+            Add-Content -Path $logFile -Value $content -NoNewline
+        }
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+    }
+}
 
+$ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 if ($exitCode -ne 0) {
-    Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Sync finished with exit code $exitCode (check log for details)." | Tee-Object -FilePath $logFile -Append
+    $msg = "$ts Sync finished with exit code $exitCode (check log for details)."
+    Write-Host $msg
+    Add-Content -Path $logFile -Value $msg
     exit $exitCode
 } else {
-    Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Sync completed successfully." | Tee-Object -FilePath $logFile -Append
+    $msg = "$ts Sync completed successfully."
+    Write-Host $msg
+    Add-Content -Path $logFile -Value $msg
     exit 0
 }
