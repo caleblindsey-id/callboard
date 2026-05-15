@@ -1,14 +1,47 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import DraftRestoredToast from '@/components/DraftRestoredToast'
+import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import type { EquipmentRow, UserRow, ContactRow, ShipToLocationRow } from '@/types/database'
 import type { ServiceTicketType, ServiceBillingType, ServicePriority } from '@/types/service-tickets'
+
+const DRAFT_KEY = 'draft-create-service-ticket'
+
+interface CreateServiceTicketDraft {
+  customerId: number | null
+  selectedCustomerName: string
+  customerSearch: string
+  shipToId: string
+  equipmentId: string
+  unknownEquipment: boolean
+  eqMake: string
+  eqModel: string
+  eqSerial: string
+  eqDescription: string
+  eqLocation: string
+  ticketType: ServiceTicketType
+  billingType: ServiceBillingType
+  priority: ServicePriority
+  laborRateType: string
+  problemDescription: string
+  diagnosticInvoiceNumber: string
+  diagnosticCharge: string
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+  serviceAddress: string
+  serviceCity: string
+  serviceState: string
+  serviceZip: string
+  technicianId: string
+}
 
 interface CustomerOption {
   id: number
@@ -76,6 +109,135 @@ export function CreateServiceTicketForm() {
   // --- Submission ---
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // --- Draft persistence ---
+  const draftState = useMemo<CreateServiceTicketDraft>(() => ({
+    customerId,
+    selectedCustomerName,
+    customerSearch,
+    shipToId,
+    equipmentId,
+    unknownEquipment,
+    eqMake,
+    eqModel,
+    eqSerial,
+    eqDescription,
+    eqLocation,
+    ticketType,
+    billingType,
+    priority,
+    laborRateType,
+    problemDescription,
+    diagnosticInvoiceNumber,
+    diagnosticCharge,
+    contactName,
+    contactEmail,
+    contactPhone,
+    serviceAddress,
+    serviceCity,
+    serviceState,
+    serviceZip,
+    technicianId,
+  }), [
+    customerId, selectedCustomerName, customerSearch, shipToId,
+    equipmentId, unknownEquipment, eqMake, eqModel, eqSerial, eqDescription, eqLocation,
+    ticketType, billingType, priority, laborRateType, problemDescription,
+    diagnosticInvoiceNumber, diagnosticCharge,
+    contactName, contactEmail, contactPhone,
+    serviceAddress, serviceCity, serviceState, serviceZip, technicianId,
+  ])
+
+  const { restoredAt, dismissRestoredToast, clearDraft, discardDraft } = useFormDraft<CreateServiceTicketDraft>({
+    key: DRAFT_KEY,
+    state: draftState,
+    isMeaningful: (s) =>
+      Boolean(
+        s.customerId ||
+        (s.customerSearch && s.customerSearch.trim() !== '') ||
+        s.problemDescription.trim() ||
+        s.contactName.trim() ||
+        s.contactEmail.trim() ||
+        s.contactPhone.trim() ||
+        s.serviceAddress.trim() ||
+        s.eqMake.trim() ||
+        s.eqModel.trim() ||
+        s.eqSerial.trim() ||
+        s.diagnosticInvoiceNumber.trim() ||
+        s.diagnosticCharge.trim() ||
+        s.technicianId
+      ),
+    onRestore: (d) => {
+      setCustomerId(d.customerId ?? null)
+      setSelectedCustomerName(d.selectedCustomerName || '')
+      setCustomerSearch(d.customerSearch || '')
+      setShipToId(d.shipToId || '')
+      // Mark this shipToId as already-processed so the async shipTos load
+      // doesn't overwrite the restored service address.
+      lastProcessedShipToIdRef.current = d.shipToId || null
+      setEquipmentId(d.equipmentId || '')
+      setUnknownEquipment(Boolean(d.unknownEquipment))
+      setEqMake(d.eqMake || '')
+      setEqModel(d.eqModel || '')
+      setEqSerial(d.eqSerial || '')
+      setEqDescription(d.eqDescription || '')
+      setEqLocation(d.eqLocation || '')
+      if (d.ticketType === 'inside' || d.ticketType === 'outside') setTicketType(d.ticketType)
+      if (d.billingType) setBillingType(d.billingType)
+      if (d.priority) setPriority(d.priority)
+      setLaborRateType(d.laborRateType || 'standard')
+      setProblemDescription(d.problemDescription || '')
+      setDiagnosticInvoiceNumber(d.diagnosticInvoiceNumber || '')
+      setDiagnosticCharge(d.diagnosticCharge || '')
+      setContactName(d.contactName || '')
+      setContactEmail(d.contactEmail || '')
+      setContactPhone(d.contactPhone || '')
+      setServiceAddress(d.serviceAddress || '')
+      setServiceCity(d.serviceCity || '')
+      setServiceState(d.serviceState || '')
+      setServiceZip(d.serviceZip || '')
+      setTechnicianId(d.technicianId || '')
+    },
+  })
+
+  function resetForm() {
+    setCustomerId(null)
+    setSelectedCustomerName('')
+    setSelectedCustomerCreditHold(false)
+    setCustomerSearch('')
+    setShipToId('')
+    setShipTos([])
+    setEquipment([])
+    setEquipmentLoaded(false)
+    setEquipmentId('')
+    setUnknownEquipment(false)
+    setEqMake('')
+    setEqModel('')
+    setEqSerial('')
+    setEqDescription('')
+    setEqLocation('')
+    setEqConflictId(null)
+    setTicketType('inside')
+    setBillingType('non_warranty')
+    setPriority('standard')
+    setLaborRateType('standard')
+    setProblemDescription('')
+    setDiagnosticInvoiceNumber('')
+    setDiagnosticCharge('')
+    setContactName('')
+    setContactEmail('')
+    setContactPhone('')
+    setServiceAddress('')
+    setServiceCity('')
+    setServiceState('')
+    setServiceZip('')
+    setTechnicianId('')
+    setError(null)
+  }
+
+  function handleDiscardDraft() {
+    discardDraft()
+    resetForm()
+  }
 
   // Load technicians on mount
   useEffect(() => {
@@ -199,11 +361,20 @@ export function CreateServiceTicketForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [equipmentId, equipment])
 
-  // Pre-fill service address + contact fallbacks when ship-to changes
+  // Pre-fill service address + contact fallbacks when ship-to *transitions*.
+  // We only run the prefill on a fresh shipToId pick, not every time the
+  // `shipTos` list reloads — otherwise a draft-restored custom address would
+  // be silently overwritten the moment `shipTos` finishes loading async.
+  const lastProcessedShipToIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!shipToId) return
+    if (!shipToId) {
+      lastProcessedShipToIdRef.current = null
+      return
+    }
+    if (lastProcessedShipToIdRef.current === shipToId) return
     const loc = shipTos.find((s) => String(s.id) === shipToId)
     if (!loc) return
+    lastProcessedShipToIdRef.current = shipToId
     if (loc.address) setServiceAddress(loc.address)
     if (loc.city) setServiceCity(loc.city)
     if (loc.state) setServiceState(loc.state)
@@ -211,7 +382,6 @@ export function CreateServiceTicketForm() {
     // Fill contact from ship-to only if still empty
     setContactName((prev) => prev || loc.contact || '')
     setContactEmail((prev) => prev || loc.email || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipToId, shipTos])
 
   // Pre-fill contact from customer's primary contact when customer selected
@@ -370,6 +540,7 @@ export function CreateServiceTicketForm() {
         setLoading(false)
         return
       }
+      clearDraft()
       router.push(`/service/${data.id}`)
     } catch {
       setError('Failed to create service ticket')
@@ -400,6 +571,11 @@ export function CreateServiceTicketForm() {
           Create Service Ticket
         </h1>
       </div>
+
+      {/* Draft restored toast */}
+      {restoredAt !== null && (
+        <DraftRestoredToast lastEditedAt={restoredAt} onDismiss={dismissRestoredToast} />
+      )}
 
       {/* Error */}
       {error && (
@@ -874,20 +1050,29 @@ export function CreateServiceTicketForm() {
         </div>
 
         {/* Submit */}
-        <div className="flex justify-end gap-3 pt-4">
-          <Link
-            href="/service"
-            className="px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Cancel
-          </Link>
+        <div className="flex items-center justify-between gap-3 pt-4">
           <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-2.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            type="button"
+            onClick={handleDiscardDraft}
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2"
           >
-            {loading ? 'Creating...' : 'Create Service Ticket'}
+            Discard draft
           </button>
+          <div className="flex gap-3">
+            <Link
+              href="/service"
+              className="px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? 'Creating...' : 'Create Service Ticket'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

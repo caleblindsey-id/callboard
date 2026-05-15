@@ -1,12 +1,28 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { EquipmentRow, UserRow } from '@/types/database'
 import { X } from 'lucide-react'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import DraftRestoredToast from '@/components/DraftRestoredToast'
+import { useFormDraft } from '@/lib/hooks/useFormDraft'
+
+const DRAFT_KEY = 'draft-create-pm-ticket'
+
+interface CreateTicketDraft {
+  customerId: string
+  selectedCustomerName: string
+  customerSearch: string
+  equipmentId: string
+  month: number
+  year: number
+  technicianId: string
+  scheduledDate: string
+  laborRateType: string
+}
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -52,6 +68,48 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   const [technicianId, setTechnicianId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
   const [laborRateType, setLaborRateType] = useState('standard')
+
+  // Draft persistence — survives modal close + browser refresh.
+  const draftState = useMemo<CreateTicketDraft>(() => ({
+    customerId,
+    selectedCustomerName,
+    customerSearch,
+    equipmentId,
+    month,
+    year,
+    technicianId,
+    scheduledDate,
+    laborRateType,
+  }), [customerId, selectedCustomerName, customerSearch, equipmentId, month, year, technicianId, scheduledDate, laborRateType])
+
+  const { restoredAt, dismissRestoredToast, clearDraft, discardDraft } = useFormDraft<CreateTicketDraft>({
+    key: DRAFT_KEY,
+    state: draftState,
+    enabled: open,
+    isMeaningful: (s) =>
+      Boolean(
+        s.customerId ||
+        s.equipmentId ||
+        s.technicianId ||
+        s.scheduledDate ||
+        (s.customerSearch && s.customerSearch.trim() !== '') ||
+        s.laborRateType !== 'standard'
+      ),
+    onRestore: (d) => {
+      setCustomerId(d.customerId || '')
+      setSelectedCustomerName(d.selectedCustomerName || '')
+      setCustomerSearch(d.customerSearch || '')
+      // Equipment is filtered server-side off `customerId`; the effect that
+      // watches customerId will refetch the list and the value below will
+      // resolve once `equipment` is populated. Storing the id alone is OK.
+      setEquipmentId(d.equipmentId || '')
+      if (typeof d.month === 'number') setMonth(d.month)
+      if (typeof d.year === 'number') setYear(d.year)
+      setTechnicianId(d.technicianId || '')
+      setScheduledDate(d.scheduledDate || '')
+      setLaborRateType(d.laborRateType || 'standard')
+    },
+  })
 
   // Load users when modal opens
   useEffect(() => {
@@ -103,12 +161,16 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Reload equipment when customer changes
+  // Reload equipment when customer changes. We don't clobber `equipmentId`
+  // up-front — instead we filter post-fetch so a restored draft can keep its
+  // selection if the equipment is still valid for the chosen customer.
   useEffect(() => {
-    setEquipmentId('')
     setEquipment([])
     setEquipmentLoaded(false)
-    if (!customerId) return
+    if (!customerId) {
+      setEquipmentId('')
+      return
+    }
     const supabase = createClient()
     supabase
       .from('equipment')
@@ -117,8 +179,11 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
       .eq('active', true)
       .order('make')
       .then(({ data }) => {
-        setEquipment(data ?? [])
+        const rows = (data ?? []) as EquipmentRow[]
+        setEquipment(rows)
         setEquipmentLoaded(true)
+        // Preserve current selection if still valid; otherwise clear.
+        setEquipmentId((prev) => (prev && rows.some((e) => e.id === prev) ? prev : ''))
       })
   }, [customerId])
 
@@ -140,8 +205,16 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   }
 
   function handleClose() {
-    resetForm()
+    // Cancel: keep draft intact so opening again restores progress. Just close
+    // the modal — when it reopens, the hook re-mounts and restores from
+    // localStorage. We deliberately do NOT call resetForm() here, because that
+    // would briefly clobber the persisted draft on close.
     onClose()
+  }
+
+  function handleDiscardDraft() {
+    discardDraft()
+    resetForm()
   }
 
   function selectCustomer(c: CustomerOption) {
@@ -184,6 +257,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
     }
 
     setLoading(false)
+    clearDraft()
     resetForm()
     onClose()
     router.refresh()
@@ -205,6 +279,12 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {restoredAt !== null && (
+          <div className="mb-3">
+            <DraftRestoredToast lastEditedAt={restoredAt} onDismiss={dismissRestoredToast} />
+          </div>
+        )}
 
         {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
 
@@ -364,21 +444,30 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
             </select>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex items-center justify-between gap-3 pt-2">
             <button
               type="button"
-              onClick={handleClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+              onClick={handleDiscardDraft}
+              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2"
             >
-              Cancel
+              Discard draft
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-            >
-              {loading ? 'Creating...' : 'Create Ticket'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              >
+                {loading ? 'Creating...' : 'Create Ticket'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
@@ -8,6 +8,32 @@ import { X, Camera } from 'lucide-react'
 import type { EquipmentSaleTier, TechLeadFrequency, TechLeadType } from '@/types/database'
 import { EQUIPMENT_SALE_TIER_LIST } from '@/lib/tech-leads/bonus-tiers'
 import { compressImage } from '@/lib/image-utils'
+import DraftRestoredToast from '@/components/DraftRestoredToast'
+import { useFormDraft } from '@/lib/hooks/useFormDraft'
+
+const DRAFT_KEY = 'draft-submit-lead'
+
+// Photos (Blob + object URLs) can't be JSON.stringify'd — they're skipped from
+// the persisted draft. The user is notified via the toast `note`.
+interface SubmitLeadDraft {
+  leadType: TechLeadType
+  customerSearch: string
+  customerId: number | null
+  newCustomerMode: boolean
+  newCustomerName: string
+  make: string
+  model: string
+  serialNumber: string
+  locationOnSite: string
+  startMonth: number
+  startYear: number
+  frequency: TechLeadFrequency | ''
+  equipmentTier: EquipmentSaleTier | ''
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+  notes: string
+}
 
 const MAX_PHOTOS = 12
 
@@ -92,6 +118,98 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
   const [submitting, setSubmitting] = useState(false)
   const [warning, setWarning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // --- Draft persistence ---
+  const draftState = useMemo<SubmitLeadDraft>(() => ({
+    leadType,
+    customerSearch,
+    customerId,
+    newCustomerMode,
+    newCustomerName,
+    make,
+    model,
+    serialNumber,
+    locationOnSite,
+    startMonth,
+    startYear,
+    frequency,
+    equipmentTier,
+    contactName,
+    contactEmail,
+    contactPhone,
+    notes,
+  }), [
+    leadType, customerSearch, customerId, newCustomerMode, newCustomerName,
+    make, model, serialNumber, locationOnSite, startMonth, startYear, frequency,
+    equipmentTier, contactName, contactEmail, contactPhone, notes,
+  ])
+
+  const { restoredAt, dismissRestoredToast, clearDraft, discardDraft } = useFormDraft<SubmitLeadDraft>({
+    key: DRAFT_KEY,
+    state: draftState,
+    enabled: open,
+    isMeaningful: (s) =>
+      Boolean(
+        s.customerId ||
+        (s.customerSearch && s.customerSearch.trim() !== '') ||
+        s.newCustomerName.trim() ||
+        s.make.trim() ||
+        s.model.trim() ||
+        s.serialNumber.trim() ||
+        s.locationOnSite.trim() ||
+        s.frequency ||
+        s.equipmentTier ||
+        s.contactName.trim() ||
+        s.contactEmail.trim() ||
+        s.contactPhone.trim() ||
+        s.notes.trim()
+      ),
+    onRestore: (d) => {
+      if (d.leadType === 'pm' || d.leadType === 'equipment_sale') setLeadType(d.leadType)
+      setCustomerSearch(d.customerSearch || '')
+      setCustomerId(d.customerId ?? null)
+      setNewCustomerMode(Boolean(d.newCustomerMode))
+      setNewCustomerName(d.newCustomerName || '')
+      setMake(d.make || '')
+      setModel(d.model || '')
+      setSerialNumber(d.serialNumber || '')
+      setLocationOnSite(d.locationOnSite || '')
+      if (typeof d.startMonth === 'number') setStartMonth(d.startMonth)
+      if (typeof d.startYear === 'number') setStartYear(d.startYear)
+      setFrequency(d.frequency || '')
+      setEquipmentTier(d.equipmentTier || '')
+      setContactName(d.contactName || '')
+      setContactEmail(d.contactEmail || '')
+      setContactPhone(d.contactPhone || '')
+      setNotes(d.notes || '')
+    },
+  })
+
+  function handleDiscardDraft() {
+    discardDraft()
+    setLeadType('pm')
+    setCustomerSearch('')
+    setCustomerResults([])
+    setCustomerId(null)
+    setComboOpen(false)
+    setNewCustomerMode(false)
+    setNewCustomerName('')
+    setMake('')
+    setModel('')
+    setSerialNumber('')
+    setLocationOnSite('')
+    const fresh = new Date()
+    setStartMonth(fresh.getMonth() + 1)
+    setStartYear(fresh.getFullYear())
+    setFrequency('')
+    setEquipmentTier('')
+    setContactName('')
+    setContactEmail('')
+    setContactPhone('')
+    setNotes('')
+    setError(null)
+    setWarning(null)
+  }
 
   // Reset when the modal opens
   useEffect(() => {
@@ -349,6 +467,9 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
         }
       }
 
+      // Lead row was created — even if photos failed, the draft is now stale
+      // and resubmitting would create a duplicate lead. Clear it in both cases.
+      clearDraft()
       if (photoWarning) {
         setWarning(photoWarning)
         setSubmitting(false)
@@ -382,6 +503,13 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {restoredAt !== null && (
+            <DraftRestoredToast
+              lastEditedAt={restoredAt}
+              onDismiss={dismissRestoredToast}
+              note="Photos aren't saved in drafts — re-attach them before submitting."
+            />
+          )}
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           {warning && (
             <p className="text-sm text-amber-700 dark:text-amber-400">{warning}</p>
@@ -768,22 +896,32 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex items-center justify-between gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleDiscardDraft}
               disabled={submitting}
-              className="px-4 py-2 min-h-[44px] text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2 disabled:opacity-50"
             >
-              Cancel
+              Discard draft
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 min-h-[44px] text-sm font-medium text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 rounded-md disabled:opacity-50"
-            >
-              {submitting ? 'Submitting…' : 'Submit lead'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="px-4 py-2 min-h-[44px] text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 min-h-[44px] text-sm font-medium text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 rounded-md disabled:opacity-50"
+              >
+                {submitting ? 'Submitting…' : 'Submit lead'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
