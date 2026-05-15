@@ -15,6 +15,8 @@ import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import AuditHistorySection from '@/components/AuditHistorySection'
 import AceLaborCard from '@/components/AceLaborCard'
+import WorkflowStatusCard from '@/components/WorkflowStatusCard'
+import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
 import { getLaborRate } from '@/lib/db/settings'
@@ -116,6 +118,9 @@ export default async function TicketDetailPage({
           </span>
         </div>
       )}
+
+      {/* Workflow state — what state we're in, who's next, what's blocking. */}
+      {!isDeleted && <WorkflowStatusCard {...deriveWorkflowProps(ticket)} />}
 
       {/* Read-only info */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">

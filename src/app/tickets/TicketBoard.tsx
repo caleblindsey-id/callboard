@@ -7,7 +7,9 @@ import { TicketWithJoins } from '@/lib/db/tickets'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import StuckIndicator from '@/components/StuckIndicator'
 import { daysOverdue } from '@/lib/overdue'
+import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
 import CreateTicketModal from './CreateTicketModal'
 import GeneratePmModal from './GeneratePmModal'
@@ -102,6 +104,7 @@ function TicketList({
       <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
         {tickets.map((ticket) => {
           const days = showOverdueBadges ? daysOverdue(ticket) : 0
+          const stuckProps = deriveWorkflowProps(ticket)
           return (
             <div
               key={ticket.id}
@@ -116,6 +119,7 @@ function TicketList({
                     WO-{ticket.work_order_number}
                   </span>
                   <StatusBadge status={ticket.status} />
+                  <StuckIndicator enteredAt={stuckProps.enteredAt} state={stuckProps.state} />
                   {showOverdueBadges && <OverdueBadge days={days} />}
                   {ticket.requires_review && (
                     <span title="Flagged for Review" className="inline-flex items-center text-blue-600 dark:text-blue-400">
@@ -203,6 +207,7 @@ function TicketList({
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {tickets.map((ticket) => {
               const days = showOverdueBadges ? daysOverdue(ticket) : 0
+              const stuckProps = deriveWorkflowProps(ticket)
               return (
                 <tr
                   key={ticket.id}
@@ -228,6 +233,7 @@ function TicketList({
                     <div className="flex flex-col items-start gap-1">
                       <div className="flex items-center gap-1.5">
                         <StatusBadge status={ticket.status} />
+                        <StuckIndicator enteredAt={stuckProps.enteredAt} state={stuckProps.state} />
                         {ticket.requires_review && (
                           <span title="Flagged for Review" className="inline-flex items-center text-blue-600 dark:text-blue-400">
                             <Flag className="h-3.5 w-3.5" />

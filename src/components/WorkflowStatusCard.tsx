@@ -4,7 +4,10 @@ import StatusBadge from '@/components/StatusBadge'
 // Soft threshold: states older than this surface a "stuck" warning in amber.
 // Tuned to 48h so an overnight + business-day round-trip doesn't trip it,
 // but a ticket truly parked for the weekend does.
-const STUCK_THRESHOLD_HOURS = 48
+//
+// Exported so list views (e.g. the kanban board) can apply the same gate when
+// rendering a compact "in state for X days" indicator — keep one source of truth.
+export const STUCK_THRESHOLD_HOURS = 48
 
 /**
  * Days elapsed since `enteredAt`. Returns null if `enteredAt` is missing or

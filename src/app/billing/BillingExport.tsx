@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TicketWithJoins } from '@/lib/db/tickets'
+import BillingPreviewModal from './BillingPreviewModal'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -33,6 +34,7 @@ export default function BillingExport({
   )
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   // Inline PO editing
   const [editingPoId, setEditingPoId] = useState<string | null>(null)
@@ -136,6 +138,7 @@ export default function BillingExport({
 
       setToast({ message: `PDF exported — ${selected.size} ticket(s) marked as billed.`, type: 'success' })
       setSelected(new Set())
+      setPreviewOpen(false)
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Export failed. Please try again.'
@@ -143,6 +146,13 @@ export default function BillingExport({
     } finally {
       setExporting(false)
     }
+  }
+
+  // Pre-export gate: open the modal so the user can eyeball the line items
+  // before any PDF render or DB write happens.
+  function handlePreviewExport() {
+    if (selected.size === 0 || exporting) return
+    setPreviewOpen(true)
   }
 
   const selectedTotal = tickets
@@ -240,7 +250,7 @@ export default function BillingExport({
               </span>
             )}
             <button
-              onClick={handleExport}
+              onClick={handlePreviewExport}
               disabled={selected.size === 0 || exporting}
               className="w-full lg:w-auto px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
             >
@@ -406,6 +416,17 @@ export default function BillingExport({
           </>
         )}
       </div>
+
+      <BillingPreviewModal
+        open={previewOpen}
+        tickets={tickets.filter((t) => selected.has(t.id))}
+        exporting={exporting}
+        onCancel={() => {
+          if (exporting) return
+          setPreviewOpen(false)
+        }}
+        onConfirm={handleExport}
+      />
     </>
   )
 }
