@@ -47,6 +47,7 @@ const STAFF_ALLOWED_FIELDS = [
   'picked_up_at',
   'generate_approval_token',
   'manual_decision_note',
+  'request_info_note',
   'labor_rate_type',
 ] as const
 
@@ -63,6 +64,9 @@ const TECH_ALLOWED_FIELDS = [
   'photos',
   'customer_signature',
   'customer_signature_name',
+  // Allowed so a tech resubmitting an estimate after a Request-More-Info
+  // round-trip can clear the previous note in the same PATCH.
+  'request_info_note',
 ] as const
 
 export async function GET(
@@ -317,6 +321,12 @@ export async function PATCH(
           approval_token_expires_at: null,
           // Note: decline_reason is intentionally preserved for reference
         })
+      }
+
+      // Resubmitting an estimate after a Request-More-Info round-trip clears
+      // the manager's note so the tech doesn't see a stale prompt next time.
+      if (nextStatus === 'estimated' && currentStatus === 'open') {
+        filtered.request_info_note = null
       }
 
       // Staff inline approval (status -> 'approved') should also retire the

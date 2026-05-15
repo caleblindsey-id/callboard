@@ -10,6 +10,7 @@ import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
@@ -81,6 +82,326 @@ function InfoField({ label, children }: { label: string; children: React.ReactNo
     <div>
       <span className="text-gray-500 dark:text-gray-400 text-sm">{label}</span>
       <p className="text-gray-900 dark:text-white font-medium text-sm">{children}</p>
+    </div>
+  )
+}
+
+// ── Workflow card helpers ───────────────────────────────────────────────────
+// User-facing labels for each status. Mirrors page.tsx STEP_LABELS but
+// includes the off-rail states (declined/canceled) too.
+const STATUS_LABELS: Record<string, string> = {
+  open: 'Open',
+  estimated: 'Awaiting Approval',
+  approved: 'Approved',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  billed: 'Billed',
+  declined: 'Declined',
+  canceled: 'Canceled',
+}
+
+interface WorkflowComputeArgs {
+  status: ServiceTicketStatus
+  isManager: boolean
+  isTech: boolean
+  isStaff: boolean
+  partsWaiting: number
+  partsTotal: number
+  requestInfoNote: string | null
+  estimateApproved: boolean
+}
+
+/**
+ * Compute the {state, nextActor, blocker} props for the WorkflowStatusCard.
+ * The pre-approval state is `open`; "Awaiting Approval" is `estimated`.
+ *
+ * `blocker` surfaces when something external (parts not in, request-info
+ * note pending) is preventing the next state transition.
+ */
+function computeWorkflowProps({
+  status,
+  isManager,
+  isTech,
+  isStaff,
+  partsWaiting,
+  partsTotal,
+  requestInfoNote,
+  estimateApproved,
+}: WorkflowComputeArgs): { state: string; nextActor?: string; blocker?: string } {
+  const label = STATUS_LABELS[status] ?? status
+  let nextActor: string | undefined
+  let blocker: string | undefined
+
+  switch (status) {
+    case 'open':
+      if (requestInfoNote) {
+        nextActor = isTech ? 'Tech revises estimate' : 'Tech updating estimate'
+        blocker = 'Manager requested more info'
+      } else {
+        nextActor = isTech ? 'Submit estimate' : 'Tech to submit estimate'
+      }
+      break
+    case 'estimated':
+      nextActor = isStaff
+        ? 'Manager to approve, decline, or request info'
+        : 'Awaiting customer / manager approval'
+      break
+    case 'approved':
+      if (partsTotal > 0 && partsWaiting > 0) {
+        nextActor = isStaff ? 'Order parts, then start work' : 'Tech starts work once parts arrive'
+        blocker = `Waiting on parts (${partsWaiting} of ${partsTotal} still pending)`
+      } else {
+        nextActor = isTech ? 'Start work' : 'Tech to start work'
+      }
+      break
+    case 'in_progress':
+      nextActor = isTech ? 'Complete the ticket' : 'Tech completing work'
+      break
+    case 'completed':
+      nextActor = isStaff ? 'Bill in Synergy' : 'Office to bill'
+      break
+    case 'billed':
+      nextActor = undefined
+      break
+    case 'declined':
+      nextActor = estimateApproved
+        ? undefined
+        : isManager ? 'Reopen and revise the estimate' : 'Manager review'
+      break
+    case 'canceled':
+      nextActor = undefined
+      break
+  }
+
+  return { state: label, nextActor, blocker }
+}
+
+// ── Request More Info modal ────────────────────────────────────────────────
+
+interface RequestInfoModalProps {
+  open: boolean
+  initialDraft?: string
+  busy: boolean
+  onSubmit: (note: string) => void
+  onCancel: () => void
+}
+
+function RequestInfoModal({ open, initialDraft, busy, onSubmit, onCancel }: RequestInfoModalProps) {
+  // Parent remounts this via the `key={open}` prop, so initialDraft only
+  // needs to seed state once. Avoids setState-in-effect cascading renders.
+  const [note, setNote] = useState(initialDraft ?? '')
+
+  if (!open) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Request more info"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+            Request More Info
+          </h3>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            This sends the estimate back to the tech and shows your note when they reopen the ticket.
+          </p>
+        </div>
+        <div className="p-5">
+          <label htmlFor="request-info-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            What do you need from the tech? <span className="text-red-600">*</span>
+          </label>
+          <textarea
+            id="request-info-note"
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={5}
+            maxLength={2000}
+            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            {note.length} / 2000
+          </p>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onSubmit(note.trim())}
+            disabled={busy || note.trim().length < 2}
+            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors min-h-[44px]"
+          >
+            {busy ? 'Sending...' : 'Send Back to Tech'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Quick Complete bottom sheet (mobile) ───────────────────────────────────
+
+interface QuickCompleteSheetProps {
+  open: boolean
+  busy: boolean
+  signatureRequired: boolean
+  onCancel: () => void
+  onSubmit: (data: { hours: number; notes: string; signatureImage: string | null; signatureName: string }) => void
+}
+
+function QuickCompleteSheet({ open, busy, signatureRequired, onCancel, onSubmit }: QuickCompleteSheetProps) {
+  // Parent uses `key={open}` to remount this on toggle so a fresh form is
+  // guaranteed without setState-in-effect cascades.
+  const [hours, setHours] = useState('')
+  const [notes, setNotes] = useState('')
+  const [sigImage, setSigImage] = useState<string | null>(null)
+  const [sigName, setSigName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) return null
+
+  const submit = () => {
+    const h = parseFloat(hours)
+    if (!Number.isFinite(h) || h <= 0) {
+      setError('Enter hours worked.')
+      return
+    }
+    if (signatureRequired && (!sigImage || !sigName.trim())) {
+      setError('Customer signature and printed name are required.')
+      return
+    }
+    setError(null)
+    onSubmit({ hours: h, notes: notes.trim(), signatureImage: sigImage, signatureName: sigName.trim() })
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Quick complete"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full sm:max-w-md sm:rounded-lg rounded-t-2xl bg-white dark:bg-gray-800 border-t sm:border border-gray-200 dark:border-gray-700 shadow-xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white dark:bg-gray-800 px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Quick Complete</h3>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 min-w-[44px] min-h-[44px] flex items-center justify-center -mr-2"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          {error && (
+            <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-3 py-2">
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            </div>
+          )}
+          <div>
+            <label htmlFor="qc-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Hours worked
+            </label>
+            <input
+              id="qc-hours"
+              type="number"
+              inputMode="decimal"
+              step="0.25"
+              min="0"
+              autoFocus
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 text-base w-full focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[44px]"
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <label htmlFor="qc-notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Completion notes
+            </label>
+            <textarea
+              id="qc-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 text-base w-full focus:outline-none focus:ring-2 focus:ring-green-500"
+              placeholder="What you fixed..."
+            />
+          </div>
+          {signatureRequired && (
+            <SignaturePad
+              onSignatureChange={({ image, name: sigPrinted }) => {
+                setSigImage(image)
+                setSigName(sigPrinted)
+              }}
+            />
+          )}
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy}
+            className="w-full px-4 py-3 text-base font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[48px]"
+          >
+            {busy ? 'Completing...' : 'Mark Complete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Section accordion wrapper ──────────────────────────────────────────────
+// Uses uncontrolled <details> with a key so changes to `open` re-render the
+// element rather than fighting the browser's internal state. The `title` is
+// rendered as an h2 inside the <summary> so the section keeps its visual
+// hierarchy when collapsed.
+
+function CardSection({
+  title,
+  open,
+  summarySuffix,
+  children,
+}: {
+  title: string
+  open: boolean
+  summarySuffix?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <details key={open ? 'open' : 'closed'} open={open}>
+        <summary className="px-5 py-4 cursor-pointer select-none flex items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-700 marker:content-none [&::-webkit-details-marker]:hidden">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide truncate">
+              {title}
+            </h2>
+            {summarySuffix && <span className="shrink-0">{summarySuffix}</span>}
+          </div>
+          <svg className="h-4 w-4 text-gray-400 dark:text-gray-500 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </summary>
+        <div className="p-5">{children}</div>
+      </details>
     </div>
   )
 }
@@ -173,6 +494,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [contactDraftName, setContactDraftName] = useState(ticket.contact_name ?? '')
   const [contactDraftEmail, setContactDraftEmail] = useState(ticket.contact_email ?? '')
   const [contactDraftPhone, setContactDraftPhone] = useState(ticket.contact_phone ?? '')
+
+  // Request More Info modal (manager-side, on Awaiting Approval state)
+  const [requestInfoOpen, setRequestInfoOpen] = useState(false)
+
+  // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
+  const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Track mobile viewport so the FAB only renders on small screens. The check
+  // runs after mount to avoid SSR hydration mismatch.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 640px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
 
   // Load preview URLs for existing photos
   useEffect(() => {
@@ -315,6 +654,56 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       })
       setManualDecisionMode(null)
       setManualDecisionNote('')
+    })
+  }
+
+  async function handleRequestMoreInfo(note: string) {
+    await apiAction(async () => {
+      const res = await fetch(`/api/service-tickets/${ticket.id}/request-info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to send back to tech')
+      }
+      setRequestInfoOpen(false)
+      setSuccessMsg('Sent back to tech with your note.')
+    })
+  }
+
+  async function handleQuickComplete({
+    hours,
+    notes,
+    signatureImage,
+    signatureName,
+  }: {
+    hours: number
+    notes: string
+    signatureImage: string | null
+    signatureName: string
+  }) {
+    await apiAction(async () => {
+      const res = await fetch(`/api/service-tickets/${ticket.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          completed_at: new Date().toISOString(),
+          hours_worked: hours,
+          parts_used: [],
+          completion_notes: notes || null,
+          customer_signature: signatureImage,
+          customer_signature_name: signatureName || null,
+          photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
+          ace_labor: null,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to complete ticket')
+      }
+      setQuickCompleteOpen(false)
     })
   }
 
@@ -785,12 +1174,74 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
   // (Render helpers moved outside component — see Badge, Card, InfoField above)
 
+  // Workflow card props — derived from current state + parts queue.
+  const partsWaitingCount = livePartsRequested.filter((p) => p.status !== 'received').length
+  const workflowProps = computeWorkflowProps({
+    status: ticket.status,
+    isManager,
+    isTech,
+    isStaff,
+    partsWaiting: partsWaitingCount,
+    partsTotal: livePartsRequested.length,
+    requestInfoNote: ticket.request_info_note,
+    estimateApproved: ticket.estimate_approved,
+  })
+
+  // Accordion default-open logic:
+  //  - estimating (open status, no request-info): estimate section open
+  //  - awaiting_approval (estimated): estimate read-only, expanded for review
+  //  - approved/in_progress: completion open
+  //  - completed/billed: both closed (summary already shown above)
+  // On viewports ≤ 640px, only the section matching the *current* action is open;
+  // other sections collapse so the tech doesn't have to scroll past them.
+  const estimateOpenDefault = ticket.status === SERVICE_STATUS.OPEN ||
+    ticket.status === SERVICE_STATUS.ESTIMATED ||
+    ticket.status === SERVICE_STATUS.DECLINED
+  const completionOpenDefault = ticket.status === SERVICE_STATUS.APPROVED ||
+    ticket.status === SERVICE_STATUS.IN_PROGRESS
+  // On mobile, only the section that matches the current state is open.
+  const estimateOpen = isMobile
+    ? (ticket.status === SERVICE_STATUS.OPEN || ticket.status === SERVICE_STATUS.ESTIMATED || ticket.status === SERVICE_STATUS.DECLINED)
+    : estimateOpenDefault
+  const completionOpen = isMobile
+    ? (ticket.status === SERVICE_STATUS.APPROVED || ticket.status === SERVICE_STATUS.IN_PROGRESS)
+    : completionOpenDefault
+
+  const quickCompleteEligible =
+    ticket.status === SERVICE_STATUS.IN_PROGRESS &&
+    isTech &&
+    ticket.assigned_technician_id === userId
+
+  const signatureRequired = ticket.ticket_type !== 'inside'
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
 
   return (
     <div className="space-y-6">
+      {/* Workflow state card — top of detail page, always visible. */}
+      <WorkflowStatusCard
+        state={workflowProps.state}
+        nextActor={workflowProps.nextActor}
+        blocker={workflowProps.blocker}
+        enteredAt={ticket.updated_at}
+      />
+
+      {/* Request More Info note — surfaced prominently when the manager has
+          sent the estimate back. Visible to anyone viewing the ticket so
+          everyone sees why it's back at "open". */}
+      {ticket.status === SERVICE_STATUS.OPEN && ticket.request_info_note && (
+        <div className="rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+            Manager requested more info
+          </p>
+          <p className="text-sm text-amber-900 dark:text-amber-100 whitespace-pre-wrap">
+            {ticket.request_info_note}
+          </p>
+        </div>
+      )}
+
       {/* Error / Success messages */}
       {error && (
         <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3">
@@ -1013,7 +1464,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       {/* ── Section 4: Diagnosis & Estimate ── */}
       {(ticket.status === SERVICE_STATUS.OPEN || ticket.status === SERVICE_STATUS.ESTIMATED || ticket.status === SERVICE_STATUS.APPROVED ||
         ticket.status === SERVICE_STATUS.DECLINED || ticket.estimate_amount != null) && (
-        <Card title="Diagnosis & Estimate">
+        <CardSection
+          title="Diagnosis & Estimate"
+          open={estimateOpen}
+          summarySuffix={ticket.estimate_amount != null ? (
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              ${ticket.estimate_amount.toFixed(2)}
+            </span>
+          ) : undefined}
+        >
           {/* Show existing estimate breakdown */}
           {ticket.estimate_amount != null && (
             <div className="space-y-3 mb-4">
@@ -1209,6 +1668,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                   >
                     Decline
                   </button>
+                  {isManager && (
+                    <button
+                      onClick={() => setRequestInfoOpen(true)}
+                      disabled={loading}
+                      className="px-4 py-3 sm:py-2 text-sm font-medium text-amber-700 dark:text-amber-400 bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-600 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
+                    >
+                      Request More Info
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2 max-w-lg">
@@ -1447,12 +1915,39 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               )}
             </div>
           )}
-        </Card>
+        </CardSection>
       )}
 
-      {/* ── Section 5: Parts Requested ── */}
+      {/* ── Section 5: Parts Requested ──
+          Collapsible. Stays open whenever something needs attention
+          (status is pre-completion AND not all parts received). Auto-closes
+          once everything is received so the tech doesn't scroll past it. */}
       {(partsRequested.length > 0 || (ticket.status !== 'completed' && ticket.status !== 'billed' && ticket.status !== 'canceled')) && (
-        <Card title={`Parts Requested${livePartsRequested.length > 0 ? ` (${partsReceivedCount}/${livePartsRequested.length} received)` : ''}`}>
+        <CardSection
+          title={`Parts Requested${livePartsRequested.length > 0 ? ` (${partsReceivedCount}/${livePartsRequested.length} received)` : ''}`}
+          open={
+            // Pre-completion AND something pending → open by default
+            ticket.status !== 'completed' && ticket.status !== 'billed' && ticket.status !== 'canceled' &&
+            (livePartsRequested.length === 0 || !allPartsReceived)
+          }
+          summarySuffix={allPartsReceived ? (
+            <Badge label="All Received" classes="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" />
+          ) : undefined}
+        >
+          {/* "View in Parts Queue" — consumes the Round A query-param contract.
+              The link works regardless of Round A's filter shipping; if that
+              round hasn't merged yet, parts-queue just shows its default view. */}
+          {isStaff && partsRequested.length > 0 && (
+            <div className="mb-3">
+              <Link
+                href={`/parts-queue?source=service&ticket=${ticket.id}`}
+                className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View in Parts Queue
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )}
           {partsRequested.length > 0 && (
             <>
               {allPartsReceived && (
@@ -1647,7 +2142,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               loading={loading}
             />
           )}
-        </Card>
+        </CardSection>
       )}
 
       {/* ── Section 6: Action Buttons ── */}
@@ -1764,9 +2259,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         )}
       </Card>
 
-      {/* ── Section 7: Completion Form ── */}
+      {/* ── Section 7: Completion Form ──
+          Collapsible — opens by default in_progress; on mobile it's also the
+          only open section. */}
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
-        <Card title="Complete Ticket">
+        <CardSection title="Complete Ticket" open={completionOpen}>
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Hours Worked */}
             <div>
@@ -1785,14 +2282,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               />
             </div>
 
-            {/* Parts Used */}
-            <PartsEntryList
-              parts={completionParts}
-              setParts={setCompletionParts}
-              showPricing={true}
-              showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
-              label="Parts Used"
-            />
+            {/* Parts Used — collapsible sub-section so the tech can skip
+                past it on mobile when nothing's been added. */}
+            <details open={completionParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
+              <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                <span>Parts Used{completionParts.length > 0 ? ` (${completionParts.length})` : ''}</span>
+                <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </summary>
+              <div className="p-3 pt-0">
+                <PartsEntryList
+                  parts={completionParts}
+                  setParts={setCompletionParts}
+                  showPricing={true}
+                  showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
+                  label=""
+                />
+              </div>
+            </details>
 
             {/* Billing summary */}
             <div className="rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -1814,11 +2322,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               </div>
             </div>
 
-            {/* Photos */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Service Photos
-              </label>
+            {/* Photos — collapsible sub-section. Default-open whenever
+                photos exist so the tech can review what they've captured
+                without an extra tap. */}
+            <details open={photos.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
+              <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                <span>Service Photos{photos.length > 0 ? ` (${photos.length})` : ''}</span>
+                <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </summary>
+              <div className="p-3 pt-0">
               {photos.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mb-2">
                   {photos.map((photo, i) => (
@@ -1841,10 +2355,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                   ))}
                 </div>
               )}
+              {/* `capture="environment"` opens the rear camera by default on
+                  mobile while still allowing library picks; desktop browsers
+                  ignore the attribute. `multiple` keeps batch upload working
+                  on both. */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
+                capture="environment"
                 multiple
                 onChange={handlePhotoUpload}
                 className="hidden"
@@ -1857,7 +2376,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               >
                 {uploading ? 'Uploading...' : '+ Add Photo'}
               </button>
-            </div>
+              </div>
+            </details>
 
             {/* Completion Notes */}
             <div>
@@ -1960,7 +2480,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               )}
             </div>
           </form>
-        </Card>
+        </CardSection>
       )}
 
       {/* ── Section 8: Billing Summary (read-only, completed/billed) ── */}
@@ -2077,6 +2597,42 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
         </Card>
       )}
+
+      {/* Request More Info modal — manager only, on Awaiting Approval.
+          `key` toggles a remount so opening twice always starts fresh. */}
+      <RequestInfoModal
+        key={`request-info-${requestInfoOpen}`}
+        open={requestInfoOpen}
+        initialDraft="Please add labor estimate for "
+        busy={loading}
+        onSubmit={handleRequestMoreInfo}
+        onCancel={() => setRequestInfoOpen(false)}
+      />
+
+      {/* Quick Complete bottom sheet — mobile + tech only, in_progress.
+          Rendered as a fixed-position FAB anchored bottom-right; only on
+          ≤640px viewports per the mobile-first-for-techs rule. */}
+      {quickCompleteEligible && isMobile && !quickCompleteOpen && (
+        <button
+          type="button"
+          onClick={() => setQuickCompleteOpen(true)}
+          className="fixed bottom-6 right-4 z-40 px-5 py-3 rounded-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-lg min-h-[48px] min-w-[48px] flex items-center gap-2"
+          aria-label="Quick complete this ticket"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.25} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+          Quick Complete
+        </button>
+      )}
+      <QuickCompleteSheet
+        key={`quick-complete-${quickCompleteOpen}`}
+        open={quickCompleteOpen}
+        busy={loading}
+        signatureRequired={signatureRequired}
+        onCancel={() => setQuickCompleteOpen(false)}
+        onSubmit={handleQuickComplete}
+      />
     </div>
   )
 }
