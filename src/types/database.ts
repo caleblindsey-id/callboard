@@ -978,8 +978,32 @@ export interface Database {
         Relationships: []
       }
     }
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    Functions: {}
+    Functions: {
+      // Migration 074 — transactional RPCs used by Round F.
+      fn_complete_pm_ticket: {
+        Args: { p_payload: Record<string, unknown> }
+        Returns: Record<string, unknown>
+      }
+      fn_update_parts_queue: {
+        Args: {
+          p_source: string
+          p_ticket_id: string
+          p_expected_updated_at: string
+          p_update_payload: Record<string, unknown>
+        }
+        Returns: Record<string, unknown>
+      }
+      fn_approve_tech_lead_email: {
+        Args: {
+          p_lead_id: string
+          p_approver_id: string
+          p_rep_id: string
+          p_cc_ids: string[]
+          p_message_id: string
+        }
+        Returns: Record<string, unknown>
+      }
+    }
     Enums: {
       user_role: UserRole
       ticket_status: TicketStatus

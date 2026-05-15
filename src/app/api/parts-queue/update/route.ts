@@ -1,3 +1,8 @@
+// Retry-safe (Postgres txn) — the durable write goes through
+// fn_update_parts_queue (migration 074) so the parts_requested / parts_received
+// / synergy_order_number patch lands atomically with an optimistic-lock guard
+// on updated_at. A retry from the client converges either to a successful
+// write or a 409.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
@@ -145,28 +150,28 @@ export async function POST(request: NextRequest) {
         : null
       const value = raw === '' ? null : raw
 
-      const { data: writeRows, error: writeErr } = await supabase
-        .from(table)
-        .update({ synergy_order_number: value })
-        .eq('id', ticket_id)
-        .eq('updated_at', ticket.updated_at)
-        .select('id, synergy_order_number')
-
-      if (writeErr) {
-        console.error('parts-queue set_synergy_order write error:', writeErr)
+      const { data: rpcRows, error: rpcErr } = await supabase.rpc('fn_update_parts_queue', {
+        p_source: source,
+        p_ticket_id: ticket_id,
+        p_expected_updated_at: ticket.updated_at,
+        p_update_payload: { synergy_order_number: value },
+      })
+      if (rpcErr) {
+        if (rpcErr.code === '40001') {
+          return NextResponse.json(
+            { error: 'This ticket was changed by someone else. Refresh and try again.' },
+            { status: 409 }
+          )
+        }
+        console.error('parts-queue set_synergy_order RPC error:', rpcErr)
         return NextResponse.json({ error: 'Failed to update Synergy order #' }, { status: 500 })
       }
-      if (!writeRows || writeRows.length === 0) {
-        return NextResponse.json(
-          { error: 'This ticket was changed by someone else. Refresh and try again.' },
-          { status: 409 }
-        )
-      }
+      const updatedRow = (Array.isArray(rpcRows) ? rpcRows[0] : rpcRows) as { synergy_order_number?: string | null } | null
       return NextResponse.json({
         success: true,
         ticket_id,
         source,
-        synergy_order_number: writeRows[0].synergy_order_number,
+        synergy_order_number: updatedRow?.synergy_order_number ?? null,
       })
     }
 
@@ -280,25 +285,25 @@ export async function POST(request: NextRequest) {
       updatePayload.parts_received = allReceived
     }
 
-    // Optimistic-lock on updated_at. If another writer touched the row between
-    // our read and write, eq(updated_at, ...) matches zero rows and the client
-    // gets a 409 to retry.
-    const { data: writeRows, error: writeErr } = await supabase
-      .from(table)
-      .update(updatePayload)
-      .eq('id', ticket_id)
-      .eq('updated_at', ticket.updated_at)
-      .select('id')
+    // Optimistic-lock on updated_at via fn_update_parts_queue. If another
+    // writer touched the row between our read and write, the function raises
+    // OPTIMISTIC_LOCK (40001) and we return 409 for the client to retry.
+    const { error: rpcErr } = await supabase.rpc('fn_update_parts_queue', {
+      p_source: source,
+      p_ticket_id: ticket_id,
+      p_expected_updated_at: ticket.updated_at,
+      p_update_payload: updatePayload,
+    })
 
-    if (writeErr) {
-      console.error('parts-queue update write error:', writeErr)
+    if (rpcErr) {
+      if (rpcErr.code === '40001') {
+        return NextResponse.json(
+          { error: 'This part was changed by someone else. Refresh and try again.' },
+          { status: 409 }
+        )
+      }
+      console.error('parts-queue update RPC error:', rpcErr)
       return NextResponse.json({ error: 'Failed to update part' }, { status: 500 })
-    }
-    if (!writeRows || writeRows.length === 0) {
-      return NextResponse.json(
-        { error: 'This part was changed by someone else. Refresh and try again.' },
-        { status: 409 }
-      )
     }
 
     return NextResponse.json({ success: true, part: next })
