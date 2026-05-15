@@ -17,6 +17,7 @@ import {
 import CancelPartDialog from './CancelPartDialog'
 import VendorPicker from '@/components/VendorPicker'
 import { formatDateTime } from '@/lib/format'
+import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 
 type Tab = 'to_order' | 'ordered' | 'received'
 type SortKey =
@@ -107,17 +108,32 @@ function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): Par
 
 interface Props {
   rows: PartsQueueRow[]
+  // Round B (service-ticket deep-link) sets these from ?source=&ticket= query
+  // params on the URL. When initialTicketFilter is set, the table is narrowed
+  // to just that ticket and a "clear filter" chip surfaces above the table.
+  // Both default to null when navigating to /parts-queue directly.
+  initialTicketFilter?: string | null
+  initialSourceFilter?: PartsQueueSource | null
 }
 
-export default function PartsQueueClient({ rows: initialRows }: Props) {
+export default function PartsQueueClient({
+  rows: initialRows,
+  initialTicketFilter = null,
+  initialSourceFilter = null,
+}: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
   const [tab, setTab] = useState<Tab>('to_order')
   const [sortKey, setSortKey] = useState<SortKey>('requested_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [search, setSearch] = useState('')
-  const [sourceFilter, setSourceFilter] = useState<'all' | PartsQueueSource>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | PartsQueueSource>(
+    initialSourceFilter ?? 'all',
+  )
   const [vendorFilter, setVendorFilter] = useState('')
+  // Ticket-prefilter survives only on initial load; clearing it removes the
+  // chip and falls back to the normal full-queue view.
+  const [ticketFilter, setTicketFilter] = useState<string | null>(initialTicketFilter)
   const [pendingRow, setPendingRow] = useState<string | null>(null)
   const [flashedRow, setFlashedRow] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
@@ -165,6 +181,10 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
         if (!r.received_at) return false
         if (new Date(r.received_at).getTime() < receivedCutoffMs) return false
       }
+      // Ticket prefilter (Round B deep-link from /service/<id>) — takes
+      // precedence over the source dropdown so a deep-link still shows the
+      // exact ticket's parts.
+      if (ticketFilter && r.ticket_id !== ticketFilter) return false
       // Source filter
       if (sourceFilter !== 'all' && r.source !== sourceFilter) return false
       // Vendor filter
@@ -189,7 +209,7 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
       return true
     })
     return sortRows(result, sortKey, sortDir)
-  }, [rows, tab, sourceFilter, vendorFilter, search, sortKey, sortDir, receivedCutoffMs])
+  }, [rows, tab, sourceFilter, vendorFilter, search, sortKey, sortDir, receivedCutoffMs, ticketFilter])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -353,6 +373,29 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
         <TabButton active={tab === 'received'} onClick={() => setTab('received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
       </div>
 
+      {/* Ticket prefilter chip — only present when the page was loaded via a
+          deep-link from a source ticket (Round B). Clears back to the normal
+          full-queue view without a navigation. */}
+      {ticketFilter && (
+        <div className="flex items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3 py-2 text-xs">
+          <span className="text-slate-600 dark:text-slate-300">
+            Filtered to one ticket
+            {initialSourceFilter ? ` (${initialSourceFilter === 'pm' ? 'PM' : 'Service'})` : ''}
+            .
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setTicketFilter(null)
+              setSourceFilter('all')
+            }}
+            className="text-slate-700 dark:text-slate-200 underline hover:text-slate-900 dark:hover:text-white"
+          >
+            Show all parts
+          </button>
+        </div>
+      )}
+
       {/* Filter bar */}
       <div className="flex flex-col sm:flex-row gap-2">
         <input
@@ -403,6 +446,13 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
               <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <th
+                scope="col"
+                className="px-3 py-2 text-left font-semibold"
+                title="Hint based on part description — not auto-applied. Pick the actual vendor in the Vendor column."
+              >
+                Suggested
+              </th>
               <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -420,7 +470,7 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={13 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
+                  colSpan={14 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
                   className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
@@ -484,6 +534,9 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
                           handleFieldsCommit(row, { vendor: picked.vendor, vendor_code: picked.vendor_code })
                         }
                       />
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+                      <SuggestedVendor description={row.description} pickedVendor={row.vendor} />
                     </td>
                     <td className="px-3 py-2">
                       <InlineText
@@ -570,7 +623,12 @@ export default function PartsQueueClient({ rows: initialRows }: Props) {
                         )}
                         <Link
                           href={ticketDeepLink(row.source, row.ticket_id)}
-                          title="Open ticket"
+                          title={
+                            row.source === 'pm'
+                              ? 'Open source PM ticket'
+                              : 'Open source service ticket'
+                          }
+                          aria-label="Open source ticket"
                           className="p-1 text-gray-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
                         >
                           <ExternalLink className="h-4 w-4" />
@@ -649,6 +707,42 @@ function SortHeader({
         <Icon className="h-3 w-3 opacity-70" />
       </button>
     </th>
+  )
+}
+
+function SuggestedVendor({
+  description,
+  pickedVendor,
+}: {
+  description: string | null
+  pickedVendor: string | null
+}) {
+  const suggestion = suggestVendor(description)
+  if (!suggestion) return <span aria-hidden="true">—</span>
+
+  // Highlight the suggestion when it doesn't match what's actually picked so
+  // the coordinator notices the conflict; muted when it matches (or nothing
+  // is picked yet) so it doesn't pull focus.
+  const conflicts =
+    pickedVendor != null &&
+    pickedVendor.trim().length > 0 &&
+    pickedVendor.toLowerCase() !== suggestion.toLowerCase()
+
+  return (
+    <span
+      title={
+        conflicts
+          ? `Suggestion differs from the picked vendor — double-check before ordering.`
+          : `Hint based on part description.`
+      }
+      className={
+        conflicts
+          ? 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+          : 'text-gray-500 dark:text-gray-400'
+      }
+    >
+      {suggestion}
+    </span>
   )
 }
 
