@@ -1,7 +1,12 @@
+// Retry-safe (Postgres txn) — the durable writes (ACE labor upsert + ticket
+// completion + optional month/year slide + schedule anchor update) are all
+// executed inside fn_complete_pm_ticket (migration 074). Before this round,
+// each write was a separate Supabase call: if write #2 failed after write
+// #1 succeeded the row was stuck in a partial-state half-complete row. Now
+// the function raises and the whole transaction rolls back, leaving the
+// ticket unchanged and the client free to retry.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { completeTicket } from '@/lib/db/tickets'
-import { updateAnchorMonth } from '@/lib/db/schedules'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, TicketPhoto } from '@/types/database'
 import { getLaborRate } from '@/lib/db/settings'
@@ -135,9 +140,13 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (current.status === 'completed' || current.status === 'billed') {
+    // status='completed' is idempotent (no-op inside the RPC), status='billed'
+    // raises ALREADY_BILLED -> 409. We still 409 on 'billed' here pre-RPC for
+    // a clearer early-exit message, but completed is allowed through so the
+    // function can return the unchanged row.
+    if (current.status === 'billed') {
       return NextResponse.json(
-        { error: `Ticket is already ${current.status} and cannot be re-completed` },
+        { error: 'Ticket is already billed and cannot be re-completed' },
         { status: 409 }
       )
     }
@@ -205,132 +214,81 @@ export async function POST(
     const customerRow = Array.isArray(customerJoin) ? customerJoin[0] : customerJoin
     const showPricingSnapshot = customerRow?.show_pricing_on_pm_pdf ?? false
 
-    // ACE labor (tech-payout) is written BEFORE the ticket transitions to
-    // completed. There is no DB transaction across these two writes, so we
-    // intentionally order ACE first: if it fails we 500 with the ticket
-    // unchanged and the tech can retry safely. The partial unique index on
-    // pm_ticket_id makes the retry an in-place update of the existing pending
-    // row, so an orphan from a partial run never blocks future attempts.
-    if (aceLabor != null) {
-      const { data: existing, error: existingErr } = await supabase
-        .from('ace_labor_entries')
-        .select('id, status')
-        .eq('pm_ticket_id', id)
-        .maybeSingle()
-      if (existingErr) {
-        console.error(`[complete] ACE lookup failed for ticket ${id}:`, existingErr)
+    // Slide billing period to completion month if work happened in a
+    // different month. The Postgres function handles the slide + anchor
+    // update atomically along with the rest of the writes.
+    const completedMonth = completionDate.getUTCMonth() + 1
+    const completedYear = completionDate.getUTCFullYear()
+
+    const laborRateType = (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum'
+
+    // All writes — ACE upsert (if provided), ticket completion update, and
+    // optional month/year slide + anchor update — flow through a single
+    // SECURITY DEFINER Postgres function. Either everything lands or nothing
+    // lands.
+    const { data: rpcResult, error: rpcErr } = await supabase.rpc('fn_complete_pm_ticket', {
+      p_payload: {
+        ticket_id: id,
+        completed_date: completedDate,
+        hours_worked: hoursWorked,
+        parts_used: finalParts,
+        completion_notes: completionNotes ?? '',
+        billing_amount: finalBillingAmount,
+        customer_signature: customerSignature,
+        customer_signature_name: customerSignatureName,
+        photos: photos ?? [],
+        po_number: poNumber ?? null,
+        billing_contact_name: billingContactName ?? null,
+        billing_contact_email: billingContactEmail ?? null,
+        billing_contact_phone: billingContactPhone ?? null,
+        additional_parts_used: finalAdditionalParts,
+        additional_hours_worked: finalAdditionalHours,
+        machine_hours: machineHours,
+        date_code: dateCode.trim(),
+        show_pricing: showPricingSnapshot,
+        completed_month: completedMonth,
+        completed_year: completedYear,
+        ace_labor: aceLabor
+          ? {
+              hours: aceLabor.hours,
+              reason: aceLabor.reason.trim(),
+              labor_rate_type: laborRateType,
+            }
+          : null,
+      },
+    })
+
+    if (rpcErr) {
+      // Distinct PG error codes -> user-friendly HTTP responses.
+      if (rpcErr.message?.includes('ALREADY_BILLED')) {
         return NextResponse.json(
-          { error: 'Failed to read existing ACE labor entry.' },
-          { status: 500 }
+          { error: 'Ticket is already billed and cannot be re-completed' },
+          { status: 409 }
         )
       }
-      if (existing && (existing.status === 'approved' || existing.status === 'paid')) {
+      if (rpcErr.message?.includes('ACE_LOCKED')) {
         return NextResponse.json(
           { error: 'ACE labor entry already approved/paid; cannot be changed here.' },
           { status: 409 }
         )
       }
-      if (existing) {
-        const { error: updErr } = await supabase
-          .from('ace_labor_entries')
-          .update({
-            hours: aceLabor.hours,
-            reason: aceLabor.reason.trim(),
-            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
-            status: 'pending',
-            rejected_reason: null,
-            approved_by_id: null,
-            approved_at: null,
-            rate_value_at_approval: null,
-            submitted_at: new Date().toISOString(),
-            updated_by_id: user.id,
-          })
-          .eq('id', existing.id)
-        if (updErr) {
-          console.error(`[complete] ACE update failed for ticket ${id}:`, updErr)
-          return NextResponse.json(
-            { error: 'Failed to save ACE labor entry.' },
-            { status: 500 }
-          )
-        }
-      } else {
-        // tech_id must point at the assigned technician, not the user
-        // submitting completion. A manager completing on a tech's behalf
-        // should still attribute the ACE entry to the tech for payout and
-        // for the self-approval guard to work. Fall back to the current
-        // user only when the ticket is unassigned (edge case).
-        const aceTechId = current.assigned_technician_id ?? user.id
-        const { error: insErr } = await supabase
-          .from('ace_labor_entries')
-          .insert({
-            pm_ticket_id: id,
-            tech_id: aceTechId,
-            hours: aceLabor.hours,
-            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
-            reason: aceLabor.reason.trim(),
-            status: 'pending',
-            created_by_id: user.id,
-          })
-        if (insErr) {
-          console.error(`[complete] ACE insert failed for ticket ${id}:`, insErr)
-          return NextResponse.json(
-            { error: 'Failed to create ACE labor entry.' },
-            { status: 500 }
-          )
-        }
+      if (rpcErr.message?.includes('TICKET_NOT_FOUND')) {
+        return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
       }
+      if (rpcErr.message?.includes('FORBIDDEN')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      console.error(`[complete] fn_complete_pm_ticket failed for ticket ${id}:`, rpcErr)
+      return NextResponse.json({ error: 'Failed to complete ticket' }, { status: 500 })
     }
 
-    const updated = await completeTicket(id, {
-      completedDate,
-      hoursWorked,
-      partsUsed: finalParts,
-      completionNotes: completionNotes ?? '',
-      billingAmount: finalBillingAmount,
-      customerSignature,
-      customerSignatureName,
-      photos: photos ?? [],
-      poNumber: poNumber ?? null,
-      billingContactName: billingContactName ?? null,
-      billingContactEmail: billingContactEmail ?? null,
-      billingContactPhone: billingContactPhone ?? null,
-      additionalPartsUsed: finalAdditionalParts,
-      additionalHoursWorked: finalAdditionalHours,
-      machineHours,
-      dateCode: dateCode.trim(),
-      showPricing: showPricingSnapshot,
-    })
-
-    // Slide billing period to completion month if work happened in a different month
-    const completedMonth = completionDate.getUTCMonth() + 1
-    const completedYear = completionDate.getUTCFullYear()
-
-    if (completedMonth !== current.month || completedYear !== current.year) {
-      const { error: slideError } = await supabase
-        .from('pm_tickets')
-        .update({ month: completedMonth, year: completedYear })
-        .eq('id', id)
-
-      // 23505 = unique_violation — a ticket for that schedule+month+year already exists.
-      // Keep the original billing period in that case; anchor still updates below.
-      if (slideError && slideError.code !== '23505') {
-        console.error(`[complete] Failed to slide billing period for ticket ${id}:`, slideError)
-      }
-
-      if (current.pm_schedule_id) {
-        try {
-          await updateAnchorMonth(current.pm_schedule_id, completedMonth)
-        } catch (err) {
-          console.error(`[complete] Failed to update anchor for schedule ${current.pm_schedule_id}:`, err)
-        }
-      }
-
-      if (!slideError) {
-        return NextResponse.json({ ...updated, month: completedMonth, year: completedYear })
-      }
+    const result = rpcResult as { ticket: Record<string, unknown> } | null
+    if (!result?.ticket) {
+      console.error(`[complete] fn_complete_pm_ticket returned no ticket for ${id}`)
+      return NextResponse.json({ error: 'Failed to complete ticket' }, { status: 500 })
     }
 
-    return NextResponse.json(updated)
+    return NextResponse.json(result.ticket)
   } catch (err) {
     console.error(`tickets/[id]/complete error:`, err)
     return NextResponse.json(

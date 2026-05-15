@@ -19,6 +19,11 @@ type ReqBody = {
   note?: string
 }
 
+// Retry-safe (Postgres txn) — the durable approval flip + email-audit columns
+// are written by fn_approve_tech_lead_email (migration 074). The Mandrill
+// send still happens first so a failed email aborts approval; an RPC failure
+// after a successful send returns 409/500 and leaves the lead pending.
+//
 // POST /api/tech-leads/[id]/approve-and-email
 // Approves an equipment-sale lead AND emails it to a selected sales rep in one
 // shot. Email is sent BEFORE the DB flip so a Mandrill failure cancels the
@@ -179,28 +184,21 @@ export async function POST(
       )
     }
 
-    // Status-guarded update. PGRST116 = lead is no longer pending (someone
-    // else approved concurrently). Email already sent at that point —
-    // surface 409 so the UI can warn.
-    const now = new Date().toISOString()
-    const { data: updated, error: writeErr } = await supabase
-      .from('tech_leads')
-      .update({
-        status: 'approved',
-        approved_by: user.id,
-        approved_at: now,
-        emailed_to_rep_id: primary.id,
-        emailed_to_rep_at: now,
-        email_rep_message_id: messageId,
-        emailed_cc_ids: validCcReps.map(r => r.id),
-      })
-      .eq('id', id)
-      .eq('status', 'pending')
-      .select('id')
-      .single()
+    // Status-guarded update via fn_approve_tech_lead_email (migration 074).
+    // The function raises STATUS_CONFLICT (40001) when the lead is no longer
+    // pending OR has already been emailed — both surface as 409 here. Email
+    // is already sent by this point, so the user sees the "email sent but
+    // already approved" message.
+    const { error: rpcErr } = await supabase.rpc('fn_approve_tech_lead_email', {
+      p_lead_id: id,
+      p_approver_id: user.id,
+      p_rep_id: primary.id,
+      p_cc_ids: validCcReps.map(r => r.id),
+      p_message_id: messageId,
+    })
 
-    if (writeErr || !updated) {
-      if (writeErr?.code === 'PGRST116') {
+    if (rpcErr) {
+      if (rpcErr.code === '40001') {
         return NextResponse.json(
           {
             error:
@@ -209,7 +207,7 @@ export async function POST(
           { status: 409 }
         )
       }
-      console.error('approve-and-email: update failed after send', writeErr)
+      console.error('approve-and-email: RPC failed after send', rpcErr)
       return NextResponse.json(
         { error: 'Email sent, but failed to record approval. Contact support.' },
         { status: 500 }
