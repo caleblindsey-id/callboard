@@ -10,8 +10,16 @@ interface TechEquipmentListProps {
   equipment: TechEquipmentItem[]
 }
 
-function formatNextService(dateStr: string | null): { text: string; className: string } {
-  if (!dateStr) return { text: '—', className: 'text-gray-400 dark:text-gray-600' }
+type ServiceBucket = 'overdue' | 'due' | 'future' | 'none'
+
+function classifyNextService(dateStr: string | null): {
+  text: string
+  className: string
+  bucket: ServiceBucket
+} {
+  if (!dateStr) {
+    return { text: '—', className: 'text-gray-400 dark:text-gray-600', bucket: 'none' }
+  }
 
   const [yearStr, monthStr] = dateStr.split('-')
   const year = parseInt(yearStr)
@@ -27,12 +35,39 @@ function formatNextService(dateStr: string | null): { text: string; className: s
   })
 
   if (year < currentYear || (year === currentYear && month < currentMonth)) {
-    return { text: label, className: 'text-red-600 dark:text-red-400 font-medium' }
+    return {
+      text: label,
+      className: 'text-red-600 dark:text-red-400 font-medium',
+      bucket: 'overdue',
+    }
   }
   if (year === currentYear && month === currentMonth) {
-    return { text: label, className: 'text-amber-600 dark:text-amber-400 font-medium' }
+    return {
+      text: label,
+      className: 'text-amber-600 dark:text-amber-400 font-medium',
+      bucket: 'due',
+    }
   }
-  return { text: label, className: 'text-gray-600 dark:text-gray-400' }
+  return {
+    text: label,
+    className: 'text-gray-600 dark:text-gray-400',
+    bucket: 'future',
+  }
+}
+
+const BUCKET_ORDER: Record<ServiceBucket, number> = {
+  overdue: 0,
+  due: 1,
+  future: 2,
+  none: 3,
+}
+
+function OverdueBadge() {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+      Overdue
+    </span>
+  )
 }
 
 export default function TechEquipmentList({ equipment }: TechEquipmentListProps) {
@@ -41,12 +76,26 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
   const deferredSearch = useDeferredValue(search)
 
   const filtered = useMemo(() => {
-    if (!deferredSearch) return equipment
-    const q = deferredSearch.toLowerCase()
-    return equipment.filter((e) => {
-      const name = e.customers?.name?.toLowerCase() ?? ''
-      const serial = e.serial_number?.toLowerCase() ?? ''
-      return name.includes(q) || serial.includes(q)
+    const base = !deferredSearch
+      ? equipment
+      : equipment.filter((e) => {
+          const q = deferredSearch.toLowerCase()
+          const name = e.customers?.name?.toLowerCase() ?? ''
+          const serial = e.serial_number?.toLowerCase() ?? ''
+          return name.includes(q) || serial.includes(q)
+        })
+
+    // Sort: overdue first, then due-this-month, then future, then no schedule.
+    // Within the same bucket, earlier next-service-date first; tiebreak by customer.
+    return [...base].sort((a, b) => {
+      const aInfo = classifyNextService(a.nextServiceDate)
+      const bInfo = classifyNextService(b.nextServiceDate)
+      const bucketDelta = BUCKET_ORDER[aInfo.bucket] - BUCKET_ORDER[bInfo.bucket]
+      if (bucketDelta !== 0) return bucketDelta
+      if (a.nextServiceDate && b.nextServiceDate && a.nextServiceDate !== b.nextServiceDate) {
+        return a.nextServiceDate.localeCompare(b.nextServiceDate)
+      }
+      return (a.customers?.name ?? '').localeCompare(b.customers?.name ?? '')
     })
   }, [equipment, deferredSearch])
 
@@ -74,17 +123,20 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {filtered.map((e) => {
-                const next = formatNextService(e.nextServiceDate)
+                const next = classifyNextService(e.nextServiceDate)
                 return (
                   <div
                     key={e.id}
                     className="px-4 py-3 min-h-[44px] cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
                     onClick={() => router.push(`/equipment/${e.id}`)}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {e.customers?.name ?? '—'}
-                      </span>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {e.customers?.name ?? '—'}
+                        </span>
+                        {next.bucket === 'overdue' && <OverdueBadge />}
+                      </div>
                       <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -96,7 +148,7 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                         {e.location_on_site}
                       </p>
                     )}
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                       Last: {formatDate(e.lastServiceDate)} · Next:{' '}
                       <span className={next.className}>{next.text}</span>
                     </p>
@@ -120,7 +172,7 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {filtered.map((e) => {
-                    const next = formatNextService(e.nextServiceDate)
+                    const next = classifyNextService(e.nextServiceDate)
                     return (
                       <tr
                         key={e.id}
@@ -128,7 +180,10 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                         onClick={() => router.push(`/equipment/${e.id}`)}
                       >
                         <td className="px-5 py-3 text-gray-900 dark:text-white">
-                          {e.customers?.name ?? '—'}
+                          <div className="flex items-center gap-2">
+                            <span>{e.customers?.name ?? '—'}</span>
+                            {next.bucket === 'overdue' && <OverdueBadge />}
+                          </div>
                         </td>
                         <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                           {[e.make, e.model].filter(Boolean).join(' ') || '—'}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Button from '@/components/Button'
 
 interface PoNumberSectionProps {
   ticketId: string
@@ -53,13 +54,14 @@ export default function PoNumberSection({ ticketId, initialPoNumber }: PoNumberS
           />
         </div>
         <div className="flex items-end">
-          <button
+          <Button
             onClick={handleSave}
             disabled={saving}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 whitespace-nowrap min-h-[44px] sm:min-h-0"
+            variant="secondary"
+            size="mobile"
           >
             {saved ? 'Saved ✓' : 'Save'}
-          </button>
+          </Button>
         </div>
       </div>
       {error && (

@@ -6,6 +6,7 @@ import type { TechLeadStatus } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import SubmitLeadModal from './SubmitLeadModal'
+import Button from '@/components/Button'
 import { formatMoney, formatDate } from '@/lib/format'
 
 interface Props {
@@ -13,14 +14,14 @@ interface Props {
 }
 
 const STATUS_LABEL: Record<TechLeadStatus, string> = {
-  pending: 'Submitted — awaiting review',
-  approved: 'Pending — waiting on match',
-  rejected: 'Rejected',
-  cancelled: 'Cancelled',
-  earned: 'Earned',
-  paid: 'Paid',
-  match_pending: 'Match awaiting confirmation',
-  expired: 'Expired',
+  pending: '⏳ Submitted — awaiting review',
+  approved: '⏳ Pending — waiting on match',
+  rejected: '❌ Rejected',
+  cancelled: '⊘ Cancelled',
+  earned: '✅ Earned',
+  paid: '💰 Paid',
+  match_pending: '⏳ Match awaiting confirmation',
+  expired: '⊘ Expired',
 }
 
 const STATUS_STYLE: Record<TechLeadStatus, string> = {
@@ -43,14 +44,14 @@ export default function MyLeadsClient({ leads }: Props) {
         <p className="text-sm text-gray-500 dark:text-gray-400">
           {leads.length} {leads.length === 1 ? 'lead' : 'leads'}
         </p>
-        <button
-          type="button"
+        <Button
           onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 min-h-[44px] px-4 py-2 text-sm font-medium text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 rounded-md"
+          variant="primary"
+          size="mobile"
         >
           <Plus className="h-4 w-4" />
           Submit lead
-        </button>
+        </Button>
       </div>
 
       {leads.length === 0 ? (
@@ -81,7 +82,7 @@ export default function MyLeadsClient({ leads }: Props) {
                       Submitted {formatDate(lead.submitted_at)}
                     </p>
                   </div>
-                  <span className={`shrink-0 px-2 py-1 rounded-md text-xs font-medium ${STATUS_STYLE[lead.status]}`}>
+                  <span className={`shrink-0 px-2.5 py-1 rounded-md text-sm font-medium ${STATUS_STYLE[lead.status]}`}>
                     {STATUS_LABEL[lead.status]}
                   </span>
                 </div>
