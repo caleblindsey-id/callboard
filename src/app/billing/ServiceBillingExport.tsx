@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
+import BillingNotesDrawer from './BillingNotesDrawer'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -49,6 +51,7 @@ export default function ServiceBillingExport({
   )
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [marking, setMarking] = useState(false)
+  const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
 
   // Inline Synergy # editing — mirrors the PO editor on the PM tab.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -217,6 +220,25 @@ export default function ServiceBillingExport({
     )
   }
 
+  function renderNotesButton(t: ServiceBillingTicket) {
+    if (t.customer_id == null) return null
+    const customerId = t.customer_id
+    const customerName = t.customers?.name ?? '—'
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          setNotesCustomer({ id: customerId, name: customerName })
+        }}
+        className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors"
+        title="Billing notes for this customer"
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
+        Notes
+      </button>
+    )
+  }
+
   return (
     <>
       {/* Month picker */}
@@ -335,8 +357,9 @@ export default function ServiceBillingExport({
                             ? new Date(t.completed_at).toLocaleDateString()
                             : '—'}
                         </p>
-                        <div className="mt-1">
+                        <div className="mt-1 flex items-center justify-between gap-2">
                           {renderSynergyStatus(t)}
+                          {renderNotesButton(t)}
                         </div>
                       </div>
                     </div>
@@ -366,6 +389,7 @@ export default function ServiceBillingExport({
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Billing</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Type</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                    <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -407,6 +431,9 @@ export default function ServiceBillingExport({
                             ? new Date(t.completed_at).toLocaleDateString()
                             : '—'}
                         </td>
+                        <td className="px-4 py-3 text-right">
+                          {renderNotesButton(t)}
+                        </td>
                       </tr>
                     )
                   })}
@@ -416,6 +443,12 @@ export default function ServiceBillingExport({
           </>
         )}
       </div>
+
+      <BillingNotesDrawer
+        customerId={notesCustomer?.id ?? null}
+        customerName={notesCustomer?.name ?? null}
+        onClose={() => setNotesCustomer(null)}
+      />
     </>
   )
 }
