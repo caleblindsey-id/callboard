@@ -886,7 +886,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     if (!entry || !entry.description.trim() || entry.alreadyRequested) return
     const newPart: PartRequest = {
       description: entry.description.trim(),
-      quantity: entry.quantity || 1,
+      quantity: Number(entry.quantity) || 1,
       product_number: entry.productNumber?.trim() || undefined,
       synergy_product_id: entry.synergyProductId ?? undefined,
       status: 'requested',
@@ -1159,7 +1159,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const allPartsReceived = livePartsRequested.length > 0 && partsReceivedCount === livePartsRequested.length
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
-    .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+    .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
   const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal
 
@@ -1167,7 +1167,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const estLaborTotal = (parseFloat(estimateLaborHours) || 0) * laborRate
   const estPartsTotal = estimateParts
     .filter((p) => !p.warrantyCovered)
-    .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+    .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal
 
   // Service address

@@ -65,7 +65,7 @@ export default function PmPartsSection({
     try {
       const newPart: PartRequest = {
         description: entry.description.trim(),
-        quantity: entry.quantity || 1,
+        quantity: Number(entry.quantity) || 1,
         ...(entry.productNumber?.trim() ? { product_number: entry.productNumber.trim() } : {}),
         ...(entry.synergyProductId != null ? { synergy_product_id: entry.synergyProductId } : {}),
         ...(entry.vendorItemCode?.trim() ? { vendor_item_code: entry.vendorItemCode.trim() } : {}),
