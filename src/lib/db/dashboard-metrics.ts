@@ -284,6 +284,46 @@ export async function getTechLeadBonusLeaderboard(limit = 5): Promise<TechLeadBo
     .slice(0, limit)
 }
 
+// --- Ready to Bill (PM + Service queued for Synergy keying) -------------
+// PM uses status='completed' AND billing_exported=false (PDF render is the
+// "exported" signal). Service uses status='completed' (mark-billed flips to
+// 'billed', removing from this query). Two parallel aggregate queries.
+
+export type ReadyToBillCounts = {
+  pmCount: number
+  pmAmount: number
+  serviceCount: number
+  serviceAmount: number
+}
+
+export async function getReadyToBillCounts(): Promise<ReadyToBillCounts> {
+  const supabase = await createClient()
+
+  const [pmRes, svcRes] = await Promise.all([
+    supabase
+      .from('pm_tickets')
+      .select('billing_amount')
+      .is('deleted_at', null)
+      .eq('status', 'completed')
+      .eq('billing_exported', false),
+    supabase
+      .from('service_tickets')
+      .select('billing_amount')
+      .eq('status', 'completed'),
+  ])
+  if (pmRes.error) throw pmRes.error
+  if (svcRes.error) throw svcRes.error
+
+  const pmRows = (pmRes.data ?? []) as { billing_amount: number | null }[]
+  const svcRows = (svcRes.data ?? []) as { billing_amount: number | null }[]
+  return {
+    pmCount: pmRows.length,
+    pmAmount: pmRows.reduce((s, r) => s + (r.billing_amount ?? 0), 0),
+    serviceCount: svcRows.length,
+    serviceAmount: svcRows.reduce((s, r) => s + (r.billing_amount ?? 0), 0),
+  }
+}
+
 // --- Alert: Pending Payout Approvals ------------------------------------
 // Combined count of pending tech_leads and pending ace_labor_entries. Drives
 // the dashboard "Tech Payouts" alert; both flows resolve on /tech-payouts.

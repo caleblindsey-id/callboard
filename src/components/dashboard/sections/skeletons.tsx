@@ -82,6 +82,15 @@ export function MoneySkeleton() {
   )
 }
 
+export function ReadyToBillSkeleton() {
+  return (
+    <section>
+      <ZoneSkeleton />
+      <Card className="h-20" />
+    </section>
+  )
+}
+
 export function ScheduleSkeleton() {
   return (
     <section>

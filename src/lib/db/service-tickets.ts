@@ -147,6 +147,61 @@ export async function completeServiceTicket(
   return updated as ServiceTicketRow
 }
 
+// --- Service tickets ready to bill (parallel to PM getBillingTickets) ---
+// Filters: status='completed' AND completed_at in [month, nextMonth). Status
+// flips to 'billed' on Mark Billed, which naturally drops rows from this query
+// — no separate billing_exported column on service_tickets.
+
+export type ServiceBillingTicket = {
+  id: string
+  work_order_number: number | null
+  status: ServiceTicketStatus
+  billing_type: ServiceBillingType
+  billing_amount: number | null
+  hours_worked: number | null
+  synergy_order_number: string | null
+  completed_at: string | null
+  customers: {
+    name: string
+    po_required: boolean
+    ar_terms: string | null
+    credit_hold: boolean
+  } | null
+  equipment: { make: string | null; model: string | null } | null
+  equipment_make: string | null
+  equipment_model: string | null
+  assigned_technician: { name: string } | null
+}
+
+export async function getServiceBillingTickets(
+  month: number,
+  year: number
+): Promise<ServiceBillingTicket[]> {
+  const supabase = await createClient()
+
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`
+  const nextMonth = month === 12 ? 1 : month + 1
+  const nextYear = month === 12 ? year + 1 : year
+  const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00.000Z`
+
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .select(`
+      id, work_order_number, status, billing_type, billing_amount, hours_worked,
+      synergy_order_number, completed_at, equipment_make, equipment_model,
+      customers ( name, po_required, ar_terms, credit_hold ),
+      equipment ( make, model ),
+      assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
+    `)
+    .eq('status', 'completed')
+    .gte('completed_at', startDate)
+    .lt('completed_at', endDate)
+    .order('completed_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as unknown as ServiceBillingTicket[]
+}
+
 // --- Get service tickets for equipment (for unified service history) ---
 
 export async function getServiceTicketsForEquipment(equipmentId: string) {
