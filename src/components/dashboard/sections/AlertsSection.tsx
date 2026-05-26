@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertOctagon, AlertTriangle, ChevronRight, Flag, CreditCard, Clock, Award } from 'lucide-react'
+import { AlertOctagon, AlertTriangle, ChevronRight, Flag, CreditCard, Clock, Award, ShieldAlert } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
 import {
   getOverdueTicketCount,
@@ -11,6 +11,7 @@ import {
   getStaleEstimatesCount,
   getPendingPayoutApprovalsCount,
 } from '@/lib/db/dashboard-metrics'
+import { getCreditReviewCounts } from '@/lib/db/credit-reviews'
 
 export default async function AlertsSection() {
   const [
@@ -20,6 +21,7 @@ export default async function AlertsSection() {
     creditHoldCount,
     staleEstimatesCount,
     pendingPayoutApprovalsCount,
+    creditReviewCounts,
   ] = await Promise.all([
     getOverdueTicketCount(),
     getSkipRequestedCount(),
@@ -27,7 +29,10 @@ export default async function AlertsSection() {
     getCreditHoldCount(),
     getStaleEstimatesCount(14),
     getPendingPayoutApprovalsCount(),
+    getCreditReviewCounts(),
   ])
+
+  const creditReviewOpen = creditReviewCounts.pending + creditReviewCounts.blocked
 
   const hasAlerts =
     overdueCount > 0 ||
@@ -35,7 +40,8 @@ export default async function AlertsSection() {
     skipRequestedCount > 0 ||
     creditHoldCount > 0 ||
     staleEstimatesCount > 0 ||
-    pendingPayoutApprovalsCount > 0
+    pendingPayoutApprovalsCount > 0 ||
+    creditReviewOpen > 0
 
   if (!hasAlerts) return null
 
@@ -92,6 +98,37 @@ export default async function AlertsSection() {
                   {creditHoldCount}
                 </span>
                 <ChevronRight className="h-5 w-5 text-red-400 dark:text-red-500" />
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {creditReviewOpen > 0 && (
+          <Link
+            href="/credit-review"
+            className={`block rounded-lg border p-4 hover:shadow transition-all ${
+              creditReviewCounts.blocked > 0
+                ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 hover:border-red-300 dark:hover:border-red-700'
+                : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 hover:border-amber-300 dark:hover:border-amber-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className={`h-5 w-5 ${creditReviewCounts.blocked > 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`} />
+                  <span className={`text-sm font-semibold ${creditReviewCounts.blocked > 0 ? 'text-red-800 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'}`}>
+                    Credit Review
+                  </span>
+                </div>
+                <p className={`text-xs mt-1 ${creditReviewCounts.blocked > 0 ? 'text-red-700/80 dark:text-red-400/80' : 'text-amber-700/80 dark:text-amber-400/80'}`}>
+                  {creditReviewCounts.pending} pending AR · {creditReviewCounts.blocked} blocked. Orders gated for credit approval.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-2xl font-semibold tabular-nums ${creditReviewCounts.blocked > 0 ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                  {creditReviewOpen}
+                </span>
+                <ChevronRight className={`h-5 w-5 ${creditReviewCounts.blocked > 0 ? 'text-red-400 dark:text-red-500' : 'text-amber-400 dark:text-amber-500'}`} />
               </div>
             </div>
           </Link>

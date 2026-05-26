@@ -11,6 +11,11 @@ import {
 } from '@/types/service-tickets'
 import { getLaborRate } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
+import { isTicketCreditGated } from '@/lib/credit-review'
+
+// Status transitions that count as "performing work" — blocked while a credit
+// review is pending/blocked.
+const CREDIT_GATED_SERVICE_TARGETS: ServiceTicketStatus[] = ['in_progress', 'completed', 'billed']
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -218,6 +223,23 @@ export async function PATCH(
           { error: `Invalid status transition: ${currentStatus} → ${nextStatus}` },
           { status: 409 }
         )
+      }
+
+      // Credit-hold gate: block advancement into "work" states while AR review
+      // is pending/blocked.
+      if (CREDIT_GATED_SERVICE_TARGETS.includes(nextStatus) && nextStatus !== currentStatus) {
+        const creditGate = await isTicketCreditGated('service', id)
+        if (creditGate) {
+          return NextResponse.json(
+            {
+              error:
+                creditGate.status === 'blocked'
+                  ? 'This order is blocked by AR — a manager must enter the release passcode.'
+                  : 'This order is pending AR credit review.',
+            },
+            { status: 423 }
+          )
+        }
       }
 
       // Techs can't complete via PATCH (must use /complete endpoint)

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import TicketActions from './TicketActions'
 import PmPartsSection from './PmPartsSection'
 import PoNumberSection from './PoNumberSection'
@@ -68,6 +69,11 @@ export default async function TicketDetailPage({
   const aceEntry = await getEntryByTicket('pm', ticket.id)
 
   const showBilling = !isTechnician(user?.role ?? null)
+  const isManager = !isTechnician(user?.role ?? null)
+
+  const creditReview = (ticket.credit_reviews ?? []).find(
+    (r) => r.status === 'pending' || r.status === 'blocked'
+  )
 
   const equipmentLabel = [ticket.equipment?.make, ticket.equipment?.model]
     .filter(Boolean)
@@ -117,6 +123,37 @@ export default async function TicketDetailPage({
             This customer is on credit hold. Verify with office before dispatching or billing.
           </span>
         </div>
+      )}
+
+      {!isDeleted && creditReview?.status === 'pending' && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 rounded-lg p-4">
+          <p className="text-sm text-amber-800 dark:text-amber-300 font-semibold">
+            Awaiting credit review by AR.
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+            This order was created for a credit-hold customer and sent to AR. Work is gated until AR
+            releases it.
+          </p>
+        </div>
+      )}
+
+      {!isDeleted && creditReview?.status === 'blocked' && (
+        isManager ? (
+          <UnblockCreditPanel
+            reviewId={creditReview.id}
+            blockReason={creditReview.block_reason}
+            decidedByName={creditReview.decided_by_name}
+          />
+        ) : (
+          <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 rounded-lg p-4">
+            <p className="text-sm text-red-800 dark:text-red-300 font-semibold">
+              Blocked by AR — manager release required.
+            </p>
+            <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+              AR blocked this order. A manager must enter the release passcode before work can proceed.
+            </p>
+          </div>
+        )
       )}
 
       {/* Workflow state — what state we're in, who's next, what's blocking. */}

@@ -6,6 +6,11 @@ import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/database'
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
+import { isTicketCreditGated } from '@/lib/credit-review'
+
+// Status transitions that count as "performing work" — blocked while a credit
+// review is pending/blocked.
+const CREDIT_GATED_PM_TARGETS: TicketStatus[] = ['in_progress', 'completed', 'billed']
 
 // Only allow these fields to be updated via PATCH. `skip_previous_status` is
 // intentionally excluded — it's set server-side inside the skip-request branch
@@ -175,6 +180,23 @@ export async function PATCH(
           { error: `Invalid status transition: ${currentStatus} → ${nextStatus}` },
           { status: 409 }
         )
+      }
+
+      // Credit-hold gate: block advancement into "work" states while AR review
+      // is pending/blocked.
+      if (CREDIT_GATED_PM_TARGETS.includes(nextStatus)) {
+        const creditGate = await isTicketCreditGated('pm', id)
+        if (creditGate) {
+          return NextResponse.json(
+            {
+              error:
+                creditGate.status === 'blocked'
+                  ? 'This order is blocked by AR — a manager must enter the release passcode.'
+                  : 'This order is pending AR credit review.',
+            },
+            { status: 423 }
+          )
+        }
       }
 
       // Reopening tickets: only managers/coordinators

@@ -27,6 +27,8 @@ interface SettingsContentProps {
   companyName: string
   serviceEmail: string
   servicePhone: string
+  arEmail: string
+  passcodeConfigured: boolean
   salesReps: SalesRep[]
 }
 
@@ -39,6 +41,8 @@ export default function SettingsContent({
   companyName,
   serviceEmail,
   servicePhone,
+  arEmail,
+  passcodeConfigured,
   salesReps,
 }: SettingsContentProps) {
   const router = useRouter()
@@ -58,6 +62,12 @@ export default function SettingsContent({
         initialCompanyName={companyName}
         initialServiceEmail={serviceEmail}
         initialServicePhone={servicePhone}
+      />
+
+      {/* Credit Review — AR notification + release passcode */}
+      <CreditReviewSetting
+        initialArEmail={arEmail}
+        passcodeConfigured={passcodeConfigured}
       />
 
       {/* Sales Reps — destination list for forwarded equipment leads */}
@@ -527,6 +537,174 @@ function PdfBrandingSetting({
         <p className="text-xs text-gray-500 dark:text-gray-400">
           Shown in the header of the customer PM work order PDF. Leave email or phone blank to omit those rows.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function CreditReviewSetting({
+  initialArEmail,
+  passcodeConfigured,
+}: {
+  initialArEmail: string
+  passcodeConfigured: boolean
+}) {
+  const [arEmail, setArEmail] = useState(initialArEmail)
+  const [savingEmail, setSavingEmail] = useState(false)
+  const [emailSaved, setEmailSaved] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+
+  const [configured, setConfigured] = useState(passcodeConfigured)
+  const [passcode, setPasscode] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [savingPass, setSavingPass] = useState(false)
+  const [passSaved, setPassSaved] = useState(false)
+  const [passError, setPassError] = useState<string | null>(null)
+
+  async function handleSaveEmail() {
+    setSavingEmail(true)
+    setEmailSaved(false)
+    setEmailError(null)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'ar_email', value: arEmail }),
+      })
+      if (res.ok) {
+        setEmailSaved(true)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setEmailError(data.error ?? 'Failed to save AR email.')
+      }
+    } catch {
+      setEmailError('Could not save AR email.')
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
+  async function handleSavePasscode() {
+    setPassError(null)
+    setPassSaved(false)
+    if (passcode.length < 4) {
+      setPassError('Passcode must be at least 4 characters.')
+      return
+    }
+    if (passcode !== confirm) {
+      setPassError('Passcodes do not match.')
+      return
+    }
+    setSavingPass(true)
+    try {
+      const res = await fetch('/api/settings/credit-passcode', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode }),
+      })
+      if (res.ok) {
+        setPassSaved(true)
+        setConfigured(true)
+        setPasscode('')
+        setConfirm('')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setPassError(data.error ?? 'Failed to update passcode.')
+      }
+    } catch {
+      setPassError('Could not update passcode.')
+    } finally {
+      setSavingPass(false)
+    }
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+          Credit Review
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          When work is created for a customer on credit hold, AR is emailed to release or block the
+          order. Managers unblock locked orders with the release passcode.
+        </p>
+      </div>
+      <div className="px-5 py-4 space-y-5">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            AR notification email(s)
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="text"
+              value={arEmail}
+              onChange={(e) => { setArEmail(e.target.value); setEmailSaved(false) }}
+              placeholder="ar@example.com, billing@example.com"
+              className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+            <button
+              onClick={handleSaveEmail}
+              disabled={savingEmail}
+              className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {savingEmail ? 'Saving...' : 'Save'}
+            </button>
+            {emailSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+            {emailError && <span className="text-sm text-red-600 font-medium">{emailError}</span>}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Separate multiple addresses with commas. Required — without it, credit-hold work is still
+            gated but nobody is notified.
+          </p>
+        </div>
+
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Release passcode
+            </label>
+            <span
+              className={`text-xs font-medium ${
+                configured ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              {configured ? '✓ A passcode is set' : '⚠ No passcode set — managers cannot unblock'}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={passcode}
+              onChange={(e) => { setPasscode(e.target.value); setPassSaved(false) }}
+              placeholder="New passcode"
+              className="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => { setConfirm(e.target.value); setPassSaved(false) }}
+              placeholder="Confirm passcode"
+              className="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button
+              onClick={handleSavePasscode}
+              disabled={savingPass}
+              className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {savingPass ? 'Saving...' : configured ? 'Update passcode' : 'Set passcode'}
+            </button>
+            {passSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+            {passError && <span className="text-sm text-red-600 font-medium">{passError}</span>}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Stored hashed and never shown again. Rotate it here to revoke the old one. Share only with
+            managers and AR.
+          </p>
+        </div>
       </div>
     </div>
   )

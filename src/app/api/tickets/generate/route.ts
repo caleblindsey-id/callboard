@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
-import { generatePmTickets } from '@/lib/pm-generation'
+import { generatePmTickets, groupPendingReviewsByCustomer } from '@/lib/pm-generation'
+import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,9 +11,8 @@ export async function POST(request: NextRequest) {
       month: number
       year: number
       preview?: boolean
-      skipCreditHoldCustomerIds?: number[]
     }
-    const { month, year, preview = false, skipCreditHoldCustomerIds = [] } = body
+    const { month, year, preview = false } = body
 
     if (!month || !year || month < 1 || month > 12) {
       return NextResponse.json(
@@ -35,41 +35,55 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    try {
-      const result = await generatePmTickets({
-        supabase,
-        scope: { kind: 'all_active_for_month', month, year },
-        createdById: user.id,
-        preview,
-        skipCreditHoldCustomerIds,
-        creditHoldReviewMode: 'skip',
-      })
+    const result = await generatePmTickets({
+      supabase,
+      scope: { kind: 'all_active_for_month', month, year },
+      createdById: user.id,
+      preview,
+    })
 
-      if (preview) {
-        return NextResponse.json({
-          preview: true,
-          wouldCreate: result.attempted,
-          wouldFlag: result.flagged,
-          skipped: result.skipped,
-          creditHoldCustomers: result.creditHoldCustomers,
-        })
-      }
-
+    if (preview) {
       return NextResponse.json({
-        created: result.created,
+        preview: true,
+        wouldCreate: result.attempted,
+        wouldFlag: result.flagged,
         skipped: result.skipped,
-        skippedCreditHold: result.skippedCreditHold,
-        flagged: result.flagged,
-        tickets: result.tickets,
+        // Credit-hold customers whose PMs WILL be created and sent to AR.
+        creditHoldCustomers: result.creditHoldCustomers,
       })
-    } catch (innerErr) {
-      // Validation surfaced from the shared service (e.g. non-credit-hold customer
-      // in skipCreditHoldCustomerIds) is a 400, not a 500.
-      if (innerErr instanceof Error && /is not on credit hold/.test(innerErr.message)) {
-        return NextResponse.json({ error: innerErr.message }, { status: 400 })
-      }
-      throw innerErr
     }
+
+    // Live run: route every credit-hold PM into AR credit review — one email
+    // per customer. Email failure is non-fatal (rows persist + are resendable).
+    const byCustomer = groupPendingReviewsByCustomer(result.pendingReviewTickets)
+    let emailedCustomers = 0
+    let unemailedCustomers = 0
+    for (const [customerId, info] of byCustomer) {
+      const enqueue = await enqueueCreditReviewsForCustomer({
+        customerId,
+        customerName: info.customerName,
+        accountNumber: info.customerAccount,
+        tickets: info.tickets.map((t) => ({
+          ticketType: 'pm' as const,
+          ticketId: t.pmTicketId,
+          orderLabel: t.orderLabel,
+        })),
+        createdById: user.id,
+      })
+      if (enqueue.emailed) emailedCustomers++
+      else unemailedCustomers++
+    }
+
+    return NextResponse.json({
+      created: result.created,
+      skipped: result.skipped,
+      flagged: result.flagged,
+      pendingReview: result.pendingReview,
+      pendingReviewCustomers: byCustomer.size,
+      creditReviewEmailed: emailedCustomers,
+      creditReviewNotEmailed: unemailedCustomers,
+      tickets: result.tickets,
+    })
   } catch (err) {
     console.error('tickets/generate error:', err)
     return NextResponse.json(

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, ADMIN_ROLES, MANAGER_ROLES } from '@/lib/auth'
 import { getSetting, setSetting } from '@/lib/db/settings'
+import { parseEmailList } from '@/lib/credit-review-crypto'
 
 // Allowlist of settings keys staff can read/write through this endpoint.
 // Any future setting must be added here explicitly.
+// NOTE: credit_hold_release_passcode_hash is deliberately NOT here — it is
+// write-only via /api/settings/credit-passcode and must never be returned.
 const ALLOWED_KEYS = new Set([
   'labor_rate_per_hour',
   'industrial_labor_rate_per_hour',
@@ -11,6 +14,7 @@ const ALLOWED_KEYS = new Set([
   'company_name',
   'service_email',
   'service_phone',
+  'ar_email',
 ])
 
 const NUMERIC_RATE_KEYS = new Set([
@@ -18,6 +22,10 @@ const NUMERIC_RATE_KEYS = new Set([
   'industrial_labor_rate_per_hour',
   'vacuum_labor_rate_per_hour',
 ])
+
+// Keys holding a comma/semicolon/whitespace-separated email list. A non-empty
+// value must parse to at least one plausible address.
+const EMAIL_LIST_KEYS = new Set(['ar_email'])
 
 const VALUE_MAX_LEN = 500
 
@@ -70,6 +78,15 @@ export async function PATCH(request: NextRequest) {
       if (!Number.isFinite(n) || n < 0) {
         return NextResponse.json({ error: `${key} must be a non-negative number` }, { status: 400 })
       }
+    }
+
+    // Email-list keys: empty clears the setting; otherwise it must contain at
+    // least one plausible address.
+    if (EMAIL_LIST_KEYS.has(key) && value.trim() !== '' && parseEmailList(value).length === 0) {
+      return NextResponse.json(
+        { error: `${key} must be one or more email addresses, separated by commas.` },
+        { status: 400 }
+      )
     }
 
     await setSetting(key, value)

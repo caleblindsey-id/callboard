@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
@@ -1263,6 +1264,42 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           </span>
         </div>
       )}
+
+      {/* Credit review state (per-order AR decision) */}
+      {(() => {
+        const cr = (ticket.credit_reviews ?? []).find(
+          (r) => r.status === 'pending' || r.status === 'blocked'
+        )
+        if (!cr) return null
+        if (cr.status === 'pending') {
+          return (
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 px-4 py-3">
+              <p className="text-sm text-amber-800 dark:text-amber-300 font-semibold">
+                Awaiting credit review by AR.
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                This order was sent to AR for credit approval. Work is gated until AR releases it.
+              </p>
+            </div>
+          )
+        }
+        return isStaff ? (
+          <UnblockCreditPanel
+            reviewId={cr.id}
+            blockReason={cr.block_reason}
+            decidedByName={cr.decided_by_name}
+          />
+        ) : (
+          <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 px-4 py-3">
+            <p className="text-sm text-red-800 dark:text-red-300 font-semibold">
+              Blocked by AR — manager release required.
+            </p>
+            <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+              AR blocked this order. A manager must enter the release passcode before work can proceed.
+            </p>
+          </div>
+        )
+      })()}
 
       {/* Synergy validation warning */}
       {ticket.synergy_validation_status === 'invalid' && ticket.synergy_order_number && (
