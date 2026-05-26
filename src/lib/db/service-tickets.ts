@@ -161,6 +161,7 @@ export type ServiceBillingTicket = {
   hours_worked: number | null
   synergy_order_number: string | null
   completed_at: string | null
+  customer_id: number | null
   customers: {
     name: string
     po_required: boolean
@@ -188,7 +189,7 @@ export async function getServiceBillingTickets(
     .from('service_tickets')
     .select(`
       id, work_order_number, status, billing_type, billing_amount, hours_worked,
-      synergy_order_number, completed_at, equipment_make, equipment_model,
+      synergy_order_number, completed_at, customer_id, equipment_make, equipment_model,
       customers ( name, po_required, ar_terms, credit_hold ),
       equipment ( make, model ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
