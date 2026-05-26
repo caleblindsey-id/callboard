@@ -12,15 +12,22 @@ export default async function BillingPage({
 }) {
   await requireRole(...MANAGER_ROLES)
   const params = await searchParams
-  const now = new Date()
-  const month = params.month ? parseInt(params.month) : now.getMonth() + 1
-  const year = params.year ? parseInt(params.year) : now.getFullYear()
+
+  // Default scope is ALL unbilled tickets regardless of month. month/year are
+  // an optional narrowing filter, applied only when both are valid in the URL —
+  // otherwise prior-month completions silently fall off the billing queue.
+  const parsedMonth = params.month ? parseInt(params.month) : NaN
+  const parsedYear = params.year ? parseInt(params.year) : NaN
+  const hasFilter =
+    Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12 &&
+    Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100
+  const month = hasFilter ? parsedMonth : undefined
+  const year = hasFilter ? parsedYear : undefined
 
   const [pmTickets, serviceTickets] = await Promise.all([
     getBillingTickets(month, year),
     getServiceBillingTickets(month, year),
   ])
-  const pmUnexported = pmTickets.filter((t) => !t.billing_exported)
 
   return (
     <div className="p-6 space-y-6">
@@ -31,16 +38,16 @@ export default async function BillingPage({
         </p>
       </div>
       <BillingTabs
-        pmCount={pmUnexported.length}
+        pmCount={pmTickets.length}
         serviceCount={serviceTickets.length}
         pmContent={
           <div className="space-y-4">
-            <BillingExport tickets={pmUnexported} defaultMonth={month} defaultYear={year} />
+            <BillingExport tickets={pmTickets} selectedMonth={month} selectedYear={year} />
           </div>
         }
         serviceContent={
           <div className="space-y-4">
-            <ServiceBillingExport tickets={serviceTickets} defaultMonth={month} defaultYear={year} />
+            <ServiceBillingExport tickets={serviceTickets} selectedMonth={month} selectedYear={year} />
           </div>
         }
       />

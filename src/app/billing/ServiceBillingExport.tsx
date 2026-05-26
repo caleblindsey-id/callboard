@@ -17,9 +17,13 @@ const BILLING_TYPE_LABELS: Record<string, string> = {
 
 interface ServiceBillingExportProps {
   tickets: ServiceBillingTicket[]
-  defaultMonth: number
-  defaultYear: number
+  // Active narrowing filter from the URL. undefined → "All months" (default).
+  selectedMonth?: number
+  selectedYear?: number
 }
+
+// 0 is the "All months" sentinel for the month picker — no date narrowing.
+const ALL_MONTHS = 0
 
 function needsSynergyOrder(t: ServiceBillingTicket): boolean {
   return !t.synergy_order_number
@@ -33,13 +37,13 @@ function renderEquipment(t: ServiceBillingTicket): string {
 
 export default function ServiceBillingExport({
   tickets,
-  defaultMonth,
-  defaultYear,
+  selectedMonth,
+  selectedYear,
 }: ServiceBillingExportProps) {
   const router = useRouter()
   const thisYear = new Date().getFullYear()
-  const [month, setMonth] = useState(defaultMonth)
-  const [year, setYear] = useState(defaultYear)
+  const [month, setMonth] = useState(selectedMonth ?? ALL_MONTHS)
+  const [year, setYear] = useState(selectedYear ?? thisYear)
   const [selected, setSelected] = useState<Set<string>>(
     new Set(tickets.filter((t) => !needsSynergyOrder(t)).map((t) => t.id))
   )
@@ -74,7 +78,12 @@ export default function ServiceBillingExport({
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
     setYear(newYear)
-    router.push(`/billing?month=${newMonth}&year=${newYear}`)
+    // "All months" clears the filter so the queue shows every unbilled ticket.
+    if (newMonth === ALL_MONTHS) {
+      router.push('/billing')
+    } else {
+      router.push(`/billing?month=${newMonth}&year=${newYear}`)
+    }
   }
 
   function startEdit(ticketId: string) {
@@ -220,6 +229,7 @@ export default function ServiceBillingExport({
               onChange={(e) => handleMonthChange(parseInt(e.target.value), year)}
               className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
+              <option value={ALL_MONTHS}>All months</option>
               {MONTHS.map((m, i) => (
                 <option key={i} value={i + 1}>{m}</option>
               ))}
@@ -229,8 +239,9 @@ export default function ServiceBillingExport({
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Year</label>
             <select
               value={year}
+              disabled={month === ALL_MONTHS}
               onChange={(e) => handleMonthChange(month, parseInt(e.target.value))}
-              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
                 <option key={y} value={y}>{y}</option>
@@ -278,7 +289,9 @@ export default function ServiceBillingExport({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {tickets.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            No completed service tickets ready to bill for this period.
+            {month === ALL_MONTHS
+              ? 'No completed service tickets ready to bill.'
+              : 'No completed service tickets ready to bill for this period.'}
           </div>
         ) : (
           <>
