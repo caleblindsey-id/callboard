@@ -16,8 +16,11 @@ export interface ProductResult {
 
 export interface PartEntry {
   description: string
-  quantity: number
-  unitPrice: number
+  // quantity/unitPrice are kept as raw input strings (mirroring hoursWorked)
+  // so the fields can be empty instead of showing a stray leading "0"/"1"
+  // that the user has to delete. Parsed with parseFloat at the use sites.
+  quantity: string
+  unitPrice: string
   synergyProductId: number | null
   // Synergy item # (catalog number). Captured when a product is picked from the
   // product search so downstream flows (e.g. "Request this part" button) can
@@ -39,8 +42,8 @@ export interface PartEntry {
 export function emptyPart(): PartEntry {
   return {
     description: '',
-    quantity: 1,
-    unitPrice: 0,
+    quantity: '1',
+    unitPrice: '',
     synergyProductId: null,
     productNumber: null,
     isFromDb: false,
@@ -55,8 +58,8 @@ export function emptyPart(): PartEntry {
 export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean }[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
-    quantity: p.quantity,
-    unitPrice: p.unit_price,
+    quantity: String(p.quantity),
+    unitPrice: String(p.unit_price),
     synergyProductId: p.synergy_product_id ?? null,
     productNumber: null,
     isFromDb: p.synergy_product_id != null,
@@ -71,8 +74,8 @@ export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: n
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
-    quantity: p.quantity,
-    unit_price: p.unitPrice,
+    quantity: parseFloat(p.quantity) || 0,
+    unit_price: parseFloat(p.unitPrice) || 0,
     warranty_covered: p.warrantyCovered,
   }))
 }
@@ -186,7 +189,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
       updated[index] = {
         ...updated[index],
         description: `${product.number} - ${product.description ?? ''}`,
-        unitPrice: product.unit_price ?? 0,
+        unitPrice: String(product.unit_price ?? 0),
         synergyProductId: Number(product.synergy_id),
         productNumber: product.number,
         isFromDb: true,
@@ -201,7 +204,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
   function handleClearProduct(index: number) {
     setParts((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], description: '', unitPrice: 0, synergyProductId: null, productNumber: null, isFromDb: false }
+      updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, productNumber: null, isFromDb: false }
       return updated
     })
   }
@@ -312,7 +315,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                     onChange={(e) => {
                       setParts((prev) => {
                         const u = [...prev]
-                        u[i] = { ...u[i], quantity: Number(e.target.value) }
+                        u[i] = { ...u[i], quantity: e.target.value }
                         return u
                       })
                     }}
@@ -331,7 +334,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                       onChange={(e) => {
                         setParts((prev) => {
                           const u = [...prev]
-                          u[i] = { ...u[i], unitPrice: Number(e.target.value) }
+                          u[i] = { ...u[i], unitPrice: e.target.value }
                           return u
                         })
                       }}
