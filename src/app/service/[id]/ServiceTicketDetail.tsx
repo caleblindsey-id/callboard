@@ -2159,8 +2159,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </>
           )}
 
-          {/* Synergy order # — staff only, shown for any ticket that may need billing */}
-          {isStaff && (ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined') && (
+          {/* Synergy order # — staff only, for the parts-ordering flow (pre-completion).
+              On completed/billed tickets the field lives in the Actions card instead. */}
+          {isStaff && !['open', 'canceled', 'declined', 'completed', 'billed'].includes(ticket.status) && (
             <SynergyOrderFields
               initialOrder={ticket.synergy_order_number ?? ''}
               onSave={handleSaveSynergyOrderNumber}
@@ -2213,12 +2214,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </button>
           )}
 
-          {/* Completed: Mark Billed (staff only) */}
+          {/* Completed: Mark Billed (staff only) — Synergy Order # entered right here */}
           {ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
             <div className="space-y-2">
+              <SynergyOrderFields
+                initialOrder={synergyOrderNumber}
+                onSave={handleSaveSynergyOrderNumber}
+                loading={loading}
+              />
               {!synergyOrderNumber.trim() && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Enter the Synergy Order # in the Parts section above before billing.
+                  Enter and save the Synergy Order # above before billing.
                 </p>
               )}
               <button
@@ -2229,6 +2235,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 {loading ? 'Saving...' : 'Mark Billed'}
               </button>
             </div>
+          )}
+
+          {/* Billed: show the recorded Synergy order # for reference (staff) */}
+          {ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim() && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Billed under Synergy Order # <span className="font-medium text-gray-900 dark:text-white">{synergyOrderNumber}</span>
+            </p>
           )}
 
           {/* Inside ticket pickup toggle */}
