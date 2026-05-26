@@ -8,10 +8,12 @@ Two jobs, run in this order:
      elapsed to status='expired' (if still pending/approved/match_pending).
 
   2. Candidate scan: for each open equipment_sale lead (approved or
-     match_pending, expires_at > now()), pull Synergy invoiced orders to the
-     flagged customer since the lead's submitted_at. If any line on that order
-     has a bonus-eligible ComdtyCode (equipment/scrubbers/pressure washers,
-     explicitly excluding V175 vacuums), upsert an
+     match_pending, expires_at > now()), pull Synergy invoiced SALES orders to
+     the flagged customer since the lead's submitted_at — sales order types only
+     (no repair/rental) and actually invoiced (InvNum <> 0, not merely a
+     scheduled InvDate). If any line on that order is a real sale (QtyOrd and
+     UnitPrice > 0) with a bonus-eligible ComdtyCode (equipment/scrubbers/
+     pressure washers, explicitly excluding V175 vacuums), upsert an
      equipment_sale_lead_candidates row. Flip the lead to match_pending so the
      office picks it up in the Match Candidates tab.
 
@@ -58,6 +60,13 @@ BONUS_ELIGIBLE_COMDTY_CODES = (
     "C200",  # CARPTEXTRACTORS
     "P250",  # PRESSUREWASHER
 )
+
+# Synergy roh.OrdType values that represent an equipment SALE. The lead bonus
+# pays on sales only, so we exclude OrdType 22 (repair/PM service — references the
+# customer's existing machine as a zero-qty line) and OrdType 23 (equipment
+# rental). Both 1 (standard sales) and 2 (contract/bulk sales) carry real
+# equipment sales, so both are eligible.
+SALES_ORDER_TYPES = (1, 2)
 
 # ============================================================
 # Logging setup
@@ -187,6 +196,7 @@ def build_candidate_rows(conn, leads: list[dict]) -> tuple[list[dict], set[str]]
     leads_with_candidates: set[str] = set()
 
     comdty_placeholders = ",".join("?" for _ in BONUS_ELIGIBLE_COMDTY_CODES)
+    sales_type_placeholders = ",".join("?" for _ in SALES_ORDER_TYPES)
 
     for lead in leads:
         lead_id = lead["id"]
@@ -204,29 +214,40 @@ def build_candidate_rows(conn, leads: list[dict]) -> tuple[list[dict], set[str]]
         # Synergy OrdDate is a date — compare to the date portion of submitted_at.
         since_date = submitted_at[:10]
 
-        # 1. Invoiced orders to this customer since submit date.
+        # 1. Invoiced SALES orders to this customer since submit date.
+        #    OrdType limits to sales (excludes repair/rental); InvNum <> 0 means
+        #    actually invoiced. NOTE: InvDate is a *scheduled* invoice date set at
+        #    order entry — it is populated on orders that have NOT been invoiced
+        #    yet (incl. every repair order), so it is the wrong signal. InvNum is
+        #    only assigned at true invoicing.
         cursor.execute(
-            """
+            f"""
             SELECT OrdNum, OrdDate, TotDol4Prof
             FROM roh
             WHERE CustNum = ?
               AND OrdDate >= ?
-              AND InvDate IS NOT NULL
+              AND OrdType IN ({sales_type_placeholders})
+              AND InvNum <> 0
             """,
-            (cust_num, since_date),
+            (cust_num, since_date, *SALES_ORDER_TYPES),
         )
         orders = cursor.fetchall()
         if not orders:
             continue
 
         for ord_num, ord_date, tot_dollars in orders:
-            # 2. Equipment-eligible lines on this order.
+            # 2. Equipment-eligible lines on this order. QtyOrd/UnitPrice > 0
+            #    ensures the machine was actually SOLD, not merely referenced — a
+            #    repair order lists the serviced machine as a zero-qty / $0 line
+            #    carrying the same commodity code.
             cursor.execute(
                 f"""
                 SELECT ProdCode, Desc1, Desc2, QtyOrd, UnitPrice, ComdtyCode
                 FROM rolnew
                 WHERE OrdNum = ?
                   AND ComdtyCode IN ({comdty_placeholders})
+                  AND QtyOrd > 0
+                  AND UnitPrice > 0
                 """,
                 (int(ord_num), *BONUS_ELIGIBLE_COMDTY_CODES),
             )
