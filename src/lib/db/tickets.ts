@@ -132,18 +132,17 @@ export async function getTickets(filters?: {
   return rows
 }
 
+// Billing queue: completed PM tickets not yet exported to a billing PDF.
+// Default scope is ALL unbilled tickets regardless of month — a prior-month
+// completion that was never billed must stay visible, or it leaks revenue.
+// month/year are optional and narrow the list only when both are supplied.
 export async function getBillingTickets(
-  month: number,
-  year: number
+  month?: number,
+  year?: number
 ): Promise<TicketWithJoins[]> {
   const supabase = await createClient()
 
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-  const nextMonth = month === 12 ? 1 : month + 1
-  const nextYear = month === 12 ? year + 1 : year
-  const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
-
-  const { data, error } = await supabase
+  let query = supabase
     .from('pm_tickets')
     .select(`
       *,
@@ -154,10 +153,18 @@ export async function getBillingTickets(
       pm_schedules(interval_months, anchor_month)
     `)
     .eq('status', 'completed')
+    .eq('billing_exported', false)
     .is('deleted_at', null)
-    .gte('completed_date', startDate)
-    .lt('completed_date', endDate)
-    .order('completed_date', { ascending: false })
+
+  if (month !== undefined && year !== undefined) {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
+    query = query.gte('completed_date', startDate).lt('completed_date', endDate)
+  }
+
+  const { data, error } = await query.order('completed_date', { ascending: false })
 
   if (error) throw error
   return data as unknown as TicketWithJoins[]

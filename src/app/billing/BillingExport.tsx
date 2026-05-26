@@ -12,23 +12,27 @@ const MONTHS = [
 
 interface BillingExportProps {
   tickets: TicketWithJoins[]
-  defaultMonth: number
-  defaultYear: number
+  // Active narrowing filter from the URL. undefined → "All months" (default).
+  selectedMonth?: number
+  selectedYear?: number
 }
 
 function needsPo(t: TicketWithJoins): boolean {
   return !!t.customers?.po_required && !t.po_number
 }
 
+// 0 is the "All months" sentinel for the month picker — no date narrowing.
+const ALL_MONTHS = 0
+
 export default function BillingExport({
   tickets,
-  defaultMonth,
-  defaultYear,
+  selectedMonth,
+  selectedYear,
 }: BillingExportProps) {
   const router = useRouter()
   const thisYear = new Date().getFullYear()
-  const [month, setMonth] = useState(defaultMonth)
-  const [year, setYear] = useState(defaultYear)
+  const [month, setMonth] = useState(selectedMonth ?? ALL_MONTHS)
+  const [year, setYear] = useState(selectedYear ?? thisYear)
   const [selected, setSelected] = useState<Set<string>>(
     new Set(tickets.filter((t) => !needsPo(t)).map((t) => t.id))
   )
@@ -64,7 +68,12 @@ export default function BillingExport({
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
     setYear(newYear)
-    router.push(`/billing?month=${newMonth}&year=${newYear}`)
+    // "All months" clears the filter so the queue shows every unbilled ticket.
+    if (newMonth === ALL_MONTHS) {
+      router.push('/billing')
+    } else {
+      router.push(`/billing?month=${newMonth}&year=${newYear}`)
+    }
   }
 
   function startEditPo(ticketId: string) {
@@ -112,14 +121,21 @@ export default function BillingExport({
     setExporting(true)
     setToast(null)
 
+    // The PDF header/filename need a concrete period. Under "All months" the
+    // selection can span completion months, so label it with the current
+    // billing-run period (when the coordinator is keying into Synergy).
+    const now = new Date()
+    const pdfMonth = month === ALL_MONTHS ? now.getMonth() + 1 : month
+    const pdfYear = month === ALL_MONTHS ? now.getFullYear() : year
+
     try {
       const res = await fetch('/api/billing/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticketIds: Array.from(selected),
-          month,
-          year,
+          month: pdfMonth,
+          year: pdfYear,
         }),
       })
 
@@ -132,7 +148,7 @@ export default function BillingExport({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `PM-Billing-${MONTHS[month - 1]}-${year}.pdf`
+      a.download = `PM-Billing-${MONTHS[pdfMonth - 1]}-${pdfYear}.pdf`
       a.click()
       URL.revokeObjectURL(url)
 
@@ -226,6 +242,7 @@ export default function BillingExport({
               onChange={(e) => handleMonthChange(parseInt(e.target.value), year)}
               className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
+              <option value={ALL_MONTHS}>All months</option>
               {MONTHS.map((m, i) => (
                 <option key={i} value={i + 1}>{m}</option>
               ))}
@@ -235,8 +252,9 @@ export default function BillingExport({
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Year</label>
             <select
               value={year}
+              disabled={month === ALL_MONTHS}
               onChange={(e) => handleMonthChange(month, parseInt(e.target.value))}
-              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
                 <option key={y} value={y}>{y}</option>
@@ -284,7 +302,9 @@ export default function BillingExport({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {tickets.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            No completed, unexported tickets for this period.
+            {month === ALL_MONTHS
+              ? 'No completed, unexported tickets ready to bill.'
+              : 'No completed, unexported tickets for this period.'}
           </div>
         ) : (
           <>
