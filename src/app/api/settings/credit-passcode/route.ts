@@ -4,7 +4,7 @@ import { getSetting, setSetting } from '@/lib/db/settings'
 import { hashPasscode } from '@/lib/credit-review-crypto'
 
 const PASSCODE_KEY = 'credit_hold_release_passcode_hash'
-const MIN_PASSCODE_LEN = 4
+const MIN_PASSCODE_LEN = 8
 const MAX_PASSCODE_LEN = 200
 
 // GET → { configured: boolean }. Managers may check whether a release passcode

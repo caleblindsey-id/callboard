@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { TicketStatus } from '@/types/database'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export async function POST(request: NextRequest) {
   try {
@@ -127,6 +130,29 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertError) throw insertError
+
+    // If the customer is on credit hold, route this manually-created PM into AR
+    // credit review (mirrors batch generation + service creation). The ticket is
+    // created normally; the gate blocks progression. Non-fatal.
+    try {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('name, account_number, credit_hold')
+        .eq('id', customer_id)
+        .maybeSingle()
+      if (customer?.credit_hold && ticket) {
+        const orderLabel = `PM ${MONTHS[(month - 1) % 12] ?? ''} ${year}`.trim()
+        await enqueueCreditReviewsForCustomer({
+          customerId: customer_id,
+          customerName: customer.name,
+          accountNumber: customer.account_number,
+          tickets: [{ ticketType: 'pm', ticketId: ticket.id, orderLabel }],
+          createdById: user?.id ?? null,
+        })
+      }
+    } catch (creditErr) {
+      console.error('tickets POST: credit review enqueue failed', creditErr)
+    }
 
     return NextResponse.json({ ticket }, { status: 201 })
   } catch (err) {

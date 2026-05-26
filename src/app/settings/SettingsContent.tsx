@@ -587,8 +587,8 @@ function CreditReviewSetting({
   async function handleSavePasscode() {
     setPassError(null)
     setPassSaved(false)
-    if (passcode.length < 4) {
-      setPassError('Passcode must be at least 4 characters.')
+    if (passcode.length < 8) {
+      setPassError('Passcode must be at least 8 characters.')
       return
     }
     if (passcode !== confirm) {

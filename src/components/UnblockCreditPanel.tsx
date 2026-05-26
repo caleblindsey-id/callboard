@@ -21,7 +21,6 @@ export default function UnblockCreditPanel({
 }: UnblockCreditPanelProps) {
   const router = useRouter()
   const [passcode, setPasscode] = useState('')
-  const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,7 +35,7 @@ export default function UnblockCreditPanel({
       const res = await fetch(`/api/credit-reviews/${reviewId}/unblock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode, note: note.trim() || undefined }),
+        body: JSON.stringify({ passcode }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -83,13 +82,6 @@ export default function UnblockCreditPanel({
           {submitting ? 'Unblocking…' : 'Unblock & proceed'}
         </button>
       </div>
-      <input
-        type="text"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="Note (optional)"
-        className="mt-2 w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-red-300"
-      />
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">{error}</p>}
     </div>
   )

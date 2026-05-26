@@ -47,10 +47,12 @@ export default async function CreditReviewPage({
   }
 
   if (review.action_token_expires_at && new Date(review.action_token_expires_at) < new Date()) {
+    // Same neutral copy as not-found so the page can't be used to distinguish a
+    // never-valid token from an expired one (matches the API route).
     return (
       <ErrorPage
-        title="Link Expired"
-        message="This link has expired. Please contact Imperial Dade for a new credit review link."
+        title="Link Not Valid"
+        message="This link is no longer valid. Please contact Imperial Dade for assistance."
       />
     )
   }
@@ -96,15 +98,16 @@ export default async function CreditReviewPage({
     amountLabel = svc?.estimate_amount != null ? `$${svc.estimate_amount.toFixed(2)}` : 'To be determined'
   }
 
-  // Other orders for this customer still awaiting review (the AR email lists
-  // them too; this is a convenience for whoever followed one link).
-  const { data: others } = await supabase
+  // How many other orders for this customer are still awaiting a decision. We
+  // show only a count — never the sibling tokens, which are live secrets (a
+  // forwarded link must not expose the customer's whole pending set). AR already
+  // received a per-order link for each in the original email.
+  const { count: otherPending } = await supabase
     .from('credit_reviews')
-    .select('id, action_token, ticket_type')
+    .select('id', { count: 'exact', head: true })
     .eq('customer_id', review.customer_id)
     .eq('status', 'pending')
     .neq('id', review.id)
-    .not('action_token', 'is', null)
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -142,23 +145,12 @@ export default async function CreditReviewPage({
 
         <CreditReviewForm token={token} />
 
-        {others && others.length > 0 && (
+        {otherPending != null && otherPending > 0 && (
           <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              {others.length} other order{others.length === 1 ? '' : 's'} for this customer also need a decision:
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              This customer has <strong>{otherPending}</strong> other order{otherPending === 1 ? '' : 's'} awaiting
+              a credit decision. Each has its own link in the email we sent.
             </p>
-            <ul className="space-y-1.5">
-              {others.map((o) => (
-                <li key={o.id}>
-                  <a
-                    href={`/cr/${o.action_token}`}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    Review {o.ticket_type === 'pm' ? 'PM' : 'service'} order →
-                  </a>
-                </li>
-              ))}
-            </ul>
           </div>
         )}
       </div>

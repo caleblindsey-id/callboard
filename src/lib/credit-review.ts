@@ -125,6 +125,7 @@ export async function enqueueCreditReviewsForCustomer(args: {
   if (insErr) throw insErr
 
   const rows = insertedRows ?? []
+  if (rows.length === 0) return { created: 0, emailed: false, reviewIds: [] }
   const reviewIds = rows.map((r) => r.id)
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '')
@@ -259,7 +260,7 @@ export async function resendCreditReview(args: {
   if (arEmails.length === 0) return { ok: false, code: 'ar_email_unset' }
 
   const token = mintToken()
-  const { error: upErr } = await admin
+  const { data: written, error: upErr } = await admin
     .from('credit_reviews')
     .update({
       action_token: token,
@@ -269,7 +270,12 @@ export async function resendCreditReview(args: {
     })
     .eq('id', row.id)
     .eq('status', 'pending')
+    .select('id')
+    .maybeSingle()
   if (upErr) throw upErr
+  // AR consumed the token between our read and this write — don't email a link
+  // whose token we just failed to set.
+  if (!written) return { ok: false, code: 'not_pending' }
 
   const customer = first(row.customers as { name: string; account_number: string | null } | { name: string; account_number: string | null }[])
   let orderLabel = 'Order'
