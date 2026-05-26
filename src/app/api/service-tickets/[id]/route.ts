@@ -211,6 +211,18 @@ export async function PATCH(
         }
       }
 
+      // Reopen-to-approved (worked ticket → estimate-approved phase) is also
+      // a manager-only action. The normal estimated → approved staff approval
+      // flow is unaffected because its source status isn't a worked state.
+      if (
+        nextStatus === 'approved' &&
+        (['in_progress', 'completed', 'billed'] as ServiceTicketStatus[]).includes(currentStatus)
+      ) {
+        if (!RESET_ROLES.includes(user.role!)) {
+          return NextResponse.json({ error: 'Only managers can reopen tickets' }, { status: 403 })
+        }
+      }
+
       // Validate transition
       const allowed = SERVICE_VALID_TRANSITIONS[currentStatus] ?? []
       if (!allowed.includes(nextStatus)) {
@@ -278,10 +290,16 @@ export async function PATCH(
         }
       }
 
-      // Reopen: clear completion + estimate data when going back to 'open'.
+      // Reopen: clear completion data when going back from a worked state.
+      // Estimate fields are only cleared on the 'open' branch below — the
+      // 'approved' branch preserves the estimate so a manager can edit
+      // completion data without losing the customer-approved estimate.
       // Also clean orphaned photos from Storage (DB array gets cleared below;
       // matching blob removal prevents Storage from accumulating dead objects).
-      if (nextStatus === 'open' && ['completed', 'billed', 'in_progress'].includes(currentStatus)) {
+      if (
+        (nextStatus === 'open' || nextStatus === 'approved') &&
+        ['completed', 'billed', 'in_progress'].includes(currentStatus)
+      ) {
         const existingPhotos = (current.photos ?? []) as Array<{ storage_path?: string }>
         const paths = existingPhotos.map(p => p.storage_path).filter((p): p is string => !!p)
         if (paths.length > 0) {

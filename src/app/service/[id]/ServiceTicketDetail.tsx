@@ -1104,9 +1104,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   }
 
   async function handleReopen() {
-    if (!confirm('Reopen this ticket? Completion data will be cleared.')) return
+    // Reopen from a worked state (in_progress/completed/billed) on a ticket
+    // whose estimate was already approved drops back to 'approved' so the
+    // estimate + approval survive and only completion data is cleared.
+    // Everything else (declined-revise, canceled, or worked tickets without
+    // an approved estimate) keeps the original wipe-to-'open' behavior.
+    const reopenToApproved =
+      ticket.estimate_approved &&
+      (ticket.status === SERVICE_STATUS.IN_PROGRESS ||
+        ticket.status === SERVICE_STATUS.COMPLETED ||
+        ticket.status === SERVICE_STATUS.BILLED)
+    const message = reopenToApproved
+      ? 'Reopen this ticket? Completion data will be cleared. The estimate and approval will be kept.'
+      : 'Reopen this ticket? Completion data will be cleared.'
+    if (!confirm(message)) return
     await apiAction(async () => {
-      await patchTicket({ status: 'open' })
+      await patchTicket({ status: reopenToApproved ? 'approved' : 'open' })
     })
   }
 
