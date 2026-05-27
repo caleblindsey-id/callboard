@@ -41,12 +41,34 @@ export default function SignaturePad({ onSignatureChange, initialName = '' }: Si
     function resizeCanvas() {
       const ratio = Math.max(window.devicePixelRatio || 1, 1)
       const rect = canvas!.getBoundingClientRect()
-      canvas!.width = rect.width * ratio
-      canvas!.height = rect.height * ratio
-      const ctx = canvas!.getContext('2d')
-      ctx?.scale(ratio, ratio)
+      const newWidth = Math.round(rect.width * ratio)
+      const newHeight = Math.round(rect.height * ratio)
+
+      // Skip resize events that don't actually change the canvas size
+      // (mobile soft keyboard opening, address-bar show/hide on scroll).
+      // Resizing a <canvas> wipes its bitmap, so a no-op resize must NOT
+      // clear an in-progress signature — this is the bug techs hit.
+      if (canvas!.width === newWidth && canvas!.height === newHeight) return
+
+      // Genuine resize (e.g. orientation change): preserve the strokes,
+      // resize, then replay them onto the new canvas.
+      const data = pad.toData()
+      canvas!.width = newWidth
+      canvas!.height = newHeight
+      canvas!.getContext('2d')?.scale(ratio, ratio)
       pad.clear()
-      setHasSigned(false)
+      if (data.length) {
+        pad.fromData(data)
+        setHasSigned(!pad.isEmpty())
+        // Re-emit so the parent's saved image matches the live (resized)
+        // canvas, not the stale-resolution PNG captured before resize.
+        onSignatureChange({
+          image: pad.isEmpty() ? null : pad.toDataURL('image/png'),
+          name: nameRef.current,
+        })
+      } else {
+        setHasSigned(false)
+      }
     }
 
     resizeCanvas()
