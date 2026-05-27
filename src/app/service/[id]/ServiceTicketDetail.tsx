@@ -1337,12 +1337,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             label={billingTypeLabels[ticket.billing_type] ?? ticket.billing_type}
             classes="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
           />
-          <span className="text-sm text-gray-500 dark:text-gray-400 ml-auto">
-            Created {new Date(ticket.created_at).toLocaleDateString()}
-            {ticket.assigned_technician && (
-              <> | Assigned to <span className="font-medium text-gray-700 dark:text-gray-300">{ticket.assigned_technician.name}</span></>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              Created {new Date(ticket.created_at).toLocaleDateString()}
+              {ticket.assigned_technician && (
+                <> | Assigned to <span className="font-medium text-gray-700 dark:text-gray-300">{ticket.assigned_technician.name}</span></>
+              )}
+            </span>
+            {/* Reopen — a routine manager action, kept accessible at the top.
+                Cancel/Delete remain in the bottom Manager Controls footer. */}
+            {isManager && ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined' && (
+              <button
+                onClick={handleReopen}
+                disabled={loading}
+                className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+              >
+                Reopen
+              </button>
             )}
-          </span>
+          </div>
         </div>
       </Card>
 
@@ -2711,21 +2724,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       )}
 
       {/* ── Manager controls ──
-          Low-frequency, high-risk actions (reopen / cancel / delete) live at
-          the very bottom of the page, away from the active workflow, so they
-          can't be hit by accident mid-task. */}
+          Destructive, low-frequency actions (cancel / delete) live at the very
+          bottom of the page so they can't be hit by accident mid-task. Reopen
+          is routine, so it lives up top in the attributes strip instead. */}
       {isManager && (
         <Card title="Manager Controls">
           <div className="flex flex-wrap gap-2">
-            {ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined' && (
-              <button
-                onClick={handleReopen}
-                disabled={loading}
-                className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-              >
-                Reopen
-              </button>
-            )}
             {ticket.status !== 'canceled' && (
               <button
                 onClick={handleCancel}
