@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
-import { monthsInRange, generatePmTickets } from '@/lib/pm-generation'
+import { monthsInRange, generatePmTickets, groupPendingReviewsByCustomer } from '@/lib/pm-generation'
+import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
 import { BillingType, PmScheduleInsert } from '@/types/database'
 
 const INTERVAL_VALUES = new Set([1, 2, 3, 4, 6, 12])
@@ -143,14 +144,32 @@ export async function POST(request: NextRequest) {
         supabase,
         scope: { kind: 'one_schedule', scheduleId: schedule.id, months },
         createdById: user.id,
-        creditHoldReviewMode: 'flag',
       })
+
+      // If the schedule's customer is on credit hold, route the backfilled PMs
+      // into AR credit review (one email for the customer). Non-fatal.
+      const byCustomer = groupPendingReviewsByCustomer(result.pendingReviewTickets)
+      for (const [customerId, info] of byCustomer) {
+        await enqueueCreditReviewsForCustomer({
+          customerId,
+          customerName: info.customerName,
+          accountNumber: info.customerAccount,
+          tickets: info.tickets.map((t) => ({
+            ticketType: 'pm' as const,
+            ticketId: t.pmTicketId,
+            orderLabel: t.orderLabel,
+          })),
+          createdById: user.id,
+        })
+      }
+
       return NextResponse.json({
         schedule,
         backfill: {
           created: result.created,
           flagged: result.flagged,
           skipped: result.skipped,
+          pendingReview: result.pendingReview,
           months: result.monthsProcessed,
         },
       })

@@ -20,6 +20,7 @@ import {
   KeyRound,
   Award,
   ScrollText,
+  ShieldAlert,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
@@ -28,6 +29,7 @@ const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
   { label: 'Preventive Maintenance', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
+  { label: 'Credit Review', icon: ShieldAlert, route: '/credit-review' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
   { label: 'Tech Payouts', icon: Award, route: '/tech-payouts' },
   { label: 'Billing', icon: FileText, route: '/billing' },

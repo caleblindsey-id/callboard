@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { PmTicketRow, PmTicketUpdate, TicketStatus, PartUsed, TicketPhoto, BillingType } from '@/types/database'
+import { PmTicketRow, PmTicketUpdate, TicketStatus, PartUsed, TicketPhoto, BillingType, CreditReviewStatus } from '@/types/database'
 import { OVERDUE_ELIGIBLE_STATUSES } from '@/lib/overdue'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
 
@@ -21,7 +21,12 @@ export type TicketWithJoins = PmTicketRow & {
   pm_ship_to: { name: string | null; address: string | null; city: string | null } | null
   users: { name: string } | null
   pm_schedules: { interval_months: number; anchor_month: number } | null
+  credit_reviews: { status: CreditReviewStatus }[] | null
 }
+
+// Re-exported from the server-free module so server callers can keep importing
+// it from here; client components must import from '@/lib/credit-review-status'.
+export { activeCreditReviewStatus } from '@/lib/credit-review-status'
 
 export type TicketDetail = PmTicketRow & {
   customers: { name: string; account_number: string | null; billing_address: string | null; billing_city: string | null; billing_state: string | null; billing_zip: string | null; po_required: boolean; ar_terms: string | null; credit_hold: boolean } | null
@@ -31,6 +36,7 @@ export type TicketDetail = PmTicketRow & {
   created_by: { name: string } | null
   deleted_by: { name: string } | null
   schedule: { billing_type: BillingType | null; flat_rate: number | null; interval_months: number; anchor_month: number } | null
+  credit_reviews: { id: string; status: CreditReviewStatus; block_reason: string | null; decided_by_name: string | null }[] | null
   lastServiceMonth: number | null
   lastServiceYear: number | null
   nextServiceMonth: number | null
@@ -74,7 +80,8 @@ export async function getTickets(filters?: {
       equipment(make, model, ship_to_locations(name, address, city)),
       pm_ship_to:ship_to_locations!pm_tickets_ship_to_location_id_fkey(name, address, city),
       users!assigned_technician_id(name),
-      pm_schedules(interval_months, anchor_month)
+      pm_schedules(interval_months, anchor_month),
+      credit_reviews(status)
     `)
 
   if (filters?.deletedOnly) {
@@ -150,7 +157,8 @@ export async function getBillingTickets(
       equipment(make, model, ship_to_locations(name, address, city)),
       pm_ship_to:ship_to_locations!pm_tickets_ship_to_location_id_fkey(name, address, city),
       users!assigned_technician_id(name),
-      pm_schedules(interval_months, anchor_month)
+      pm_schedules(interval_months, anchor_month),
+      credit_reviews(status)
     `)
     .eq('status', 'completed')
     .eq('billing_exported', false)
@@ -248,7 +256,8 @@ export async function getTicket(id: string, options?: { includeDeleted?: boolean
       assigned_technician:users!assigned_technician_id(name),
       created_by:users!created_by_id(name),
       deleted_by:users!deleted_by_id(name),
-      schedule:pm_schedules(billing_type, flat_rate, interval_months, anchor_month)
+      schedule:pm_schedules(billing_type, flat_rate, interval_months, anchor_month),
+      credit_reviews(id, status, block_reason, decided_by_name)
     `)
     .eq('id', id)
 

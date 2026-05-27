@@ -1,5 +1,5 @@
 // PM ticket generation — shared between the monthly "Generate [Month] PMs"
-// modal and the new "auto-backfill on schedule create" path.
+// modal and the "auto-backfill on schedule create" path.
 //
 // Two scopes:
 //   - all_active_for_month: fetch every active schedule, generate cycle-matching
@@ -8,13 +8,14 @@
 //     cycle-matching months in the provided list. Used by /api/pm-schedules
 //     for year-to-date backfill.
 //
-// Two credit-hold modes:
-//   - 'skip': caller (the monthly modal) prompts the user; ids in
-//     skipCreditHoldCustomerIds are excluded from generation. Mirrors the
-//     pre-refactor monthly-flow behavior exactly.
-//   - 'flag': caller (backfill) cannot prompt, so credit-hold customers are
-//     generated with requires_review=true and review_reason='credit_hold_at_backfill'.
-//     skipCreditHoldCustomerIds is rejected (treated as caller error).
+// Credit hold (migration 076 — AR-in-the-loop release workflow):
+//   PMs for customers on credit_hold are NO LONGER skipped or flagged. They are
+//   generated normally, and the caller routes them into the credit-review
+//   workflow (a credit_reviews row + AR email) via
+//   enqueueCreditReviewsForCustomer. This function reports which created tickets
+//   belong to credit-hold customers (pendingReviewTickets) so the caller can
+//   enqueue. Work on those tickets is gated until AR releases each order.
+//   The customer credit_hold flag is read-only here (sync owns it).
 //
 // Idempotency: relies on the existing unique constraint
 // (pm_schedule_id, month, year) on pm_tickets. Per-month pre-fetch of existing
@@ -33,9 +34,14 @@ import {
 
 export type PmSupabaseClient = SupabaseClient<Database>
 
+const MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
 export type ScheduleWithEquipment = PmScheduleRow & {
   equipment: (EquipmentRow & {
-    customers: { id: number; name: string; credit_hold: boolean } | null
+    customers: { id: number; name: string; account_number: string | null; credit_hold: boolean } | null
   }) | null
 }
 
@@ -43,13 +49,21 @@ export type GenerateScope =
   | { kind: 'all_active_for_month'; month: number; year: number }
   | { kind: 'one_schedule'; scheduleId: string; months: { month: number; year: number }[] }
 
+// A created ticket whose customer is on credit hold — the caller enqueues a
+// credit review + AR email for each.
+export interface PendingReviewTicket {
+  customerId: number
+  customerName: string
+  customerAccount: string | null
+  pmTicketId: string
+  orderLabel: string
+}
+
 export interface GeneratePmTicketsArgs {
   supabase: PmSupabaseClient
   scope: GenerateScope
   createdById: string | null
   preview?: boolean
-  skipCreditHoldCustomerIds?: number[]
-  creditHoldReviewMode: 'skip' | 'flag'
 }
 
 export interface GeneratePmTicketsResult {
@@ -58,9 +72,14 @@ export interface GeneratePmTicketsResult {
   // Count of rows that would be / were attempted (populated in both preview and live).
   attempted: number
   skipped: number
-  skippedCreditHold: number
   flagged: number
+  // Count of created tickets for credit-hold customers (live only).
+  pendingReview: number
+  // The credit-hold tickets to route to AR review (live only; empty in preview).
+  pendingReviewTickets: PendingReviewTicket[]
   tickets: PmTicketRow[]
+  // Credit-hold customers seen this run, for the preview UI ("N will be sent to
+  // AR for review"). Populated in both preview and live.
   creditHoldCustomers: { id: number; name: string; equipmentCount: number }[]
   monthsProcessed: { month: number; year: number }[]
 }
@@ -125,25 +144,15 @@ export function monthsInRange(
 export async function generatePmTickets(
   args: GeneratePmTicketsArgs
 ): Promise<GeneratePmTicketsResult> {
-  const {
-    supabase,
-    scope,
-    createdById,
-    preview = false,
-    skipCreditHoldCustomerIds = [],
-    creditHoldReviewMode,
-  } = args
-
-  if (creditHoldReviewMode === 'flag' && skipCreditHoldCustomerIds.length > 0) {
-    throw new Error('skipCreditHoldCustomerIds is not supported in flag mode')
-  }
+  const { supabase, scope, createdById, preview = false } = args
 
   const aggregate: GeneratePmTicketsResult = {
     created: 0,
     attempted: 0,
     skipped: 0,
-    skippedCreditHold: 0,
     flagged: 0,
+    pendingReview: 0,
+    pendingReviewTickets: [],
     tickets: [],
     creditHoldCustomers: [],
     monthsProcessed: [],
@@ -161,15 +170,14 @@ export async function generatePmTickets(
       target: m,
       createdById,
       preview,
-      skipCreditHoldCustomerIds,
-      creditHoldReviewMode,
     })
 
     aggregate.created += monthResult.created.length
     aggregate.attempted += monthResult.attempted
     aggregate.skipped += monthResult.skipped
-    aggregate.skippedCreditHold += monthResult.skippedCreditHold
     aggregate.flagged += monthResult.flaggedCount
+    aggregate.pendingReview += monthResult.pendingReviewTickets.length
+    aggregate.pendingReviewTickets.push(...monthResult.pendingReviewTickets)
     aggregate.tickets.push(...monthResult.created)
     aggregate.monthsProcessed.push(m)
 
@@ -188,9 +196,19 @@ interface MonthRunResult {
   created: PmTicketRow[]
   attempted: number
   skipped: number
-  skippedCreditHold: number
   flaggedCount: number
+  pendingReviewTickets: PendingReviewTicket[]
   creditHoldCustomers: { id: number; name: string; equipmentCount: number }[]
+}
+
+// Per-schedule metadata captured during the build loop so we can, after insert,
+// identify which created tickets belong to credit-hold customers and label them.
+interface ScheduleMeta {
+  creditHold: boolean
+  customerId: number
+  customerName: string
+  customerAccount: string | null
+  orderLabel: string
 }
 
 async function generateForMonth(args: {
@@ -199,16 +217,14 @@ async function generateForMonth(args: {
   target: { month: number; year: number }
   createdById: string | null
   preview: boolean
-  skipCreditHoldCustomerIds: number[]
-  creditHoldReviewMode: 'skip' | 'flag'
 }): Promise<MonthRunResult> {
-  const { supabase, scope, target, createdById, preview, skipCreditHoldCustomerIds, creditHoldReviewMode } = args
+  const { supabase, scope, target, createdById, preview } = args
   const { month, year } = target
 
   const baseSelect = `
     id, equipment_id, interval_months, anchor_month, active, billing_type, flat_rate,
-    equipment(id, customer_id, active, default_technician_id, default_products,
-      customers(id, name, credit_hold))
+    equipment(id, customer_id, active, default_technician_id, default_products, make, model, serial_number,
+      customers(id, name, account_number, credit_hold))
   `
 
   let schedulesQuery = supabase.from('pm_schedules').select(baseSelect).eq('active', true)
@@ -235,11 +251,10 @@ async function generateForMonth(args: {
     (existingTickets ?? []).map((t) => t.equipment_id).filter(Boolean)
   )
 
-  const skipCreditHoldSet = new Set<number>(skipCreditHoldCustomerIds)
   const creditHoldCustomers = new Map<number, { id: number; name: string; equipmentCount: number }>()
+  const scheduleMeta = new Map<string, ScheduleMeta>()
   const ticketsToCreate: PmTicketInsert[] = []
   let skipped = 0
-  let skippedCreditHold = 0
 
   for (const schedule of schedules) {
     if (!scheduleMatchesMonth(schedule, month)) continue
@@ -261,9 +276,8 @@ async function generateForMonth(args: {
     }
 
     const customer = equipment.customers
-    let onCreditHold = false
-    if (customer?.credit_hold) {
-      onCreditHold = true
+    const onCreditHold = Boolean(customer?.credit_hold)
+    if (onCreditHold && customer) {
       const existing = creditHoldCustomers.get(customer.id)
       if (existing) {
         existing.equipmentCount++
@@ -274,16 +288,19 @@ async function generateForMonth(args: {
           equipmentCount: 1,
         })
       }
-
-      if (creditHoldReviewMode === 'skip' && !preview && skipCreditHoldSet.has(customer.id)) {
-        skipped++
-        skippedCreditHold++
-        continue
-      }
     }
 
+    const equipLabel = [equipment.make, equipment.model].filter(Boolean).join(' ')
+    const orderLabel = `PM ${MONTHS[(month - 1) % 12] ?? ''} ${year}${equipLabel ? ` — ${equipLabel}` : ''}`
+    scheduleMeta.set(schedule.id, {
+      creditHold: onCreditHold,
+      customerId: customer?.id ?? equipment.customer_id ?? 0,
+      customerName: customer?.name ?? 'Customer',
+      customerAccount: customer?.account_number ?? null,
+      orderLabel,
+    })
+
     const status: TicketStatus = equipment.default_technician_id ? 'assigned' : 'unassigned'
-    const flagForCreditHold = onCreditHold && creditHoldReviewMode === 'flag'
 
     ticketsToCreate.push({
       pm_schedule_id: schedule.id,
@@ -293,8 +310,8 @@ async function generateForMonth(args: {
       month,
       year,
       status,
-      requires_review: flagForCreditHold,
-      review_reason: flagForCreditHold ? 'credit_hold_at_backfill' : null,
+      requires_review: false,
+      review_reason: null,
       parts_used: (equipment.default_products ?? []).map((p) => ({
         synergy_product_id: p.synergy_product_id,
         quantity: p.quantity,
@@ -305,8 +322,8 @@ async function generateForMonth(args: {
     })
   }
 
-  // Prior-PM flagging (same logic as before) — only escalates rows that aren't
-  // already flagged by the credit-hold branch above.
+  // Prior-PM flagging (unchanged) — flags rows whose equipment still has an open
+  // prior-month PM, so a manager reviews before the new one proceeds.
   const equipmentIdsToCreate = ticketsToCreate
     .map((t) => t.equipment_id)
     .filter((v): v is string => typeof v === 'string')
@@ -332,7 +349,6 @@ async function generateForMonth(args: {
 
     for (const t of ticketsToCreate) {
       if (!t.equipment_id) continue
-      if (t.requires_review) continue // already flagged (credit-hold) — don't clobber reason
       const prior = priorByEquipment.get(t.equipment_id)
       if (prior) {
         t.requires_review = true
@@ -343,24 +359,13 @@ async function generateForMonth(args: {
 
   const flaggedCount = ticketsToCreate.filter((t) => t.requires_review === true).length
 
-  // In skip mode, validate skipCreditHoldCustomerIds against credit-hold-eligible
-  // customers actually seen this run. Preserves the original API guarantee that
-  // the modal can't be used to suppress non-credit-hold customers.
-  if (creditHoldReviewMode === 'skip' && !preview) {
-    for (const cid of skipCreditHoldSet) {
-      if (!creditHoldCustomers.has(cid)) {
-        throw new Error(`Customer ${cid} is not on credit hold`)
-      }
-    }
-  }
-
   if (preview) {
     return {
       created: [],
       attempted: ticketsToCreate.length,
       skipped,
-      skippedCreditHold,
       flaggedCount,
+      pendingReviewTickets: [],
       creditHoldCustomers: Array.from(creditHoldCustomers.values()),
     }
   }
@@ -378,12 +383,50 @@ async function generateForMonth(args: {
     created = insertedTickets ?? []
   }
 
+  // Map inserted credit-hold tickets back to their schedule metadata so the
+  // caller can enqueue an AR credit review for each.
+  const pendingReviewTickets: PendingReviewTicket[] = []
+  for (const t of created) {
+    if (!t.pm_schedule_id) continue
+    const meta = scheduleMeta.get(t.pm_schedule_id)
+    if (meta?.creditHold) {
+      pendingReviewTickets.push({
+        customerId: meta.customerId,
+        customerName: meta.customerName,
+        customerAccount: meta.customerAccount,
+        pmTicketId: t.id,
+        orderLabel: meta.orderLabel,
+      })
+    }
+  }
+
   return {
     created,
     attempted: ticketsToCreate.length,
     skipped,
-    skippedCreditHold,
     flaggedCount,
+    pendingReviewTickets,
     creditHoldCustomers: Array.from(creditHoldCustomers.values()),
   }
+}
+
+// Group pending-review tickets by customer for one-email-per-customer enqueue.
+export function groupPendingReviewsByCustomer(
+  tickets: PendingReviewTicket[]
+): Map<number, { customerName: string; customerAccount: string | null; tickets: PendingReviewTicket[] }> {
+  const byCustomer = new Map<
+    number,
+    { customerName: string; customerAccount: string | null; tickets: PendingReviewTicket[] }
+  >()
+  for (const t of tickets) {
+    const entry = byCustomer.get(t.customerId)
+    if (entry) entry.tickets.push(t)
+    else
+      byCustomer.set(t.customerId, {
+        customerName: t.customerName,
+        customerAccount: t.customerAccount,
+        tickets: [t],
+      })
+  }
+  return byCustomer
 }

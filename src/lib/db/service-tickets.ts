@@ -41,7 +41,8 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       equipment ( make, model, serial_number, description,
         ship_to_locations ( name, address, city, state, zip )
       ),
-      assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
+      assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
+      credit_reviews ( status )
     `)
     .order('created_at', { ascending: false })
 
@@ -75,7 +76,8 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
         ship_to_locations ( name, address, city, state, zip )
       ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
-      created_by:users!service_tickets_created_by_id_fkey ( name )
+      created_by:users!service_tickets_created_by_id_fkey ( name ),
+      credit_reviews ( id, status, block_reason, decided_by_name )
     `)
     .eq('id', id)
     .single()

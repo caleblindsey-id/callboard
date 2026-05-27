@@ -379,6 +379,39 @@ export type EquipmentNoteRow = {
   created_at: string
 }
 
+export type CreditReviewStatus = 'pending' | 'released' | 'blocked'
+export type CreditReviewTicketType = 'pm' | 'service'
+
+export type CreditReviewRow = {
+  id: string
+  ticket_type: CreditReviewTicketType
+  pm_ticket_id: string | null
+  service_ticket_id: string | null
+  customer_id: number
+  status: CreditReviewStatus
+  action_token: string | null
+  action_token_expires_at: string | null
+  decided_by_name: string | null
+  decided_at: string | null
+  block_reason: string | null
+  email_message_id: string | null
+  emailed_at: string | null
+  unblocked_by_id: string | null
+  unblocked_at: string | null
+  auto_released_at: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CreditReviewInsert = Pick<
+  CreditReviewRow,
+  'ticket_type' | 'customer_id'
+> &
+  Partial<Omit<CreditReviewRow, 'id' | 'created_at' | 'updated_at'>>
+
+export type CreditReviewUpdate = Partial<Omit<CreditReviewRow, 'id' | 'created_at'>>
+
 export type CustomerNoteRow = {
   id: string
   customer_id: number
@@ -780,6 +813,34 @@ export interface Database {
         Insert: SettingsRow
         Update: Partial<SettingsRow>
         Relationships: []
+      }
+      credit_reviews: {
+        Row: CreditReviewRow
+        Insert: CreditReviewInsert
+        Update: CreditReviewUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'credit_reviews_pm_ticket_id_fkey'
+            columns: ['pm_ticket_id']
+            isOneToOne: false
+            referencedRelation: 'pm_tickets'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'credit_reviews_service_ticket_id_fkey'
+            columns: ['service_ticket_id']
+            isOneToOne: false
+            referencedRelation: 'service_tickets'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'credit_reviews_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+        ]
       }
       equipment_notes: {
         Row: EquipmentNoteRow

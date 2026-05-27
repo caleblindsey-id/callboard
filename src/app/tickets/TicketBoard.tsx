@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
+import { activeCreditReviewStatus } from '@/lib/credit-review-status'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
+import CreditReviewBadge from '@/components/CreditReviewBadge'
 import StuckIndicator from '@/components/StuckIndicator'
 import { daysOverdue } from '@/lib/overdue'
 import { deriveWorkflowProps } from '@/lib/workflow-status'
@@ -127,6 +129,10 @@ function TicketList({
                     </span>
                   )}
                   {ticket.customers?.credit_hold && <CreditHoldBadge />}
+                  {(() => {
+                    const cr = activeCreditReviewStatus(ticket.credit_reviews)
+                    return cr ? <CreditReviewBadge status={cr} /> : null
+                  })()}
                   {deletedMode && (
                     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                       <Trash2 className="h-3 w-3" /> Deleted
@@ -247,6 +253,10 @@ function TicketList({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{ticket.customers?.name ?? '—'}</span>
                       {ticket.customers?.credit_hold && <CreditHoldBadge />}
+                      {(() => {
+                        const cr = activeCreditReviewStatus(ticket.credit_reviews)
+                        return cr ? <CreditReviewBadge status={cr} /> : null
+                      })()}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400">

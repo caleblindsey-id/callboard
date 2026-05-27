@@ -8,7 +8,7 @@ import SettingsContent from './SettingsContent'
 
 export default async function SettingsPage() {
   await requireRole('super_admin')
-  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, companyName, serviceEmail, servicePhone, salesReps] = await Promise.all([
+  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, companyName, serviceEmail, servicePhone, arEmail, passcodeHash, salesReps] = await Promise.all([
     getUsers(),
     getSyncLog(),
     getSetting('labor_rate_per_hour'),
@@ -17,6 +17,8 @@ export default async function SettingsPage() {
     getSetting('company_name'),
     getSetting('service_email'),
     getSetting('service_phone'),
+    getSetting('ar_email'),
+    getSetting('credit_hold_release_passcode_hash'),
     getAllSalesReps(),
   ])
 
@@ -37,6 +39,8 @@ export default async function SettingsPage() {
         companyName={companyName ?? ''}
         serviceEmail={serviceEmail ?? ''}
         servicePhone={servicePhone ?? ''}
+        arEmail={arEmail ?? ''}
+        passcodeConfigured={Boolean(passcodeHash && passcodeHash.length > 0)}
         salesReps={salesReps}
       />
     </div>

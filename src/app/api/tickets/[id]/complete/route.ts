@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, TicketPhoto } from '@/types/database'
 import { getLaborRate } from '@/lib/db/settings'
+import { isTicketCreditGated } from '@/lib/credit-review'
 
 interface CompleteTicketBody {
   completedDate: string
@@ -138,6 +139,20 @@ export async function POST(
     // Techs can only complete their own assigned tickets
     if (isTechnician(user.role) && current.assigned_technician_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Credit-hold gate: work cannot complete while AR review is pending/blocked.
+    const creditGate = await isTicketCreditGated('pm', id)
+    if (creditGate) {
+      return NextResponse.json(
+        {
+          error:
+            creditGate.status === 'blocked'
+              ? 'This order is blocked by AR — a manager must enter the release passcode before it can be completed.'
+              : 'This order is pending AR credit review and cannot be completed yet.',
+        },
+        { status: 423 }
+      )
     }
 
     // status='completed' is idempotent (no-op inside the RPC), status='billed'

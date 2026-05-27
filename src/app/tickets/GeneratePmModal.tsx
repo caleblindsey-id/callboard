@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CheckCircle, Flag } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Flag, ShieldAlert } from 'lucide-react'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 
 interface CreditHoldCustomer {
@@ -21,8 +21,9 @@ interface PreviewResponse {
 
 interface GenerateResult {
   created: number
-  skippedCreditHold: number
+  pendingReview: number
   flagged: number
+  creditReviewNotEmailed: number
 }
 
 interface GeneratePmModalProps {
@@ -48,13 +49,10 @@ export default function GeneratePmModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<GenerateResult | null>(null)
-  // Credit-hold customers default to EXCLUDED (checkbox off = skip them).
-  const [includeIds, setIncludeIds] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     if (!open) {
       setPreview(null)
-      setIncludeIds(new Set())
       setError(null)
       setResult(null)
       return
@@ -93,18 +91,10 @@ export default function GeneratePmModal({
     setSubmitting(true)
     setError(null)
     try {
-      const skipCreditHoldCustomerIds = preview.creditHoldCustomers
-        .filter((c) => !includeIds.has(c.id))
-        .map((c) => c.id)
-
       const res = await fetch('/api/tickets/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          month,
-          year,
-          skipCreditHoldCustomerIds,
-        }),
+        body: JSON.stringify({ month, year }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -113,8 +103,9 @@ export default function GeneratePmModal({
       }
       setResult({
         created: data.created ?? 0,
-        skippedCreditHold: data.skippedCreditHold ?? 0,
+        pendingReview: data.pendingReview ?? 0,
         flagged: data.flagged ?? 0,
+        creditReviewNotEmailed: data.creditReviewNotEmailed ?? 0,
       })
     } finally {
       setSubmitting(false)
@@ -130,22 +121,17 @@ export default function GeneratePmModal({
     router.push('/tickets?needsReview=1')
   }
 
-  function toggleInclude(id: number) {
-    const next = new Set(includeIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setIncludeIds(next)
+  function handleViewCreditReview() {
+    if (result) onGenerated(result)
+    router.push('/credit-review')
   }
 
   if (!open) return null
 
-  const excludedCount = preview
-    ? preview.creditHoldCustomers.reduce(
-        (sum, c) => (includeIds.has(c.id) ? sum : sum + c.equipmentCount),
-        0
-      )
+  const netCreate = preview ? preview.wouldCreate : 0
+  const creditHoldPmCount = preview
+    ? preview.creditHoldCustomers.reduce((sum, c) => sum + c.equipmentCount, 0)
     : 0
-  const netCreate = preview ? preview.wouldCreate - excludedCount : 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -161,12 +147,29 @@ export default function GeneratePmModal({
                 </h3>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                   Created {result.created} ticket{result.created === 1 ? '' : 's'}.
-                  {result.skippedCreditHold > 0 && (
-                    <> {result.skippedCreditHold} skipped due to credit hold.</>
+                  {result.pendingReview > 0 && (
+                    <> {result.pendingReview} sent to AR for credit review.</>
                   )}
                 </p>
               </div>
             </div>
+            {result.creditReviewNotEmailed > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <div className="text-sm text-amber-800 dark:text-amber-300">
+                    <p className="font-semibold">
+                      {result.creditReviewNotEmailed} customer
+                      {result.creditReviewNotEmailed === 1 ? '' : 's'} not emailed
+                    </p>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+                      Reviews were created but the AR email didn&apos;t send — check the AR email in
+                      Settings, then resend from the credit review queue.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {result.flagged > 0 && (
               <div className="mt-4 rounded-lg border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-4">
                 <div className="flex items-start gap-2">
@@ -180,7 +183,16 @@ export default function GeneratePmModal({
                 </div>
               </div>
             )}
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              {result.pendingReview > 0 && (
+                <button
+                  type="button"
+                  onClick={handleViewCreditReview}
+                  className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700"
+                >
+                  View credit review
+                </button>
+              )}
               {result.flagged > 0 && (
                 <button
                   type="button"
@@ -232,11 +244,26 @@ export default function GeneratePmModal({
                   {netCreate}
                 </p>
               </div>
-              <div className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
-                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Credit hold
+              <div
+                className={`rounded-md border p-3 ${
+                  preview.creditHoldCustomers.length > 0
+                    ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30'
+                    : 'border-gray-200 dark:border-gray-700'
+                }`}
+                title="Credit-hold customers whose PMs will be created and sent to AR for credit review."
+              >
+                <p className={`text-xs uppercase tracking-wide ${
+                  preview.creditHoldCustomers.length > 0
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
+                  Credit review
                 </p>
-                <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+                <p className={`mt-1 text-2xl font-semibold ${
+                  preview.creditHoldCustomers.length > 0
+                    ? 'text-amber-800 dark:text-amber-200'
+                    : 'text-gray-900 dark:text-white'
+                }`}>
                   {preview.creditHoldCustomers.length}
                 </p>
               </div>
@@ -266,45 +293,34 @@ export default function GeneratePmModal({
             </div>
 
             {preview.creditHoldCustomers.length > 0 && (
-              <div className="rounded-lg border-2 border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4">
+              <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <CreditHoldBadge />
-                  <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                  <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
                     {preview.creditHoldCustomers.length} customer
-                    {preview.creditHoldCustomers.length === 1 ? '' : 's'} on credit hold
+                    {preview.creditHoldCustomers.length === 1 ? '' : 's'} on credit hold · {creditHoldPmCount} PM
+                    {creditHoldPmCount === 1 ? '' : 's'}
                   </p>
                 </div>
-                <p className="text-xs text-red-700 dark:text-red-400 mb-3">
-                  These customers are excluded by default. Check a box to generate PMs for them anyway.
+                <p className="text-xs text-amber-700 dark:text-amber-400 mb-3">
+                  These PMs <strong>will be created</strong> and automatically sent to AR for credit
+                  approval. Work stays gated until AR releases each order — nothing is dropped.
                 </p>
-                <ul className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {preview.creditHoldCustomers.map((c) => {
-                    const included = includeIds.has(c.id)
-                    return (
-                      <li key={c.id}>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer py-1 px-2 rounded hover:bg-red-100/50 dark:hover:bg-red-900/30">
-                          <input
-                            type="checkbox"
-                            checked={included}
-                            onChange={() => toggleInclude(c.id)}
-                            className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
-                          />
-                          <span
-                            className={`flex-1 ${
-                              included
-                                ? 'text-gray-900 dark:text-white font-medium'
-                                : 'text-gray-600 dark:text-gray-400 line-through'
-                            }`}
-                          >
-                            {c.name}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-500">
-                            {c.equipmentCount} PM{c.equipmentCount === 1 ? '' : 's'}
-                          </span>
-                        </label>
-                      </li>
-                    )
-                  })}
+                <ul className="space-y-1 max-h-40 overflow-y-auto">
+                  {preview.creditHoldCustomers.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between text-sm py-1 px-2 rounded"
+                    >
+                      <span className="flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                        <CreditHoldBadge />
+                        {c.name}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-500">
+                        {c.equipmentCount} PM{c.equipmentCount === 1 ? '' : 's'}
+                      </span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}

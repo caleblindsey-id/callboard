@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician, MANAGER_ROLES } from '@/lib/auth'
 import { getServiceTickets } from '@/lib/db/service-tickets'
+import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
 import type { ServiceTicketStatus, ServicePriority, ServiceTicketType, ServiceBillingType } from '@/types/service-tickets'
 
 export async function POST(request: NextRequest) {
@@ -119,6 +120,29 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('service-tickets POST error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // If the customer is on credit hold, route this ticket into AR credit
+    // review (the ticket is created normally; the gate blocks progression).
+    // Non-fatal: a failure here must not undo the created ticket.
+    try {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('name, account_number, credit_hold')
+        .eq('id', customerIdInt)
+        .maybeSingle()
+      if (customer?.credit_hold) {
+        const woLabel = data.work_order_number ? `Service — WO-${data.work_order_number}` : 'Service Order'
+        await enqueueCreditReviewsForCustomer({
+          customerId: customerIdInt,
+          customerName: customer.name,
+          accountNumber: customer.account_number,
+          tickets: [{ ticketType: 'service', ticketId: data.id, orderLabel: woLabel }],
+          createdById: user.id,
+        })
+      }
+    } catch (creditErr) {
+      console.error('service-tickets: credit review enqueue failed', creditErr)
     }
 
     return NextResponse.json(data, { status: 201 })

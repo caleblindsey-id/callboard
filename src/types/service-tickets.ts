@@ -1,6 +1,6 @@
 // Service ticket types — separate from PM ticket types in database.ts
 
-import type { PartUsed, TicketPhoto, PartRequest } from './database'
+import type { PartUsed, TicketPhoto, PartRequest, CreditReviewStatus } from './database'
 export type { PartRequest } from './database'
 
 // --- Enums ---
@@ -129,6 +129,7 @@ export type ServiceTicketWithJoins = ServiceTicketRow & {
     } | null
   } | null
   assigned_technician: { name: string } | null
+  credit_reviews: { status: CreditReviewStatus }[] | null
 }
 
 export type ServiceTicketDetail = ServiceTicketRow & {
@@ -154,6 +155,7 @@ export type ServiceTicketDetail = ServiceTicketRow & {
   } | null
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
+  credit_reviews: { id: string; status: CreditReviewStatus; block_reason: string | null; decided_by_name: string | null }[] | null
 }
 
 // --- Status Transition Map ---

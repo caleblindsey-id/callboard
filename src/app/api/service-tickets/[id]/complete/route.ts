@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getLaborRate } from '@/lib/db/settings'
+import { isTicketCreditGated } from '@/lib/credit-review'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -101,6 +102,20 @@ export async function POST(
 
     if (isTechnician(user.role) && current.assigned_technician_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Credit-hold gate: cannot complete while AR review is pending/blocked.
+    const creditGate = await isTicketCreditGated('service', id)
+    if (creditGate) {
+      return NextResponse.json(
+        {
+          error:
+            creditGate.status === 'blocked'
+              ? 'This order is blocked by AR — a manager must enter the release passcode before it can be completed.'
+              : 'This order is pending AR credit review and cannot be completed yet.',
+        },
+        { status: 423 }
+      )
     }
 
     if (current.status !== 'in_progress') {
