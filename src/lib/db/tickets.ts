@@ -17,7 +17,7 @@ const STATUS_RANK: Record<TicketStatus, number> = {
 
 export type TicketWithJoins = PmTicketRow & {
   customers: { name: string; billing_city: string | null; po_required: boolean; ar_terms: string | null; credit_hold: boolean } | null
-  equipment: { make: string | null; model: string | null; ship_to_locations: { name: string | null; address: string | null; city: string | null } | null } | null
+  equipment: { make: string | null; model: string | null; serial_number: string | null; ship_to_locations: { name: string | null; address: string | null; city: string | null } | null } | null
   pm_ship_to: { name: string | null; address: string | null; city: string | null } | null
   users: { name: string } | null
   pm_schedules: { interval_months: number; anchor_month: number } | null
@@ -77,7 +77,7 @@ export async function getTickets(filters?: {
     .select(`
       *,
       customers(name, billing_city, po_required, ar_terms, credit_hold),
-      equipment(make, model, ship_to_locations(name, address, city)),
+      equipment(make, model, serial_number, ship_to_locations(name, address, city)),
       pm_ship_to:ship_to_locations!pm_tickets_ship_to_location_id_fkey(name, address, city),
       users!assigned_technician_id(name),
       pm_schedules(interval_months, anchor_month),
