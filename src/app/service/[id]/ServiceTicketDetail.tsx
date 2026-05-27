@@ -17,6 +17,7 @@ import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
+import DiagnosticFeeCard from './DiagnosticFeeCard'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
@@ -139,7 +140,7 @@ function computeWorkflowProps({
         nextActor = isTech ? 'Tech revises estimate' : 'Tech updating estimate'
         blocker = 'Manager requested more info'
       } else {
-        nextActor = isTech ? 'Submit estimate' : 'Tech to submit estimate'
+        nextActor = isTech ? 'Build the estimate' : 'Tech to build estimate'
       }
       break
     case 'estimated':
@@ -156,7 +157,7 @@ function computeWorkflowProps({
       }
       break
     case 'in_progress':
-      nextActor = isTech ? 'Complete the ticket' : 'Tech completing work'
+      nextActor = isTech ? 'Complete the job' : 'Tech completing work'
       break
     case 'completed':
       nextActor = isStaff ? 'Bill in Synergy' : 'Office to bill'
@@ -503,8 +504,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
-  // Track mobile viewport so the FAB only renders on small screens. The check
-  // runs after mount to avoid SSR hydration mismatch.
+  // Refs to the estimate / completion cards so opening a form from the Next
+  // Step bar (top or mobile sticky) scrolls it into view — on a phone the
+  // trigger can sit a full screen away from the form.
+  const estimateCardRef = useRef<HTMLDivElement>(null)
+  const completionCardRef = useRef<HTMLDivElement>(null)
+
+  // Track mobile viewport so the mobile sticky action bar / quick-complete
+  // sheet only render on small screens. Runs after mount to avoid SSR mismatch.
   useEffect(() => {
     if (typeof window === 'undefined') return
     const mq = window.matchMedia('(max-width: 640px)')
@@ -513,6 +520,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [])
+
+  // Scroll the relevant form into view when opened from a Next Step action.
+  useEffect(() => {
+    if (showEstimateForm) {
+      estimateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showEstimateForm])
+  useEffect(() => {
+    if (showCompletionForm) {
+      completionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showCompletionForm])
 
   // Load preview URLs for existing photos
   useEffect(() => {
@@ -1245,16 +1264,58 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
   const signatureRequired = ticket.ticket_type !== 'inside'
 
+  // ── Next Step bar ──
+  // One contextual primary action per stage, surfaced at the top so the
+  // viewer never hunts for "what's next". The same booleans gate the bar's
+  // visibility AND suppress the WorkflowStatusCard "Next:" line when the
+  // viewer has a button (so we don't show "Next: Build the estimate" right
+  // above a "Build Estimate" button).
+  const partsBlocking = livePartsRequested.length > 0 && !allPartsReceived
+  const isWarrantyOpen =
+    ticket.status === SERVICE_STATUS.OPEN &&
+    (ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty')
+  const viewerHasPrimaryAction =
+    isWarrantyOpen ||
+    (ticket.status === SERVICE_STATUS.OPEN && !showEstimateForm) ||
+    (ticket.status === SERVICE_STATUS.ESTIMATED && isStaff) ||
+    (ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking) ||
+    (ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm) ||
+    (ticket.status === SERVICE_STATUS.COMPLETED && isStaff)
+  const suppressNextActor = viewerHasPrimaryAction || showEstimateForm || showCompletionForm
+
+  // Actions card now holds only secondary controls (the primary stage action
+  // lives in the Next Step bar). Render it only when it has content so we
+  // don't ship an empty "Actions" card.
+  const showPickupToggle =
+    ticket.ticket_type === 'inside' && ticket.status === SERVICE_STATUS.COMPLETED && isStaff
+  const showBilledRef =
+    ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim().length > 0
+  const showActionsCard = isManager || showPickupToggle || showBilledRef
+
+  // Mobile sticky bottom action bar: keeps the single-tap primary action
+  // reachable on a phone (the top Next Step bar scrolls away). Covers the
+  // common tech stages only — manager input stages (estimated decision,
+  // completed billing) keep using the top bar, which has room for their
+  // sub-inputs. When it shows, the top bar is hidden for that stage so the
+  // action isn't duplicated.
+  const showMobileActionBar =
+    isMobile && !showEstimateForm && !showCompletionForm && !quickCompleteOpen && (
+      isWarrantyOpen ||
+      (ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen) ||
+      (ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking) ||
+      ticket.status === SERVICE_STATUS.IN_PROGRESS
+    )
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${showMobileActionBar ? 'pb-24' : ''}`}>
       {/* Workflow state card — top of detail page, always visible. */}
       <WorkflowStatusCard
         state={workflowProps.state}
-        nextActor={workflowProps.nextActor}
+        nextActor={suppressNextActor ? undefined : workflowProps.nextActor}
         blocker={workflowProps.blocker}
         enteredAt={ticket.updated_at}
       />
@@ -1352,6 +1413,176 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           <p className="text-sm text-amber-800 dark:text-amber-300">
             Add a Synergy order # below before this ticket can be marked billed.
           </p>
+        </div>
+      )}
+
+      {/* ── Next Step: one contextual primary action per stage ──
+          The same `viewerHasPrimaryAction` gate suppresses the redundant
+          "Next:" line on the status card above. The estimate builder and
+          completion form still live in their own cards below; the buttons
+          here open them. On mobile, simple stages are handled by the sticky
+          bottom bar, so the top bar yields to it (no duplicate button). */}
+      {viewerHasPrimaryAction && !showMobileActionBar && !quickCompleteOpen && (
+        <div className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-5 space-y-3">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Next Step
+          </p>
+
+          {/* Open + warranty/partial → skip the estimate, start work */}
+          {isWarrantyOpen && (
+            <button
+              onClick={handleStartWork}
+              disabled={loading}
+              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+            >
+              {loading ? 'Starting...' : 'Start Work'}
+            </button>
+          )}
+
+          {/* Open + non-warranty → build / revise the estimate (opens builder below) */}
+          {ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen && !showEstimateForm && (
+            <button
+              onClick={() => setShowEstimateForm(true)}
+              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
+            >
+              {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+            </button>
+          )}
+
+          {/* Estimated + staff → approve / decline / request more info.
+              Both commit paths require a note (who told us / why), shown via
+              an inline-expand textarea before committing. */}
+          {ticket.status === SERVICE_STATUS.ESTIMATED && isStaff && (
+            manualDecisionMode === null ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setManualDecisionMode('approve')
+                    setManualDecisionNote('')
+                  }}
+                  disabled={loading}
+                  className="px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
+                >
+                  Approve Estimate
+                </button>
+                <button
+                  onClick={() => {
+                    setManualDecisionMode('decline')
+                    setManualDecisionNote('')
+                  }}
+                  disabled={loading}
+                  className="px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
+                >
+                  Decline
+                </button>
+                {isManager && (
+                  <button
+                    onClick={() => setRequestInfoOpen(true)}
+                    disabled={loading}
+                    className="px-5 py-3 text-sm font-medium text-amber-700 dark:text-amber-400 bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-600 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
+                  >
+                    Request More Info
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2 max-w-lg">
+                <label htmlFor="manual-decision-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {manualDecisionMode === 'approve'
+                    ? 'Who told us to approve? (required)'
+                    : 'Why are we declining? (required for the record)'}
+                </label>
+                <textarea
+                  id="manual-decision-note"
+                  autoFocus
+                  value={manualDecisionNote}
+                  onChange={(e) => setManualDecisionNote(e.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  placeholder={manualDecisionMode === 'approve'
+                    ? 'e.g. Spoke with John Smith on phone 4/29 — approved verbally'
+                    : 'e.g. Customer chose another vendor — confirmed by email 4/29'}
+                  className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      const note = manualDecisionNote.trim()
+                      if (manualDecisionMode === 'approve') {
+                        handleApproveEstimate(note)
+                      } else {
+                        handleDeclineEstimate(note)
+                      }
+                    }}
+                    disabled={loading || manualDecisionNote.trim().length < 2}
+                    className={`px-5 py-3 text-sm font-semibold text-white rounded-md disabled:opacity-50 transition-colors min-h-[44px] ${
+                      manualDecisionMode === 'approve'
+                        ? 'bg-green-600 hover:bg-green-700'
+                        : 'bg-red-600 hover:bg-red-700'
+                    }`}
+                  >
+                    {loading
+                      ? (manualDecisionMode === 'approve' ? 'Approving...' : 'Declining...')
+                      : (manualDecisionMode === 'approve' ? 'Confirm Approve' : 'Confirm Decline')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setManualDecisionMode(null)
+                      setManualDecisionNote('')
+                    }}
+                    disabled={loading}
+                    className="px-5 py-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Approved → start work (the parts-blocked case shows on the status card) */}
+          {ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking && (
+            <button
+              onClick={handleStartWork}
+              disabled={loading}
+              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+            >
+              {loading ? 'Starting...' : 'Start Work'}
+            </button>
+          )}
+
+          {/* In progress → complete the job (opens completion form below) */}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && (
+            <button
+              onClick={() => setShowCompletionForm(true)}
+              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
+            >
+              Complete Job
+            </button>
+          )}
+
+          {/* Completed + staff → record Synergy order #, then bill */}
+          {ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
+            <div className="space-y-2">
+              <SynergyOrderFields
+                initialOrder={synergyOrderNumber}
+                onSave={handleSaveSynergyOrderNumber}
+                loading={loading}
+              />
+              {!synergyOrderNumber.trim() && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Enter and save the Synergy Order # above before billing.
+                </p>
+              )}
+              <button
+                onClick={handleMarkBilled}
+                disabled={loading || !synergyOrderNumber.trim()}
+                className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                {loading ? 'Saving...' : 'Mark Billed'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1540,9 +1771,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         </p>
       </Card>
 
-      {/* ── Section 4: Diagnosis & Estimate ── */}
-      {(ticket.status === SERVICE_STATUS.OPEN || ticket.status === SERVICE_STATUS.ESTIMATED || ticket.status === SERVICE_STATUS.APPROVED ||
-        ticket.status === SERVICE_STATUS.DECLINED || ticket.estimate_amount != null) && (
+      {/* ── Section 4: Diagnosis & Estimate ──
+          Renders once an estimate exists, the ticket is past the estimate
+          stage, or the builder is open (triggered from the Next Step bar).
+          A fresh `open` ticket shows no empty estimate card. */}
+      {(ticket.status === SERVICE_STATUS.ESTIMATED || ticket.status === SERVICE_STATUS.APPROVED ||
+        ticket.status === SERVICE_STATUS.DECLINED || ticket.estimate_amount != null || showEstimateForm) && (
+        <div ref={estimateCardRef}>
         <CardSection
           title="Diagnosis & Estimate"
           open={estimateOpen}
@@ -1554,7 +1789,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         >
           {/* Show existing estimate breakdown */}
           {ticket.estimate_amount != null && (
-            <div className="space-y-3 mb-4">
+            <div className="space-y-3">
               <div className="flex items-center gap-3 mb-2">
                 <InfoField label="Approval Status">
                   {ticket.estimate_approved ? (
@@ -1720,111 +1955,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           )}
 
-          {/* Estimate action buttons for staff (approve/decline).
-              Both paths require a note explaining who told us — shown via
-              an inline-expand textarea before the action commits. */}
-          {ticket.status === SERVICE_STATUS.ESTIMATED && isStaff && (
-            <div className="mt-3">
-              {manualDecisionMode === null ? (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => {
-                      setManualDecisionMode('approve')
-                      setManualDecisionNote('')
-                    }}
-                    disabled={loading}
-                    className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
-                  >
-                    Approve Estimate
-                  </button>
-                  <button
-                    onClick={() => {
-                      setManualDecisionMode('decline')
-                      setManualDecisionNote('')
-                    }}
-                    disabled={loading}
-                    className="px-4 py-3 sm:py-2 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
-                  >
-                    Decline
-                  </button>
-                  {isManager && (
-                    <button
-                      onClick={() => setRequestInfoOpen(true)}
-                      disabled={loading}
-                      className="px-4 py-3 sm:py-2 text-sm font-medium text-amber-700 dark:text-amber-400 bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-600 rounded-md hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
-                    >
-                      Request More Info
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2 max-w-lg">
-                  <label htmlFor="manual-decision-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {manualDecisionMode === 'approve'
-                      ? 'Who told us to approve? (required)'
-                      : 'Why are we declining? (required for the record)'}
-                  </label>
-                  <textarea
-                    id="manual-decision-note"
-                    autoFocus
-                    value={manualDecisionNote}
-                    onChange={(e) => setManualDecisionNote(e.target.value)}
-                    rows={3}
-                    maxLength={2000}
-                    placeholder={manualDecisionMode === 'approve'
-                      ? 'e.g. Spoke with John Smith on phone 4/29 — approved verbally'
-                      : 'e.g. Customer chose another vendor — confirmed by email 4/29'}
-                    className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => {
-                        const note = manualDecisionNote.trim()
-                        if (manualDecisionMode === 'approve') {
-                          handleApproveEstimate(note)
-                        } else {
-                          handleDeclineEstimate(note)
-                        }
-                      }}
-                      disabled={loading || manualDecisionNote.trim().length < 2}
-                      className={`px-4 py-3 sm:py-2 text-sm font-medium text-white rounded-md disabled:opacity-50 transition-colors min-h-[44px] ${
-                        manualDecisionMode === 'approve'
-                          ? 'bg-green-600 hover:bg-green-700'
-                          : 'bg-red-600 hover:bg-red-700'
-                      }`}
-                    >
-                      {loading
-                        ? (manualDecisionMode === 'approve' ? 'Approving...' : 'Declining...')
-                        : (manualDecisionMode === 'approve' ? 'Confirm Approve' : 'Confirm Decline')}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setManualDecisionMode(null)
-                        setManualDecisionNote('')
-                      }}
-                      disabled={loading}
-                      className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Decline reason */}
-          {ticket.status === SERVICE_STATUS.DECLINED && ticket.decline_reason && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <InfoField label="Decline Reason">
-                <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
-              </InfoField>
-            </div>
-          )}
-
-          {/* Reopen & Revise for declined tickets */}
+          {/* Declined: reason + reopen, grouped */}
           {ticket.status === SERVICE_STATUS.DECLINED && (
-            <div className="mt-3">
+            <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700 space-y-3">
+              <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                Estimate Declined
+              </p>
+              {ticket.decline_reason && (
+                <InfoField label="Decline Reason">
+                  <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
+                </InfoField>
+              )}
               <button
                 onClick={handleReopen}
                 disabled={loading}
@@ -1835,72 +1976,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           )}
 
-          {/* Diagnostic fee — staff can capture / edit anytime while the ticket is live */}
-          {isStaff && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                Diagnostic Fee <span className="normal-case font-normal text-gray-400 dark:text-gray-500">(if billed separately in Synergy)</span>
+          {/* Estimate builder — opened from the Next Step bar above */}
+          {ticket.status === SERVICE_STATUS.OPEN && showEstimateForm && (
+            <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
+                {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
               </p>
-              <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Synergy Invoice #
-                  </label>
-                  <input
-                    type="text"
-                    value={diagnosticInvoiceNumber}
-                    onChange={(e) => setDiagnosticInvoiceNumber(e.target.value)}
-                    placeholder="e.g. 612978"
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Amount
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-500 dark:text-gray-400">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={diagnosticCharge}
-                      onChange={(e) => setDiagnosticCharge(e.target.value)}
-                      placeholder="0.00"
-                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={handleSubmitDiagnosticCharge}
-                  disabled={loading}
-                  className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
-                >
-                  Save
-                </button>
-              </div>
-              {(ticket.diagnostic_charge != null || ticket.diagnostic_invoice_number) && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Current:
-                  {ticket.diagnostic_charge != null && ` $${ticket.diagnostic_charge.toFixed(2)}`}
-                  {ticket.diagnostic_invoice_number && ` on invoice #${ticket.diagnostic_invoice_number}`}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Submit estimate form — techs or staff when ticket is open */}
-          {ticket.status === SERVICE_STATUS.OPEN && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              {!showEstimateForm ? (
-                <button
-                  onClick={() => setShowEstimateForm(true)}
-                  className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
-                >
-                  Submit Estimate
-                </button>
-              ) : (
-                <form onSubmit={handleSubmitEstimate} className="space-y-4 mt-3">
+              <form onSubmit={handleSubmitEstimate} className="space-y-4">
                   {/* Labor Hours */}
                   <div className="max-w-lg">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1991,10 +2073,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     </button>
                   </div>
                 </form>
-              )}
             </div>
           )}
         </CardSection>
+        </div>
+      )}
+
+      {/* ── Diagnostic Fee (staff, any active stage) ── */}
+      {isStaff && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
+        <DiagnosticFeeCard
+          invoiceNumber={diagnosticInvoiceNumber}
+          setInvoiceNumber={setDiagnosticInvoiceNumber}
+          amount={diagnosticCharge}
+          setAmount={setDiagnosticCharge}
+          onSave={handleSubmitDiagnosticCharge}
+          loading={loading}
+          currentCharge={ticket.diagnostic_charge}
+          currentInvoiceNumber={ticket.diagnostic_invoice_number}
+        />
       )}
 
       {/* ── Section 5: Parts Requested ──
@@ -2225,81 +2321,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         </CardSection>
       )}
 
-      {/* ── Section 6: Action Buttons ── */}
+      {/* ── Section 6: Secondary actions ──
+          The primary stage action lives in the Next Step bar at the top.
+          This card holds only secondary controls (pickup toggle, billed
+          reference) plus manager actions, and renders only when non-empty. */}
+      {showActionsCard && (
       <Card title="Actions">
         <div className="space-y-3">
-          {/* Open: Start Work (skip estimate for warranty/pre-approved) */}
-          {ticket.status === SERVICE_STATUS.OPEN && (ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty') && (
-            <button
-              onClick={handleStartWork}
-              disabled={loading}
-              className="w-full sm:w-auto px-4 py-3 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-            >
-              {loading ? 'Starting...' : 'Start Work'}
-            </button>
-          )}
-
-          {/* Approved: Start Work */}
-          {ticket.status === SERVICE_STATUS.APPROVED && (
-            <>
-              {livePartsRequested.length > 0 && !allPartsReceived ? (
-                <div className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
-                  Waiting on parts ({partsReceivedCount}/{livePartsRequested.length} received)
-                </div>
-              ) : (
-                <button
-                  onClick={handleStartWork}
-                  disabled={loading}
-                  className="w-full sm:w-auto px-4 py-3 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-                >
-                  {loading ? 'Starting...' : 'Start Work'}
-                </button>
-              )}
-            </>
-          )}
-
-          {/* In Progress: Complete Ticket */}
-          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && (
-            <button
-              onClick={() => setShowCompletionForm(true)}
-              className="w-full sm:w-auto px-4 py-3 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
-            >
-              Complete Ticket
-            </button>
-          )}
-
-          {/* Completed: Mark Billed (staff only) — Synergy Order # entered right here */}
-          {ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
-            <div className="space-y-2">
-              <SynergyOrderFields
-                initialOrder={synergyOrderNumber}
-                onSave={handleSaveSynergyOrderNumber}
-                loading={loading}
-              />
-              {!synergyOrderNumber.trim() && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Enter and save the Synergy Order # above before billing.
-                </p>
-              )}
-              <button
-                onClick={handleMarkBilled}
-                disabled={loading || !synergyOrderNumber.trim()}
-                className="w-full sm:w-auto px-4 py-3 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors min-h-[44px]"
-              >
-                {loading ? 'Saving...' : 'Mark Billed'}
-              </button>
-            </div>
-          )}
-
           {/* Billed: show the recorded Synergy order # for reference (staff) */}
-          {ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim() && (
+          {showBilledRef && (
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Billed under Synergy Order # <span className="font-medium text-gray-900 dark:text-white">{synergyOrderNumber}</span>
             </p>
           )}
 
           {/* Inside ticket pickup toggle */}
-          {ticket.ticket_type === 'inside' && ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
+          {showPickupToggle && (
             <button
               onClick={handleTogglePickup}
               disabled={loading}
@@ -2350,12 +2387,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           </div>
         )}
       </Card>
+      )}
 
       {/* ── Section 7: Completion Form ──
           Collapsible — opens by default in_progress; on mobile it's also the
           only open section. */}
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
-        <CardSection title="Complete Ticket" open={completionOpen}>
+        <div ref={completionCardRef}>
+        <CardSection title="Complete Job" open={completionOpen}>
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Prefilled-from-estimate reminder. Only shown when an estimate was
                 approved — the work order was seeded from it on Start Work. Calls
@@ -2585,6 +2624,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           </form>
         </CardSection>
+        </div>
       )}
 
       {/* ── Section 8: Billing Summary (read-only, completed/billed) ── */}
@@ -2713,21 +2753,51 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         onCancel={() => setRequestInfoOpen(false)}
       />
 
-      {/* Quick Complete bottom sheet — mobile + tech only, in_progress.
-          Rendered as a fixed-position FAB anchored bottom-right; only on
-          ≤640px viewports per the mobile-first-for-techs rule. */}
-      {quickCompleteEligible && isMobile && !quickCompleteOpen && (
-        <button
-          type="button"
-          onClick={() => setQuickCompleteOpen(true)}
-          className="fixed bottom-6 right-4 z-40 px-5 py-3 rounded-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-lg min-h-[48px] min-w-[48px] flex items-center gap-2"
-          aria-label="Quick complete this ticket"
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.25} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-          Quick Complete
-        </button>
+      {/* Mobile sticky action bar — the primary action stays reachable at the
+          bottom of the screen on phones (≤640px) per the mobile-first-for-techs
+          rule. in_progress opens the QuickCompleteSheet for the assigned tech,
+          else the inline completion form. */}
+      {showMobileActionBar && (
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          {isWarrantyOpen && (
+            <button
+              type="button"
+              onClick={handleStartWork}
+              disabled={loading}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[48px]"
+            >
+              {loading ? 'Starting...' : 'Start Work'}
+            </button>
+          )}
+          {ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen && (
+            <button
+              type="button"
+              onClick={() => setShowEstimateForm(true)}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[48px]"
+            >
+              {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+            </button>
+          )}
+          {ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking && (
+            <button
+              type="button"
+              onClick={handleStartWork}
+              disabled={loading}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[48px]"
+            >
+              {loading ? 'Starting...' : 'Start Work'}
+            </button>
+          )}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
+            <button
+              type="button"
+              onClick={() => (quickCompleteEligible ? setQuickCompleteOpen(true) : setShowCompletionForm(true))}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[48px]"
+            >
+              Complete Job
+            </button>
+          )}
+        </div>
       )}
       <QuickCompleteSheet
         key={`quick-complete-${quickCompleteOpen}`}
