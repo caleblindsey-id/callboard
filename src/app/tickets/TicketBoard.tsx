@@ -151,6 +151,11 @@ function TicketList({
                   .filter(Boolean)
                   .join(' ') || '—'}
               </p>
+              {ticket.equipment?.serial_number && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  SN: {ticket.equipment.serial_number}
+                </p>
+              )}
               <div className="mt-1">
                 <LocationBlock ticket={ticket} />
               </div>
@@ -260,9 +265,16 @@ function TicketList({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                    {[ticket.equipment?.make, ticket.equipment?.model]
-                      .filter(Boolean)
-                      .join(' ') || '—'}
+                    <div>
+                      {[ticket.equipment?.make, ticket.equipment?.model]
+                        .filter(Boolean)
+                        .join(' ') || '—'}
+                    </div>
+                    {ticket.equipment?.serial_number && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        SN: {ticket.equipment.serial_number}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 max-w-[260px]">
                     <LocationBlock ticket={ticket} />

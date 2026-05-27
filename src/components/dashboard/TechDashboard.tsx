@@ -218,6 +218,11 @@ export default function TechDashboard(p: Props) {
                       .join(' ') || '—'}
                     {ticket.scheduled_date && ` · ${new Date(ticket.scheduled_date).toLocaleDateString()}`}
                   </p>
+                  {ticket.equipment?.serial_number && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      SN: {ticket.equipment.serial_number}
+                    </p>
+                  )}
                 </Link>
               ))}
             </div>
