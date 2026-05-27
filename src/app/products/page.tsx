@@ -1,17 +1,15 @@
-import { getProducts } from '@/lib/db/products'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import ProductList from './ProductList'
 
 export default async function ProductsPage() {
-  await requireRole(...MANAGER_ROLES)
-  const products = await getProducts()
+  await requireRole(...MANAGER_ROLES, 'technician')
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Products</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Synced from SynergyERP — read only</p>
       </div>
-      <ProductList products={products} />
+      <ProductList />
     </div>
   )
 }
