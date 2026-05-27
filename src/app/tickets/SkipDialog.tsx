@@ -23,6 +23,12 @@ export interface SkippableTicket {
 
 interface SkipDialogProps {
   tickets: SkippableTicket[]
+  // When the tech relayed a recommended next-PM month/year, seed the picker with
+  // it instead of the calculated cycle default (detail-page approval only).
+  recommendedMonth?: number
+  recommendedYear?: number
+  // Pre-check "stop future PMs" when the skip reason implies the equipment is gone.
+  suggestStop?: boolean
   onClose: () => void
   onDone: () => void
 }
@@ -49,7 +55,7 @@ function calcDefaultNextMonth(
   return { month: nextMonth, year: nextYear }
 }
 
-export default function SkipDialog({ tickets, onClose, onDone }: SkipDialogProps) {
+export default function SkipDialog({ tickets, recommendedMonth, recommendedYear, suggestStop, onClose, onDone }: SkipDialogProps) {
   const router = useRouter()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -64,8 +70,9 @@ export default function SkipDialog({ tickets, onClose, onDone }: SkipDialogProps
     ? calcDefaultNextMonth(schedule.interval_months, schedule.anchor_month, ticket.month, ticket.year)
     : { month: ((ticket?.month ?? 1) % 12) + 1, year: ticket?.month === 12 ? (ticket?.year ?? thisYear) + 1 : (ticket?.year ?? thisYear) }
 
-  const [selectedMonth, setSelectedMonth] = useState(defaultNext.month)
-  const [selectedYear, setSelectedYear] = useState(defaultNext.year)
+  const [selectedMonth, setSelectedMonth] = useState(recommendedMonth ?? defaultNext.month)
+  const [selectedYear, setSelectedYear] = useState(recommendedYear ?? defaultNext.year)
+  const [stopSchedule, setStopSchedule] = useState(suggestStop ?? false)
 
   if (!ticket) return null
 
@@ -80,10 +87,11 @@ export default function SkipDialog({ tickets, onClose, onDone }: SkipDialogProps
       const res = await fetch(`/api/tickets/${ticket.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'skipped',
-          reschedule_month: selectedMonth,
-        }),
+        body: JSON.stringify(
+          stopSchedule
+            ? { status: 'skipped', deactivate_schedule: true }
+            : { status: 'skipped', reschedule_month: selectedMonth }
+        ),
       })
 
       if (!res.ok) {
@@ -106,6 +114,7 @@ export default function SkipDialog({ tickets, onClose, onDone }: SkipDialogProps
         setCurrentIndex(nextIndex)
         setSelectedMonth(nextDefault.month)
         setSelectedYear(nextDefault.year)
+        setStopSchedule(false)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to skip ticket.'
@@ -142,39 +151,58 @@ export default function SkipDialog({ tickets, onClose, onDone }: SkipDialogProps
           </p>
         </div>
 
-        {/* Next service date picker */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Next Service Date
-          </label>
-          <div className="flex gap-2">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-              disabled={loading}
-              className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              {MONTHS.map((m, i) => (
-                <option key={i} value={i + 1}>{m}</option>
-              ))}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              disabled={loading}
-              className="w-24 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              {[thisYear, thisYear + 1, thisYear + 2].map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+        {/* Next service date picker — hidden when stopping the schedule */}
+        {!stopSchedule && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Next Service Date
+            </label>
+            <div className="flex gap-2">
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                disabled={loading}
+                className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              >
+                {MONTHS.map((m, i) => (
+                  <option key={i} value={i + 1}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                disabled={loading}
+                className="w-24 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              >
+                {[thisYear, thisYear + 1, thisYear + 2].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            {schedule && (
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                Regular schedule: every {schedule.interval_months} month{schedule.interval_months > 1 ? 's' : ''}
+              </p>
+            )}
           </div>
-          {schedule && (
-            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-              Regular schedule: every {schedule.interval_months} month{schedule.interval_months > 1 ? 's' : ''}
-            </p>
-          )}
-        </div>
+        )}
+
+        {/* Stop future PMs — deactivates the recurring schedule */}
+        <label className="flex items-start gap-2 mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={stopSchedule}
+            onChange={(e) => setStopSchedule(e.target.checked)}
+            disabled={loading}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600"
+          />
+          <span className="text-sm text-gray-700 dark:text-gray-300">
+            Stop future PMs for this equipment
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Deactivates the recurring schedule — no new PM tickets will be generated.
+            </span>
+          </span>
+        </label>
 
         {/* Error */}
         {error && (
@@ -201,9 +229,11 @@ export default function SkipDialog({ tickets, onClose, onDone }: SkipDialogProps
           >
             {loading
               ? 'Processing...'
-              : isLast
-                ? 'Skip'
-                : 'Skip & Next'}
+              : stopSchedule
+                ? 'Skip & Stop PMs'
+                : isLast
+                  ? 'Skip'
+                  : 'Skip & Next'}
           </button>
         </div>
       </div>

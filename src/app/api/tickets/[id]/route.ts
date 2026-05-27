@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { updateTicket } from '@/lib/db/tickets'
-import { updateAnchorMonth } from '@/lib/db/schedules'
+import { updateAnchorMonth, deactivateSchedule } from '@/lib/db/schedules'
+import { isSkipReasonCategory, isStopReason } from '@/lib/skip-reasons'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/database'
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
@@ -32,6 +33,10 @@ const ALLOWED_FIELDS = [
   'additional_parts_used',
   'additional_hours_worked',
   'skip_reason',
+  'skip_reason_category',
+  'skip_recommended_month',
+  'skip_recommended_year',
+  'skip_equipment_on_site',
   'parts_requested',
   'synergy_order_number',
   'machine_hours',
@@ -52,6 +57,10 @@ const TECH_ALLOWED_FIELDS = [
   'additional_parts_used',
   'additional_hours_worked',
   'skip_reason',
+  'skip_reason_category',
+  'skip_recommended_month',
+  'skip_recommended_year',
+  'skip_equipment_on_site',
   'parts_requested',
   'machine_hours',
   'date_code',
@@ -214,15 +223,39 @@ export async function PATCH(
         return NextResponse.json(updated)
       }
 
-      // Tech requesting a skip — store reason and previous status
+      // Tech requesting a skip — store the structured request + previous status
       if (nextStatus === 'skip_requested') {
-        const skipReason = typeof raw.skip_reason === 'string' ? raw.skip_reason.trim() : ''
-        if (!skipReason) {
-          return NextResponse.json({ error: 'A reason is required when requesting a skip' }, { status: 400 })
+        const category = raw.skip_reason_category
+        if (!isSkipReasonCategory(category)) {
+          return NextResponse.json({ error: 'A valid reason category is required when requesting a skip' }, { status: 400 })
         }
+
+        // Notes are now optional (the category carries the required signal).
+        const notes = typeof raw.skip_reason === 'string' ? raw.skip_reason.trim() : ''
+
+        // Recommended next-PM month/year — the customer's request relayed by the
+        // tech. Month is what the reschedule actually applies (see approve branch);
+        // year is captured for the manager's visibility only.
+        const recMonth = Number(raw.skip_recommended_month)
+        const recommendedMonth = recMonth >= 1 && recMonth <= 12 ? recMonth : null
+        const recYear = Number(raw.skip_recommended_year)
+        const recommendedYear = Number.isInteger(recYear) && recYear >= 2000 && recYear <= 2100 ? recYear : null
+
+        // A "stop" reason (equipment removed / service ended) means the equipment
+        // is gone — coerce on-site to false regardless of the submitted toggle.
+        const equipmentOnSite = isStopReason(category)
+          ? false
+          : typeof raw.skip_equipment_on_site === 'boolean'
+            ? raw.skip_equipment_on_site
+            : null
+
         const updated = await updateTicket(id, {
           status: 'skip_requested',
-          skip_reason: skipReason,
+          skip_reason: notes || null,
+          skip_reason_category: category,
+          skip_recommended_month: recommendedMonth,
+          skip_recommended_year: recommendedYear,
+          skip_equipment_on_site: equipmentOnSite,
           skip_previous_status: currentStatus,
         })
         return NextResponse.json(updated)
@@ -233,9 +266,14 @@ export async function PATCH(
         if (isTechnician(user.role)) {
           return NextResponse.json({ error: 'Only managers can approve or deny skip requests' }, { status: 403 })
         }
+        // Denial reverts the ticket — discard the whole skip request.
         const updated = await updateTicket(id, {
           status: nextStatus,
           skip_reason: null,
+          skip_reason_category: null,
+          skip_recommended_month: null,
+          skip_recommended_year: null,
+          skip_equipment_on_site: null,
           skip_previous_status: null,
         })
         return NextResponse.json(updated)
@@ -246,21 +284,29 @@ export async function PATCH(
         if (currentStatus === 'skip_requested' && isTechnician(user.role)) {
           return NextResponse.json({ error: 'Only managers can approve skip requests' }, { status: 403 })
         }
+        // Preserve the structured skip metadata (category, recommended month/year,
+        // on-site flag, notes) — the ticket IS skipped, so these are its permanent
+        // record and the reporting signal. Only clear the internal revert pointer.
         const updated = await updateTicket(id, {
           status: 'skipped',
-          skip_reason: null,
           skip_previous_status: null,
         })
 
-        const rescheduleMonth = Number(raw.reschedule_month)
-        if (rescheduleMonth >= 1 && rescheduleMonth <= 12) {
-          const { data: ticketData } = await supabase
-            .from('pm_tickets')
-            .select('pm_schedule_id')
-            .eq('id', id)
-            .single()
-          if (ticketData?.pm_schedule_id) {
-            await updateAnchorMonth(ticketData.pm_schedule_id, rescheduleMonth)
+        // Stop vs reschedule are mutually exclusive: deactivating the schedule
+        // leaves no future cycle for a new anchor month to affect.
+        const { data: ticketData } = await supabase
+          .from('pm_tickets')
+          .select('pm_schedule_id')
+          .eq('id', id)
+          .single()
+        if (ticketData?.pm_schedule_id) {
+          if (raw.deactivate_schedule === true) {
+            await deactivateSchedule(ticketData.pm_schedule_id)
+          } else {
+            const rescheduleMonth = Number(raw.reschedule_month)
+            if (rescheduleMonth >= 1 && rescheduleMonth <= 12) {
+              await updateAnchorMonth(ticketData.pm_schedule_id, rescheduleMonth)
+            }
           }
         }
         return NextResponse.json(updated)
