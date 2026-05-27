@@ -51,6 +51,7 @@ const techNavItems = [
   { label: 'Service Tickets', icon: Headset, route: '/service' },
   { label: 'Equipment', icon: Wrench, route: '/my-equipment' },
   { label: 'My Leads', icon: Award, route: '/my-leads' },
+  { label: 'Products', icon: Package, route: '/products' },
 ]
 
 interface SidebarProps {

@@ -14,6 +14,8 @@ export interface ProductSearchResult {
   synergy_id: string
   number: string
   description: string | null
+  unit_price: number | null
+  synced_at: string | null
 }
 
 export interface UseProductSearchReturn {
@@ -42,12 +44,13 @@ export interface UseProductSearchReturn {
  *
  * Behavior contract (must match the prior inline implementations):
  *   - Empty/whitespace query => clear results, close dropdown
- *   - Non-empty query => 300ms debounce, then fetch up to 25 products
- *     matching `number ilike` or `description ilike`
+ *   - Non-empty query => 300ms debounce, then fetch up to `limit` products
+ *     (default 25) matching `number ilike` or `description ilike`
  *   - Strip `,` `(` `)` from the query before splicing into `.or()`
  *   - On fetch resolution, open the dropdown (regardless of result count)
  */
-export function useProductSearch(): UseProductSearchReturn {
+export function useProductSearch(options?: { limit?: number }): UseProductSearchReturn {
+  const limit = options?.limit ?? 25
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [results, setResults] = useState<ProductSearchResult[]>([])
@@ -69,20 +72,20 @@ export function useProductSearch(): UseProductSearchReturn {
       const q = sanitizeOrValue(query.trim())
       const { data } = await supabase
         .from('products')
-        .select('id, synergy_id, number, description')
+        .select('id, synergy_id, number, description, unit_price, synced_at')
         .or(safeOrRaw([
           { column: 'number', op: 'ilike', raw: `%${q}%` },
           { column: 'description', op: 'ilike', raw: `%${q}%` },
         ]))
         .order('number')
-        .limit(25)
+        .limit(limit)
         .returns<ProductSearchResult[]>()
       setResults(data ?? [])
       setDebouncedQuery(q)
       setComboOpen(true)
       setLoading(false)
     }, 300)
-  }, [query])
+  }, [query, limit])
 
   function clear() {
     setQuery('')
