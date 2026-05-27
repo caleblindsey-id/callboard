@@ -65,7 +65,12 @@ export async function sendMandrillEmail(
       to: recipients,
       preserve_recipients: true,
       track_opens: true,
-      track_clicks: true,
+      // Never rewrite links. Every CallBoard send is transactional with an
+      // action link (credit-review Release/Block, estimate approval). Click
+      // tracking wraps the href in a mandrillapp.com/track/click redirect that
+      // breaks when that host is DNS-blocked (e.g. the Imperial Dade network)
+      // and invites link scanners to pre-click/burn single-use tokens.
+      track_clicks: false,
       tags: input.tags ?? [],
       metadata: input.metadata ?? {},
     },
