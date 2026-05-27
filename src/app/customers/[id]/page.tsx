@@ -9,6 +9,7 @@ import ActiveToggle from './ActiveToggle'
 import ShowPricingToggle from './ShowPricingToggle'
 import AutoApproveThresholdInput from './AutoApproveThresholdInput'
 import AuditHistorySection from '@/components/AuditHistorySection'
+import CustomerNotes from '@/components/CustomerNotes'
 
 export default async function CustomerDetailPage({
   params,
@@ -99,6 +100,19 @@ export default async function CustomerDetailPage({
             threshold={customer.auto_approve_threshold}
           />
         </div>
+      </div>
+
+      {/* Billing Notes */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+            Billing Notes
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Log of contact attempts and customer responses
+          </p>
+        </div>
+        <CustomerNotes customerId={customer.id} />
       </div>
 
       {/* Contacts */}

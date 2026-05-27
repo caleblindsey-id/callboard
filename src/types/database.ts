@@ -412,6 +412,14 @@ export type CreditReviewInsert = Pick<
 
 export type CreditReviewUpdate = Partial<Omit<CreditReviewRow, 'id' | 'created_at'>>
 
+export type CustomerNoteRow = {
+  id: string
+  customer_id: number
+  user_id: string
+  note_text: string
+  created_at: string
+}
+
 export type TechnicianTargetRow = {
   id: string
   technician_id: string | null
@@ -848,6 +856,27 @@ export interface Database {
           },
           {
             foreignKeyName: 'equipment_notes_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      customer_notes: {
+        Row: CustomerNoteRow
+        Insert: Omit<CustomerNoteRow, 'id' | 'created_at'>
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: 'customer_notes_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'customer_notes_user_id_fkey'
             columns: ['user_id']
             isOneToOne: false
             referencedRelation: 'users'

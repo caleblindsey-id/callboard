@@ -150,9 +150,11 @@ export async function completeServiceTicket(
 }
 
 // --- Service tickets ready to bill (parallel to PM getBillingTickets) ---
-// Filters: status='completed' AND completed_at in [month, nextMonth). Status
-// flips to 'billed' on Mark Billed, which naturally drops rows from this query
-// — no separate billing_exported column on service_tickets.
+// Default scope is ALL completed service tickets regardless of month, so a
+// prior-month completion that was never billed stays visible. month/year are
+// optional and narrow on completed_at only when both are supplied. Status flips
+// to 'billed' on Mark Billed, which naturally drops rows from this query — no
+// separate billing_exported column on service_tickets.
 
 export type ServiceBillingTicket = {
   id: string
@@ -163,6 +165,7 @@ export type ServiceBillingTicket = {
   hours_worked: number | null
   synergy_order_number: string | null
   completed_at: string | null
+  customer_id: number | null
   customers: {
     name: string
     po_required: boolean
@@ -176,29 +179,31 @@ export type ServiceBillingTicket = {
 }
 
 export async function getServiceBillingTickets(
-  month: number,
-  year: number
+  month?: number,
+  year?: number
 ): Promise<ServiceBillingTicket[]> {
   const supabase = await createClient()
 
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`
-  const nextMonth = month === 12 ? 1 : month + 1
-  const nextYear = month === 12 ? year + 1 : year
-  const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00.000Z`
-
-  const { data, error } = await supabase
+  let query = supabase
     .from('service_tickets')
     .select(`
       id, work_order_number, status, billing_type, billing_amount, hours_worked,
-      synergy_order_number, completed_at, equipment_make, equipment_model,
+      synergy_order_number, completed_at, customer_id, equipment_make, equipment_model,
       customers ( name, po_required, ar_terms, credit_hold ),
       equipment ( make, model ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
     `)
     .eq('status', 'completed')
-    .gte('completed_at', startDate)
-    .lt('completed_at', endDate)
-    .order('completed_at', { ascending: false })
+
+  if (month !== undefined && year !== undefined) {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00.000Z`
+    query = query.gte('completed_at', startDate).lt('completed_at', endDate)
+  }
+
+  const { data, error } = await query.order('completed_at', { ascending: false })
 
   if (error) throw error
   return (data ?? []) as unknown as ServiceBillingTicket[]

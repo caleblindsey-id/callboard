@@ -15,8 +15,8 @@ import type { PartEntry, ProductResult } from './TicketActions'
 export function emptyPart(): PartEntry {
   return {
     description: '',
-    quantity: 1,
-    unitPrice: 0,
+    quantity: '1',
+    unitPrice: '',
     synergyProductId: null,
     isFromDb: false,
     searchOpen: false,
@@ -98,7 +98,7 @@ function handleSelectProduct(
     updated[index] = {
       ...updated[index],
       description: `${product.number} - ${product.description ?? ''}`,
-      unitPrice: zeroPrices ? 0 : (product.unit_price ?? 0),
+      unitPrice: zeroPrices ? '0' : String(product.unit_price ?? 0),
       synergyProductId: Number(product.synergy_id),
       isFromDb: true,
       searchOpen: false,
@@ -114,7 +114,7 @@ function handleClearProduct(
 ) {
   setter((prev) => {
     const updated = [...prev]
-    updated[index] = { ...updated[index], description: '', unitPrice: 0, synergyProductId: null, isFromDb: false }
+    updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, isFromDb: false }
     return updated
   })
 }
@@ -122,16 +122,14 @@ function handleClearProduct(
 function handleUpdatePartField(
   index: number,
   field: 'quantity' | 'unitPrice',
-  value: string | number,
+  value: string,
   setter: React.Dispatch<React.SetStateAction<PartEntry[]>>
 ) {
+  // Store the raw input string so the field can be empty (no stray leading
+  // "0"); parsed with parseFloat at the use sites. Mirrors hoursWorked.
   setter((prev) => {
     const updated = [...prev]
-    if (field === 'quantity') {
-      updated[index] = { ...updated[index], quantity: Number(value) }
-    } else {
-      updated[index] = { ...updated[index], unitPrice: Number(value) }
-    }
+    updated[index] = { ...updated[index], [field]: value }
     return updated
   })
 }
@@ -255,7 +253,7 @@ export function renderPartsSection({
                       />
                     </div>
                     <div className="hidden sm:block text-sm text-gray-600 dark:text-gray-400 text-right tabular-nums">
-                      ${(part.quantity * part.unitPrice).toFixed(2)}
+                      ${((parseFloat(part.quantity) || 0) * (parseFloat(part.unitPrice) || 0)).toFixed(2)}
                     </div>
                   </>
                 )}

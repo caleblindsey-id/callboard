@@ -887,7 +887,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     if (!entry || !entry.description.trim() || entry.alreadyRequested) return
     const newPart: PartRequest = {
       description: entry.description.trim(),
-      quantity: entry.quantity || 1,
+      quantity: Number(entry.quantity) || 1,
       product_number: entry.productNumber?.trim() || undefined,
       synergy_product_id: entry.synergyProductId ?? undefined,
       status: 'requested',
@@ -1105,9 +1105,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   }
 
   async function handleReopen() {
-    if (!confirm('Reopen this ticket? Completion data will be cleared.')) return
+    // Reopen from a worked state (in_progress/completed/billed) on a ticket
+    // whose estimate was already approved drops back to 'approved' so the
+    // estimate + approval survive and only completion data is cleared.
+    // Everything else (declined-revise, canceled, or worked tickets without
+    // an approved estimate) keeps the original wipe-to-'open' behavior.
+    const reopenToApproved =
+      ticket.estimate_approved &&
+      (ticket.status === SERVICE_STATUS.IN_PROGRESS ||
+        ticket.status === SERVICE_STATUS.COMPLETED ||
+        ticket.status === SERVICE_STATUS.BILLED)
+    const message = reopenToApproved
+      ? 'Reopen this ticket? Completion data will be cleared. The estimate and approval will be kept.'
+      : 'Reopen this ticket? Completion data will be cleared.'
+    if (!confirm(message)) return
     await apiAction(async () => {
-      await patchTicket({ status: 'open' })
+      await patchTicket({ status: reopenToApproved ? 'approved' : 'open' })
     })
   }
 
@@ -1147,7 +1160,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const allPartsReceived = livePartsRequested.length > 0 && partsReceivedCount === livePartsRequested.length
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
-    .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+    .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
   const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal
 
@@ -1155,7 +1168,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const estLaborTotal = (parseFloat(estimateLaborHours) || 0) * laborRate
   const estPartsTotal = estimateParts
     .filter((p) => !p.warrantyCovered)
-    .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+    .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal
 
   // Service address
@@ -2183,8 +2196,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </>
           )}
 
-          {/* Synergy order # — staff only, shown for any ticket that may need billing */}
-          {isStaff && (ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined') && (
+          {/* Synergy order # — staff only, for the parts-ordering flow (pre-completion).
+              On completed/billed tickets the field lives in the Actions card instead. */}
+          {isStaff && !['open', 'canceled', 'declined', 'completed', 'billed'].includes(ticket.status) && (
             <SynergyOrderFields
               initialOrder={ticket.synergy_order_number ?? ''}
               onSave={handleSaveSynergyOrderNumber}
@@ -2237,12 +2251,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </button>
           )}
 
-          {/* Completed: Mark Billed (staff only) */}
+          {/* Completed: Mark Billed (staff only) — Synergy Order # entered right here */}
           {ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
             <div className="space-y-2">
+              <SynergyOrderFields
+                initialOrder={synergyOrderNumber}
+                onSave={handleSaveSynergyOrderNumber}
+                loading={loading}
+              />
               {!synergyOrderNumber.trim() && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Enter the Synergy Order # in the Parts section above before billing.
+                  Enter and save the Synergy Order # above before billing.
                 </p>
               )}
               <button
@@ -2253,6 +2272,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 {loading ? 'Saving...' : 'Mark Billed'}
               </button>
             </div>
+          )}
+
+          {/* Billed: show the recorded Synergy order # for reference (staff) */}
+          {ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim() && (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Billed under Synergy Order # <span className="font-medium text-gray-900 dark:text-white">{synergyOrderNumber}</span>
+            </p>
           )}
 
           {/* Inside ticket pickup toggle */}

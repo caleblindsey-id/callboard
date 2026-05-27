@@ -24,8 +24,11 @@ export interface ProductResult {
 
 export interface PartEntry {
   description: string
-  quantity: number
-  unitPrice: number
+  // quantity/unitPrice are kept as raw input strings (mirroring hoursWorked)
+  // so the fields can be empty instead of showing a stray leading "0"/"1"
+  // that the user has to delete. Parsed with parseFloat at the use sites.
+  quantity: string
+  unitPrice: string
   synergyProductId: number | null
   isFromDb: boolean
   searchOpen: boolean
@@ -45,8 +48,8 @@ interface TicketActionsProps {
 function partsFromSaved(saved: PartUsed[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
-    quantity: p.quantity,
-    unitPrice: p.unit_price,
+    quantity: String(p.quantity),
+    unitPrice: String(p.unit_price),
     synergyProductId: p.synergy_product_id,
     isFromDb: p.synergy_product_id != null,
     searchOpen: false,
@@ -58,8 +61,8 @@ function partsFromSaved(saved: PartUsed[]): PartEntry[] {
 function partsFromDefaults(defaults: { synergy_product_id: number; quantity: number; description: string }[]): PartEntry[] {
   return defaults.map((d) => ({
     description: d.description,
-    quantity: d.quantity,
-    unitPrice: 0,
+    quantity: String(d.quantity),
+    unitPrice: '0',
     synergyProductId: d.synergy_product_id,
     isFromDb: true,
     searchOpen: false,
@@ -72,8 +75,8 @@ function toPartUsed(entries: PartEntry[]): PartUsed[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
-    quantity: p.quantity,
-    unit_price: p.unitPrice,
+    quantity: parseFloat(p.quantity) || 0,
+    unit_price: parseFloat(p.unitPrice) || 0,
   }))
 }
 
@@ -224,7 +227,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   // ── Computed totals ──
 
   const additionalPartsTotal = additionalParts.reduce(
-    (sum, p) => sum + p.quantity * p.unitPrice, 0
+    (sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0
   )
   const additionalLaborTotal = (parseFloat(additionalHoursWorked) || 0) * laborRate
   const additionalSubtotal = additionalLaborTotal + additionalPartsTotal
