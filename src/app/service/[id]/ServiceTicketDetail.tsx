@@ -17,6 +17,7 @@ import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
+import DiagnosticFeeCard from './DiagnosticFeeCard'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
@@ -139,7 +140,7 @@ function computeWorkflowProps({
         nextActor = isTech ? 'Tech revises estimate' : 'Tech updating estimate'
         blocker = 'Manager requested more info'
       } else {
-        nextActor = isTech ? 'Submit estimate' : 'Tech to submit estimate'
+        nextActor = isTech ? 'Build the estimate' : 'Tech to build estimate'
       }
       break
     case 'estimated':
@@ -156,7 +157,7 @@ function computeWorkflowProps({
       }
       break
     case 'in_progress':
-      nextActor = isTech ? 'Complete the ticket' : 'Tech completing work'
+      nextActor = isTech ? 'Complete the job' : 'Tech completing work'
       break
     case 'completed':
       nextActor = isStaff ? 'Bill in Synergy' : 'Office to bill'
@@ -1537,7 +1538,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         >
           {/* Show existing estimate breakdown */}
           {ticket.estimate_amount != null && (
-            <div className="space-y-3 mb-4">
+            <div className="space-y-3">
               <div className="flex items-center gap-3 mb-2">
                 <InfoField label="Approval Status">
                   {ticket.estimate_approved ? (
@@ -1707,7 +1708,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               Both paths require a note explaining who told us — shown via
               an inline-expand textarea before the action commits. */}
           {ticket.status === SERVICE_STATUS.ESTIMATED && isStaff && (
-            <div className="mt-3">
+            <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
+                Manager Decision
+              </p>
               {manualDecisionMode === null ? (
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -1796,18 +1800,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           )}
 
-          {/* Decline reason */}
-          {ticket.status === SERVICE_STATUS.DECLINED && ticket.decline_reason && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <InfoField label="Decline Reason">
-                <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
-              </InfoField>
-            </div>
-          )}
-
-          {/* Reopen & Revise for declined tickets */}
+          {/* Declined: reason + reopen, grouped */}
           {ticket.status === SERVICE_STATUS.DECLINED && (
-            <div className="mt-3">
+            <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700 space-y-3">
+              <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                Estimate Declined
+              </p>
+              {ticket.decline_reason && (
+                <InfoField label="Decline Reason">
+                  <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
+                </InfoField>
+              )}
               <button
                 onClick={handleReopen}
                 disabled={loading}
@@ -1818,72 +1821,23 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           )}
 
-          {/* Diagnostic fee — staff can capture / edit anytime while the ticket is live */}
-          {isStaff && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                Diagnostic Fee <span className="normal-case font-normal text-gray-400 dark:text-gray-500">(if billed separately in Synergy)</span>
-              </p>
-              <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Synergy Invoice #
-                  </label>
-                  <input
-                    type="text"
-                    value={diagnosticInvoiceNumber}
-                    onChange={(e) => setDiagnosticInvoiceNumber(e.target.value)}
-                    placeholder="e.g. 612978"
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Amount
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-500 dark:text-gray-400">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={diagnosticCharge}
-                      onChange={(e) => setDiagnosticCharge(e.target.value)}
-                      placeholder="0.00"
-                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={handleSubmitDiagnosticCharge}
-                  disabled={loading}
-                  className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
-                >
-                  Save
-                </button>
-              </div>
-              {(ticket.diagnostic_charge != null || ticket.diagnostic_invoice_number) && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Current:
-                  {ticket.diagnostic_charge != null && ` $${ticket.diagnostic_charge.toFixed(2)}`}
-                  {ticket.diagnostic_invoice_number && ` on invoice #${ticket.diagnostic_invoice_number}`}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Submit estimate form — techs or staff when ticket is open */}
+          {/* Build / revise estimate form — techs or staff when ticket is open */}
           {ticket.status === SERVICE_STATUS.OPEN && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
               {!showEstimateForm ? (
-                <button
-                  onClick={() => setShowEstimateForm(true)}
-                  className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
-                >
-                  Submit Estimate
-                </button>
+                <>
+                  <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
+                    {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+                  </p>
+                  <button
+                    onClick={() => setShowEstimateForm(true)}
+                    className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
+                  >
+                    {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+                  </button>
+                </>
               ) : (
-                <form onSubmit={handleSubmitEstimate} className="space-y-4 mt-3">
+                <form onSubmit={handleSubmitEstimate} className="space-y-4">
                   {/* Labor Hours */}
                   <div className="max-w-lg">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1978,6 +1932,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           )}
         </CardSection>
+      )}
+
+      {/* ── Diagnostic Fee (staff, any active stage) ── */}
+      {isStaff && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
+        <DiagnosticFeeCard
+          invoiceNumber={diagnosticInvoiceNumber}
+          setInvoiceNumber={setDiagnosticInvoiceNumber}
+          amount={diagnosticCharge}
+          setAmount={setDiagnosticCharge}
+          onSave={handleSubmitDiagnosticCharge}
+          loading={loading}
+          currentCharge={ticket.diagnostic_charge}
+          currentInvoiceNumber={ticket.diagnostic_invoice_number}
+        />
       )}
 
       {/* ── Section 5: Parts Requested ──
@@ -2247,7 +2215,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               onClick={() => setShowCompletionForm(true)}
               className="w-full sm:w-auto px-4 py-3 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
             >
-              Complete Ticket
+              Complete Job
             </button>
           )}
 
