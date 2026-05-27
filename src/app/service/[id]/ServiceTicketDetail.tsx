@@ -802,7 +802,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
   async function handleStartWork() {
     await apiAction(async () => {
-      await patchTicket({ status: 'in_progress' })
+      // PATCH returns the full updated row. On the approved -> in_progress
+      // transition the server prefills the work order from the approved
+      // estimate (parts, hours, diagnosis -> completion notes), so hydrate the
+      // already-mounted form state from the response — the useState seeds at
+      // mount captured the empty `approved`-state values and won't re-run.
+      // These setState calls run before router.refresh(), while ticket.status
+      // is still 'approved', so the auto-save effect early-returns on its
+      // status check and no spurious write-back fires.
+      const updated = await patchTicket({ status: 'in_progress' })
+      if (updated) {
+        setCompletionParts(
+          updated.parts_used && updated.parts_used.length > 0
+            ? partsFromSaved(updated.parts_used)
+            : []
+        )
+        setHoursWorked(updated.hours_worked != null ? String(updated.hours_worked) : '')
+        setCompletionNotes(updated.completion_notes ?? '')
+      }
     })
   }
 
@@ -2340,6 +2357,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
         <CardSection title="Complete Ticket" open={completionOpen}>
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
+            {/* Prefilled-from-estimate reminder. Only shown when an estimate was
+                approved — the work order was seeded from it on Start Work. Calls
+                out the diagnosis-vs-completion distinction explicitly so the tech
+                rewrites the notes to what was actually done. */}
+            {ticket.estimate_approved && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700/60 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+                These values were copied from the approved estimate. Update the
+                hours, parts, and completion notes to reflect the actual work
+                done before marking complete.
+              </div>
+            )}
+
             {/* Hours Worked */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

@@ -300,15 +300,40 @@ export async function PATCH(
         }
       }
 
-      // Auto-set started_at when transitioning to in_progress
+      // Auto-set started_at when transitioning to in_progress, and prefill the
+      // work order from the approved estimate so the tech adjusts to actuals
+      // instead of re-entering parts, hours, and the work description. Gated to
+      // the estimate path (approved -> in_progress); the warranty
+      // open -> in_progress path has no estimate to copy. Each field is seeded
+      // only when its work-order counterpart is empty so we never clobber
+      // tech-entered work — including the reopen-then-restart case, where the
+      // reopen branch below already cleared completion data while preserving the
+      // estimate, so a restart naturally re-prefills.
       if (nextStatus === 'in_progress') {
         const { data: ticketData } = await supabase
           .from('service_tickets')
-          .select('started_at')
+          .select(
+            'started_at, estimate_parts, estimate_labor_hours, diagnosis_notes, parts_used, hours_worked, completion_notes'
+          )
           .eq('id', id)
           .single()
         if (!ticketData?.started_at) {
           filtered.started_at = new Date().toISOString()
+        }
+        if (currentStatus === 'approved' && ticketData) {
+          const estimateParts = (ticketData.estimate_parts ?? []) as unknown[]
+          const currentParts = (ticketData.parts_used ?? []) as unknown[]
+          if (currentParts.length === 0 && estimateParts.length > 0) {
+            filtered.parts_used = estimateParts
+          }
+          if (ticketData.hours_worked == null && ticketData.estimate_labor_hours != null) {
+            filtered.hours_worked = ticketData.estimate_labor_hours
+          }
+          const currentNotes = ((ticketData.completion_notes ?? '') as string).trim()
+          const diagnosis = ((ticketData.diagnosis_notes ?? '') as string).trim()
+          if (currentNotes === '' && diagnosis !== '') {
+            filtered.completion_notes = diagnosis
+          }
         }
       }
 
