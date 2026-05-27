@@ -22,6 +22,29 @@ interface ServiceTicketFilters {
   waitingOnParts?: boolean
 }
 
+// Applies the non-status filters shared by the listing query and the
+// per-status count queries. Centralizing them (especially the waiting-on-parts
+// predicate) keeps the board's list and tab counts from drifting apart. Status
+// is intentionally NOT applied here — the list applies its single status filter
+// and the counts helper iterates every status separately.
+function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters): Q {
+  // The Supabase builder is chainable but its generics make a typed pass-through
+  // awkward; cast to a minimal chainable shape, reassign, and return as Q.
+  let q = query as unknown as {
+    eq(column: string, value: unknown): typeof q
+    neq(column: string, value: unknown): typeof q
+  }
+  if (filters?.technicianId) q = q.eq('assigned_technician_id', filters.technicianId)
+  if (filters?.customerId) q = q.eq('customer_id', filters.customerId)
+  if (filters?.priority) q = q.eq('priority', filters.priority)
+  if (filters?.ticketType) q = q.eq('ticket_type', filters.ticketType)
+  if (filters?.billingType) q = q.eq('billing_type', filters.billingType)
+  if (filters?.waitingOnParts) {
+    q = q.eq('parts_received', false).neq('parts_requested', '[]' as unknown as PartRequest[])
+  }
+  return q as unknown as Q
+}
+
 export async function getServiceTickets(filters?: ServiceTicketFilters): Promise<ServiceTicketWithJoins[]> {
   const supabase = await createClient()
 
@@ -47,19 +70,51 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
     .order('created_at', { ascending: false })
 
   if (filters?.status) query = query.eq('status', filters.status)
-  if (filters?.technicianId) query = query.eq('assigned_technician_id', filters.technicianId)
-  if (filters?.customerId) query = query.eq('customer_id', filters.customerId)
-  if (filters?.priority) query = query.eq('priority', filters.priority)
-  if (filters?.ticketType) query = query.eq('ticket_type', filters.ticketType)
-  if (filters?.billingType) query = query.eq('billing_type', filters.billingType)
-  if (filters?.waitingOnParts) {
-    query = query.eq('parts_received', false).neq('parts_requested', '[]' as unknown as PartRequest[])
-  }
+  query = applyServiceTicketFilters(query, filters)
 
   const { data, error } = await query
 
   if (error) throw error
   return data as ServiceTicketWithJoins[]
+}
+
+// --- Service ticket counts grouped by status (service board tabs) ---
+// Powers the status tabs on /service: each tab shows how many tickets sit in
+// that stage, plus an `all` total. Uses one count:'exact', head:true query per
+// status (+ one for the total), parallelized — same antipattern-free shape as
+// getServiceTicketCounts below. Counts honor every filter EXCEPT status, so the
+// numbers stay correct as the user narrows by priority / type / tech / parts.
+
+const SERVICE_STATUS_VALUES: ServiceTicketStatus[] = [
+  'open', 'estimated', 'approved', 'in_progress', 'completed', 'billed', 'declined', 'canceled',
+]
+
+export type ServiceTicketStatusCounts = Record<ServiceTicketStatus, number> & { all: number }
+
+export async function getServiceTicketStatusCounts(
+  filters?: ServiceTicketFilters
+): Promise<ServiceTicketStatusCounts> {
+  const supabase = await createClient()
+
+  const baseQuery = () =>
+    applyServiceTicketFilters(
+      supabase.from('service_tickets').select('id', { count: 'exact', head: true }),
+      filters
+    )
+
+  const allQuery = baseQuery()
+  const statusQueries = SERVICE_STATUS_VALUES.map((status) => baseQuery().eq('status', status))
+
+  const [allResult, ...statusResults] = await Promise.all([allQuery, ...statusQueries])
+
+  if (allResult.error) throw allResult.error
+  const counts = { all: allResult.count ?? 0 } as ServiceTicketStatusCounts
+  SERVICE_STATUS_VALUES.forEach((status, i) => {
+    const r = statusResults[i]
+    if (r.error) throw r.error
+    counts[status] = r.count ?? 0
+  })
+  return counts
 }
 
 // --- Get single service ticket with full detail ---
