@@ -1825,17 +1825,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           {ticket.status === SERVICE_STATUS.OPEN && (
             <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
               {!showEstimateForm ? (
-                <>
-                  <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
-                    {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
-                  </p>
-                  <button
-                    onClick={() => setShowEstimateForm(true)}
-                    className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
-                  >
-                    {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
-                  </button>
-                </>
+                <button
+                  onClick={() => setShowEstimateForm(true)}
+                  className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
+                >
+                  {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+                </button>
               ) : (
                 <form onSubmit={handleSubmitEstimate} className="space-y-4">
                   {/* Labor Hours */}
