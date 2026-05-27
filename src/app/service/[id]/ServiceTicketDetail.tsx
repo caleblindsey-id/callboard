@@ -2294,7 +2294,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
               } disabled:opacity-50`}
             >
-              {ticket.picked_up_at ? 'Picked Up' : ticket.awaiting_pickup ? 'Awaiting Pickup' : 'Mark Awaiting Pickup'}
+              {ticket.picked_up_at ? 'Customer Picked Up' : ticket.awaiting_pickup ? 'Awaiting Customer Pickup' : 'Mark Awaiting Customer Pickup'}
             </button>
           )}
         </div>

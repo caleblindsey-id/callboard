@@ -101,7 +101,7 @@ export default function TechDashboard(p: Props) {
                 <div className="flex items-center gap-2">
                   <PackageCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                    My Parts Ready
+                    My Parts Ready for Pickup
                   </span>
                 </div>
                 <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">

@@ -80,7 +80,7 @@ export default function PartsPipeline(props: Props) {
     href: partsHref,
   })
   cards.push({
-    title: 'Ready for Pickup',
+    title: 'Parts Ready for Pickup',
     total: props.pmPartsReady + props.svcPartsReady,
     pm: props.pmPartsReady,
     service: props.svcPartsReady,
