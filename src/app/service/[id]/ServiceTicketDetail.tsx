@@ -504,8 +504,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
-  // Track mobile viewport so the FAB only renders on small screens. The check
-  // runs after mount to avoid SSR hydration mismatch.
+  // Refs to the estimate / completion cards so opening a form from the Next
+  // Step bar (top or mobile sticky) scrolls it into view — on a phone the
+  // trigger can sit a full screen away from the form.
+  const estimateCardRef = useRef<HTMLDivElement>(null)
+  const completionCardRef = useRef<HTMLDivElement>(null)
+
+  // Track mobile viewport so the mobile sticky action bar / quick-complete
+  // sheet only render on small screens. Runs after mount to avoid SSR mismatch.
   useEffect(() => {
     if (typeof window === 'undefined') return
     const mq = window.matchMedia('(max-width: 640px)')
@@ -514,6 +520,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [])
+
+  // Scroll the relevant form into view when opened from a Next Step action.
+  useEffect(() => {
+    if (showEstimateForm) {
+      estimateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showEstimateForm])
+  useEffect(() => {
+    if (showCompletionForm) {
+      completionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [showCompletionForm])
 
   // Load preview URLs for existing photos
   useEffect(() => {
@@ -1257,12 +1275,26 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim().length > 0
   const showActionsCard = isManager || showPickupToggle || showBilledRef
 
+  // Mobile sticky bottom action bar: keeps the single-tap primary action
+  // reachable on a phone (the top Next Step bar scrolls away). Covers the
+  // common tech stages only — manager input stages (estimated decision,
+  // completed billing) keep using the top bar, which has room for their
+  // sub-inputs. When it shows, the top bar is hidden for that stage so the
+  // action isn't duplicated.
+  const showMobileActionBar =
+    isMobile && !showEstimateForm && !showCompletionForm && !quickCompleteOpen && (
+      isWarrantyOpen ||
+      (ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen) ||
+      (ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking) ||
+      ticket.status === SERVICE_STATUS.IN_PROGRESS
+    )
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${showMobileActionBar ? 'pb-24' : ''}`}>
       {/* Workflow state card — top of detail page, always visible. */}
       <WorkflowStatusCard
         state={workflowProps.state}
@@ -1371,8 +1403,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           The same `viewerHasPrimaryAction` gate suppresses the redundant
           "Next:" line on the status card above. The estimate builder and
           completion form still live in their own cards below; the buttons
-          here open them. */}
-      {viewerHasPrimaryAction && (
+          here open them. On mobile, simple stages are handled by the sticky
+          bottom bar, so the top bar yields to it (no duplicate button). */}
+      {viewerHasPrimaryAction && !showMobileActionBar && !quickCompleteOpen && (
         <div className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-5 space-y-3">
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Next Step
@@ -1727,6 +1760,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           A fresh `open` ticket shows no empty estimate card. */}
       {(ticket.status === SERVICE_STATUS.ESTIMATED || ticket.status === SERVICE_STATUS.APPROVED ||
         ticket.status === SERVICE_STATUS.DECLINED || ticket.estimate_amount != null || showEstimateForm) && (
+        <div ref={estimateCardRef}>
         <CardSection
           title="Diagnosis & Estimate"
           open={estimateOpen}
@@ -2025,6 +2059,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           )}
         </CardSection>
+        </div>
       )}
 
       {/* ── Diagnostic Fee (staff, any active stage) ── */}
@@ -2341,6 +2376,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           Collapsible — opens by default in_progress; on mobile it's also the
           only open section. */}
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
+        <div ref={completionCardRef}>
         <CardSection title="Complete Job" open={completionOpen}>
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Hours Worked */}
@@ -2559,6 +2595,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </div>
           </form>
         </CardSection>
+        </div>
       )}
 
       {/* ── Section 8: Billing Summary (read-only, completed/billed) ── */}
@@ -2687,21 +2724,51 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         onCancel={() => setRequestInfoOpen(false)}
       />
 
-      {/* Quick Complete bottom sheet — mobile + tech only, in_progress.
-          Rendered as a fixed-position FAB anchored bottom-right; only on
-          ≤640px viewports per the mobile-first-for-techs rule. */}
-      {quickCompleteEligible && isMobile && !quickCompleteOpen && (
-        <button
-          type="button"
-          onClick={() => setQuickCompleteOpen(true)}
-          className="fixed bottom-6 right-4 z-40 px-5 py-3 rounded-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-lg min-h-[48px] min-w-[48px] flex items-center gap-2"
-          aria-label="Quick complete this ticket"
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.25} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-          Quick Complete
-        </button>
+      {/* Mobile sticky action bar — the primary action stays reachable at the
+          bottom of the screen on phones (≤640px) per the mobile-first-for-techs
+          rule. in_progress opens the QuickCompleteSheet for the assigned tech,
+          else the inline completion form. */}
+      {showMobileActionBar && (
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          {isWarrantyOpen && (
+            <button
+              type="button"
+              onClick={handleStartWork}
+              disabled={loading}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[48px]"
+            >
+              {loading ? 'Starting...' : 'Start Work'}
+            </button>
+          )}
+          {ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen && (
+            <button
+              type="button"
+              onClick={() => setShowEstimateForm(true)}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[48px]"
+            >
+              {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+            </button>
+          )}
+          {ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking && (
+            <button
+              type="button"
+              onClick={handleStartWork}
+              disabled={loading}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[48px]"
+            >
+              {loading ? 'Starting...' : 'Start Work'}
+            </button>
+          )}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
+            <button
+              type="button"
+              onClick={() => (quickCompleteEligible ? setQuickCompleteOpen(true) : setShowCompletionForm(true))}
+              className="w-full px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[48px]"
+            >
+              Complete Job
+            </button>
+          )}
+        </div>
       )}
       <QuickCompleteSheet
         key={`quick-complete-${quickCompleteOpen}`}
