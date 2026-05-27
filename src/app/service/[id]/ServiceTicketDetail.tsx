@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
-import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import SignaturePad from '@/components/SignaturePad'
@@ -1283,14 +1282,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     (ticket.status === SERVICE_STATUS.COMPLETED && isStaff)
   const suppressNextActor = viewerHasPrimaryAction || showEstimateForm || showCompletionForm
 
-  // Actions card now holds only secondary controls (the primary stage action
-  // lives in the Next Step bar). Render it only when it has content so we
-  // don't ship an empty "Actions" card.
+  // Secondary controls card holds only post-work staff controls (pickup
+  // toggle, billed reference) and now lives down with the billing context.
+  // The primary stage action lives in the Next Step bar; manager destructive
+  // actions live in their own footer at the very bottom of the page. Render
+  // the secondary card only when it has content so we don't ship an empty one.
   const showPickupToggle =
     ticket.ticket_type === 'inside' && ticket.status === SERVICE_STATUS.COMPLETED && isStaff
   const showBilledRef =
     ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim().length > 0
-  const showActionsCard = isManager || showPickupToggle || showBilledRef
+  const showSecondaryControls = showPickupToggle || showBilledRef
 
   // Mobile sticky bottom action bar: keeps the single-tap primary action
   // reachable on a phone (the top Next Step bar scrolls away). Covers the
@@ -1319,6 +1320,44 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         blocker={workflowProps.blocker}
         enteredAt={ticket.updated_at}
       />
+
+      {/* Ticket attributes — priority / type / billing / assignment.
+          Sits directly under the status card so the viewer knows what kind of
+          ticket this is before the alerts and the Next Step action. Status
+          itself is owned by the WorkflowStatusCard above (not repeated here). */}
+      <Card>
+        <div className="flex flex-wrap items-center gap-2">
+          {priorityConfig[ticket.priority] && (
+            <Badge {...priorityConfig[ticket.priority]} />
+          )}
+          {ticketTypeConfig[ticket.ticket_type] && (
+            <Badge {...ticketTypeConfig[ticket.ticket_type]} />
+          )}
+          <Badge
+            label={billingTypeLabels[ticket.billing_type] ?? ticket.billing_type}
+            classes="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+          />
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              Created {new Date(ticket.created_at).toLocaleDateString()}
+              {ticket.assigned_technician && (
+                <> | Assigned to <span className="font-medium text-gray-700 dark:text-gray-300">{ticket.assigned_technician.name}</span></>
+              )}
+            </span>
+            {/* Reopen — a routine manager action, kept accessible at the top.
+                Cancel/Delete remain in the bottom Manager Controls footer. */}
+            {isManager && ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined' && (
+              <button
+                onClick={handleReopen}
+                disabled={loading}
+                className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+              >
+                Reopen
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {/* Request More Info note — surfaced prominently when the manager has
           sent the estimate back. Visible to anyone viewing the ticket so
@@ -1585,29 +1624,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           )}
         </div>
       )}
-
-      {/* ── Section 1: Header Badges ── */}
-      <Card>
-        <div className="flex flex-wrap items-center gap-2">
-          <ServiceStatusBadge status={ticket.status} />
-          {priorityConfig[ticket.priority] && (
-            <Badge {...priorityConfig[ticket.priority]} />
-          )}
-          {ticketTypeConfig[ticket.ticket_type] && (
-            <Badge {...ticketTypeConfig[ticket.ticket_type]} />
-          )}
-          <Badge
-            label={billingTypeLabels[ticket.billing_type] ?? ticket.billing_type}
-            classes="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-          />
-          <span className="text-sm text-gray-500 dark:text-gray-400 ml-auto">
-            Created {new Date(ticket.created_at).toLocaleDateString()}
-            {ticket.assigned_technician && (
-              <> | Assigned to <span className="font-medium text-gray-700 dark:text-gray-300">{ticket.assigned_technician.name}</span></>
-            )}
-          </span>
-        </div>
-      </Card>
 
       {/* ── Section 2: Customer & Equipment Info ── */}
       <Card title="Customer & Equipment">
@@ -2321,74 +2337,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         </CardSection>
       )}
 
-      {/* ── Section 6: Secondary actions ──
-          The primary stage action lives in the Next Step bar at the top.
-          This card holds only secondary controls (pickup toggle, billed
-          reference) plus manager actions, and renders only when non-empty. */}
-      {showActionsCard && (
-      <Card title="Actions">
-        <div className="space-y-3">
-          {/* Billed: show the recorded Synergy order # for reference (staff) */}
-          {showBilledRef && (
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Billed under Synergy Order # <span className="font-medium text-gray-900 dark:text-white">{synergyOrderNumber}</span>
-            </p>
-          )}
-
-          {/* Inside ticket pickup toggle */}
-          {showPickupToggle && (
-            <button
-              onClick={handleTogglePickup}
-              disabled={loading}
-              className={`w-full sm:w-auto px-4 py-3 text-sm font-medium rounded-md transition-colors min-h-[44px] ${
-                ticket.picked_up_at
-                  ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-600'
-                  : ticket.awaiting_pickup
-                    ? 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-600'
-                    : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-              } disabled:opacity-50`}
-            >
-              {ticket.picked_up_at ? 'Customer Picked Up' : ticket.awaiting_pickup ? 'Awaiting Customer Pickup' : 'Mark Awaiting Customer Pickup'}
-            </button>
-          )}
-        </div>
-
-        {/* Manager actions — always visible */}
-        {isManager && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Manager Actions</p>
-            <div className="flex flex-wrap gap-2">
-              {ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined' && (
-                <button
-                  onClick={handleReopen}
-                  disabled={loading}
-                  className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-                >
-                  Reopen
-                </button>
-              )}
-              {ticket.status !== 'canceled' && (
-                <button
-                  onClick={handleCancel}
-                  disabled={loading}
-                  className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-                >
-                  Cancel Ticket
-                </button>
-              )}
-              <button
-                onClick={handleDelete}
-                disabled={loading}
-                className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        )}
-      </Card>
-      )}
-
       {/* ── Section 7: Completion Form ──
           Collapsible — opens by default in_progress; on mobile it's also the
           only open section. */}
@@ -2707,6 +2655,39 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         </Card>
       )}
 
+      {/* ── Secondary controls (pickup toggle / billed reference) ──
+          Post-work staff controls; live with the billing context rather than
+          mid-workflow. Render only when non-empty. */}
+      {showSecondaryControls && (
+        <Card title="Actions">
+          <div className="space-y-3">
+            {/* Billed: show the recorded Synergy order # for reference (staff) */}
+            {showBilledRef && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Billed under Synergy Order # <span className="font-medium text-gray-900 dark:text-white">{synergyOrderNumber}</span>
+              </p>
+            )}
+
+            {/* Inside ticket pickup toggle */}
+            {showPickupToggle && (
+              <button
+                onClick={handleTogglePickup}
+                disabled={loading}
+                className={`w-full sm:w-auto px-4 py-3 text-sm font-medium rounded-md transition-colors min-h-[44px] ${
+                  ticket.picked_up_at
+                    ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-600'
+                    : ticket.awaiting_pickup
+                      ? 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-600'
+                      : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                } disabled:opacity-50`}
+              >
+                {ticket.picked_up_at ? 'Customer Picked Up' : ticket.awaiting_pickup ? 'Awaiting Customer Pickup' : 'Mark Awaiting Customer Pickup'}
+              </button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Completion details for techs (no billing) */}
       {(ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED) && isTech && (
         <Card title="Completion Details">
@@ -2739,6 +2720,33 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               </div>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* ── Manager controls ──
+          Destructive, low-frequency actions (cancel / delete) live at the very
+          bottom of the page so they can't be hit by accident mid-task. Reopen
+          is routine, so it lives up top in the attributes strip instead. */}
+      {isManager && (
+        <Card title="Manager Controls">
+          <div className="flex flex-wrap gap-2">
+            {ticket.status !== 'canceled' && (
+              <button
+                onClick={handleCancel}
+                disabled={loading}
+                className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+              >
+                Cancel Ticket
+              </button>
+            )}
+            <button
+              onClick={handleDelete}
+              disabled={loading}
+              className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              Delete
+            </button>
+          </div>
         </Card>
       )}
 
