@@ -9,6 +9,7 @@ import { ArrowLeft } from 'lucide-react'
 import EquipmentForm from './EquipmentForm'
 import ScheduleSection from './ScheduleSection'
 import DefaultProductsSection from './DefaultProductsSection'
+import DefaultProductsReadOnly from './DefaultProductsReadOnly'
 import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import AuditHistorySection from '@/components/AuditHistorySection'
@@ -103,6 +104,10 @@ export default async function EquipmentDetailPage({
           equipmentId={equipment.id}
           initialProducts={equipment.default_products ?? []}
         />
+      )}
+
+      {isTech && (
+        <DefaultProductsReadOnly products={equipment.default_products ?? []} />
       )}
 
       <ServiceHistory items={allHistory} showBilling={showBilling} />
