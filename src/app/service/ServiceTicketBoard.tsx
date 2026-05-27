@@ -11,16 +11,19 @@ import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { activeCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 
-const STATUS_OPTIONS: { value: '' | ServiceTicketStatus; label: string }[] = [
-  { value: '', label: 'All Statuses' },
-  { value: 'open', label: 'Open' },
-  { value: 'estimated', label: 'Estimated' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'billed', label: 'Billed' },
-  { value: 'declined', label: 'Declined' },
-  { value: 'canceled', label: 'Canceled' },
+// Status tabs for the board — workflow order (actionable stages first, terminal
+// states last) so a manager can scan and follow up by stage. `all` is the count
+// key for the catch-all tab. Mirrors the ServiceTicketStatus enum.
+const STATUS_TABS: { value: '' | ServiceTicketStatus; label: string; countKey: string }[] = [
+  { value: '', label: 'All', countKey: 'all' },
+  { value: 'open', label: 'Open', countKey: 'open' },
+  { value: 'estimated', label: 'Estimated', countKey: 'estimated' },
+  { value: 'approved', label: 'Approved', countKey: 'approved' },
+  { value: 'in_progress', label: 'In Progress', countKey: 'in_progress' },
+  { value: 'completed', label: 'Completed', countKey: 'completed' },
+  { value: 'billed', label: 'Billed', countKey: 'billed' },
+  { value: 'declined', label: 'Declined', countKey: 'declined' },
+  { value: 'canceled', label: 'Canceled', countKey: 'canceled' },
 ]
 
 const PRIORITY_OPTIONS: { value: '' | ServicePriority; label: string }[] = [
@@ -100,6 +103,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
 
   const [tickets, setTickets] = useState<ServiceTicketWithJoins[]>([])
   const [users, setUsers] = useState<UserRow[]>([])
+  const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -126,9 +130,9 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
         const params = new URLSearchParams()
         if (statusFilter) params.set('status', statusFilter)
         if (priorityFilter) params.set('priority', priorityFilter)
-        if (typeFilter) params.set('type', typeFilter)
+        if (typeFilter) params.set('ticketType', typeFilter)
         if (techFilter) params.set('technicianId', techFilter)
-        if (waitingOnParts) params.set('waiting_on_parts', 'true')
+        if (waitingOnParts) params.set('waitingOnParts', 'true')
 
         const res = await fetch(`/api/service-tickets?${params.toString()}`)
         if (!res.ok) {
@@ -147,24 +151,70 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
     fetchTickets()
   }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts])
 
+  // Tab counts are intentionally NOT keyed on statusFilter — switching tabs
+  // shouldn't reload the numbers, only the other filters narrow them.
+  useEffect(() => {
+    async function fetchCounts() {
+      try {
+        const params = new URLSearchParams()
+        if (priorityFilter) params.set('priority', priorityFilter)
+        if (typeFilter) params.set('ticketType', typeFilter)
+        if (techFilter) params.set('technicianId', techFilter)
+        if (waitingOnParts) params.set('waitingOnParts', 'true')
+
+        const res = await fetch(`/api/service-tickets/counts?${params.toString()}`)
+        if (res.ok) {
+          setCounts(await res.json())
+        }
+      } catch {
+        // non-critical — tabs just render without counts
+      }
+    }
+    fetchCounts()
+  }, [priorityFilter, typeFilter, techFilter, waitingOnParts])
+
   return (
     <div className="space-y-6">
+      {/* Status tabs — primary way to scan/follow up by stage. Horizontal-scrolls on mobile. */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter tickets by status">
+          {STATUS_TABS.map((tab) => {
+            const active = statusFilter === tab.value
+            const count = counts ? counts[tab.countKey] ?? 0 : undefined
+            return (
+              <button
+                key={tab.countKey}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setStatusFilter(tab.value)}
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
+                  active
+                    ? 'bg-slate-800 text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {tab.label}
+                {count !== undefined && (
+                  <span
+                    className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] text-xs font-semibold ${
+                      active
+                        ? 'bg-white/20 text-white'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
-          <div className="w-full lg:w-auto">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as '' | ServiceTicketStatus)}
-              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-
           <div className="w-full lg:w-auto">
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
             <select
