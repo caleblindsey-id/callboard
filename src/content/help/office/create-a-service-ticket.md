@@ -46,4 +46,4 @@ The customer signs and approves (or declines) on that page. A manager can also a
 
 - **Diagnosis Notes are customer-visible.** Don't put internal notes there.
 - **The approval link expires after 7 days.** Resend if the customer is slow.
-- A **credit-hold** customer routes the ticket to AR — work stays gated until a manager releases the hold.
+- A **credit-hold** customer routes the ticket to AR — work stays gated until the hold is released. See [Release or block a credit hold](/help/managers/release-a-credit-hold).
