@@ -8,6 +8,7 @@ import rehypeAutolinkHeadings from 'rehype-autolink-headings'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getHelpNav, getHelpPage, ROLE_HOME_CATEGORY } from '@/lib/help'
 import HelpNav from './HelpNav'
+import HelpSearch from './HelpSearch'
 
 export const metadata = {
   title: 'Help & Guides — CallBoard',
@@ -27,7 +28,10 @@ export default async function HelpPage({ params }: { params: Promise<{ slug?: st
   return (
     <div className="p-6">
       <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-10 max-w-5xl">
-        <HelpNav groups={nav} defaultOpen={defaultOpen} />
+        <div className="space-y-4">
+          <HelpSearch />
+          <HelpNav groups={nav} defaultOpen={defaultOpen} />
+        </div>
 
         <div className="mt-6 lg:mt-0 min-w-0">
           {page ? (

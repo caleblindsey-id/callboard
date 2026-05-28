@@ -21,6 +21,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/tech-leads(\/|$)/,                                // POST /api/tech-leads (Submit Lead modal)
   /^\/api\/ship-to-requests(\/|$)/,                          // POST /api/ship-to-requests (request new ship-to)
   /^\/api\/feedback$/,                                       // POST /api/feedback (FAB submission — all roles)
+  /^\/api\/help\/search$/,                                   // GET /api/help/search (help center search — all roles)
   /^\/api\/ace-labor\/[0-9a-f-]{36}$/i,                      // PATCH /api/ace-labor/[uuid] (tech edits pending/rejected entry from ticket detail)
 ]
 
