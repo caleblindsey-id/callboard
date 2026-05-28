@@ -61,7 +61,7 @@ Note anything the office or customer should know about the visit.
 CallBoard checks a few things before it accepts the ticket:
 
 - Machine Hours, Date Code, and the customer signature + printed name must be filled in.
-- **All ordered parts must be marked received.** If a part is still on order, you'll see a message and can't complete yet — the office needs to receive the part in the **Parts Queue** first.
+- **All ordered parts must be marked received.** If a part is still on order, you'll see a message and can't complete yet — the office needs to receive the part in the [Parts Queue](/help/office/order-parts) first.
 
 If everything checks out, the ticket moves to *Completed* and the next PM for this machine is scheduled automatically.
 
