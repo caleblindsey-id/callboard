@@ -4,6 +4,8 @@ import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getLaborRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
+import { buildProductCostMap } from '@/lib/db/products'
+import { checkPartLines } from '@/lib/margin'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -123,6 +125,33 @@ export async function POST(
         { error: `Ticket must be in_progress to complete (currently: ${current.status})` },
         { status: 409 }
       )
+    }
+
+    // Margin floor (parts only, per-line): every billable part must keep >= 15%
+    // gross margin over loaded cost. Cost is sourced from the products catalog
+    // (server-authoritative); the line unit_cost snapshot is overwritten from
+    // it. Warranty tickets bill no parts, so the floor doesn't apply there.
+    {
+      const billingTypeForFloor = current.billing_type as string
+      const lines = parts_used ?? []
+      if (billingTypeForFloor !== 'warranty' && lines.length > 0) {
+        const billable =
+          billingTypeForFloor === 'partial_warranty'
+            ? lines.filter((p) => !p.warranty_covered)
+            : lines
+        const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
+        const check = checkPartLines(billable, (pid) => costMap.get(pid))
+        if (!check.ok) {
+          const v = check.violations[0]
+          return NextResponse.json(
+            {
+              error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
+              violations: check.violations,
+            },
+            { status: 400 },
+          )
+        }
+      }
     }
 
     // Server-authoritative billing math (mirrors PM /complete in section 2).
