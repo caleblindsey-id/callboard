@@ -22,6 +22,7 @@ import {
   ScrollText,
   ShieldAlert,
   HelpCircle,
+  PackageCheck,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
@@ -50,6 +51,7 @@ const techNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
   { label: 'My PMs', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
+  { label: 'My Parts', icon: PackageCheck, route: '/my-parts' },
   { label: 'Equipment', icon: Wrench, route: '/my-equipment' },
   { label: 'My Leads', icon: Award, route: '/my-leads' },
   { label: 'Products', icon: Package, route: '/products' },

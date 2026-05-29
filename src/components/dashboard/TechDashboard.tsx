@@ -95,7 +95,7 @@ export default function TechDashboard(p: Props) {
             )}
             {p.partsReady > 0 && (
               <Link
-                href="/tickets"
+                href="/my-parts"
                 className="block rounded-lg border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-4 hover:shadow transition-shadow"
               >
                 <div className="flex items-center gap-2">
@@ -170,7 +170,7 @@ export default function TechDashboard(p: Props) {
             </div>
           </Link>
           <Link
-            href="/tickets"
+            href="/my-parts"
             className="block bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow transition-shadow"
           >
             <div className="flex items-center gap-2">
