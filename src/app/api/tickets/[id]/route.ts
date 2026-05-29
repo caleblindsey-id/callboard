@@ -8,6 +8,7 @@ import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/dat
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
+import { partsOnOrder } from '@/lib/parts'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -384,6 +385,30 @@ export async function DELETE(
     }
 
     const supabase = await createClient()
+
+    // Block deletion while parts are still on order, so a live vendor PO never
+    // loses its parent ticket. Mirrors the completion guard in TicketActions.
+    const { data: existing, error: fetchError } = await supabase
+      .from('pm_tickets')
+      .select('id, parts_requested')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (fetchError) throw fetchError
+    if (!existing) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+    }
+
+    const onOrder = partsOnOrder(existing.parts_requested as PartRequest[] | null)
+    if (onOrder.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete: ${onOrder.length} part(s) are still on order. Receive or cancel them first.`,
+        },
+        { status: 409 }
+      )
+    }
 
     // Soft-delete: leaves the row in place so the PM generator's (pm_schedule_id, month, year)
     // dedup query continues to block regeneration. Photos are kept so Restore returns a
