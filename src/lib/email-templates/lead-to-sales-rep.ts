@@ -22,7 +22,6 @@ export type LeadToSalesRepTemplateInput = {
   equipmentDescription: string
   notes: string | null
   signedPhotoUrls: string[]
-  leadDeepLink: string
   optionalNote: string | null
   companyName: string
 }
@@ -45,7 +44,6 @@ export function renderLeadToSalesRepEmail(
     equipmentDescription,
     notes,
     signedPhotoUrls,
-    leadDeepLink,
     optionalNote,
     companyName,
   } = input
@@ -89,8 +87,6 @@ export function renderLeadToSalesRepEmail(
     signedPhotoUrls.length > 0 ? '' : null,
     signedPhotoUrls.length > 0 ? 'Photos (links valid 7 days):' : null,
     ...signedPhotoUrls.map((u, i) => `  ${i + 1}. ${u}`),
-    '',
-    `Full lead in CallBoard: ${leadDeepLink}`,
     ccLine ? '' : null,
     ccLine,
     '',
@@ -131,7 +127,7 @@ export function renderLeadToSalesRepEmail(
                     .join('')}
                 </tr>
               </table>
-              <p style="margin:8px 0 0;color:#71717a;font-size:12px;">Photo links expire after 7 days. Open the lead in CallBoard for a fresh view.</p>
+              <p style="margin:8px 0 0;color:#71717a;font-size:12px;">Photo links expire after 7 days.</p>
             </td>
           </tr>`
       : ''
@@ -192,29 +188,6 @@ export function renderLeadToSalesRepEmail(
           </tr>
           ${notesHtml}
           ${photosHtml}
-          <tr>
-            <td style="padding:8px 32px 24px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td>
-                    <!--[if mso]>
-                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${escapeAttr(leadDeepLink)}" style="height:44px;v-text-anchor:middle;width:240px;" arcsize="14%" stroke="f" fillcolor="#0f172a">
-                      <w:anchorlock/>
-                      <center style="color:#ffffff;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:600;">View lead in CallBoard</center>
-                    </v:roundrect>
-                    <![endif]-->
-                    <!--[if !mso]><!-- -->
-                    <a href="${escapeAttr(leadDeepLink)}" style="background:#0f172a;border-radius:6px;color:#ffffff;display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;line-height:44px;text-align:center;text-decoration:none;width:240px;mso-hide:all;">View lead in CallBoard</a>
-                    <!--<![endif]-->
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:8px 0 0;color:#52525b;font-size:13px;">
-                Button not working?
-                <a href="${escapeAttr(leadDeepLink)}" style="color:#0f172a;text-decoration:underline;">Open the lead</a>.
-              </p>
-            </td>
-          </tr>
           ${ccLine ? `<tr>
             <td style="padding:0 32px 16px;color:#71717a;font-size:13px;font-style:italic;">
               ${escapeHtml(ccLine)}

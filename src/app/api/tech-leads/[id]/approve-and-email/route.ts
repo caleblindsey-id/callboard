@@ -165,11 +165,6 @@ export async function POST(
 
     const companyName = (await getSetting('company_name')) || 'CallBoard'
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ?? ''
-    const leadDeepLink = appUrl
-      ? `${appUrl}/tech-payouts?lead=${id}`
-      : `/tech-payouts?lead=${id}`
-
     const { subject, html, text } = renderLeadToSalesRepEmail({
       primary: { name: primary.name, kind: primary.kind },
       ccNames: validCcReps.map(r => r.name),
@@ -183,7 +178,6 @@ export async function POST(
       equipmentDescription: lead.equipment_description,
       notes: lead.notes,
       signedPhotoUrls,
-      leadDeepLink,
       optionalNote: note || null,
       companyName,
     })
