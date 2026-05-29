@@ -22,8 +22,12 @@ interface SkipRequestFormProps {
   onCancel: () => void
 }
 
-const inputClass =
-  'w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px]'
+// Width is applied per-field: full-width inputs use `inputClass`; the month/year
+// selects in the flex row use `inputBase` + their own flex/width so `w-full`
+// can't override them (Tailwind resolves width conflicts by source order).
+const inputBase =
+  'rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px]'
+const inputClass = `w-full ${inputBase}`
 
 export default function SkipRequestForm({
   defaultMonth,
@@ -84,7 +88,7 @@ export default function SkipRequestForm({
               <select
                 value={recMonth}
                 onChange={(e) => setRecMonth(parseInt(e.target.value))}
-                className={`${inputClass} flex-1`}
+                className={`${inputBase} flex-1 min-w-0`}
                 aria-label="Next PM month"
               >
                 {MONTHS.map((m, i) => (
@@ -94,7 +98,7 @@ export default function SkipRequestForm({
               <select
                 value={recYear}
                 onChange={(e) => setRecYear(parseInt(e.target.value))}
-                className={`${inputClass} w-28`}
+                className={`${inputBase} w-28 shrink-0`}
                 aria-label="Next PM year"
               >
                 {[thisYear, thisYear + 1, thisYear + 2].map((y) => (
