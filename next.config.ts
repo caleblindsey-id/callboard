@@ -27,6 +27,12 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // The /help route reads its markdown from src/content/help at request time.
+  // Force those files into the route's serverless bundle so reads don't ENOENT
+  // in production (node-file-trace can't follow the dynamic readdir on its own).
+  outputFileTracingIncludes: {
+    "/help/[[...slug]]": ["./src/content/help/**/*"],
+  },
   async headers() {
     return [
       {

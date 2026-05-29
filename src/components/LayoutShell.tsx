@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Menu, Wrench } from 'lucide-react'
 import Sidebar from './Sidebar'
 import FeedbackFAB from './FeedbackFAB'
+import WhatsNewBanner from './WhatsNewBanner'
 import { APP_NAME } from '@/lib/branding'
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
@@ -43,6 +44,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
 
       {/* Content — full-width on mobile, offset by sidebar on desktop */}
       <main className="lg:ml-60 min-h-full pt-14 lg:pt-0">
+        <WhatsNewBanner />
         {children}
       </main>
 
