@@ -19,6 +19,10 @@ interface Props {
   customerId: number
   equipmentId: string | null
   currentShipToId: number | null
+  // POST target for the relocate. PM and service use different routes.
+  relocateUrl: string
+  // Which column a "request a new ship-to" links to. Defaults to PM.
+  requestTicketField?: 'pm_ticket_id' | 'service_ticket_id'
 }
 
 type View = 'closed' | 'pick' | 'confirm' | 'request'
@@ -28,6 +32,8 @@ export default function ChangeLocationSection({
   customerId,
   equipmentId,
   currentShipToId,
+  relocateUrl,
+  requestTicketField = 'pm_ticket_id',
 }: Props) {
   const router = useRouter()
   const [view, setView] = useState<View>('closed')
@@ -97,7 +103,7 @@ export default function ChangeLocationSection({
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch(`/api/tickets/${ticketId}/relocate`, {
+      const res = await fetch(relocateUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ship_to_location_id: selected.id }),
@@ -127,7 +133,7 @@ export default function ChangeLocationSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customer_id: customerId,
-          pm_ticket_id: ticketId,
+          [requestTicketField]: ticketId,
           equipment_id: equipmentId,
           note: requestNote.trim(),
         }),

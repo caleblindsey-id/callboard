@@ -17,6 +17,7 @@ import { getPublicAppUrl } from '@/lib/urls'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
+import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
@@ -1670,6 +1671,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 />
               )
             )}
+            {/* Tech/staff equipment relocation — parity with PM ticket detail.
+                Only for linked equipment (inline-only equipment has no row to
+                move) and while the ticket is still active. */}
+            {ticket.equipment_id &&
+              !['completed', 'billed', 'declined', 'canceled'].includes(ticket.status) && (
+                <div className="mt-2">
+                  <ChangeLocationSection
+                    ticketId={ticket.id}
+                    customerId={ticket.customer_id}
+                    equipmentId={ticket.equipment_id}
+                    currentShipToId={ticket.ship_to_location_id ?? null}
+                    relocateUrl={`/api/service-tickets/${ticket.id}/relocate`}
+                    requestTicketField="service_ticket_id"
+                  />
+                </div>
+              )}
           </InfoField>
           <InfoField label="Serial Number">
             {equipSerial ?? '—'}

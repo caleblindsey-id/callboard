@@ -105,10 +105,11 @@ export default async function TicketDetailPage({
 
       {isDeleted && (
         <DeletedBanner
-          ticketId={ticket.id}
           deletedAt={ticket.deleted_at!}
           deletedByName={ticket.deleted_by?.name ?? null}
           canRestore={canRestore}
+          restoreUrl={`/api/tickets/${ticket.id}/restore`}
+          extraNote="Won't be regenerated."
         />
       )}
 
@@ -253,6 +254,8 @@ export default async function TicketDetailPage({
                       ticket.equipment?.ship_to_location_id ??
                       null
                     }
+                    relocateUrl={`/api/tickets/${ticket.id}/relocate`}
+                    requestTicketField="pm_ticket_id"
                   />
                 </div>
               )}

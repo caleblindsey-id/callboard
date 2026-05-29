@@ -100,6 +100,8 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
   const [typeFilter, setTypeFilter] = useState<'' | ServiceTicketType>('')
   const [techFilter, setTechFilter] = useState('')
   const [waitingOnParts, setWaitingOnParts] = useState(false)
+  // Manager-only "Deleted" view — shows soft-deleted tickets (restore from detail).
+  const [deletedView, setDeletedView] = useState(false)
 
   const [tickets, setTickets] = useState<ServiceTicketWithJoins[]>([])
   const [users, setUsers] = useState<UserRow[]>([])
@@ -128,7 +130,11 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
       setError(null)
       try {
         const params = new URLSearchParams()
-        if (statusFilter) params.set('status', statusFilter)
+        if (deletedView) {
+          params.set('deleted', '1')
+        } else if (statusFilter) {
+          params.set('status', statusFilter)
+        }
         if (priorityFilter) params.set('priority', priorityFilter)
         if (typeFilter) params.set('ticketType', typeFilter)
         if (techFilter) params.set('technicianId', techFilter)
@@ -149,7 +155,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
       }
     }
     fetchTickets()
-  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts])
+  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, deletedView])
 
   // Tab counts are intentionally NOT keyed on statusFilter — switching tabs
   // shouldn't reload the numbers, only the other filters narrow them.
@@ -179,7 +185,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
         <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter tickets by status">
           {STATUS_TABS.map((tab) => {
-            const active = statusFilter === tab.value
+            const active = !deletedView && statusFilter === tab.value
             const count = counts ? counts[tab.countKey] ?? 0 : undefined
             return (
               <button
@@ -187,7 +193,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                onClick={() => setStatusFilter(tab.value)}
+                onClick={() => { setDeletedView(false); setStatusFilter(tab.value) }}
                 className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
                   active
                     ? 'bg-slate-800 text-white'
@@ -209,6 +215,33 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
               </button>
             )
           })}
+          {/* Manager-only Deleted view. Restore happens from the ticket detail. */}
+          {!isTech && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={deletedView}
+              onClick={() => { setDeletedView(true); setStatusFilter('') }}
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
+                deletedView
+                  ? 'bg-slate-800 text-white'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              Deleted
+              {counts?.deleted !== undefined && (
+                <span
+                  className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] text-xs font-semibold ${
+                    deletedView
+                      ? 'bg-white/20 text-white'
+                      : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
+                  }`}
+                >
+                  {counts.deleted}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

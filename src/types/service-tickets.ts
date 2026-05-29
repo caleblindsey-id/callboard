@@ -92,6 +92,8 @@ export type ServiceTicketRow = {
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string
+  deleted_at: string | null
+  deleted_by_id: string | null
   created_at: string
   updated_at: string
 }
@@ -129,6 +131,7 @@ export type ServiceTicketWithJoins = ServiceTicketRow & {
     } | null
   } | null
   assigned_technician: { name: string } | null
+  deleted_by: { name: string } | null
   credit_reviews: { status: CreditReviewStatus }[] | null
 }
 
@@ -155,6 +158,7 @@ export type ServiceTicketDetail = ServiceTicketRow & {
   } | null
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
+  deleted_by: { name: string } | null
   credit_reviews: { id: string; status: CreditReviewStatus; block_reason: string | null; decided_by_name: string | null }[] | null
 }
 

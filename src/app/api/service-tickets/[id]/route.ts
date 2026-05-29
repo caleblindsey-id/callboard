@@ -638,19 +638,22 @@ export async function DELETE(
 
     const supabase = await createClient()
 
-    // Fetch ticket to get photos for cleanup
+    // Fetch live ticket to check the parts guard. `.is('deleted_at', null)` so a
+    // second delete of an already-deleted ticket returns a clean 404.
     const { data: ticket, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('id, photos, parts_requested')
+      .select('id, parts_requested')
       .eq('id', id)
-      .single()
+      .is('deleted_at', null)
+      .maybeSingle()
 
-    if (fetchError || !ticket) {
+    if (fetchError) throw fetchError
+    if (!ticket) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
 
-    // Block deletion while parts are still on order — a hard delete here is
-    // permanent and would strand a live vendor PO with no parent ticket.
+    // Block deletion while parts are still on order — even a soft delete hides
+    // the ticket from boards, which would strand a live vendor PO out of view.
     const onOrder = partsOnOrder(ticket.parts_requested as PartRequest[] | null)
     if (onOrder.length > 0) {
       return NextResponse.json(
@@ -661,20 +664,20 @@ export async function DELETE(
       )
     }
 
-    // Clean up photos from Supabase Storage
-    const photos = (ticket.photos as { storage_path: string }[] | null) ?? []
-    if (photos.length > 0) {
-      await supabase.storage
-        .from('ticket-photos')
-        .remove(photos.map((p: { storage_path: string }) => p.storage_path))
-    }
-
-    const { error: deleteError } = await supabase
+    // Soft delete (parity with PM, migration 043/082). The row survives so a
+    // manager can restore it; photos are kept so a restore is lossless.
+    const { data: deleted, error: deleteError } = await supabase
       .from('service_tickets')
-      .delete()
+      .update({ deleted_at: new Date().toISOString(), deleted_by_id: user.id })
       .eq('id', id)
+      .is('deleted_at', null)
+      .select('id')
+      .maybeSingle()
 
     if (deleteError) throw deleteError
+    if (!deleted) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {
