@@ -12,6 +12,7 @@ import {
 import { getLaborRate } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
+import { partsOnOrder } from '@/lib/parts'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -566,12 +567,24 @@ export async function DELETE(
     // Fetch ticket to get photos for cleanup
     const { data: ticket, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('id, photos')
+      .select('id, photos, parts_requested')
       .eq('id', id)
       .single()
 
     if (fetchError || !ticket) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+    }
+
+    // Block deletion while parts are still on order — a hard delete here is
+    // permanent and would strand a live vendor PO with no parent ticket.
+    const onOrder = partsOnOrder(ticket.parts_requested as PartRequest[] | null)
+    if (onOrder.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete: ${onOrder.length} part(s) are still on order. Receive or cancel them first.`,
+        },
+        { status: 409 }
+      )
     }
 
     // Clean up photos from Supabase Storage
