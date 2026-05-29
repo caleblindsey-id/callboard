@@ -9,6 +9,7 @@ import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getHelpNav, getHelpPage, ROLE_HOME_CATEGORY } from '@/lib/help'
 import HelpNav from './HelpNav'
 import HelpSearch from './HelpSearch'
+import HelpLandingGrid from './HelpLandingGrid'
 
 export const metadata = {
   title: 'Help & Guides — CallBoard',
@@ -62,7 +63,7 @@ export default async function HelpPage({ params }: { params: Promise<{ slug?: st
               )}
             </article>
           ) : (
-            <Landing nav={nav} homeCategory={homeCategory} />
+            <Landing nav={nav} homeCategory={homeCategory} isTech={user.role === 'technician'} />
           )}
         </div>
       </div>
@@ -70,7 +71,15 @@ export default async function HelpPage({ params }: { params: Promise<{ slug?: st
   )
 }
 
-function Landing({ nav, homeCategory }: { nav: ReturnType<typeof getHelpNav>; homeCategory?: string }) {
+function Landing({
+  nav,
+  homeCategory,
+  isTech,
+}: {
+  nav: ReturnType<typeof getHelpNav>
+  homeCategory?: string
+  isTech: boolean
+}) {
   const homeGroup = homeCategory ? nav.find((g) => g.category === homeCategory) : undefined
   return (
     <div className="space-y-8">
@@ -96,27 +105,11 @@ function Landing({ nav, homeCategory }: { nav: ReturnType<typeof getHelpNav>; ho
         </div>
       )}
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        {nav.map((group) => (
-          <section key={group.category}>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              {group.category}
-            </h2>
-            <ul className="mt-2 space-y-1.5">
-              {group.pages.map((p) => (
-                <li key={p.href}>
-                  <Link
-                    href={p.href}
-                    className="text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:underline"
-                  >
-                    {p.title}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
+      <HelpLandingGrid
+        groups={nav}
+        primaryCategories={['Overview', ...(homeCategory ? [homeCategory] : [])]}
+        collapsible={isTech}
+      />
     </div>
   )
 }
