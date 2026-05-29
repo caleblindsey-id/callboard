@@ -16,6 +16,7 @@ interface Props {
 
 const NOTE_MAX = 500
 const CC_MAX = 10
+const EMAIL_RE = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/
 
 const KIND_GROUP_LABEL: Record<SalesRepKind, string> = {
   branch_manager: 'Branch Managers',
@@ -31,6 +32,9 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
   const [selectedRepId, setSelectedRepId] = useState('')
   const [ccIds, setCcIds] = useState<Set<string>>(new Set())
+  const [ccEmails, setCcEmails] = useState<string[]>([])
+  const [ccEmailInput, setCcEmailInput] = useState('')
+  const [ccEmailError, setCcEmailError] = useState<string | null>(null)
   const [repNote, setRepNote] = useState('')
 
   useEffect(() => {
@@ -41,6 +45,9 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
       setSubmitting(false)
       setSelectedRepId('')
       setCcIds(new Set())
+      setCcEmails([])
+      setCcEmailInput('')
+      setCcEmailError(null)
       setRepNote('')
     }
   }, [lead])
@@ -145,6 +152,7 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
         body: JSON.stringify({
           sales_rep_id: selectedRepId,
           cc_ids: Array.from(ccIds),
+          cc_emails: ccEmails,
           note: repNote.trim().slice(0, NOTE_MAX),
         }),
       })
@@ -157,13 +165,40 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
     }
   }
 
+  const ccTotal = ccIds.size + ccEmails.length
+
   function toggleCc(id: string) {
     setCcIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
-      else if (next.size < CC_MAX) next.add(id)
+      else if (next.size + ccEmails.length < CC_MAX) next.add(id)
       return next
     })
+  }
+
+  function addCcEmail() {
+    const email = ccEmailInput.trim().toLowerCase()
+    if (!email) return
+    if (!EMAIL_RE.test(email)) {
+      setCcEmailError('Enter a valid email address.')
+      return
+    }
+    if (ccEmails.includes(email) || selectedRep?.email.toLowerCase() === email) {
+      setCcEmailError('That address is already on the list.')
+      return
+    }
+    if (ccTotal >= CC_MAX) {
+      setCcEmailError(`Up to ${CC_MAX} CC recipients.`)
+      return
+    }
+    setCcEmails(prev => [...prev, email])
+    setCcEmailInput('')
+    setCcEmailError(null)
+  }
+
+  function removeCcEmail(email: string) {
+    setCcEmails(prev => prev.filter(e => e !== email))
+    setCcEmailError(null)
   }
 
   const customerLabel = lead.customers?.name
@@ -382,7 +417,7 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
         {mode === 'email_rep' && (
           <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              Approves the lead and emails the contact info, notes, and photos to the recipient. CC sales/branch managers as needed.
+              Approves the lead and emails the contact info, notes, and photos to the recipient. CC sales/branch managers or any other email address as needed.
             </p>
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -450,10 +485,68 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
                   })}
                 </div>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {ccIds.size}/{CC_MAX} selected
+                  {ccIds.size} selected
                 </p>
               </div>
             )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                CC other emails (optional)
+              </label>
+              {ccEmails.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {ccEmails.map(email => (
+                    <span
+                      key={email}
+                      className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-xs text-gray-800 dark:text-gray-200 max-w-full"
+                    >
+                      <span className="truncate">{email}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeCcEmail(email)}
+                        aria-label={`Remove ${email}`}
+                        className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  inputMode="email"
+                  value={ccEmailInput}
+                  onChange={e => { setCcEmailInput(e.target.value); setCcEmailError(null) }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                      e.preventDefault()
+                      addCcEmail()
+                    }
+                  }}
+                  onBlur={addCcEmail}
+                  disabled={ccTotal >= CC_MAX}
+                  placeholder="name@company.com"
+                  className="flex-1 min-w-0 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={addCcEmail}
+                  disabled={!ccEmailInput.trim() || ccTotal >= CC_MAX}
+                  className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </div>
+              {ccEmailError ? (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{ccEmailError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {ccTotal}/{CC_MAX} total CC recipients
+                </p>
+              )}
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Note to recipient (optional)

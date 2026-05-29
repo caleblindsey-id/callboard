@@ -12,10 +12,13 @@ const NOTE_MAX = 500
 const CC_MAX = 10
 const SIGNED_URL_TTL_SEC = 60 * 60 * 24 * 7 // 7 days
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Single-address only — no spaces/newlines, which also blocks header injection.
+const EMAIL_RE = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/
 
 type ReqBody = {
   sales_rep_id?: string
   cc_ids?: string[]
+  cc_emails?: string[]
   note?: string
 }
 
@@ -46,6 +49,7 @@ export async function POST(
     const salesRepId = typeof body.sales_rep_id === 'string' ? body.sales_rep_id : ''
     const note = typeof body.note === 'string' ? body.note.trim().slice(0, NOTE_MAX) : ''
     const rawCcIds = Array.isArray(body.cc_ids) ? body.cc_ids : []
+    const rawCcEmails = Array.isArray(body.cc_emails) ? body.cc_emails : []
 
     if (!salesRepId || !UUID_RE.test(salesRepId)) {
       return NextResponse.json({ error: 'A valid sales_rep_id is required' }, { status: 400 })
@@ -57,7 +61,20 @@ export async function POST(
         rawCcIds.filter((v): v is string => typeof v === 'string' && UUID_RE.test(v) && v !== salesRepId)
       )
     )
-    if (ccIds.length > CC_MAX) {
+
+    // Free-text CC emails: trim + lowercase, validate single-address format,
+    // dedupe. Dedupe against rep emails happens after the reps resolve below.
+    const ccEmails = Array.from(
+      new Set(
+        rawCcEmails
+          .filter((v): v is string => typeof v === 'string')
+          .map(v => v.trim().toLowerCase())
+          .filter(v => EMAIL_RE.test(v))
+      )
+    )
+
+    // Combined cap across rep CCs and typed CCs (dedupe below only removes more).
+    if (ccIds.length + ccEmails.length > CC_MAX) {
       return NextResponse.json({ error: `Up to ${CC_MAX} CC recipients allowed` }, { status: 400 })
     }
 
@@ -115,6 +132,15 @@ export async function POST(
     }
     const validCcReps = ccReps.filter((r): r is NonNullable<typeof r> => !!r)
 
+    // Drop any typed email that's already a rep on the send (primary or CC'd
+    // manager) so nobody gets double-CC'd.
+    const repEmailSet = new Set(
+      [primary.email, ...validCcReps.map(r => r.email)].map(e => e.toLowerCase())
+    )
+    const ccEmailRecipients = ccEmails
+      .filter(e => !repEmailSet.has(e))
+      .map(email => ({ email }))
+
     // Sign 7-day URLs for any attached machine photos. Service-role client
     // bypasses the storage RLS that would otherwise block manager reads.
     const admin = await createAdminClient('ADMIN_ONLY')
@@ -167,7 +193,10 @@ export async function POST(
     try {
       const result = await sendMandrillEmail({
         to: { email: primary.email, name: primary.name },
-        cc: validCcReps.map(r => ({ email: r.email, name: r.name })),
+        cc: [
+          ...validCcReps.map(r => ({ email: r.email, name: r.name })),
+          ...ccEmailRecipients,
+        ],
         subject,
         html,
         text,
