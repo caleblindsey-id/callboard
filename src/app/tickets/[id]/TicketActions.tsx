@@ -12,7 +12,10 @@ import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import SkipDialog from '../SkipDialog'
+import SkipRequestForm, { SkipRequestPayload } from './SkipRequestForm'
 import { renderPartsSection } from './renderPartsSection'
+import { calcNextServiceMonth, formatMonthYear } from '@/lib/utils/schedule'
+import { skipReasonLabel, isStopReason } from '@/lib/skip-reasons'
 
 export interface ProductResult {
   id: number
@@ -160,8 +163,17 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
   // Skip request state
   const [skipRequestOpen, setSkipRequestOpen] = useState(false)
-  const [skipReason, setSkipReason] = useState('')
   const [skipDialogOpen, setSkipDialogOpen] = useState(false)
+
+  // Seed the skip form's next-PM recommendation from the schedule cycle (the
+  // first cycle month after this ticket's month). Falls back to next month.
+  const afterMonth = (ticket.month % 12) + 1
+  const afterYear = ticket.month === 12 ? ticket.year + 1 : ticket.year
+  const nextCycle = ticket.schedule
+    ? calcNextServiceMonth(ticket.schedule.interval_months, ticket.schedule.anchor_month, afterMonth, afterYear, new Set<string>())
+    : null
+  const skipDefaultMonth = nextCycle?.month ?? afterMonth
+  const skipDefaultYear = nextCycle?.year ?? afterYear
 
   // Photo state
   const [photos, setPhotos] = useState<Array<TicketPhoto & { previewUrl?: string }>>(
@@ -575,8 +587,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
     }
   }
 
-  async function handleRequestSkip() {
-    if (!skipReason.trim()) return
+  async function handleRequestSkip(payload: SkipRequestPayload) {
     setLoading(true)
     setError(null)
     try {
@@ -585,8 +596,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'skip_requested',
-          skip_reason: skipReason.trim(),
-          skip_previous_status: ticket.status,
+          ...payload,
         }),
       })
       if (!res.ok) {
@@ -720,36 +730,14 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             </button>
           )}
         </div>
-        {skipRequestOpen && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Why should this PM be skipped?
-            </label>
-            <textarea
-              value={skipReason}
-              onChange={(e) => setSkipReason(e.target.value)}
-              placeholder="e.g., Customer requested to reschedule, machine is down..."
-              rows={3}
-              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleRequestSkip}
-                disabled={loading || !skipReason.trim()}
-                className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-              >
-                {loading ? 'Submitting...' : 'Submit Skip Request'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setSkipRequestOpen(false); setSkipReason('') }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+        {skipRequestOpen && isTech && (
+          <SkipRequestForm
+            defaultMonth={skipDefaultMonth}
+            defaultYear={skipDefaultYear}
+            loading={loading}
+            onSubmit={handleRequestSkip}
+            onCancel={() => setSkipRequestOpen(false)}
+          />
         )}
         {superAdminOverride}
         {deleteButton}
@@ -1144,35 +1132,13 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
             {/* Skip request form — tech only, in_progress */}
             {skipRequestOpen && isTech && (
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Why should this PM be skipped?
-                </label>
-                <textarea
-                  value={skipReason}
-                  onChange={(e) => setSkipReason(e.target.value)}
-                  placeholder="e.g., Customer requested to reschedule, machine is down..."
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleRequestSkip}
-                    disabled={loading || !skipReason.trim()}
-                    className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-                  >
-                    {loading ? 'Submitting...' : 'Submit Skip Request'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setSkipRequestOpen(false); setSkipReason('') }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <SkipRequestForm
+                defaultMonth={skipDefaultMonth}
+                defaultYear={skipDefaultYear}
+                loading={loading}
+                onSubmit={handleRequestSkip}
+                onCancel={() => setSkipRequestOpen(false)}
+              />
             )}
           </form>
           {(userRole === 'super_admin' || userRole === 'manager') && (
@@ -1218,10 +1184,39 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           </h2>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-          {/* Show the reason */}
-          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-md p-3 mb-4 border border-amber-200 dark:border-amber-800">
-            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">Reason</p>
-            <p className="text-sm text-gray-900 dark:text-white">{ticket.skip_reason || '—'}</p>
+          {/* Structured skip request (legacy rows show only the free-text reason) */}
+          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-md p-3 mb-4 border border-amber-200 dark:border-amber-800 space-y-2">
+            {ticket.skip_reason_category ? (
+              <>
+                <div>
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Reason</p>
+                  <p className="text-sm text-gray-900 dark:text-white">{skipReasonLabel(ticket.skip_reason_category)}</p>
+                </div>
+                {ticket.skip_equipment_on_site !== null && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Equipment still on site</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{ticket.skip_equipment_on_site ? 'Yes' : 'No'}</p>
+                  </div>
+                )}
+                {ticket.skip_recommended_month && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Customer&apos;s requested next PM</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{formatMonthYear(ticket.skip_recommended_month, ticket.skip_recommended_year)}</p>
+                  </div>
+                )}
+                {ticket.skip_reason && (
+                  <div>
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Notes</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{ticket.skip_reason}</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div>
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">Reason</p>
+                <p className="text-sm text-gray-900 dark:text-white">{ticket.skip_reason || '—'}</p>
+              </div>
+            )}
           </div>
 
           {isTech ? (
@@ -1264,8 +1259,13 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               // TicketDetail exposes the schedule join as `schedule` (different
               // shape than the listing's `pm_schedules`); SkipDialog needs the
               // listing shape so we map it explicitly.
-              pm_schedules: null,
+              pm_schedules: ticket.schedule
+                ? { interval_months: ticket.schedule.interval_months, anchor_month: ticket.schedule.anchor_month }
+                : null,
             }]}
+            recommendedMonth={ticket.skip_recommended_month ?? undefined}
+            recommendedYear={ticket.skip_recommended_year ?? undefined}
+            suggestStop={isStopReason(ticket.skip_reason_category) || ticket.skip_equipment_on_site === false}
             onClose={() => setSkipDialogOpen(false)}
             onDone={() => {
               setSkipDialogOpen(false)
