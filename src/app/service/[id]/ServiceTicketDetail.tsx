@@ -2027,6 +2027,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     showPricing={true}
                     showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
                     label="Estimated Parts"
+                    allowPriceOverride={isStaff}
                     onRequestPart={handleRequestEstimatePart}
                   />
 
@@ -2389,6 +2390,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                   showPricing={true}
                   showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
                   label=""
+                  allowPriceOverride={isStaff}
                 />
               </div>
             </details>

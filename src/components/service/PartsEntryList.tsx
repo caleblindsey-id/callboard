@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import { minPrice } from '@/lib/margin'
 
 // ── Types (shared with ServiceTicketDetail) ──
 
@@ -12,6 +13,9 @@ export interface ProductResult {
   number: string
   description: string | null
   unit_price: number | null
+  // Loaded cost — only selected/used when allowPriceOverride is set (staff).
+  // Never requested in tech-facing contexts. Backs the per-line margin floor.
+  unit_cost?: number | null
 }
 
 export interface PartEntry {
@@ -27,6 +31,10 @@ export interface PartEntry {
   // seed a PartRequest without the tech retyping it.
   productNumber: string | null
   isFromDb: boolean
+  // Loaded cost for this catalog part, captured on select when the viewer can
+  // override prices (staff). Drives the client-side margin-floor hint. null =
+  // cost unknown (manual part, or staff-override off) — floor not shown.
+  unitCost?: number | null
   searchOpen: boolean
   searchResults: ProductResult[]
   searching: boolean
@@ -88,6 +96,10 @@ interface PartsEntryListProps {
   showPricing: boolean
   showWarranty: boolean
   label?: string
+  // Staff-only: unlock the price field on catalog parts (locked by default) and
+  // fetch loaded cost so a per-line 15% margin floor can be shown. Never pass
+  // true in a tech-facing context — it would expose cost-derived data.
+  allowPriceOverride?: boolean
   // Surface an optional vendor / manufacturer part # input on each row.
   showVendorItemCode?: boolean
   // When provided, each row renders a "Request" button that hands the entry
@@ -96,7 +108,7 @@ interface PartsEntryListProps {
   onRequestPart?: (index: number) => Promise<void>
 }
 
-export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', showVendorItemCode = false, onRequestPart }: PartsEntryListProps) {
+export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', allowPriceOverride = false, showVendorItemCode = false, onRequestPart }: PartsEntryListProps) {
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
   // Tracks which dropdown result is keyboard-highlighted per row (-1 = none)
@@ -128,7 +140,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
   function handlePartSearch(index: number, value: string) {
     setParts((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], description: value, isFromDb: false, synergyProductId: null, productNumber: null }
+      updated[index] = { ...updated[index], description: value, isFromDb: false, synergyProductId: null, productNumber: null, unitCost: null }
       return updated
     })
 
@@ -156,9 +168,14 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
       const supabase = createClient()
       // Sanitize before splicing into .or() — see lib/db/safe-or.
       const q = sanitizeOrValue(value.trim())
+      // Cost is only pulled for staff who can override prices (drives the floor
+      // hint). Tech-facing callers never request unit_cost.
+      const cols = allowPriceOverride
+        ? 'id, synergy_id, number, description, unit_price, unit_cost'
+        : 'id, synergy_id, number, description, unit_price'
       const { data } = await supabase
         .from('products')
-        .select('id, synergy_id, number, description, unit_price')
+        .select(cols)
         .or(safeOrRaw([
           { column: 'number', op: 'ilike', raw: `%${q}%` },
           { column: 'description', op: 'ilike', raw: `%${q}%` },
@@ -171,7 +188,9 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
         if (u[index]) {
           u[index] = {
             ...u[index],
-            searchResults: (data as ProductResult[]) ?? [],
+            // Cast via unknown: the select column list is built dynamically
+            // (cost only for staff), so supabase-js can't statically type it.
+            searchResults: (data as unknown as ProductResult[]) ?? [],
             searchOpen: true,
             searching: false,
           }
@@ -193,6 +212,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
         synergyProductId: Number(product.synergy_id),
         productNumber: product.number,
         isFromDb: true,
+        unitCost: allowPriceOverride ? (product.unit_cost ?? null) : null,
         searchOpen: false,
         searchResults: [],
       }
@@ -204,7 +224,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
   function handleClearProduct(index: number) {
     setParts((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, productNumber: null, isFromDb: false }
+      updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, productNumber: null, isFromDb: false, unitCost: null }
       return updated
     })
   }
@@ -323,7 +343,16 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                     className="w-16 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-2 h-[44px] sm:h-[34px] text-sm text-center focus:outline-none focus:ring-2 focus:ring-slate-500"
                   />
                 </div>
-                {showPricing && (
+                {showPricing && (() => {
+                  // Catalog prices are locked unless the viewer can override.
+                  const locked = part.isFromDb && !allowPriceOverride
+                  // Per-line floor: price must keep >= 15% margin over loaded
+                  // cost. Only shown to staff; null cost = floor not enforced.
+                  const floor = allowPriceOverride ? minPrice(part.unitCost) : null
+                  const parsedPrice = parseFloat(part.unitPrice)
+                  const belowFloor =
+                    floor != null && Number.isFinite(parsedPrice) && parsedPrice + 0.005 < floor
+                  return (
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Price</label>
                     <input
@@ -339,13 +368,29 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                         })
                       }}
                       onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-                      readOnly={part.isFromDb}
+                      readOnly={locked}
+                      aria-invalid={belowFloor}
                       className={`w-24 rounded-md border px-2 h-[44px] sm:h-[34px] text-sm text-right focus:outline-none focus:ring-2 focus:ring-slate-500 ${
-                        part.isFromDb ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 cursor-not-allowed dark:text-white' : 'border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600'
+                        belowFloor
+                          ? 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                          : locked
+                            ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 cursor-not-allowed dark:text-white'
+                            : 'border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600'
                       }`}
                     />
+                    {floor != null && (
+                      <p className={`mt-0.5 text-[11px] ${belowFloor ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-400 dark:text-gray-500'}`}>
+                        Min ${floor.toFixed(2)}
+                      </p>
+                    )}
+                    {allowPriceOverride && part.isFromDb && part.unitCost == null && (
+                      <p className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                        Cost unknown — floor off
+                      </p>
+                    )}
                   </div>
-                )}
+                  )
+                })()}
                 {showWarranty && (
                   <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer min-h-[44px] sm:min-h-0">
                     <input

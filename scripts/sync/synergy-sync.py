@@ -432,6 +432,8 @@ def sync_products(conn) -> int:
                 prod.Desc1,
                 prod.Desc2,
                 prod.ListPrice1,
+                prod.CostLoad,
+                prod.CostPO,
                 prod.SupersedeCode
             FROM prod
             WHERE prod.ComdtyCode IN ({placeholders})
@@ -453,11 +455,20 @@ def sync_products(conn) -> int:
         desc2 = safe_str(row.Desc2)
         description = (f"{desc1} {desc2}".strip()) if desc2 else desc1 or None
 
+        # Loaded cost backs the service-ticket margin floor. Prefer CostLoad
+        # (cost + allocated overhead); fall back to CostPO (last PO cost) when
+        # CostLoad is missing or non-positive. NULL = cost unknown (floor not
+        # enforced on that part). Internal only — never exposed to techs.
+        cost_load = float(row.CostLoad) if row.CostLoad is not None else None
+        cost_po = float(row.CostPO) if row.CostPO is not None else None
+        unit_cost = cost_load if (cost_load is not None and cost_load > 0) else cost_po
+
         products.append({
             "synergy_id": str(row.ProdCode).strip(),
             "number": str(row.ProdCode).strip(),
             "description": description,
             "unit_price": float(row.ListPrice1) if row.ListPrice1 is not None else None,
+            "unit_cost": unit_cost,
             "synced_at": utcnow_iso(),
         })
 

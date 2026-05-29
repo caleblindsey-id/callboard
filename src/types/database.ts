@@ -271,6 +271,9 @@ export type ProductRow = {
   number: string
   description: string | null
   unit_price: number | null
+  // Loaded cost (Synergy CostLoad, CostPO fallback). Internal/server-only —
+  // never select this onto a tech-facing payload. Backs the margin floor.
+  unit_cost: number | null
   synced_at: string | null
 }
 
@@ -589,7 +592,7 @@ export type ContactInsert = MakeOptional<
 
 export type ProductInsert = MakeOptional<
   Omit<ProductRow, 'id'>,
-  'synced_at' | 'description' | 'unit_price'
+  'synced_at' | 'description' | 'unit_price' | 'unit_cost'
 >
 
 export type UserInsert = MakeOptional<

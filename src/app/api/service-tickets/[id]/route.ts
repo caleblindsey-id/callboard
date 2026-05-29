@@ -13,6 +13,8 @@ import { getLaborRate } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder } from '@/lib/parts'
+import { buildProductCostMap } from '@/lib/db/products'
+import { checkPartLines, minPrice } from '@/lib/margin'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -192,7 +194,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used')
       .eq('id', id)
       .single()
 
@@ -203,6 +205,74 @@ export async function PATCH(
     // Techs can only update their own assigned tickets
     if (isTechnician(user.role) && current.assigned_technician_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // --- Margin floor (parts only, per-line) ---
+    // A billable part line's price can't drop below 15% gross margin over loaded
+    // cost (min price = cost / 0.85). Cost is sourced from the products catalog
+    // here (server-authoritative); a client-supplied unit_cost is never trusted.
+    // Lines with no catalog cost are allowed through (flagged in the UI). Only
+    // BILLABLE lines are floored — warranty-covered parts aren't billed, so they
+    // are excluded (mirrors the estimate/billing math).
+    {
+      const billingType =
+        (filtered.billing_type as string | undefined) ?? current.billing_type ?? 'non_warranty'
+      // Restrict an array to its billable lines for the current billing type.
+      const billableOnly = (lines: ServicePartUsed[]): ServicePartUsed[] =>
+        billingType === 'warranty'
+          ? []
+          : billingType === 'partial_warranty'
+            ? lines.filter((p) => !p.warranty_covered)
+            : lines
+
+      const partFields = (['estimate_parts', 'parts_used'] as const).filter(
+        (k) => Array.isArray(filtered[k]),
+      )
+      if (partFields.length > 0) {
+        const allLines = partFields.flatMap((k) => filtered[k] as ServicePartUsed[])
+        const costMap = await buildProductCostMap(supabase, allLines.map((l) => l.synergy_product_id))
+        const lookup = (pid: number) => costMap.get(pid)
+
+        for (const key of partFields) {
+          const billable = billableOnly(filtered[key] as ServicePartUsed[])
+          const check = checkPartLines(billable, lookup)
+          if (!check.ok) {
+            const v = check.violations[0]
+            return NextResponse.json(
+              {
+                error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
+                violations: check.violations,
+              },
+              { status: 400 },
+            )
+          }
+        }
+      }
+
+      // Backstop: a direct billing_amount override can't dip below the parts
+      // revenue floor (sum of qty x line min-price for billable, known-cost
+      // lines). Keeps the per-line floor from being bypassed via the total.
+      if (typeof filtered.billing_amount === 'number' && billingType !== 'warranty') {
+        const effParts = Array.isArray(filtered.parts_used)
+          ? (filtered.parts_used as ServicePartUsed[])
+          : ((current.parts_used as ServicePartUsed[] | null) ?? [])
+        const billable = billableOnly(effParts)
+        const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
+        let floorSum = 0
+        for (const line of billable) {
+          if (line.synergy_product_id == null) continue
+          const mp = minPrice(costMap.get(line.synergy_product_id))
+          if (mp != null) floorSum += mp * (Number(line.quantity) || 0)
+        }
+        if (filtered.billing_amount + 0.005 < floorSum) {
+          return NextResponse.json(
+            {
+              error: `Billing amount $${filtered.billing_amount.toFixed(2)} is below the parts margin floor of $${floorSum.toFixed(2)} (15% over loaded cost).`,
+            },
+            { status: 400 },
+          )
+        }
+      }
     }
 
     // --- Status transition logic ---
