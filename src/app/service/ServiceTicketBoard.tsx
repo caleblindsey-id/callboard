@@ -108,6 +108,12 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
   const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Manager-only bulk select (parity with the PM board). refreshTick re-runs the
+  // ticket fetch after a bulk action without a full page reload.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [assignTo, setAssignTo] = useState('')
+  const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
     async function fetchUsers() {
@@ -154,8 +160,11 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
         setLoading(false)
       }
     }
+    // Drop any selection when the visible set changes (filters/tab/refresh) so a
+    // bulk action never hits a row the manager can no longer see.
+    setSelected(new Set())
     fetchTickets()
-  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, deletedView])
+  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, deletedView, refreshTick])
 
   // Tab counts are intentionally NOT keyed on statusFilter — switching tabs
   // shouldn't reload the numbers, only the other filters narrow them.
@@ -178,6 +187,66 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
     }
     fetchCounts()
   }, [priorityFilter, typeFilter, techFilter, waitingOnParts])
+
+  const technicians = users.filter((u) => u.role === 'technician')
+  const allSelected = tickets.length > 0 && selected.size === tickets.length
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelected(allSelected ? new Set() : new Set(tickets.map((t) => t.id)))
+  }
+
+  async function handleBulkAssign() {
+    if (!assignTo || selected.size === 0) return
+    setBulkBusy(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/service-tickets/bulk-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: Array.from(selected), technicianId: assignTo }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setError(d.error ?? 'Failed to assign tickets')
+        return
+      }
+      setAssignTo('')
+      setRefreshTick((t) => t + 1)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selected.size === 0) return
+    if (!confirm(`Delete ${selected.size} ticket(s)? They can be restored from the Deleted view.`)) return
+    setBulkBusy(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/service-tickets/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: Array.from(selected) }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setError(d.error ?? 'Failed to delete tickets')
+        return
+      }
+      setRefreshTick((t) => t + 1)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -322,6 +391,54 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
         </div>
       )}
 
+      {/* Bulk action bar — manager-only, hidden in the Deleted view. */}
+      {!isTech && !deletedView && selected.size > 0 && (
+        <div className="bg-slate-50 dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {selected.size} selected
+          </span>
+          <div className="flex flex-1 flex-col sm:flex-row sm:items-center gap-2">
+            <select
+              value={assignTo}
+              onChange={(e) => setAssignTo(e.target.value)}
+              disabled={bulkBusy}
+              className="w-full sm:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              <option value="">Assign to technician…</option>
+              {technicians.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleBulkAssign}
+              disabled={bulkBusy || !assignTo}
+              className="w-full sm:w-auto px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              Assign
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={bulkBusy}
+              className="px-4 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              disabled={bulkBusy}
+              className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Ticket list */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {loading ? (
@@ -348,6 +465,16 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {!isTech && !deletedView && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(ticket.id)}
+                          onChange={() => toggleSelect(ticket.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label="Select ticket"
+                          className="h-4 w-4 shrink-0 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                        />
+                      )}
                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                         {ticket.work_order_number ? `WO-${ticket.work_order_number}` : '—'}
                         {ticket.synergy_validation_status === 'invalid' && (
@@ -398,6 +525,17 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    {!isTech && !deletedView && (
+                      <th className="px-4 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="Select all"
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">WO #</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Priority</th>
@@ -419,6 +557,17 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                       }`}
                       onClick={() => router.push(`/service/${ticket.id}`)}
                     >
+                      {!isTech && !deletedView && (
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(ticket.id)}
+                            onChange={() => toggleSelect(ticket.id)}
+                            aria-label="Select ticket"
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">
                         {ticket.work_order_number ? `WO-${ticket.work_order_number}` : '—'}
                         {ticket.synergy_validation_status === 'invalid' && (

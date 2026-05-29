@@ -477,3 +477,46 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
   }
   return counts
 }
+
+// --- Bulk operations (parity with PM bulkAssignTechnician / bulkSoftDeleteTickets) ---
+
+export async function bulkAssignServiceTechnician(
+  ticketIds: string[],
+  technicianId: string
+): Promise<{ id: string }[]> {
+  const supabase = await createClient()
+
+  // Unlike PM (which flips unassigned -> assigned), a service ticket's status is
+  // independent of assignment, so we only set the technician. Scope to live,
+  // non-terminal tickets so closed/cancelled work is never silently reassigned.
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .update({ assigned_technician_id: technicianId })
+    .in('id', ticketIds)
+    .is('deleted_at', null)
+    .not('status', 'in', '("completed","billed","declined","canceled")')
+    .select('id')
+
+  if (error) throw error
+  return (data ?? []) as { id: string }[]
+}
+
+export async function bulkSoftDeleteServiceTickets(
+  ticketIds: string[],
+  userId: string
+): Promise<{ id: string }[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by_id: userId,
+    })
+    .in('id', ticketIds)
+    .is('deleted_at', null)
+    .select('id')
+
+  if (error) throw error
+  return (data ?? []) as { id: string }[]
+}
