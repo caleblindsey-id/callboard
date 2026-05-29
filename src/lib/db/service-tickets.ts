@@ -89,7 +89,10 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
   const { data, error } = await query
 
   if (error) throw error
-  return data as ServiceTicketWithJoins[]
+  // `deleted_by` embeds the service_tickets_deleted_by_id_fkey relationship (migration
+  // 082), which isn't in the generated database.ts types yet, so the inferred row type
+  // can't resolve the join. Cast through `unknown` — same pattern as applyServiceTicketFilters.
+  return data as unknown as ServiceTicketWithJoins[]
 }
 
 // --- Service ticket counts grouped by status (service board tabs) ---
@@ -168,7 +171,9 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
     throw error
   }
 
-  return data as ServiceTicketDetail
+  // See note in getServiceTickets: the deleted_by embed isn't resolvable from the
+  // generated types yet, so cast through `unknown`.
+  return data as unknown as ServiceTicketDetail
 }
 
 // --- Update service ticket fields ---
