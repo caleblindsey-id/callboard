@@ -4,14 +4,14 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 60
 summary: Turn completed PMs and service tickets into billing PDFs — and what gates a ticket from billing.
-last_verified: 2026-05-28
+last_verified: 2026-05-29
 ---
 
 The **Billing** page lists completed work that hasn't been invoiced yet. You export it to a PDF, which also marks the tickets as billed — then you create the invoices in Synergy.
 
 ## Bill PM tickets
 
-1. Tap **Billing**. The **PM Tickets** tab shows completed, not-yet-billed PMs.
+1. Tap **Billing**. The **PM Tickets** tab shows completed, not-yet-billed PMs. Each row shows the **account number** and **ship-to** under the customer name, and the **serial number** under the equipment — handy for telling apart customers or machines that share a name when you call to follow up.
 2. Check the **PO** column:
    - **PO Needed** (red) — the customer requires a PO and none is entered. Tap it, type the **PO number**, and **Save**. You can do this right here without opening the ticket.
    - A green PO number means it's set; **—** means no PO is required.

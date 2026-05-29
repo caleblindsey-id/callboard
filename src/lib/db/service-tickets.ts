@@ -221,13 +221,27 @@ export type ServiceBillingTicket = {
   synergy_order_number: string | null
   completed_at: string | null
   customer_id: number | null
+  service_address: string | null
+  service_city: string | null
+  service_state: string | null
   customers: {
     name: string
+    account_number: string | null
     po_required: boolean
     ar_terms: string | null
     credit_hold: boolean
   } | null
-  equipment: { make: string | null; model: string | null } | null
+  equipment: {
+    make: string | null
+    model: string | null
+    serial_number: string | null
+    ship_to_locations: {
+      name: string | null
+      address: string | null
+      city: string | null
+      state: string | null
+    } | null
+  } | null
   equipment_make: string | null
   equipment_model: string | null
   assigned_technician: { name: string } | null
@@ -244,8 +258,11 @@ export async function getServiceBillingTickets(
     .select(`
       id, work_order_number, status, billing_type, billing_amount, hours_worked,
       synergy_order_number, completed_at, customer_id, equipment_make, equipment_model,
-      customers ( name, po_required, ar_terms, credit_hold ),
-      equipment ( make, model ),
+      service_address, service_city, service_state,
+      customers ( name, account_number, po_required, ar_terms, credit_hold ),
+      equipment ( make, model, serial_number,
+        ship_to_locations ( name, address, city, state )
+      ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
     `)
     .eq('status', 'completed')

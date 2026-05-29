@@ -37,6 +37,22 @@ function renderEquipment(t: ServiceBillingTicket): string {
   return [make, model].filter(Boolean).join(' ') || '—'
 }
 
+// Compact ship-to label so identically-named machines can be told apart on the
+// phone. Prefer the ticket's own service location (set on the work order, always
+// current for outside work), then the equipment's home ship-to.
+function shipToLabel(t: ServiceBillingTicket): string | null {
+  const loc = t.equipment?.ship_to_locations
+  return t.service_city || loc?.name || loc?.city || t.service_address || loc?.address || null
+}
+
+// Account # · ship-to, shown under the customer name. Both are optional;
+// returns null when neither is known so we can skip the line entirely.
+function customerSubline(t: ServiceBillingTicket): string | null {
+  const acct = t.customers?.account_number
+  const parts = [acct ? `Acct #${acct}` : null, shipToLabel(t)].filter(Boolean)
+  return parts.length ? parts.join(' · ') : null
+}
+
 export default function ServiceBillingExport({
   tickets,
   selectedMonth,
@@ -340,9 +356,19 @@ export default function ServiceBillingExport({
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {t.customers?.name ?? '—'}
                         </p>
+                        {customerSubline(t) && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {customerSubline(t)}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                           {renderEquipment(t)}
                         </p>
+                        {t.equipment?.serial_number && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            S/N {t.equipment.serial_number}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           Tech: {t.assigned_technician?.name ?? '—'} · Hrs: {t.hours_worked ?? '—'} ·{' '}
                           {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
@@ -408,12 +434,22 @@ export default function ServiceBillingExport({
                         </td>
                         <td className="px-4 py-3 text-gray-900 dark:text-white">
                           {t.customers?.name ?? '—'}
+                          {customerSubline(t) && (
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                              {customerSubline(t)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           {renderSynergyStatus(t)}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {renderEquipment(t)}
+                          {t.equipment?.serial_number && (
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                              S/N {t.equipment.serial_number}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {t.assigned_technician?.name ?? '—'}
