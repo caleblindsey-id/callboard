@@ -451,6 +451,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     ticket.hours_worked != null ? String(ticket.hours_worked) : ''
   )
   const [completionNotes, setCompletionNotes] = useState(ticket.completion_notes ?? '')
+  // Optional equipment service-life capture (parity with PM completion).
+  const [machineHours, setMachineHours] = useState(
+    ticket.machine_hours != null ? String(ticket.machine_hours) : ''
+  )
+  const [dateCode, setDateCode] = useState(ticket.date_code ?? '')
   const [completionParts, setCompletionParts] = useState<PartEntry[]>(
     ticket.parts_used && ticket.parts_used.length > 0
       ? partsFromSaved(ticket.parts_used)
@@ -1127,6 +1132,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           hours_worked: hours,
           parts_used: toServicePartUsed(completionParts),
           completion_notes: completionNotes || null,
+          machine_hours: machineHours.trim() !== '' ? parseFloat(machineHours) : null,
+          date_code: dateCode.trim() || null,
           customer_signature: signatureImage || null,
           customer_signature_name: signatureName.trim() || null,
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
@@ -2416,6 +2423,40 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               />
             </div>
 
+            {/* Machine Hours + Date Code — optional equipment service-life data
+                (parity with PM completion; optional since not every service unit
+                has an hour meter). */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="svc-machine-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Machine Hours <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="svc-machine-hours"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={machineHours}
+                  onChange={(e) => setMachineHours(e.target.value)}
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  placeholder="e.g. 1247.5"
+                />
+              </div>
+              <div>
+                <label htmlFor="svc-date-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Date Code <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="svc-date-code"
+                  type="text"
+                  value={dateCode}
+                  onChange={(e) => setDateCode(e.target.value)}
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  placeholder="e.g. 26W15"
+                />
+              </div>
+            </div>
+
             {/* Parts Used — collapsible sub-section so the tech can skip
                 past it on mobile when nothing's been added. */}
             <details open={completionParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
@@ -2629,6 +2670,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             <InfoField label="Hours Worked">
               {ticket.hours_worked ?? '—'}
             </InfoField>
+            {ticket.machine_hours != null && (
+              <InfoField label="Machine Hours">
+                {ticket.machine_hours}
+              </InfoField>
+            )}
+            {ticket.date_code && (
+              <InfoField label="Date Code">
+                {ticket.date_code}
+              </InfoField>
+            )}
             <InfoField label="Labor Total">
               ${((ticket.hours_worked ?? 0) * laborRate).toFixed(2)}
             </InfoField>

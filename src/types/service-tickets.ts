@@ -70,6 +70,8 @@ export type ServiceTicketRow = {
   hours_worked: number | null
   parts_used: ServicePartUsed[]
   warranty_labor_covered: boolean
+  machine_hours: number | null
+  date_code: string | null
   completion_notes: string | null
   customer_signature: string | null
   customer_signature_name: string | null
