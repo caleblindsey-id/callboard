@@ -254,6 +254,8 @@ export default async function TicketDetailPage({
                       ticket.equipment?.ship_to_location_id ??
                       null
                     }
+                    relocateUrl={`/api/tickets/${ticket.id}/relocate`}
+                    requestTicketField="pm_ticket_id"
                   />
                 </div>
               )}

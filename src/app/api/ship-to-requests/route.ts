@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       customer_id?: unknown
       pm_ticket_id?: unknown
+      service_ticket_id?: unknown
       equipment_id?: unknown
       note?: unknown
     }
@@ -30,6 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pmTicketId = typeof body.pm_ticket_id === 'string' ? body.pm_ticket_id : null
+    const serviceTicketId = typeof body.service_ticket_id === 'string' ? body.service_ticket_id : null
     const equipmentId = typeof body.equipment_id === 'string' ? body.equipment_id : null
 
     const user = await getCurrentUser()
@@ -63,12 +65,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Same validation for a service_ticket_id link.
+    if (serviceTicketId) {
+      const { data: ticket, error } = await supabase
+        .from('service_tickets')
+        .select('id, customer_id, assigned_technician_id, deleted_at')
+        .eq('id', serviceTicketId)
+        .single()
+
+      if (error || !ticket || ticket.deleted_at) {
+        return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+      }
+      if (ticket.customer_id !== customerId) {
+        return NextResponse.json(
+          { error: 'Ticket does not belong to that customer' },
+          { status: 422 }
+        )
+      }
+      if (isTechnician(user.role) && ticket.assigned_technician_id !== user.id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
     const { data, error } = await supabase
       .from('ship_to_requests')
       .insert({
         customer_id: customerId,
         requested_by: user.id,
         pm_ticket_id: pmTicketId,
+        service_ticket_id: serviceTicketId,
         equipment_id: equipmentId,
         note,
       })
