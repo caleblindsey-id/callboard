@@ -233,16 +233,20 @@ export async function PATCH(
         const costMap = await buildProductCostMap(supabase, allLines.map((l) => l.synergy_product_id))
         const lookup = (pid: number) => costMap.get(pid)
 
+        // Techs must never see the min price (it back-derives loaded cost).
+        const hideFloor = isTechnician(user.role)
         for (const key of partFields) {
           const billable = billableOnly(filtered[key] as ServicePartUsed[])
           const check = checkPartLines(billable, lookup)
           if (!check.ok) {
             const v = check.violations[0]
             return NextResponse.json(
-              {
-                error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
-                violations: check.violations,
-              },
+              hideFloor
+                ? { error: `"${v.description}" is priced too low — please check with the office.` }
+                : {
+                    error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
+                    violations: check.violations,
+                  },
               { status: 400 },
             )
           }

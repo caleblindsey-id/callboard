@@ -143,11 +143,14 @@ export async function POST(
         const check = checkPartLines(billable, (pid) => costMap.get(pid))
         if (!check.ok) {
           const v = check.violations[0]
+          // Techs must never see the min price (it back-derives loaded cost).
           return NextResponse.json(
-            {
-              error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
-              violations: check.violations,
-            },
+            isTechnician(user.role)
+              ? { error: `"${v.description}" is priced too low — please check with the office.` }
+              : {
+                  error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
+                  violations: check.violations,
+                },
             { status: 400 },
           )
         }
