@@ -89,7 +89,11 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
   const { data, error } = await query
 
   if (error) throw error
-  return data as ServiceTicketWithJoins[]
+  // Partial column select + embedded relations: cast through unknown (matches
+  // getServiceBillingTickets). The deleted_by embed FK (migration 082) isn't in
+  // the generated Supabase types, so the typed query infers a SelectQueryError;
+  // the FK is real, so the embed resolves at runtime.
+  return data as unknown as ServiceTicketWithJoins[]
 }
 
 // --- Service ticket counts grouped by status (service board tabs) ---
@@ -168,7 +172,10 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
     throw error
   }
 
-  return data as ServiceTicketDetail
+  // Cast through unknown: the deleted_by embed FK (migration 082) isn't in the
+  // generated Supabase types, so the typed query infers a SelectQueryError. The
+  // FK is real, so the embed resolves at runtime.
+  return data as unknown as ServiceTicketDetail
 }
 
 // --- Update service ticket fields ---
