@@ -105,10 +105,11 @@ export default async function TicketDetailPage({
 
       {isDeleted && (
         <DeletedBanner
-          ticketId={ticket.id}
           deletedAt={ticket.deleted_at!}
           deletedByName={ticket.deleted_by?.name ?? null}
           canRestore={canRestore}
+          restoreUrl={`/api/tickets/${ticket.id}/restore`}
+          extraNote="Won't be regenerated."
         />
       )}
 

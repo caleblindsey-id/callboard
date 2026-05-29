@@ -1,10 +1,11 @@
 import { getServiceTicket } from '@/lib/db/service-tickets'
-import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { getLaborRate } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
+import DeletedBanner from '@/app/tickets/[id]/DeletedBanner'
 import { ServiceTicketDetail } from './ServiceTicketDetail'
 import AuditHistorySection from '@/components/AuditHistorySection'
 import AceLaborCard from '@/components/AceLaborCard'
@@ -40,6 +41,14 @@ export default async function ServiceTicketPage({
     redirect('/')
   }
 
+  // Techs never see deleted tickets — only managers can review/restore them.
+  if (ticket.deleted_at && isTechnician(user.role)) {
+    redirect('/')
+  }
+
+  const isDeleted = !!ticket.deleted_at
+  const canRestore = !isTechnician(user.role) && RESET_ROLES.includes(user.role ?? ('' as never))
+
   const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
   const aceEntry = await getEntryByTicket('service', ticket.id)
 
@@ -74,6 +83,15 @@ export default async function ServiceTicketPage({
           <ServiceStatusBadge status={ticket.status} />
         </div>
       </div>
+
+      {isDeleted && (
+        <DeletedBanner
+          deletedAt={ticket.deleted_at!}
+          deletedByName={ticket.deleted_by?.name ?? null}
+          canRestore={canRestore}
+          restoreUrl={`/api/service-tickets/${ticket.id}/restore`}
+        />
+      )}
 
       {/* Workflow progression indicator */}
       {WORKFLOW_STEPS.includes(ticket.status) && (() => {

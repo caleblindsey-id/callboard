@@ -169,6 +169,7 @@ export async function GET(request: NextRequest) {
       ticketType?: ServiceTicketType
       billingType?: ServiceBillingType
       waitingOnParts?: boolean
+      deletedOnly?: boolean
     } = {}
 
     if (searchParams.get('status')) filters.status = searchParams.get('status') as ServiceTicketStatus
@@ -182,6 +183,10 @@ export async function GET(request: NextRequest) {
     // Techs only see their own tickets (RLS enforces this too, but filter for clarity)
     if (isTechnician(user.role)) {
       filters.technicianId = user.id
+    } else if (searchParams.get('deleted') === '1') {
+      // Manager-only "Deleted" board view. Techs never reach this branch, so a
+      // tech passing ?deleted=1 is ignored and they still get their live tickets.
+      filters.deletedOnly = true
     }
 
     const tickets = await getServiceTickets(filters)

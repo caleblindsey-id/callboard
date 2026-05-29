@@ -5,13 +5,17 @@ import { useRouter } from 'next/navigation'
 import { Trash2, RotateCcw } from 'lucide-react'
 
 interface Props {
-  ticketId: string
   deletedAt: string
   deletedByName: string | null
   canRestore: boolean
+  // Restore endpoint for this ticket type — PM and service post to different
+  // routes, so the caller supplies the URL.
+  restoreUrl: string
+  // PM-only tail note ("Won't be regenerated."); service has no regeneration.
+  extraNote?: string
 }
 
-export default function DeletedBanner({ ticketId, deletedAt, deletedByName, canRestore }: Props) {
+export default function DeletedBanner({ deletedAt, deletedByName, canRestore, restoreUrl, extraNote }: Props) {
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,7 +26,7 @@ export default function DeletedBanner({ ticketId, deletedAt, deletedByName, canR
     setRestoring(true)
     setError(null)
     try {
-      const res = await fetch(`/api/tickets/${ticketId}/restore`, { method: 'POST' })
+      const res = await fetch(restoreUrl, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setError(data.error ?? 'Failed to restore ticket')
@@ -43,7 +47,8 @@ export default function DeletedBanner({ ticketId, deletedAt, deletedByName, canR
             <p className="font-semibold text-gray-900 dark:text-white">This ticket is deleted</p>
             <p className="text-gray-600 dark:text-gray-400 mt-0.5">
               Deleted {when}
-              {deletedByName && <> by {deletedByName}</>}. Hidden from boards, billing, and PDFs. Won&apos;t be regenerated.
+              {deletedByName && <> by {deletedByName}</>}. Hidden from boards, billing, and PDFs.
+              {extraNote && <> {extraNote}</>}
             </p>
           </div>
         </div>

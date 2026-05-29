@@ -20,19 +20,25 @@ interface ServiceTicketFilters {
   ticketType?: ServiceTicketType
   billingType?: ServiceBillingType
   waitingOnParts?: boolean
+  // Soft-delete scoping (parity with PM getTickets). Default (both unset) excludes
+  // deleted tickets. deletedOnly → only deleted; includeDeleted → both.
+  includeDeleted?: boolean
+  deletedOnly?: boolean
 }
 
 // Applies the non-status filters shared by the listing query and the
 // per-status count queries. Centralizing them (especially the waiting-on-parts
-// predicate) keeps the board's list and tab counts from drifting apart. Status
-// is intentionally NOT applied here — the list applies its single status filter
-// and the counts helper iterates every status separately.
+// and soft-delete predicates) keeps the board's list and tab counts from
+// drifting apart. Status is intentionally NOT applied here — the list applies
+// its single status filter and the counts helper iterates every status separately.
 function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters): Q {
   // The Supabase builder is chainable but its generics make a typed pass-through
   // awkward; cast to a minimal chainable shape, reassign, and return as Q.
   let q = query as unknown as {
     eq(column: string, value: unknown): typeof q
     neq(column: string, value: unknown): typeof q
+    is(column: string, value: unknown): typeof q
+    not(column: string, operator: string, value: unknown): typeof q
   }
   if (filters?.technicianId) q = q.eq('assigned_technician_id', filters.technicianId)
   if (filters?.customerId) q = q.eq('customer_id', filters.customerId)
@@ -41,6 +47,13 @@ function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters):
   if (filters?.billingType) q = q.eq('billing_type', filters.billingType)
   if (filters?.waitingOnParts) {
     q = q.eq('parts_received', false).neq('parts_requested', '[]' as unknown as PartRequest[])
+  }
+  // Soft-delete scoping. Default hides deleted tickets from every board/count
+  // surface; the manager-only "Deleted" view opts in via deletedOnly.
+  if (filters?.deletedOnly) {
+    q = q.not('deleted_at', 'is', null)
+  } else if (!filters?.includeDeleted) {
+    q = q.is('deleted_at', null)
   }
   return q as unknown as Q
 }
@@ -59,12 +72,13 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       contact_name, contact_phone, service_address, service_city, service_state,
       equipment_make, equipment_model, estimate_amount, billing_amount,
       synergy_order_number, synergy_validation_status, parts_received,
-      created_at, updated_at, started_at, completed_at,
+      created_at, updated_at, started_at, completed_at, deleted_at,
       customers ( name, account_number, credit_hold ),
       equipment ( make, model, serial_number, description,
         ship_to_locations ( name, address, city, state, zip )
       ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
+      deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
       credit_reviews ( status )
     `)
     .order('created_at', { ascending: false })
@@ -89,7 +103,7 @@ const SERVICE_STATUS_VALUES: ServiceTicketStatus[] = [
   'open', 'estimated', 'approved', 'in_progress', 'completed', 'billed', 'declined', 'canceled',
 ]
 
-export type ServiceTicketStatusCounts = Record<ServiceTicketStatus, number> & { all: number }
+export type ServiceTicketStatusCounts = Record<ServiceTicketStatus, number> & { all: number; deleted: number }
 
 export async function getServiceTicketStatusCounts(
   filters?: ServiceTicketFilters
@@ -104,11 +118,22 @@ export async function getServiceTicketStatusCounts(
 
   const allQuery = baseQuery()
   const statusQueries = SERVICE_STATUS_VALUES.map((status) => baseQuery().eq('status', status))
+  // Deleted badge for the manager-only "Deleted" board view. Counted separately
+  // because the per-status counts (and `all`) exclude soft-deleted tickets.
+  const deletedQuery = applyServiceTicketFilters(
+    supabase.from('service_tickets').select('id', { count: 'exact', head: true }),
+    { ...filters, deletedOnly: true }
+  )
 
-  const [allResult, ...statusResults] = await Promise.all([allQuery, ...statusQueries])
+  const [allResult, deletedResult, ...statusResults] = await Promise.all([
+    allQuery,
+    deletedQuery,
+    ...statusQueries,
+  ])
 
   if (allResult.error) throw allResult.error
-  const counts = { all: allResult.count ?? 0 } as ServiceTicketStatusCounts
+  if (deletedResult.error) throw deletedResult.error
+  const counts = { all: allResult.count ?? 0, deleted: deletedResult.count ?? 0 } as ServiceTicketStatusCounts
   SERVICE_STATUS_VALUES.forEach((status, i) => {
     const r = statusResults[i]
     if (r.error) throw r.error
@@ -132,6 +157,7 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
       ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
       created_by:users!service_tickets_created_by_id_fkey ( name ),
+      deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
       credit_reviews ( id, status, block_reason, decided_by_name )
     `)
     .eq('id', id)
@@ -266,6 +292,7 @@ export async function getServiceBillingTickets(
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
     `)
     .eq('status', 'completed')
+    .is('deleted_at', null)
 
   if (month !== undefined && year !== undefined) {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`
@@ -294,6 +321,7 @@ export async function getServiceTicketsForEquipment(equipmentId: string) {
     `)
     .eq('equipment_id', equipmentId)
     .in('status', ['completed', 'billed'])
+    .is('deleted_at', null)
     .order('completed_at', { ascending: false })
 
   if (error) throw error
@@ -334,6 +362,7 @@ export async function getPartsOnOrderCount(
   let serviceQuery = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .filter('parts_requested', 'cs', JSON.stringify([{ status: 'ordered' }]))
     .not('status', 'in', '("billed","declined","canceled")')
   let pmQuery = supabase
@@ -377,6 +406,7 @@ export async function getPartsReadyForPickupCount(
   let serviceQuery = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .filter('parts_requested', 'cs', JSON.stringify([{ status: 'received' }]))
     .not('status', 'in', '("billed","declined","canceled")')
   let pmQuery = supabase
@@ -424,6 +454,7 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
         .from('service_tickets')
         .select('id', { count: 'exact', head: true })
         .eq('status', status)
+        .is('deleted_at', null)
       if (technicianId) {
         q = q.eq('assigned_technician_id', technicianId)
       }
