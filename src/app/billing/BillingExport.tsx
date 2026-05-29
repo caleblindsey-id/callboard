@@ -23,6 +23,24 @@ function needsPo(t: TicketWithJoins): boolean {
   return !!t.customers?.po_required && !t.po_number
 }
 
+// Compact ship-to label so identically-named machines can be told apart on the
+// phone. Mirrors the detail page resolution: the PM's snapshot ship-to first
+// (set when a tech relocates equipment mid-PM), then the equipment's home
+// ship-to. Prefer the location name, falling back to city then street.
+function shipToLabel(t: TicketWithJoins): string | null {
+  const loc = t.pm_ship_to ?? t.equipment?.ship_to_locations
+  if (!loc) return null
+  return loc.name || loc.city || loc.address || null
+}
+
+// Account # · ship-to, shown under the customer name. Both are optional;
+// returns null when neither is known so we can skip the line entirely.
+function customerSubline(t: TicketWithJoins): string | null {
+  const acct = t.customers?.account_number
+  const parts = [acct ? `Acct #${acct}` : null, shipToLabel(t)].filter(Boolean)
+  return parts.length ? parts.join(' · ') : null
+}
+
 // 0 is the "All months" sentinel for the month picker — no date narrowing.
 const ALL_MONTHS = 0
 
@@ -353,11 +371,21 @@ export default function BillingExport({
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {t.customers?.name ?? '—'}
                         </p>
+                        {customerSubline(t) && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {customerSubline(t)}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                           {[t.equipment?.make, t.equipment?.model]
                             .filter(Boolean)
                             .join(' ') || '—'}
                         </p>
+                        {t.equipment?.serial_number && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            S/N {t.equipment.serial_number}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           Tech: {t.users?.name ?? '—'} · Hrs: {t.hours_worked ?? '—'} ·{' '}
                           {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
@@ -423,6 +451,11 @@ export default function BillingExport({
                         </td>
                         <td className="px-4 py-3 text-gray-900 dark:text-white">
                           {t.customers?.name ?? '—'}
+                          {customerSubline(t) && (
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                              {customerSubline(t)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           {renderPoStatus(t)}
@@ -431,6 +464,11 @@ export default function BillingExport({
                           {[t.equipment?.make, t.equipment?.model]
                             .filter(Boolean)
                             .join(' ') || '—'}
+                          {t.equipment?.serial_number && (
+                            <span className="block text-xs text-gray-500 dark:text-gray-400">
+                              S/N {t.equipment.serial_number}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {t.users?.name ?? '—'}
