@@ -1,3 +1,8 @@
+-- ALREADY APPLIED IN PRODUCTION (2026-05-27, schema_migrations version
+-- 20260527192416 "skip_request_structured"). Renumbered 080 -> 081 when this
+-- branch finally merged, since master already shipped 080_fix_tech_lead_cc_jsonb.
+-- Idempotent (IF NOT EXISTS / DROP IF EXISTS), so a re-run is a no-op.
+--
 -- Structured PM skip requests: capture a reason category, the customer's
 -- recommended next-PM month/year, and whether the equipment is still on site.
 -- All additive + nullable. Existing skip_reason now holds optional free-text
