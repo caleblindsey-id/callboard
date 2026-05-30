@@ -4,11 +4,14 @@ PM Scheduler — Nightly Synergy Order Validation
 
 Validates two things for open service and PM tickets:
 
-  1. `synergy_order_number` exists as `OrdNum` in Synergy `roh`
+  1. `synergy_order_number` exists as `OrdNum` in Synergy — either still open
+     (`roh`) or already invoiced (`invh`). Synergy moves the header from `roh`
+     to `invh` on invoicing, so checking `roh` alone flags every billed order
+     as "not found".
      → writes result to `synergy_validation_status` ('valid' / 'invalid')
 
   2. Each requested part's Synergy item number (`product_number`)
-     appears as a `ProdCode` on that order in `rolnew`
+     appears as a `ProdCode` on that order in `rolnew` (open) or `invl` (invoiced)
      → writes result to `parts_validation_status`
         ('valid' = all parts match, 'partial' = some match, 'invalid' = none match,
          NULL = order invalid / no parts)
@@ -148,12 +151,25 @@ def validate_single(table: str, ticket: dict) -> dict:
         return {"ok": False, "error": f"synergy_connect_failed: {e}"}
 
     try:
-        cursor.execute("SELECT OrdNum FROM roh WHERE OrdNum = ?", ord_num)
+        # Real if still open (roh) OR already invoiced (invh) — see the batch
+        # path note. A roh-only check flags every billed order as "not found".
+        cursor.execute(
+            "SELECT OrdNum FROM roh  WHERE OrdNum = ? "
+            "UNION "
+            "SELECT OrdNum FROM invh WHERE OrdNum = ?",
+            ord_num, ord_num,
+        )
         order_ok = cursor.fetchone() is not None
 
         order_prodcodes: set[str] = set()
         if order_ok:
-            cursor.execute("SELECT ProdCode FROM rolnew WHERE OrdNum = ?", ord_num)
+            # Lines live in rolnew while open, invl once invoiced — union both.
+            cursor.execute(
+                "SELECT ProdCode FROM rolnew WHERE OrdNum = ? "
+                "UNION "
+                "SELECT ProdCode FROM invl   WHERE OrdNum = ?",
+                ord_num, ord_num,
+            )
             for (prod_code,) in cursor.fetchall():
                 if prod_code is not None:
                     order_prodcodes.add(str(prod_code).strip())
@@ -302,25 +318,36 @@ def main() -> None:
         log.error(f"Failed to connect to Synergy: {e}")
         sys.exit(1)
 
-    # 3a. Which orders exist?
+    # 3a. Which orders exist? An order is real if it's still open (roh) OR has
+    # already been invoiced (invh). Synergy moves a header out of roh into invh
+    # on invoicing, so a roh-only check flags every billed order as "not found"
+    # — which is exactly when the office types the order # on a service ticket.
     valid_orders: set[int] = set()
     batch_size = 100
     for i in range(0, len(unique_orders), batch_size):
         batch = unique_orders[i:i + batch_size]
         placeholders = ",".join(str(o) for o in batch)
-        cursor.execute(f"SELECT OrdNum FROM roh WHERE OrdNum IN ({placeholders})")
+        cursor.execute(
+            f"SELECT OrdNum FROM roh  WHERE OrdNum IN ({placeholders}) "
+            f"UNION "
+            f"SELECT OrdNum FROM invh WHERE OrdNum IN ({placeholders})"
+        )
         for row in cursor.fetchall():
             valid_orders.add(row[0])
     log.info(f"Synergy returned {len(valid_orders)} matching orders out of {len(unique_orders)} checked.")
 
-    # 3b. Fetch every ProdCode on each valid order (one query, batched)
+    # 3b. Fetch every ProdCode on each valid order (one query, batched). Lines
+    # live in rolnew while open and in invl once invoiced — union both so the
+    # parts check works for billed orders too.
     prodcodes_by_order: dict[int, set[str]] = {}
     valid_list = sorted(valid_orders)
     for i in range(0, len(valid_list), batch_size):
         batch = valid_list[i:i + batch_size]
         placeholders = ",".join(str(o) for o in batch)
         cursor.execute(
-            f"SELECT OrdNum, ProdCode FROM rolnew WHERE OrdNum IN ({placeholders})"
+            f"SELECT OrdNum, ProdCode FROM rolnew WHERE OrdNum IN ({placeholders}) "
+            f"UNION "
+            f"SELECT OrdNum, ProdCode FROM invl   WHERE OrdNum IN ({placeholders})"
         )
         for ord_num, prod_code in cursor.fetchall():
             if prod_code is None:
