@@ -752,6 +752,31 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     }
   }
 
+  async function handleDownloadWorkOrder() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/service-tickets/${ticket.id}/work-order-pdf`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to generate work order PDF')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ?? 'work-order.pdf'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download work order')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleEmailEstimate() {
     if (!ticket.contact_email) {
       setError('No contact email on this ticket — add one before emailing the estimate.')
@@ -2671,6 +2696,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               </InfoField>
             </div>
           )}
+
+          {/* Customer-facing completion document (parity with the PM work order). */}
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={handleDownloadWorkOrder}
+              disabled={loading}
+              className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px]"
+            >
+              Download Work Order PDF
+            </button>
+          </div>
         </Card>
       )}
 
