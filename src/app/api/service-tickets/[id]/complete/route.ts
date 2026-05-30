@@ -18,6 +18,8 @@ interface CompleteServiceTicketBody {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   warranty_labor_covered?: boolean
+  machine_hours?: number | null
+  date_code?: string | null
   ace_labor?: { hours: number; reason: string } | null
 }
 
@@ -63,6 +65,19 @@ export async function POST(
         { status: 400 }
       )
     }
+
+    // Machine hours / date code are optional on service tickets (not every unit
+    // has an hour meter), but when provided must be valid.
+    if (body.machine_hours != null && !isNonNegativeNumber(body.machine_hours)) {
+      return NextResponse.json(
+        { error: 'machine_hours must be a non-negative number' },
+        { status: 400 }
+      )
+    }
+    const machineHours = body.machine_hours ?? null
+    const dateCode = typeof body.date_code === 'string' && body.date_code.trim()
+      ? body.date_code.trim()
+      : null
 
     // Validate parts_used: every line non-negative price + positive qty
     if (Array.isArray(parts_used)) {
@@ -264,6 +279,8 @@ export async function POST(
       customer_signature_name: customer_signature_name ?? null,
       photos: photos ?? [],
       warranty_labor_covered: body.warranty_labor_covered,
+      machine_hours: machineHours,
+      date_code: dateCode,
     })
 
     return NextResponse.json(updated)

@@ -209,6 +209,8 @@ export async function completeServiceTicket(
     customer_signature_name: string | null
     photos: ServiceTicketRow['photos']
     warranty_labor_covered?: boolean
+    machine_hours?: number | null
+    date_code?: string | null
   }
 ): Promise<ServiceTicketRow> {
   const supabase = await createClient()
@@ -226,6 +228,8 @@ export async function completeServiceTicket(
       customer_signature_name: data.customer_signature_name,
       photos: data.photos,
       warranty_labor_covered: data.warranty_labor_covered ?? false,
+      machine_hours: data.machine_hours ?? null,
+      date_code: data.date_code ?? null,
     })
     .eq('id', id)
     .select()

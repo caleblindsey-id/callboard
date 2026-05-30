@@ -22,6 +22,8 @@ interface ServiceWorkOrderData {
   serviceAddress: string | null
   equipmentLine: string
   serialNumber: string | null
+  machineHours: number | null
+  dateCode: string | null
   contactName: string | null
   contactEmail: string | null
   contactPhone: string | null
@@ -222,6 +224,17 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             {workOrder.serialNumber ? `  |  Serial: ${workOrder.serialNumber}` : ''}
           </Text>
         </View>
+        {(workOrder.machineHours != null || workOrder.dateCode) && (
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Service Data:</Text>
+            <Text style={styles.fieldValue}>
+              {[
+                workOrder.machineHours != null ? `${workOrder.machineHours} machine hrs` : null,
+                workOrder.dateCode ? `Date code ${workOrder.dateCode}` : null,
+              ].filter(Boolean).join('  |  ')}
+            </Text>
+          </View>
+        )}
         {(workOrder.contactName || workOrder.contactEmail || workOrder.contactPhone) && (
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Site Contact:</Text>
