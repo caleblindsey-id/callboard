@@ -549,6 +549,7 @@ export function CreateServiceTicketForm() {
   }
 
   const customerSelected = !!customerId
+  const selectedShipTo = shipTos.find((s) => String(s.id) === shipToId) ?? null
   const noEquipment = customerSelected && equipmentLoaded && equipment.length === 0
   const totalSteps = ticketType === 'outside' ? 6 : 5
 
@@ -667,14 +668,32 @@ export function CreateServiceTicketForm() {
                   <option value="">— No ship-to (enter address manually) —</option>
                   {shipTos.map((s) => (
                     <option key={s.id} value={String(s.id)}>
-                      {s.name}
-                      {s.city || s.state ? ` — ${[s.city, s.state].filter(Boolean).join(', ')}` : ''}
+                      {[s.name, s.address || [s.city, s.state, s.zip].filter(Boolean).join(' ')]
+                        .filter(Boolean)
+                        .join(' — ')}
                     </option>
                   ))}
                 </select>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                   Selecting a ship-to filters equipment and pre-fills the service address.
                 </p>
+                {selectedShipTo && (
+                  <div className="mt-3 rounded-md bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm">
+                    <p className="font-medium text-gray-900 dark:text-white">{selectedShipTo.name}</p>
+                    <p className="text-gray-600 dark:text-gray-300">
+                      {selectedShipTo.address ||
+                        [selectedShipTo.city, selectedShipTo.state, selectedShipTo.zip]
+                          .filter(Boolean)
+                          .join(' ') ||
+                        'No address on file'}
+                    </p>
+                    {(selectedShipTo.contact || selectedShipTo.email) && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        {[selectedShipTo.contact, selectedShipTo.email].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
