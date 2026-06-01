@@ -33,7 +33,7 @@ function handlePartSearch(
 ) {
   setter((prev) => {
     const updated = [...prev]
-    updated[index] = { ...updated[index], description: value, isFromDb: false, synergyProductId: null }
+    updated[index] = { ...updated[index], description: value, isFromDb: false, synergyProductId: null, requiresDetail: false }
     return updated
   })
 
@@ -64,7 +64,7 @@ function handlePartSearch(
     const q = sanitizeOrValue(value.trim())
     const { data } = await supabase
       .from('products')
-      .select('id, synergy_id, number, description, unit_price')
+      .select('id, synergy_id, number, description, unit_price, requires_detail')
       .or(safeOrRaw([
         { column: 'number', op: 'ilike', raw: `%${q}%` },
         { column: 'description', op: 'ilike', raw: `%${q}%` },
@@ -101,6 +101,7 @@ function handleSelectProduct(
       unitPrice: zeroPrices ? '0' : String(product.unit_price ?? 0),
       synergyProductId: Number(product.synergy_id),
       isFromDb: true,
+      requiresDetail: !!product.requires_detail,
       searchOpen: false,
       searchResults: [],
     }
@@ -114,14 +115,14 @@ function handleClearProduct(
 ) {
   setter((prev) => {
     const updated = [...prev]
-    updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, isFromDb: false }
+    updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, isFromDb: false, requiresDetail: false, detail: '' }
     return updated
   })
 }
 
 function handleUpdatePartField(
   index: number,
-  field: 'quantity' | 'unitPrice',
+  field: 'quantity' | 'unitPrice' | 'detail',
   value: string,
   setter: React.Dispatch<React.SetStateAction<PartEntry[]>>
 ) {
@@ -265,6 +266,21 @@ export function renderPartsSection({
                   Remove
                 </button>
               </div>
+              {/* Free-text detail — catch-all items (products.requires_detail, e.g.
+                  SHOP SUPPLIES). Spans the full grid width on desktop. */}
+              {(part.requiresDetail || part.detail) && (
+                <div className="sm:col-span-full">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Details</label>
+                  <input
+                    type="text"
+                    value={part.detail ?? ''}
+                    onChange={(e) => handleUpdatePartField(i, 'detail', e.target.value, setter)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                    placeholder="Describe the items, e.g. rags, lubricant, fasteners (optional)"
+                    className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

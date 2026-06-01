@@ -123,6 +123,14 @@ export interface PartUsed {
   quantity: number
   description: string
   unit_price: number
+  // Free-text detail for catch-all catalog items flagged products.requires_detail
+  // (e.g. "SHOP SUPPLIES" → "rags, lubricant, fasteners"). Optional. Rendered
+  // in-line after the description on customer-facing PDFs/views via partLabel().
+  detail?: string
+  // Snapshot of the product's requires_detail flag at entry time. Persisted so
+  // the detail input can be re-shown on reload (the product-select event that
+  // first sets it never fires again on rehydrate). See partsFromSaved().
+  requires_detail?: boolean
 }
 
 export interface DefaultProduct {
@@ -139,6 +147,9 @@ export interface TicketPhoto {
 export interface PartRequest {
   description: string
   quantity: number
+  // Free-text detail for catch-all catalog items flagged products.requires_detail
+  // (e.g. "SHOP SUPPLIES"). Optional; mirrors PartUsed.detail.
+  detail?: string
   // Synergy item number (display string, e.g. "146400019"). Source of truth for billing.
   product_number?: string
   // Int form of products.synergy_id — set when the office picks a catalog match.
@@ -274,6 +285,10 @@ export type ProductRow = {
   // Loaded cost (Synergy CostLoad, CostPO fallback). Internal/server-only —
   // never select this onto a tech-facing payload. Backs the margin floor.
   unit_cost: number | null
+  // Catch-all items (e.g. "SHOP SUPPLIES") set this so the parts entry form
+  // prompts for a free-text detail of what the supplies were. Manually curated
+  // — NOT written by the nightly Synergy sync, so it sticks across syncs.
+  requires_detail: boolean
   synced_at: string | null
 }
 
@@ -592,7 +607,7 @@ export type ContactInsert = MakeOptional<
 
 export type ProductInsert = MakeOptional<
   Omit<ProductRow, 'id'>,
-  'synced_at' | 'description' | 'unit_price' | 'unit_cost'
+  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail'
 >
 
 export type UserInsert = MakeOptional<

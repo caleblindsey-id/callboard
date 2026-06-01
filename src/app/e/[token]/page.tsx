@@ -64,6 +64,7 @@ export default async function ApprovalPage({
   const laborTotal = laborHours * laborRate
   const parts = (ticket.estimate_parts ?? []) as Array<{
     description: string
+    detail?: string
     quantity: number
     unit_price: number
     warranty_covered?: boolean
@@ -174,7 +175,7 @@ export default async function ApprovalPage({
               {parts.map((part, i) => (
                 <div key={i} className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">
-                    {part.description} ×{part.quantity}
+                    {part.detail ? `${part.description} — ${part.detail}` : part.description} ×{part.quantity}
                     {part.warranty_covered ? ' (warranty)' : ''}
                   </span>
                   <span className="font-medium text-gray-900 dark:text-white">

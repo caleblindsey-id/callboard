@@ -71,7 +71,7 @@ export async function POST(
     }
 
     // Resolve product numbers
-    type RawPart = { synergy_product_id?: number; quantity: number; description?: string; unit_price: number }
+    type RawPart = { synergy_product_id?: number; quantity: number; description?: string; detail?: string; unit_price: number }
     const allParts = [...(raw.parts_used as RawPart[] ?? []), ...(raw.additional_parts_used as RawPart[] ?? [])]
     const productIdSet = new Set<number>()
     for (const part of allParts) {
@@ -114,6 +114,7 @@ export async function POST(
             productDescMap.get(part.synergy_product_id)) ||
           part.description ||
           'Unknown part',
+        detail: part.detail ?? null,
         quantity: part.quantity,
         unitPrice: typeof part.unit_price === 'number' ? part.unit_price : 0,
       }))

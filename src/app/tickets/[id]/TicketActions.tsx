@@ -14,6 +14,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import SkipDialog from '../SkipDialog'
 import SkipRequestForm, { SkipRequestPayload } from './SkipRequestForm'
 import { renderPartsSection } from './renderPartsSection'
+import { partLabel } from '@/lib/parts'
 import { calcNextServiceMonth, formatMonthYear } from '@/lib/utils/schedule'
 import { skipReasonLabel, isStopReason } from '@/lib/skip-reasons'
 
@@ -23,6 +24,9 @@ export interface ProductResult {
   number: string
   description: string | null
   unit_price: number | null
+  // Catch-all items (e.g. "SHOP SUPPLIES") set this so the entry form prompts
+  // for a free-text detail of what the supplies actually were.
+  requires_detail?: boolean
 }
 
 export interface PartEntry {
@@ -37,6 +41,11 @@ export interface PartEntry {
   searchOpen: boolean
   searchResults: ProductResult[]
   searching: boolean
+  // True when the selected catalog item is flagged products.requires_detail
+  // (e.g. SHOP SUPPLIES). Persisted so the detail input survives reload.
+  requiresDetail?: boolean
+  // Free-text "what were the supplies". Optional.
+  detail?: string
 }
 
 interface TicketActionsProps {
@@ -58,6 +67,10 @@ function partsFromSaved(saved: PartUsed[]): PartEntry[] {
     searchOpen: false,
     searchResults: [],
     searching: false,
+    // Restore the detail input on reload (the product-select event that sets
+    // requiresDetail never fires again on rehydrate).
+    requiresDetail: !!p.requires_detail,
+    detail: p.detail ?? '',
   }))
 }
 
@@ -80,6 +93,9 @@ function toPartUsed(entries: PartEntry[]): PartUsed[] {
     description: p.description,
     quantity: parseFloat(p.quantity) || 0,
     unit_price: parseFloat(p.unitPrice) || 0,
+    // Persist only when meaningful so non-flagged parts stay lean.
+    ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
+    ...(p.requiresDetail ? { requires_detail: true } : {}),
   }))
 }
 
@@ -1356,7 +1372,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           <div className="space-y-1">
             {ticket.parts_used.map((part, i) => (
               <div key={`ro-pm-${i}`} className="text-sm text-gray-900 dark:text-white">
-                {part.description} — Qty: {part.quantity}
+                {partLabel(part)} — Qty: {part.quantity}
               </div>
             ))}
           </div>
@@ -1385,7 +1401,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             <div className="space-y-1">
               {ticket.additional_parts_used.map((part, i) => (
                 <div key={`ro-addl-${i}`} className="text-sm text-gray-900 dark:text-white">
-                  {part.description} — Qty: {part.quantity}
+                  {partLabel(part)} — Qty: {part.quantity}
                   {` @ $${part.unit_price.toFixed(2)} = $${(part.quantity * part.unit_price).toFixed(2)}`}
                 </div>
               ))}

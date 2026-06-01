@@ -9,6 +9,7 @@ import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
+import { partLabel } from '@/lib/parts'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import { createClient } from '@/lib/supabase/client'
@@ -1946,7 +1947,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                       {ticket.estimate_parts.map((part, i) => (
                         <div key={i} className="flex justify-between">
                           <span className="truncate mr-4">
-                            {part.description} x{part.quantity}
+                            {partLabel(part)} x{part.quantity}
                             {part.warranty_covered && (
                               <span className="ml-1 text-xs text-green-600 dark:text-green-400">(warranty)</span>
                             )}
@@ -2265,7 +2266,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     <div key={i} className="flex flex-col gap-2 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <div className="flex-1 min-w-0">
-                          <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{part.description}</span>
+                          <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{partLabel(part)}</span>
                           {part.product_number && isTech && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                           )}
@@ -2769,7 +2770,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 {ticket.parts_used.map((part, i) => (
                   <div key={`ro-part-${i}`} className="flex items-center justify-between text-sm">
                     <span className="text-gray-900 dark:text-white">
-                      {part.description} x{part.quantity}
+                      {partLabel(part)} x{part.quantity}
                       {part.warranty_covered && (
                         <span className="ml-2 text-xs text-green-600 dark:text-green-400">(Warranty)</span>
                       )}
@@ -2878,7 +2879,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               <div className="space-y-1">
                 {ticket.parts_used.map((part, i) => (
                   <div key={`tech-part-${i}`} className="text-sm text-gray-900 dark:text-white">
-                    {part.description} x{part.quantity}
+                    {partLabel(part)} x{part.quantity}
                   </div>
                 ))}
               </div>

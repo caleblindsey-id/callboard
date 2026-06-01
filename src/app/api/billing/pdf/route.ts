@@ -32,12 +32,14 @@ interface RawTicket {
     synergy_product_id?: number
     quantity: number
     description?: string
+    detail?: string
     unit_price: number
   }> | null
   additional_parts_used: Array<{
     synergy_product_id?: number
     quantity: number
     description?: string
+    detail?: string
     unit_price: number
   }> | null
   additional_hours_worked: number | null
@@ -288,6 +290,7 @@ export async function POST(request: NextRequest) {
             productDescMap.get(part.synergy_product_id)) ||
           part.description ||
           'Unknown part',
+        detail: part.detail ?? null,
         quantity: part.quantity,
         unit_price: part.unit_price,
       }))
@@ -346,6 +349,7 @@ export async function POST(request: NextRequest) {
               productDescMap.get(part.synergy_product_id)) ||
             part.description ||
             'Unknown part',
+          detail: part.detail ?? null,
           quantity: part.quantity,
           unit_price: part.unit_price,
         })),

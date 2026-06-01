@@ -1,6 +1,7 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { APP_NAME } from '@/lib/branding'
 import type { BillingTicket, PartLine } from '@/types/billing'
+import { partLabel } from '@/lib/parts'
 
 // ============================================================
 // Types
@@ -384,7 +385,7 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
           ticket.partsUsed.map((part, idx) => (
             <View key={idx} style={styles.tableRow}>
               <Text style={styles.colProductNum}>{part.productNumber ?? '—'}</Text>
-              <Text style={styles.colDescription}>{dash(part.description)}</Text>
+              <Text style={styles.colDescription}>{dash(partLabel(part))}</Text>
               <Text style={styles.colQty}>{part.quantity}</Text>
             </View>
           ))
@@ -421,7 +422,7 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
               {ticket.additionalPartsUsed.map((part, idx) => (
                 <View key={idx} style={styles.tableRow}>
                   <Text style={styles.colProductNum}>{part.productNumber ?? '—'}</Text>
-                  <Text style={styles.colDescription}>{dash(part.description)}</Text>
+                  <Text style={styles.colDescription}>{dash(partLabel(part))}</Text>
                   <Text style={styles.colQty}>{part.quantity}</Text>
                   <Text style={styles.colUnitPrice}>{fmt(part.unit_price)}</Text>
                   <Text style={styles.colTotal}>{fmt(part.quantity * part.unit_price)}</Text>
