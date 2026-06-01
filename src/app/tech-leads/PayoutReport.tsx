@@ -318,7 +318,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
           <button
             type="button"
             onClick={exportCsv}
-            disabled={inRange.length === 0}
+            disabled={inRange.length === 0 && aceInRange.length === 0}
             className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
           >
             Export CSV
