@@ -1,6 +1,6 @@
 import { getServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
-import { getLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -49,7 +49,7 @@ export default async function ServiceTicketPage({
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user.role) && RESET_ROLES.includes(user.role ?? ('' as never))
 
-  const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
+  const laborRate = await getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard')
   const aceEntry = await getEntryByTicket('service', ticket.id)
 
   const equipmentLabel = ticket.equipment

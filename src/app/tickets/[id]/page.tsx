@@ -20,7 +20,7 @@ import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
-import { getLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate } from '@/lib/db/settings'
 import { getEntryByTicket } from '@/lib/db/ace-labor'
 import { describeSchedule, formatMonthYear } from '@/lib/utils/schedule'
 
@@ -65,7 +65,7 @@ export default async function TicketDetailPage({
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user?.role ?? null) && RESET_ROLES.includes(user?.role ?? ('' as never))
 
-  const laborRate = await getLaborRate(ticket.labor_rate_type ?? 'standard')
+  const laborRate = await getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard')
   const aceEntry = await getEntryByTicket('pm', ticket.id)
 
   const showBilling = !isTechnician(user?.role ?? null)
