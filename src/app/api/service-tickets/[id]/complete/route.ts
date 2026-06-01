@@ -6,6 +6,7 @@ import { getCustomerLaborRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines } from '@/lib/margin'
+import { equipmentNeedsVerification } from '@/lib/equipment'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -101,7 +102,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, labor_rate_type, customer_id')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, labor_rate_type, equipment_id, customer_id')
       .eq('id', id)
       .single()
 
@@ -140,6 +141,24 @@ export async function POST(
         { error: `Ticket must be in_progress to complete (currently: ${current.status})` },
         { status: 409 }
       )
+    }
+
+    // Equipment details gate: a technician must have entered (if missing) or
+    // verified (if present) the unit's make/model/serial before completion.
+    // Verify-once — a stamped unit is trusted on future visits. Tickets with no
+    // associated equipment (general service calls) skip the gate.
+    if (current.equipment_id) {
+      const { data: eq } = await supabase
+        .from('equipment')
+        .select('make, model, details_verified_at')
+        .eq('id', current.equipment_id)
+        .maybeSingle()
+      if (equipmentNeedsVerification(eq)) {
+        return NextResponse.json(
+          { error: 'Verify the equipment make, model, and serial number before completing this ticket.' },
+          { status: 409 }
+        )
+      }
     }
 
     // Margin floor (parts only, per-line): every billable part must keep >= 15%

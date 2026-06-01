@@ -328,6 +328,8 @@ export type EquipmentRow = {
   contact_phone: string | null
   default_products: DefaultProduct[]
   blanket_po_number: string | null
+  details_verified_at: string | null
+  details_verified_by: string | null
   active: boolean
   created_at: string
   updated_at: string
@@ -626,7 +628,7 @@ export type UserInsert = MakeOptional<
 
 export type EquipmentInsert = MakeOptional<
   Omit<EquipmentRow, 'id' | 'created_at' | 'updated_at'>,
-  'active' | 'customer_id' | 'default_technician_id' | 'ship_to_location_id' | 'make' | 'model' | 'serial_number' | 'description' | 'location_on_site' | 'contact_name' | 'contact_email' | 'contact_phone' | 'default_products' | 'blanket_po_number'
+  'active' | 'customer_id' | 'default_technician_id' | 'ship_to_location_id' | 'make' | 'model' | 'serial_number' | 'description' | 'location_on_site' | 'contact_name' | 'contact_email' | 'contact_phone' | 'default_products' | 'blanket_po_number' | 'details_verified_at' | 'details_verified_by'
 >
 
 export type PmScheduleInsert = MakeOptional<

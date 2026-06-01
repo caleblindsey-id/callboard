@@ -18,6 +18,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/tickets\/[0-9a-f-]{36}(\/|$)/i,                   // PATCH /api/tickets/[uuid] and /api/tickets/[uuid]/complete
   /^\/api\/service-tickets(\/|$)/,                           // GET /api/service-tickets + /api/service-tickets/[id]/*
   /^\/api\/equipment\/[^/]+\/notes$/,                        // GET + POST /api/equipment/[id]/notes
+  /^\/api\/equipment\/[^/]+\/verify$/,                       // POST /api/equipment/[id]/verify (tech confirms make/model/serial at completion)
   /^\/api\/tech-leads(\/|$)/,                                // POST /api/tech-leads (Submit Lead modal)
   /^\/api\/ship-to-requests(\/|$)/,                          // POST /api/ship-to-requests (request new ship-to)
   /^\/api\/feedback$/,                                       // POST /api/feedback (FAB submission — all roles)

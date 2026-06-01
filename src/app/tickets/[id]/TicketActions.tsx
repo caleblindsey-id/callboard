@@ -11,6 +11,8 @@ import { formatPhoneNumber } from '@/lib/phone'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
+import { equipmentNeedsVerification } from '@/lib/equipment'
 import SkipDialog from '../SkipDialog'
 import SkipRequestForm, { SkipRequestPayload } from './SkipRequestForm'
 import { renderPartsSection } from './renderPartsSection'
@@ -136,6 +138,22 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   const [completionNotes, setCompletionNotes] = useState(
     ticket.completion_notes ?? ''
   )
+
+  // Equipment-details gate (parity with the server gate in /api/tickets/[id]/complete):
+  // a tech must enter/verify make/model/serial on the linked unit before completing.
+  // Verify-once — skips for already-verified units and equipment-less tickets.
+  const [equipmentJustVerified, setEquipmentJustVerified] = useState(false)
+  const equipmentToVerify =
+    !equipmentJustVerified && ticket.equipment && equipmentNeedsVerification(ticket.equipment)
+      ? ticket.equipment
+      : null
+  const needsEquipmentVerify = equipmentToVerify !== null
+
+  function handleEquipmentVerified() {
+    setEquipmentJustVerified(true)
+    setError(null)
+    router.refresh()
+  }
 
   // PM parts: from saved data or from equipment defaults
   const defaultProducts = ticket.equipment?.default_products ?? []
@@ -287,6 +305,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
 
   async function handleComplete(e: React.FormEvent) {
     e.preventDefault()
+
+    if (needsEquipmentVerify) {
+      setError('Verify the equipment details above before completing.')
+      return
+    }
 
     if (!machineHours || isNaN(parseFloat(machineHours))) {
       setError('Machine hours are required.')
@@ -773,6 +796,15 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
             Complete Ticket
           </h2>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+          {equipmentToVerify ? (
+            <VerifyEquipmentPanel
+              equipmentId={equipmentToVerify.id}
+              make={equipmentToVerify.make}
+              model={equipmentToVerify.model}
+              serial={equipmentToVerify.serial_number}
+              onVerified={handleEquipmentVerified}
+            />
+          ) : (
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Date + PO */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1157,6 +1189,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               />
             )}
           </form>
+          )}
           {(userRole === 'super_admin' || userRole === 'manager') && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reset ticket status</p>
