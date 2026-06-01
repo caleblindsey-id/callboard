@@ -173,6 +173,7 @@ export async function POST(
       laborRate,
       parts: partsUsed.map((p) => ({
         description: p.description,
+        detail: p.detail ?? null,
         quantity: p.quantity,
         unitPrice: p.unit_price,
         warrantyCovered: p.warranty_covered ?? false,

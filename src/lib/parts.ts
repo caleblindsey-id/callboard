@@ -12,3 +12,19 @@ export function partsOnOrder(
 ): PartRequest[] {
   return (parts ?? []).filter((p) => p.status !== 'received' && !p.cancelled)
 }
+
+/**
+ * Display label for a part line: the description, with any free-text `detail`
+ * appended in-line (e.g. "SHOP SUPPLIES — rags, lubricant, fasteners").
+ *
+ * `detail` is captured for catch-all catalog items flagged products.requires_detail.
+ * Single source of truth for the "description — detail" format so every render
+ * site (on-screen lists + PDFs) stays consistent.
+ */
+export function partLabel(
+  part: { description?: string | null; detail?: string | null }
+): string {
+  const desc = (part.description ?? '').trim()
+  const detail = (part.detail ?? '').trim()
+  return detail ? `${desc} — ${detail}` : desc
+}

@@ -6,6 +6,7 @@ import { PartRequest, TicketStatus } from '@/types/database'
 import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
+import { partLabel } from '@/lib/parts'
 
 interface PmPartsSectionProps {
   ticketId: string
@@ -66,6 +67,7 @@ export default function PmPartsSection({
       const newPart: PartRequest = {
         description: entry.description.trim(),
         quantity: Number(entry.quantity) || 1,
+        ...(entry.detail?.trim() ? { detail: entry.detail.trim() } : {}),
         ...(entry.productNumber?.trim() ? { product_number: entry.productNumber.trim() } : {}),
         ...(entry.synergyProductId != null ? { synergy_product_id: entry.synergyProductId } : {}),
         ...(entry.vendorItemCode?.trim() ? { vendor_item_code: entry.vendorItemCode.trim() } : {}),
@@ -242,7 +244,7 @@ export default function PmPartsSection({
               <div key={i} className="flex flex-col gap-2 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <div className="flex-1 min-w-0">
-                    <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{part.description}</span>
+                    <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{partLabel(part)}</span>
                     {part.product_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                     )}
