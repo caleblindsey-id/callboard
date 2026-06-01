@@ -1,4 +1,4 @@
--- 088_customer_special_labor_rates.sql
+-- 089_customer_special_labor_rates.sql
 -- Per-customer negotiated / bid labor rate overrides. CallBoard bills labor at
 -- one of three global hourly rates (standard / industrial / vacuum) chosen per
 -- ticket via labor_rate_type, stored in the settings table. Some customers have
@@ -11,7 +11,9 @@
 -- These affect ONLY what the customer is billed. Internal tech-payout math
 -- (ACE labor) deliberately keeps using the global rate.
 --
--- 087 is reserved by the in-flight equipment-verify branch; this is 088.
+-- Renumbered 088 -> 089: a parallel PR merged 088_product_requires_detail.sql.
+-- Already applied to prod under timestamp version (name: customer_special_labor_rates);
+-- this rename is filename-only and has no DB effect.
 
 ALTER TABLE customers
   ADD COLUMN IF NOT EXISTS special_labor_rate_standard   numeric CHECK (special_labor_rate_standard   >= 0),
