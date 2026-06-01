@@ -11,7 +11,7 @@ const QUEUE_COLUMNS = `
   source, ticket_id, work_order_number, part_index,
   customer_name, assigned_technician_name,
   synergy_order_number, synergy_validation_status, parts_validation_status, synergy_validated_at,
-  requested_at, description, quantity, vendor, vendor_code,
+  requested_at, description, detail, quantity, vendor, vendor_code,
   product_number, synergy_product_id, vendor_item_code, po_number,
   status, cancelled, cancel_reason,
   ordered_at, received_at, ordered_by, received_by
@@ -52,6 +52,7 @@ export type MyPartRow = {
   part_index: number
   customer_name: string | null
   description: string | null
+  detail: string | null
   quantity: number | null
   vendor: string | null
   status: MyPartStatus
@@ -93,6 +94,7 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
         part_index: idx,
         customer_name: ticket.customers?.name ?? null,
         description: part.description ?? null,
+        detail: part.detail ?? null,
         quantity: part.quantity ?? null,
         vendor: part.vendor ?? null,
         status,

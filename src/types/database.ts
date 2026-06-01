@@ -211,6 +211,9 @@ export type PartsQueueRow = {
   synergy_validated_at: string | null
   requested_at: string
   description: string | null
+  // Free-text detail for catch-all items (e.g. SHOP SUPPLIES). Projected from
+  // the parts_requested JSONB by the parts_order_queue view (migration 089).
+  detail: string | null
   quantity: number | null
   vendor: string | null
   vendor_code: string | null
