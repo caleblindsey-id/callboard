@@ -155,7 +155,7 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
     .select(`
       *,
       customers ( name, account_number, po_required, ar_terms, credit_hold ),
-      equipment ( make, model, serial_number, description,
+      equipment ( id, make, model, serial_number, description, details_verified_at,
         ship_to_locations ( name, address, city, state, zip )
       ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),

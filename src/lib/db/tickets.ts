@@ -30,7 +30,7 @@ export { activeCreditReviewStatus } from '@/lib/credit-review-status'
 
 export type TicketDetail = PmTicketRow & {
   customers: { name: string; account_number: string | null; billing_address: string | null; billing_city: string | null; billing_state: string | null; billing_zip: string | null; po_required: boolean; ar_terms: string | null; credit_hold: boolean } | null
-  equipment: { make: string | null; model: string | null; serial_number: string | null; ship_to_location_id: number | null; default_products: { synergy_product_id: number; quantity: number; description: string }[]; ship_to_locations: { name: string | null; address: string | null; city: string | null; state: string | null; zip: string | null } | null } | null
+  equipment: { id: string; make: string | null; model: string | null; serial_number: string | null; details_verified_at: string | null; ship_to_location_id: number | null; default_products: { synergy_product_id: number; quantity: number; description: string }[]; ship_to_locations: { name: string | null; address: string | null; city: string | null; state: string | null; zip: string | null } | null } | null
   pm_ship_to: { name: string | null; address: string | null; city: string | null; state: string | null; zip: string | null } | null
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
@@ -251,7 +251,7 @@ export async function getTicket(id: string, options?: { includeDeleted?: boolean
     .select(`
       *,
       customers(name, account_number, billing_address, billing_city, billing_state, billing_zip, po_required, ar_terms, credit_hold),
-      equipment(make, model, serial_number, ship_to_location_id, default_products, ship_to_locations(name, address, city, state, zip)),
+      equipment(id, make, model, serial_number, details_verified_at, ship_to_location_id, default_products, ship_to_locations(name, address, city, state, zip)),
       pm_ship_to:ship_to_locations!pm_tickets_ship_to_location_id_fkey(name, address, city, state, zip),
       assigned_technician:users!assigned_technician_id(name),
       created_by:users!created_by_id(name),

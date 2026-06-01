@@ -16,6 +16,8 @@ import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
+import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
+import { equipmentNeedsVerification } from '@/lib/equipment'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import type {
@@ -527,6 +529,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
   // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
   const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
+  // Set once the tech verifies the unit this session, for instant UI feedback
+  // ahead of the router.refresh() that re-fetches details_verified_at.
+  const [equipmentJustVerified, setEquipmentJustVerified] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
   // Refs to the estimate / completion cards so opening a form from the Next
@@ -1116,8 +1121,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     })
   }
 
+  function handleEquipmentVerified() {
+    setEquipmentJustVerified(true)
+    setError(null)
+    // Re-fetch so details_verified_at (and the rest of the ticket) is current.
+    router.refresh()
+  }
+
   async function handleComplete(e: React.FormEvent) {
     e.preventDefault()
+
+    if (needsEquipmentVerify) {
+      setError('Verify the equipment details above before completing.')
+      return
+    }
 
     const signatureRequired = ticket.ticket_type !== 'inside'
     if (signatureRequired && (!signatureImage || !signatureName.trim())) {
@@ -1274,6 +1291,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const equipModel = ticket.equipment?.model ?? ticket.equipment_model
   const equipSerial = ticket.equipment?.serial_number ?? ticket.equipment_serial_number
 
+  // Equipment-details gate (mirrors the server gate in /complete): a tech must
+  // enter/verify make/model/serial on the linked equipment before completing.
+  // Verify-once — skips for already-verified units and equipment-less tickets.
+  const equipmentToVerify =
+    !equipmentJustVerified && ticket.equipment && equipmentNeedsVerification(ticket.equipment)
+      ? ticket.equipment
+      : null
+  const needsEquipmentVerify = equipmentToVerify !== null
+
   // (Render helpers moved outside component — see Badge, Card, InfoField above)
 
   // Workflow card props — derived from current state + parts queue.
@@ -1312,7 +1338,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const quickCompleteEligible =
     ticket.status === SERVICE_STATUS.IN_PROGRESS &&
     isTech &&
-    ticket.assigned_technician_id === userId
+    ticket.assigned_technician_id === userId &&
+    // When the unit still needs verification, Quick Complete can't run — the
+    // tech is routed to the full form, which surfaces the verify panel.
+    !needsEquipmentVerify
 
   const signatureRequired = ticket.ticket_type !== 'inside'
 
@@ -2451,6 +2480,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
         <div ref={completionCardRef}>
         <CardSection title="Complete Job" open={completionOpen}>
+          {equipmentToVerify ? (
+            <VerifyEquipmentPanel
+              equipmentId={equipmentToVerify.id}
+              make={equipmentToVerify.make}
+              model={equipmentToVerify.model}
+              serial={equipmentToVerify.serial_number}
+              onVerified={handleEquipmentVerified}
+            />
+          ) : (
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Prefilled-from-estimate reminder. Only shown when an estimate was
                 approved — the work order was seeded from it on Start Work. Calls
@@ -2714,6 +2752,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
               )}
             </div>
           </form>
+          )}
         </CardSection>
         </div>
       )}

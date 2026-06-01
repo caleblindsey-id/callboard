@@ -11,6 +11,7 @@ import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, TicketPhoto } from '@/types/database'
 import { getLaborRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
+import { equipmentNeedsVerification } from '@/lib/equipment'
 
 interface CompleteTicketBody {
   completedDate: string
@@ -127,7 +128,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('pm_tickets')
-      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
+      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, equipment_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -175,6 +176,23 @@ export async function POST(
         { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received.` },
         { status: 400 }
       )
+    }
+
+    // Equipment details gate (parity with service /complete): a technician must
+    // have entered/verified the unit's make/model/serial before completion.
+    // Verify-once. PM tickets normally always reference equipment; skip if not.
+    if (current.equipment_id) {
+      const { data: eq } = await supabase
+        .from('equipment')
+        .select('make, model, details_verified_at')
+        .eq('id', current.equipment_id)
+        .maybeSingle()
+      if (equipmentNeedsVerification(eq)) {
+        return NextResponse.json(
+          { error: 'Verify the equipment make, model, and serial number before completing this ticket.' },
+          { status: 409 }
+        )
+      }
     }
 
     // PM parts always have unit_price zeroed (inventory tracking only)
