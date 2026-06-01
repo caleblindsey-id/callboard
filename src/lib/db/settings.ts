@@ -37,7 +37,8 @@ export async function getCustomerLaborRate(
       .eq('id', customerId)
       .maybeSingle()
     const v = (data as Record<string, unknown> | null)?.[col]
-    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return v
+    // 0 (and null) means "use the global rate" — only a positive override wins.
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
   }
   return getLaborRate(type)
 }
