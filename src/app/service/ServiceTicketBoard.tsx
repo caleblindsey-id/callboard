@@ -10,6 +10,7 @@ import CreditHoldBadge from '@/components/CreditHoldBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { activeCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
+import { createClient } from '@/lib/supabase/client'
 
 // Status tabs for the board — workflow order (actionable stages first, terminal
 // states last) so a manager can scan and follow up by stage. `all` is the count
@@ -109,19 +110,29 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Bulk assign (managers + office staff). Technicians never see these controls.
+  const canManage = !isTech
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [assignTo, setAssignTo] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+  // Bumped to force a ticket re-fetch after a mutation (bulk assign).
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // Load active technicians for the bulk-assign dropdown AND the technician
+  // filter. NB: the old `/api/users` GET fetch silently failed (no GET handler
+  // exists), leaving the filter empty — this client-side query is the proven
+  // pattern used by the create form.
   useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const res = await fetch('/api/users')
-        if (res.ok) {
-          const data = await res.json()
-          setUsers(data)
-        }
-      } catch {
-        // non-critical — tech filter just won't populate
-      }
-    }
-    if (!isTech) fetchUsers()
+    if (isTech) return
+    createClient()
+      .from('users')
+      .select('*')
+      .eq('active', true)
+      .eq('role', 'technician')
+      .order('name')
+      .then(({ data }) => {
+        if (data) setUsers(data)
+      })
   }, [isTech])
 
   useEffect(() => {
@@ -155,7 +166,56 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
       }
     }
     fetchTickets()
-  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, deletedView])
+  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, deletedView, refreshKey])
+
+  // Prune any selected ids that are no longer in the current list (filter change
+  // or refresh) so a stale selection can't be bulk-assigned.
+  useEffect(() => {
+    setSelected((prev) => {
+      const ids = new Set(tickets.map((t) => t.id))
+      const next = new Set<string>()
+      prev.forEach((id) => { if (ids.has(id)) next.add(id) })
+      return next.size === prev.size ? prev : next
+    })
+  }, [tickets])
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected((prev) =>
+      prev.size === tickets.length ? new Set() : new Set(tickets.map((t) => t.id))
+    )
+  }
+
+  async function handleBulkAssign() {
+    if (!assignTo || selected.size === 0) return
+    setBulkLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/service-tickets/bulk-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: Array.from(selected), technicianId: assignTo }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'Failed to assign tickets')
+        return
+      }
+      setSelected(new Set())
+      setAssignTo('')
+      setRefreshKey((k) => k + 1)
+    } finally {
+      setBulkLoading(false)
+    }
+  }
 
   // Tab counts are intentionally NOT keyed on statusFilter — switching tabs
   // shouldn't reload the numbers, only the other filters narrow them.
@@ -322,6 +382,42 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
         </div>
       )}
 
+      {/* Bulk assign toolbar — appears once tickets are selected. Managers +
+          office staff only; hidden in the Deleted view. */}
+      {canManage && !deletedView && selected.size > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <span className="text-sm text-blue-800 dark:text-blue-300 font-medium">
+            {selected.size} ticket{selected.size > 1 ? 's' : ''} selected
+          </span>
+          <select
+            value={assignTo}
+            onChange={(e) => setAssignTo(e.target.value)}
+            className="w-full sm:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0"
+          >
+            <option value="">Assign to...</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <button
+              onClick={handleBulkAssign}
+              disabled={!assignTo || bulkLoading}
+              className="flex-1 sm:flex-none px-3 py-2.5 sm:py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              {bulkLoading ? 'Assigning...' : 'Assign'}
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              disabled={bulkLoading}
+              className="flex-1 sm:flex-none px-3 py-2.5 sm:py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Ticket list */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {loading ? (
@@ -348,6 +444,16 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {canManage && !deletedView && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(ticket.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleSelect(ticket.id)}
+                          className="h-5 w-5 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                          aria-label="Select ticket"
+                        />
+                      )}
                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                         {ticket.work_order_number ? `WO-${ticket.work_order_number}` : '—'}
                         {ticket.synergy_validation_status === 'invalid' && (
@@ -398,6 +504,17 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    {canManage && !deletedView && (
+                      <th className="px-4 py-3 text-left w-px">
+                        <input
+                          type="checkbox"
+                          checked={selected.size === tickets.length && tickets.length > 0}
+                          onChange={toggleAll}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                          aria-label="Select all tickets"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">WO #</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Priority</th>
@@ -419,6 +536,17 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                       }`}
                       onClick={() => router.push(`/service/${ticket.id}`)}
                     >
+                      {canManage && !deletedView && (
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(ticket.id)}
+                            onChange={() => toggleSelect(ticket.id)}
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                            aria-label="Select ticket"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">
                         {ticket.work_order_number ? `WO-${ticket.work_order_number}` : '—'}
                         {ticket.synergy_validation_status === 'invalid' && (

@@ -479,3 +479,24 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
   }
   return counts
 }
+
+// --- Bulk assign a technician to service tickets ---
+// Parity with PM's bulkAssignTechnician (src/lib/db/tickets.ts), but service
+// tickets have no 'assigned'/'unassigned' status, so only the technician is
+// set — the workflow status is left untouched. Skips soft-deleted rows.
+export async function bulkAssignServiceTechnician(
+  ticketIds: string[],
+  technicianId: string
+): Promise<ServiceTicketRow[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .update({ assigned_technician_id: technicianId })
+    .in('id', ticketIds)
+    .is('deleted_at', null)
+    .select()
+
+  if (error) throw error
+  return data as ServiceTicketRow[]
+}

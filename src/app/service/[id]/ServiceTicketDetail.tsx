@@ -24,7 +24,7 @@ import type {
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
-import type { UserRole, TicketPhoto } from '@/types/database'
+import type { UserRole, UserRow, TicketPhoto } from '@/types/database'
 
 // ── Types ──
 
@@ -420,6 +420,26 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  // Technician assign/reassign (staff only). Active techs loaded client-side,
+  // mirroring the create form (CreateServiceTicketForm).
+  const [technicians, setTechnicians] = useState<UserRow[]>([])
+  const [assignedTechId, setAssignedTechId] = useState(ticket.assigned_technician_id ?? '')
+  useEffect(() => {
+    if (!isStaff) return
+    createClient()
+      .from('users')
+      .select('*')
+      .eq('active', true)
+      .eq('role', 'technician')
+      .order('name')
+      .then(({ data }) => {
+        if (data) setTechnicians(data)
+      })
+  }, [isStaff])
+  useEffect(() => {
+    setAssignedTechId(ticket.assigned_technician_id ?? '')
+  }, [ticket.assigned_technician_id])
 
   // Estimate form
   const [showEstimateForm, setShowEstimateForm] = useState(false)
@@ -1391,6 +1411,44 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           </div>
         </div>
       </Card>
+
+      {/* Assign / reassign technician — staff only (managers + office staff).
+          Backend already allows assigned_technician_id in STAFF_ALLOWED_FIELDS;
+          this is the UI for assigning after creation or reassigning later. */}
+      {isStaff && (
+        <Card title="Assignment">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Assigned Technician
+              </label>
+              <select
+                value={assignedTechId}
+                onChange={(e) => setAssignedTechId(e.target.value)}
+                disabled={loading}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+              >
+                <option value="">Unassigned</option>
+                {technicians.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={() =>
+                apiAction(async () => {
+                  await patchTicket({ assigned_technician_id: assignedTechId || null })
+                  setSuccessMsg('Technician updated')
+                })
+              }
+              disabled={loading || assignedTechId === (ticket.assigned_technician_id ?? '')}
+              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              {loading ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </Card>
+      )}
 
       {/* Request More Info note — surfaced prominently when the manager has
           sent the estimate back. Visible to anyone viewing the ticket so
