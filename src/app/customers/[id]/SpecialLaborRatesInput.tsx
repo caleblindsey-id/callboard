@@ -25,10 +25,12 @@ export default function SpecialLaborRatesInput({
   globals,
 }: SpecialLaborRatesInputProps) {
   const router = useRouter()
+  // 0 (and null) means "use global", so show it as an empty field.
+  const initial = (r: number | null) => (r != null && r > 0 ? String(r) : '')
   const [values, setValues] = useState<Record<RateType, string>>({
-    standard: rates.standard != null ? String(rates.standard) : '',
-    industrial: rates.industrial != null ? String(rates.industrial) : '',
-    vacuum: rates.vacuum != null ? String(rates.vacuum) : '',
+    standard: initial(rates.standard),
+    industrial: initial(rates.industrial),
+    vacuum: initial(rates.vacuum),
   })
   const [loading, setLoading] = useState(false)
 
@@ -45,7 +47,8 @@ export default function SpecialLaborRatesInput({
         alert(`Please enter a valid non-negative rate, or leave the ${type} field blank to use the global rate.`)
         return
       }
-      payload[`special_labor_rate_${type}`] = parsed
+      // 0 means "use global" — store null so the override is cleared.
+      payload[`special_labor_rate_${type}`] = parsed > 0 ? parsed : null
     }
 
     setLoading(true)
@@ -77,8 +80,8 @@ export default function SpecialLaborRatesInput({
             Special labor rates
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Negotiated or bid hourly rates for this customer. Leave a field blank to use
-            the global rate for that type.
+            Negotiated or bid hourly rates for this customer. Leave a field blank (or 0)
+            to use the global rate for that type.
           </p>
         </div>
         <button

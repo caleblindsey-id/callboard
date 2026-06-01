@@ -285,12 +285,13 @@ export async function POST(request: NextRequest) {
     const tickets: BillingTicket[] = (rawTickets as RawTicket[]).map((raw) => {
       const rateType = raw.labor_rate_type ?? 'standard'
       // Per-customer negotiated override wins over the global rate for this type.
+      // 0 (and null) means "use global" — only a positive override applies.
       const override =
         rateType === 'industrial' ? raw.customers?.special_labor_rate_industrial
         : rateType === 'vacuum' ? raw.customers?.special_labor_rate_vacuum
         : raw.customers?.special_labor_rate_standard
       const laborRate =
-        typeof override === 'number' && Number.isFinite(override) && override >= 0
+        typeof override === 'number' && Number.isFinite(override) && override > 0
           ? override
           : (laborRateByType[rateType] ?? standardRate)
       const partsUsed: PartLine[] = (raw.parts_used ?? []).map((part) => ({
