@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, PackageCheck } from 'lucide-react'
 import PartsStatusBadge from '@/components/PartsStatusBadge'
 import { ticketDeepLink } from '@/lib/parts-queue'
+import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
 
 type Props = {
@@ -131,7 +132,7 @@ export default function MyPartsClient({ rows }: Props) {
                 >
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {row.description || '—'}
+                      {partLabel(row) || '—'}
                       {row.quantity != null && (
                         <span className="text-gray-500 dark:text-gray-400 font-normal"> × {row.quantity}</span>
                       )}
@@ -178,7 +179,7 @@ export default function MyPartsClient({ rows }: Props) {
                       className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                     >
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                        {row.description || '—'}
+                        {partLabel(row) || '—'}
                       </td>
                       <td className="px-4 py-3 text-gray-700 dark:text-gray-300 tabular-nums">
                         {row.quantity ?? '—'}
