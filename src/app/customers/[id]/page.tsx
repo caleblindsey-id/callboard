@@ -1,5 +1,6 @@
 import { getCustomer } from '@/lib/db/customers'
 import { getEquipment } from '@/lib/db/equipment'
+import { getLaborRate } from '@/lib/db/settings'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -8,6 +9,7 @@ import CreditHoldBadge from '@/components/CreditHoldBadge'
 import ActiveToggle from './ActiveToggle'
 import ShowPricingToggle from './ShowPricingToggle'
 import AutoApproveThresholdInput from './AutoApproveThresholdInput'
+import SpecialLaborRatesInput from './SpecialLaborRatesInput'
 import AuditHistorySection from '@/components/AuditHistorySection'
 import CustomerNotes from '@/components/CustomerNotes'
 
@@ -21,9 +23,12 @@ export default async function CustomerDetailPage({
   const customerId = parseInt(id)
   if (isNaN(customerId)) notFound()
 
-  const [customer, equipment] = await Promise.all([
+  const [customer, equipment, standardRate, industrialRate, vacuumRate] = await Promise.all([
     getCustomer(customerId),
     getEquipment({ customerId }),
+    getLaborRate('standard'),
+    getLaborRate('industrial'),
+    getLaborRate('vacuum'),
   ])
 
   if (!customer) notFound()
@@ -98,6 +103,22 @@ export default async function CustomerDetailPage({
           <AutoApproveThresholdInput
             customerId={customer.id}
             threshold={customer.auto_approve_threshold}
+          />
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <SpecialLaborRatesInput
+            customerId={customer.id}
+            rates={{
+              standard: customer.special_labor_rate_standard,
+              industrial: customer.special_labor_rate_industrial,
+              vacuum: customer.special_labor_rate_vacuum,
+            }}
+            globals={{
+              standard: standardRate,
+              industrial: industrialRate,
+              vacuum: vacuumRate,
+            }}
           />
         </div>
       </div>

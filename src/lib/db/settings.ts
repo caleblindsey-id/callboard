@@ -13,6 +13,35 @@ export async function getLaborRate(type: string): Promise<number> {
   return Number.isFinite(n) && n >= 0 ? n : 75
 }
 
+// Per-customer override columns, keyed by labor_rate_type (migration 088).
+const RATE_TYPE_CUSTOMER_COLUMN: Record<string, string> = {
+  standard:   'special_labor_rate_standard',
+  industrial: 'special_labor_rate_industrial',
+  vacuum:     'special_labor_rate_vacuum',
+}
+
+// Effective labor rate for a customer + rate type: returns the customer's
+// negotiated/bid override when set, otherwise falls back to the global rate.
+// Use this anywhere the result feeds what the CUSTOMER is billed. Internal
+// tech-payout math (ACE labor) must keep calling getLaborRate directly.
+export async function getCustomerLaborRate(
+  customerId: number | null | undefined,
+  type: string,
+): Promise<number> {
+  if (customerId != null) {
+    const col = RATE_TYPE_CUSTOMER_COLUMN[type] ?? RATE_TYPE_CUSTOMER_COLUMN.standard
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('customers')
+      .select(col)
+      .eq('id', customerId)
+      .maybeSingle()
+    const v = (data as Record<string, unknown> | null)?.[col]
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return v
+  }
+  return getLaborRate(type)
+}
+
 export async function getSetting(key: string): Promise<string | null> {
   const supabase = await createClient()
   const { data, error } = await supabase

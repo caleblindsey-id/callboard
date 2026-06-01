@@ -9,7 +9,7 @@ import {
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
-import { getLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder } from '@/lib/parts'
@@ -492,7 +492,7 @@ export async function PATCH(
 
     if (estimateInputsChanged) {
       const rateType = (filtered.labor_rate_type as string | undefined) ?? current.labor_rate_type ?? 'standard'
-      const laborRate = await getLaborRate(rateType)
+      const laborRate = await getCustomerLaborRate(current.customer_id, rateType)
 
       // Use the new value if supplied, otherwise fall back to the existing
       // ticket's stored value (one extra read in the rare revision case).

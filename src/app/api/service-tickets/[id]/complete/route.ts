@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines } from '@/lib/margin'
@@ -101,7 +101,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, labor_rate_type')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, labor_rate_type, customer_id')
       .eq('id', id)
       .single()
 
@@ -183,7 +183,7 @@ export async function POST(
     if (billingType === 'warranty') {
       finalBillingAmount = 0
     } else {
-      const laborRate = await getLaborRate(current.labor_rate_type ?? 'standard')
+      const laborRate = await getCustomerLaborRate(current.customer_id, current.labor_rate_type ?? 'standard')
       const laborTotal = hours_worked * laborRate
 
       const billablePartsTotal = billingType === 'partial_warranty'

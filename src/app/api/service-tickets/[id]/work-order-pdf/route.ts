@@ -6,7 +6,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { ServiceWorkOrderDocument } from '@/lib/pdf/service-work-order-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getLaborRate, getSetting } from '@/lib/db/settings'
+import { getCustomerLaborRate, getSetting } from '@/lib/db/settings'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -61,6 +61,7 @@ export async function POST(
         equipment_model,
         equipment_serial_number,
         assigned_technician_id,
+        customer_id,
         customers(name, account_number),
         equipment:equipment!service_tickets_equipment_id_fkey(
           make, model, serial_number,
@@ -132,7 +133,10 @@ export async function POST(
     // time, falling back to the current rate for the ticket's labor type. The
     // authoritative figure printed as Total is billing_amount (server-computed).
     const laborRate = (raw.estimate_labor_rate as number | null)
-      ?? await getLaborRate((raw.labor_rate_type as string | null) ?? 'standard')
+      ?? await getCustomerLaborRate(
+        (raw as { customer_id?: number | null }).customer_id,
+        (raw.labor_rate_type as string | null) ?? 'standard',
+      )
 
     const partsUsed = (raw.parts_used as ServicePartUsed[]) ?? []
 

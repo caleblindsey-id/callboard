@@ -237,6 +237,12 @@ export type CustomerRow = {
   active: boolean
   show_pricing_on_pm_pdf: boolean
   auto_approve_threshold: number
+  // Per-customer negotiated/bid labor rate overrides (migration 088). NULL =
+  // use the global rate (settings) for that labor_rate_type. Customer-billing
+  // only — never applied to internal tech-payout (ACE labor) math.
+  special_labor_rate_standard: number | null
+  special_labor_rate_industrial: number | null
+  special_labor_rate_vacuum: number | null
   synced_at: string | null
 }
 
@@ -582,7 +588,7 @@ type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 
 export type CustomerInsert = MakeOptional<
   Omit<CustomerRow, 'id'>,
-  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active'
+  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum'
 >
 
 export type ContactInsert = MakeOptional<
