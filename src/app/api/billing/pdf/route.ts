@@ -32,12 +32,14 @@ interface RawTicket {
     synergy_product_id?: number
     quantity: number
     description?: string
+    detail?: string
     unit_price: number
   }> | null
   additional_parts_used: Array<{
     synergy_product_id?: number
     quantity: number
     description?: string
+    detail?: string
     unit_price: number
   }> | null
   additional_hours_worked: number | null
@@ -53,6 +55,9 @@ interface RawTicket {
     billing_state: string | null
     billing_zip: string | null
     po_required: boolean
+    special_labor_rate_standard: number | null
+    special_labor_rate_industrial: number | null
+    special_labor_rate_vacuum: number | null
   } | null
   po_number: string | null
   billing_contact_name: string | null
@@ -165,7 +170,7 @@ export async function POST(request: NextRequest) {
         billing_contact_email,
         billing_contact_phone,
         labor_rate_type,
-        customers(name, account_number, ar_terms, billing_address, billing_city, billing_state, billing_zip, po_required),
+        customers(name, account_number, ar_terms, billing_address, billing_city, billing_state, billing_zip, po_required, special_labor_rate_standard, special_labor_rate_industrial, special_labor_rate_vacuum),
         equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
         technician:users!assigned_technician_id(name),
         pm_schedules(billing_type, flat_rate)
@@ -278,7 +283,17 @@ export async function POST(request: NextRequest) {
 
     // --- Map raw tickets to BillingTicket[] ---
     const tickets: BillingTicket[] = (rawTickets as RawTicket[]).map((raw) => {
-      const laborRate = laborRateByType[raw.labor_rate_type ?? 'standard'] ?? standardRate
+      const rateType = raw.labor_rate_type ?? 'standard'
+      // Per-customer negotiated override wins over the global rate for this type.
+      // 0 (and null) means "use global" — only a positive override applies.
+      const override =
+        rateType === 'industrial' ? raw.customers?.special_labor_rate_industrial
+        : rateType === 'vacuum' ? raw.customers?.special_labor_rate_vacuum
+        : raw.customers?.special_labor_rate_standard
+      const laborRate =
+        typeof override === 'number' && Number.isFinite(override) && override > 0
+          ? override
+          : (laborRateByType[rateType] ?? standardRate)
       const partsUsed: PartLine[] = (raw.parts_used ?? []).map((part) => ({
         productNumber:
           (typeof part.synergy_product_id === 'number' &&
@@ -288,6 +303,7 @@ export async function POST(request: NextRequest) {
             productDescMap.get(part.synergy_product_id)) ||
           part.description ||
           'Unknown part',
+        detail: part.detail ?? null,
         quantity: part.quantity,
         unit_price: part.unit_price,
       }))
@@ -346,6 +362,7 @@ export async function POST(request: NextRequest) {
               productDescMap.get(part.synergy_product_id)) ||
             part.description ||
             'Unknown part',
+          detail: part.detail ?? null,
           quantity: part.quantity,
           unit_price: part.unit_price,
         })),

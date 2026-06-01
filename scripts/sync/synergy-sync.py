@@ -463,6 +463,12 @@ def sync_products(conn) -> int:
         cost_po = float(row.CostPO) if row.CostPO is not None else None
         unit_cost = cost_load if (cost_load is not None and cost_load > 0) else cost_po
 
+        # NOTE: do NOT add `requires_detail` to this payload. It's a hand-curated
+        # flag (migration 088) that marks catch-all items like SHOP SUPPLIES to
+        # prompt for a free-text detail. The upsert is ON CONFLICT (synergy_id)
+        # DO UPDATE and only touches the columns present here, so omitting
+        # requires_detail leaves the curated value intact across nightly syncs.
+        # Adding it here would reset every flagged item to false.
         products.append({
             "synergy_id": str(row.ProdCode).strip(),
             "number": str(row.ProdCode).strip(),

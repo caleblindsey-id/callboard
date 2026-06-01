@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, TicketPhoto } from '@/types/database'
-import { getLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 
@@ -128,7 +128,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('pm_tickets')
-      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, equipment_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
+      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -204,7 +204,7 @@ export async function POST(
     const schedule = current.pm_schedules as { flat_rate: number | null; billing_type: string | null } | null
     const flatRate = (schedule?.billing_type === 'flat_rate' && schedule.flat_rate != null) ? schedule.flat_rate : 0
 
-    const laborRate = await getLaborRate(current.labor_rate_type ?? 'standard')
+    const laborRate = await getCustomerLaborRate(current.customer_id, current.labor_rate_type ?? 'standard')
 
     // Resolve canonical product prices in one query
     const additionalIn: PartUsed[] = additionalPartsUsed ?? []

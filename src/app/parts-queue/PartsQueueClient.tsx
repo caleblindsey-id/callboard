@@ -14,6 +14,7 @@ import {
   ticketDeepLink,
   updatePartFields,
 } from '@/lib/parts-queue'
+import { partLabel } from '@/lib/parts'
 import CancelPartDialog from './CancelPartDialog'
 import VendorPicker from '@/components/VendorPicker'
 import { formatDateTime } from '@/lib/format'
@@ -70,6 +71,7 @@ function partToRow(row: PartsQueueRow, part: PartRequest): PartsQueueRow {
   return {
     ...row,
     description: part.description ?? row.description,
+    detail: part.detail ?? row.detail,
     quantity: part.quantity ?? row.quantity,
     vendor: part.vendor ?? null,
     vendor_code: part.vendor_code ?? null,
@@ -194,6 +196,7 @@ export default function PartsQueueClient({
         const hay = [
           r.customer_name,
           r.description,
+          r.detail,
           r.work_order_number?.toString(),
           r.product_number,
           r.vendor_item_code,
@@ -521,8 +524,8 @@ export default function PartsQueueClient({
                         widthClass="w-24"
                       />
                     </td>
-                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={row.description ?? ''}>
-                      {row.description ?? '—'}
+                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>
+                      {partLabel(row) || '—'}
                     </td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
                     <td className="px-3 py-2">

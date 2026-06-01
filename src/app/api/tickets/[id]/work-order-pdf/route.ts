@@ -6,7 +6,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { CustomerWorkOrderDocument } from '@/lib/pdf/work-order-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate } from '@/lib/db/settings'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -47,6 +47,7 @@ export async function POST(
         photos,
         assigned_technician_id,
         labor_rate_type,
+        customer_id,
         customers(name, account_number, billing_address, billing_city, billing_state, billing_zip, show_pricing_on_pm_pdf),
         equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
         schedule:pm_schedules!pm_schedule_id(flat_rate, billing_type),
@@ -71,7 +72,7 @@ export async function POST(
     }
 
     // Resolve product numbers
-    type RawPart = { synergy_product_id?: number; quantity: number; description?: string; unit_price: number }
+    type RawPart = { synergy_product_id?: number; quantity: number; description?: string; detail?: string; unit_price: number }
     const allParts = [...(raw.parts_used as RawPart[] ?? []), ...(raw.additional_parts_used as RawPart[] ?? [])]
     const productIdSet = new Set<number>()
     for (const part of allParts) {
@@ -114,6 +115,7 @@ export async function POST(
             productDescMap.get(part.synergy_product_id)) ||
           part.description ||
           'Unknown part',
+        detail: part.detail ?? null,
         quantity: part.quantity,
         unitPrice: typeof part.unit_price === 'number' ? part.unit_price : 0,
       }))
@@ -207,7 +209,10 @@ export async function POST(
       ?? customer?.show_pricing_on_pm_pdf
       ?? false
     if (showPricing && raw.billing_amount != null) {
-      const laborRatePerHour = await getLaborRate((raw as { labor_rate_type?: string | null }).labor_rate_type ?? 'standard')
+      const laborRatePerHour = await getCustomerLaborRate(
+        (raw as { customer_id?: number | null }).customer_id,
+        (raw as { labor_rate_type?: string | null }).labor_rate_type ?? 'standard',
+      )
 
       const billingType =
         (activeSchedule?.billing_type as 'flat_rate' | 'time_and_materials' | 'contract' | null) ?? 'flat_rate'

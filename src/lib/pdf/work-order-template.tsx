@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
+import { partLabel } from '@/lib/parts'
 
 // ============================================================
 // Types
@@ -7,6 +8,8 @@ import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/render
 interface PartLine {
   productNumber: string | null
   description: string
+  // Free-text detail for catch-all items (e.g. SHOP SUPPLIES). Optional.
+  detail?: string | null
   quantity: number
   unitPrice?: number
 }
@@ -366,7 +369,7 @@ function PricingSummarySection({
     for (const p of additionalParts) {
       const rate = p.unitPrice ?? 0
       rows.push({
-        desc: p.description + (p.productNumber ? ` (${p.productNumber})` : ''),
+        desc: partLabel(p) + (p.productNumber ? ` (${p.productNumber})` : ''),
         qty: p.quantity,
         rate,
         total: rate * p.quantity,
@@ -386,7 +389,7 @@ function PricingSummarySection({
     for (const p of [...pmParts, ...additionalParts]) {
       const rate = p.unitPrice ?? 0
       rows.push({
-        desc: p.description + (p.productNumber ? ` (${p.productNumber})` : ''),
+        desc: partLabel(p) + (p.productNumber ? ` (${p.productNumber})` : ''),
         qty: p.quantity,
         rate,
         total: rate * p.quantity,
@@ -580,7 +583,7 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
             ticket.pmParts.map((part, idx) => (
               <View key={idx} style={idx % 2 === 1 ? [styles.tableRow, styles.tableRowAlt] : styles.tableRow} wrap={false}>
                 <Text style={styles.colProductNum}>{part.productNumber ?? '—'}</Text>
-                <Text style={styles.colDescription}>{dash(part.description)}</Text>
+                <Text style={styles.colDescription}>{dash(partLabel(part))}</Text>
                 <Text style={styles.colQty}>{part.quantity}</Text>
               </View>
             ))
@@ -607,7 +610,7 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
                 {ticket.additionalParts.map((part, idx) => (
                   <View key={idx} style={idx % 2 === 1 ? [styles.tableRow, styles.tableRowAlt] : styles.tableRow} wrap={false}>
                     <Text style={styles.colProductNum}>{part.productNumber ?? '—'}</Text>
-                    <Text style={styles.colDescription}>{dash(part.description)}</Text>
+                    <Text style={styles.colDescription}>{dash(partLabel(part))}</Text>
                     <Text style={styles.colQty}>{part.quantity}</Text>
                   </View>
                 ))}

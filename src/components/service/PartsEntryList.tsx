@@ -16,6 +16,9 @@ export interface ProductResult {
   // Loaded cost — only selected/used when allowPriceOverride is set (staff).
   // Never requested in tech-facing contexts. Backs the per-line margin floor.
   unit_cost?: number | null
+  // Catch-all items (e.g. "SHOP SUPPLIES") set this so the entry form prompts
+  // for a free-text detail of what the supplies actually were.
+  requires_detail?: boolean
 }
 
 export interface PartEntry {
@@ -45,6 +48,12 @@ export interface PartEntry {
   // Local flag flipped after the row has been sent to the parts-requested
   // queue via onRequestPart. Not persisted.
   alreadyRequested?: boolean
+  // True when the selected catalog item is flagged products.requires_detail
+  // (e.g. SHOP SUPPLIES) — surfaces the free-text detail input on this row.
+  // Persisted onto the saved part so it survives reload (see partsFromSaved).
+  requiresDetail?: boolean
+  // Free-text "what were the supplies" entered by the tech. Optional.
+  detail?: string
 }
 
 export function emptyPart(): PartEntry {
@@ -63,7 +72,7 @@ export function emptyPart(): PartEntry {
   }
 }
 
-export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean }[]): PartEntry[] {
+export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; detail?: string; requires_detail?: boolean }[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
     quantity: String(p.quantity),
@@ -75,16 +84,23 @@ export function partsFromSaved(saved: { synergy_product_id?: number | null; desc
     searchResults: [],
     searching: false,
     warrantyCovered: p.warranty_covered ?? false,
+    // Restore the detail input on reload — requiresDetail is only set on the
+    // product-select event, which never fires again on rehydrate.
+    requiresDetail: !!p.requires_detail,
+    detail: p.detail ?? '',
   }))
 }
 
-export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean }[] {
+export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; detail?: string; requires_detail?: boolean }[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
     quantity: parseFloat(p.quantity) || 0,
     unit_price: parseFloat(p.unitPrice) || 0,
     warranty_covered: p.warrantyCovered,
+    // Persist only when meaningful so non-flagged parts stay lean.
+    ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
+    ...(p.requiresDetail ? { requires_detail: true } : {}),
   }))
 }
 
@@ -140,7 +156,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
   function handlePartSearch(index: number, value: string) {
     setParts((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], description: value, isFromDb: false, synergyProductId: null, productNumber: null, unitCost: null }
+      updated[index] = { ...updated[index], description: value, isFromDb: false, synergyProductId: null, productNumber: null, unitCost: null, requiresDetail: false }
       return updated
     })
 
@@ -171,8 +187,8 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
       // Cost is only pulled for staff who can override prices (drives the floor
       // hint). Tech-facing callers never request unit_cost.
       const cols = allowPriceOverride
-        ? 'id, synergy_id, number, description, unit_price, unit_cost'
-        : 'id, synergy_id, number, description, unit_price'
+        ? 'id, synergy_id, number, description, unit_price, unit_cost, requires_detail'
+        : 'id, synergy_id, number, description, unit_price, requires_detail'
       const { data } = await supabase
         .from('products')
         .select(cols)
@@ -213,6 +229,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
         productNumber: product.number,
         isFromDb: true,
         unitCost: allowPriceOverride ? (product.unit_cost ?? null) : null,
+        requiresDetail: !!product.requires_detail,
         searchOpen: false,
         searchResults: [],
       }
@@ -224,7 +241,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
   function handleClearProduct(index: number) {
     setParts((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, productNumber: null, isFromDb: false, unitCost: null }
+      updated[index] = { ...updated[index], description: '', unitPrice: '', synergyProductId: null, productNumber: null, isFromDb: false, unitCost: null, requiresDetail: false, detail: '' }
       return updated
     })
   }
@@ -456,6 +473,28 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                   Remove
                 </button>
               </div>
+              {/* Free-text detail — shown for catch-all items (products.requires_detail,
+                  e.g. SHOP SUPPLIES). Optional. requiresDetail || detail so a previously
+                  saved detail still renders on reload even if the flag round-trips falsy. */}
+              {(part.requiresDetail || part.detail) && (
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Details</label>
+                  <input
+                    type="text"
+                    value={part.detail ?? ''}
+                    onChange={(e) => {
+                      setParts((prev) => {
+                        const u = [...prev]
+                        u[i] = { ...u[i], detail: e.target.value }
+                        return u
+                      })
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                    placeholder="Describe the items, e.g. rags, lubricant, fasteners (optional)"
+                    className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

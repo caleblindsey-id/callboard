@@ -129,6 +129,7 @@ export async function POST(
       laborRate: (raw.estimate_labor_rate as number) ?? 0,
       parts: estimateParts.map((p) => ({
         description: p.description,
+        detail: p.detail ?? null,
         quantity: p.quantity,
         unitPrice: p.unit_price,
         warrantyCovered: p.warranty_covered ?? false,

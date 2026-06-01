@@ -6,6 +6,10 @@ export interface PartLine {
   description: string
   quantity: number
   unit_price: number
+  // Free-text detail for catch-all items (products.requires_detail), e.g.
+  // "SHOP SUPPLIES" → "rags, lubricant, fasteners". Appended after the
+  // description on the PDF via partLabel().
+  detail?: string | null
 }
 
 export interface BillingTicket {

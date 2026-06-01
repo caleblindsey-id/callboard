@@ -123,6 +123,14 @@ export interface PartUsed {
   quantity: number
   description: string
   unit_price: number
+  // Free-text detail for catch-all catalog items flagged products.requires_detail
+  // (e.g. "SHOP SUPPLIES" → "rags, lubricant, fasteners"). Optional. Rendered
+  // in-line after the description on customer-facing PDFs/views via partLabel().
+  detail?: string
+  // Snapshot of the product's requires_detail flag at entry time. Persisted so
+  // the detail input can be re-shown on reload (the product-select event that
+  // first sets it never fires again on rehydrate). See partsFromSaved().
+  requires_detail?: boolean
 }
 
 export interface DefaultProduct {
@@ -139,6 +147,9 @@ export interface TicketPhoto {
 export interface PartRequest {
   description: string
   quantity: number
+  // Free-text detail for catch-all catalog items flagged products.requires_detail
+  // (e.g. "SHOP SUPPLIES"). Optional; mirrors PartUsed.detail.
+  detail?: string
   // Synergy item number (display string, e.g. "146400019"). Source of truth for billing.
   product_number?: string
   // Int form of products.synergy_id — set when the office picks a catalog match.
@@ -200,6 +211,9 @@ export type PartsQueueRow = {
   synergy_validated_at: string | null
   requested_at: string
   description: string | null
+  // Free-text detail for catch-all items (e.g. SHOP SUPPLIES). Projected from
+  // the parts_requested JSONB by the parts_order_queue view (migration 089).
+  detail: string | null
   quantity: number | null
   vendor: string | null
   vendor_code: string | null
@@ -237,6 +251,12 @@ export type CustomerRow = {
   active: boolean
   show_pricing_on_pm_pdf: boolean
   auto_approve_threshold: number
+  // Per-customer negotiated/bid labor rate overrides (migration 088). NULL =
+  // use the global rate (settings) for that labor_rate_type. Customer-billing
+  // only — never applied to internal tech-payout (ACE labor) math.
+  special_labor_rate_standard: number | null
+  special_labor_rate_industrial: number | null
+  special_labor_rate_vacuum: number | null
   synced_at: string | null
 }
 
@@ -274,6 +294,10 @@ export type ProductRow = {
   // Loaded cost (Synergy CostLoad, CostPO fallback). Internal/server-only —
   // never select this onto a tech-facing payload. Backs the margin floor.
   unit_cost: number | null
+  // Catch-all items (e.g. "SHOP SUPPLIES") set this so the parts entry form
+  // prompts for a free-text detail of what the supplies were. Manually curated
+  // — NOT written by the nightly Synergy sync, so it sticks across syncs.
+  requires_detail: boolean
   synced_at: string | null
 }
 
@@ -584,7 +608,7 @@ type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 
 export type CustomerInsert = MakeOptional<
   Omit<CustomerRow, 'id'>,
-  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active'
+  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum'
 >
 
 export type ContactInsert = MakeOptional<
@@ -594,7 +618,7 @@ export type ContactInsert = MakeOptional<
 
 export type ProductInsert = MakeOptional<
   Omit<ProductRow, 'id'>,
-  'synced_at' | 'description' | 'unit_price' | 'unit_cost'
+  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail'
 >
 
 export type UserInsert = MakeOptional<

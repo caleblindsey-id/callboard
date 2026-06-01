@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { APP_NAME } from '@/lib/branding'
+import { partLabel } from '@/lib/parts'
 
 // ============================================================
 // Types
@@ -10,6 +11,8 @@ import { APP_NAME } from '@/lib/branding'
 
 interface ServiceWorkOrderPart {
   description: string
+  // Free-text detail for catch-all items (e.g. SHOP SUPPLIES). Optional.
+  detail?: string | null
   quantity: number
   unitPrice: number
   warrantyCovered: boolean
@@ -292,7 +295,7 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
           {workOrder.parts.map((part, idx) => (
             <View key={idx} style={styles.tableRow}>
               <Text style={styles.colDescription}>
-                {part.description}
+                {partLabel(part)}
                 {part.warrantyCovered ? ' (warranty)' : ''}
               </Text>
               <Text style={styles.colQty}>{part.quantity}</Text>
