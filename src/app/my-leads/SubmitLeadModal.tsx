@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { X, Camera } from 'lucide-react'
-import type { EquipmentSaleTier, TechLeadFrequency, TechLeadType } from '@/types/database'
+import type { EquipmentSaleTier, TechLeadFrequency, TechLeadType, TicketPhoto } from '@/types/database'
+import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import { EQUIPMENT_SALE_TIER_LIST } from '@/lib/tech-leads/bonus-tiers'
 import { compressImage } from '@/lib/image-utils'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
@@ -52,6 +53,8 @@ interface CustomerOption {
 interface SubmitLeadModalProps {
   open: boolean
   onClose: () => void
+  /** When set, the modal edits this existing (pending) lead instead of creating one. */
+  lead?: TechLeadWithJoins | null
 }
 
 const FREQUENCIES: { value: TechLeadFrequency; label: string; eligible: boolean }[] = [
@@ -67,8 +70,10 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps) {
+export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLeadModalProps) {
   const router = useRouter()
+  const isEdit = lead !== null
+  const existingPhotoCount = (lead?.photos as TicketPhoto[] | null)?.length ?? 0
 
   // Lead type toggle (new in V2)
   const [leadType, setLeadType] = useState<TechLeadType>('pm')
@@ -147,7 +152,10 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
   const { restoredAt, dismissRestoredToast, clearDraft, discardDraft } = useFormDraft<SubmitLeadDraft>({
     key: DRAFT_KEY,
     state: draftState,
-    enabled: open,
+    // Drafts are a new-lead affordance. In edit mode we never read or write the
+    // draft key — otherwise opening an edit would restore a stale new-lead draft
+    // over the pre-filled values, and the edits would pollute the next new lead.
+    enabled: open && !isEdit,
     isMeaningful: (s) =>
       Boolean(
         s.customerId ||
@@ -211,14 +219,57 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
     setWarning(null)
   }
 
-  // Reset when the modal opens
+  // Prime the form each time the modal opens. In edit mode we pre-fill from the
+  // lead; otherwise we reset to a blank new-lead form. Keyed on lead?.id (not the
+  // object) so it doesn't re-run on every render and wipe in-progress edits.
   useEffect(() => {
     if (!open) return
+    // Common per-open resets (independent of edit vs create).
+    setCustomerResults([])
+    setComboOpen(false)
+    setPendingPhotos((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.previewUrl))
+      return []
+    })
+    setPhotoError(null)
+    setWarning(null)
+    setError(null)
+
+    if (lead) {
+      setLeadType(lead.lead_type)
+      if (lead.customer_id) {
+        setNewCustomerMode(false)
+        setNewCustomerName('')
+        setCustomerId(lead.customer_id)
+        const c = lead.customers
+        setCustomerSearch(
+          c ? (c.account_number ? `${c.name} (${c.account_number})` : c.name) : ''
+        )
+      } else {
+        setNewCustomerMode(true)
+        setNewCustomerName(lead.customer_name_text ?? '')
+        setCustomerId(null)
+        setCustomerSearch('')
+      }
+      setMake(lead.make ?? '')
+      setModel(lead.model ?? '')
+      setSerialNumber(lead.serial_number ?? '')
+      setLocationOnSite(lead.location_on_site ?? '')
+      const fresh = new Date()
+      setStartMonth(lead.proposed_start_month ?? fresh.getMonth() + 1)
+      setStartYear(lead.proposed_start_year ?? fresh.getFullYear())
+      setFrequency(lead.proposed_pm_frequency ?? '')
+      setEquipmentTier(lead.proposed_equipment_tier ?? '')
+      setContactName(lead.contact_name ?? '')
+      setContactEmail(lead.contact_email ?? '')
+      setContactPhone(lead.contact_phone ?? '')
+      setNotes(lead.notes ?? '')
+      return
+    }
+
     setLeadType('pm')
     setCustomerSearch('')
-    setCustomerResults([])
     setCustomerId(null)
-    setComboOpen(false)
     setNewCustomerMode(false)
     setNewCustomerName('')
     setMake('')
@@ -233,15 +284,9 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
     setContactName('')
     setContactEmail('')
     setContactPhone('')
-    setPendingPhotos((prev) => {
-      prev.forEach((p) => URL.revokeObjectURL(p.previewUrl))
-      return []
-    })
-    setPhotoError(null)
     setNotes('')
-    setWarning(null)
-    setError(null)
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lead?.id])
 
   // Revoke any outstanding object URLs on unmount. Read from the ref so we
   // don't capture an empty initial array.
@@ -252,7 +297,11 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
   }, [])
 
   useEffect(() => {
-    if (!customerSearch.trim() || newCustomerMode) {
+    // A picked customer keeps its label in `customerSearch` while `customerId`
+    // is set — don't re-search or pop the combo for it (matters on edit pre-fill).
+    // Typing nulls customerId via the input's onChange, so search-as-you-type
+    // still works.
+    if (!customerSearch.trim() || newCustomerMode || customerId) {
       setCustomerResults([])
       setComboOpen(false)
       return
@@ -276,7 +325,7 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
       setComboOpen(true)
       setSearching(false)
     }, 300)
-  }, [customerSearch, newCustomerMode])
+  }, [customerSearch, newCustomerMode, customerId])
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -415,18 +464,33 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
 
     setSubmitting(true)
     try {
-      // 1. Create the lead row
-      const res = await fetch('/api/tech-leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const respBody = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(respBody?.error || 'Failed to submit lead.')
+      // 1. Create the lead row (new) or save edits to the existing one.
+      let leadId: string | undefined
+      if (isEdit && lead) {
+        const res = await fetch(`/api/tech-leads/${lead.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const respBody = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(respBody?.error || 'Failed to save changes.')
+        }
+        leadId = lead.id
+      } else {
+        const res = await fetch('/api/tech-leads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const respBody = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(respBody?.error || 'Failed to submit lead.')
+        }
+        leadId = respBody?.id
       }
-      const leadId: string | undefined = respBody?.id
       let photoWarning: string | null = null
+      const savedMsg = isEdit ? 'Changes saved' : 'Lead submitted'
 
       // 2. Upload photos in parallel and 3. attach to lead
       if (leadId && pendingPhotos.length > 0) {
@@ -456,20 +520,20 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
               }),
             })
             if (!patchRes.ok) {
-              photoWarning = 'Lead submitted, but photos could not be saved to the lead.'
+              photoWarning = `${savedMsg}, but photos could not be saved to the lead.`
             }
           }
           if (failures > 0 && !photoWarning) {
-            photoWarning = `Lead submitted, but ${failures} photo${failures > 1 ? 's' : ''} failed to upload.`
+            photoWarning = `${savedMsg}, but ${failures} photo${failures > 1 ? 's' : ''} failed to upload.`
           }
         } catch {
-          photoWarning = 'Lead submitted, but photos could not be uploaded.'
+          photoWarning = `${savedMsg}, but photos could not be uploaded.`
         }
       }
 
-      // Lead row was created — even if photos failed, the draft is now stale
-      // and resubmitting would create a duplicate lead. Clear it in both cases.
-      clearDraft()
+      // New-lead flow only: the row now exists, so the draft is stale and
+      // resubmitting would duplicate it. Edit mode never touches the draft key.
+      if (!isEdit) clearDraft()
       if (photoWarning) {
         setWarning(photoWarning)
         setSubmitting(false)
@@ -492,7 +556,7 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
       <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
       <div className="relative bg-white dark:bg-gray-800 sm:rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full sm:max-w-lg sm:mx-4 rounded-t-xl max-h-[95vh] overflow-y-auto">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Submit a lead</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{isEdit ? 'Edit lead' : 'Submit a lead'}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -524,7 +588,8 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
               <button
                 type="button"
                 onClick={() => setLeadType('pm')}
-                className={`min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                disabled={isEdit}
+                className={`min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   leadType === 'pm'
                     ? 'bg-slate-900 dark:bg-slate-700 text-white border-slate-900 dark:border-slate-700'
                     : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
@@ -535,7 +600,8 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
               <button
                 type="button"
                 onClick={() => setLeadType('equipment_sale')}
-                className={`min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                disabled={isEdit}
+                className={`min-h-[44px] rounded-md border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   leadType === 'equipment_sale'
                     ? 'bg-slate-900 dark:bg-slate-700 text-white border-slate-900 dark:border-slate-700'
                     : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
@@ -544,6 +610,11 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
                 Equipment Sale Lead
               </button>
             </div>
+            {isEdit && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Lead type can&apos;t be changed after submitting. To switch, cancel this lead and file a new one.
+              </p>
+            )}
             {leadType === 'pm' ? (
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 Customer is adding equipment to a PM schedule. Bonus = first PM&apos;s flat rate (monthly, bi-monthly, or quarterly only).
@@ -837,6 +908,11 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
               Snap the machine, data plate, or anything that helps the office identify it.
             </p>
+            {isEdit && existingPhotoCount > 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                {existingPhotoCount} photo{existingPhotoCount > 1 ? 's' : ''} already attached. New photos are added to the lead.
+              </p>
+            )}
             {pendingPhotos.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mb-2">
                 {pendingPhotos.map(p => (
@@ -897,14 +973,18 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
           </div>
 
           <div className="flex items-center justify-between gap-3 pt-2">
-            <button
-              type="button"
-              onClick={handleDiscardDraft}
-              disabled={submitting}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2 disabled:opacity-50"
-            >
-              Discard draft
-            </button>
+            {isEdit ? (
+              <span />
+            ) : (
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                disabled={submitting}
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2 disabled:opacity-50"
+              >
+                Discard draft
+              </button>
+            )}
             <div className="flex gap-3">
               <button
                 type="button"
@@ -919,7 +999,9 @@ export default function SubmitLeadModal({ open, onClose }: SubmitLeadModalProps)
                 disabled={submitting}
                 className="px-4 py-2 min-h-[44px] text-sm font-medium text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 rounded-md disabled:opacity-50"
               >
-                {submitting ? 'Submitting…' : 'Submit lead'}
+                {isEdit
+                  ? (submitting ? 'Saving…' : 'Save changes')
+                  : (submitting ? 'Submitting…' : 'Submit lead')}
               </button>
             </div>
           </div>

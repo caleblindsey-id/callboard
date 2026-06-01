@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Pencil } from 'lucide-react'
 import type { TechLeadStatus } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
@@ -37,6 +37,22 @@ const STATUS_STYLE: Record<TechLeadStatus, string> = {
 
 export default function MyLeadsClient({ leads }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
+  const [editingLead, setEditingLead] = useState<TechLeadWithJoins | null>(null)
+
+  function openSubmit() {
+    setEditingLead(null)
+    setModalOpen(true)
+  }
+
+  function openEdit(lead: TechLeadWithJoins) {
+    setEditingLead(lead)
+    setModalOpen(true)
+  }
+
+  function closeModal() {
+    setModalOpen(false)
+    setEditingLead(null)
+  }
 
   return (
     <>
@@ -45,7 +61,7 @@ export default function MyLeadsClient({ leads }: Props) {
           {leads.length} {leads.length === 1 ? 'lead' : 'leads'}
         </p>
         <Button
-          onClick={() => setModalOpen(true)}
+          onClick={openSubmit}
           variant="primary"
           size="mobile"
         >
@@ -112,13 +128,25 @@ export default function MyLeadsClient({ leads }: Props) {
                     {lead.payout_period && <span>Period {lead.payout_period}</span>}
                   </div>
                 )}
+                {lead.status === 'pending' && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(lead)}
+                      className="inline-flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  </div>
+                )}
               </li>
             )
           })}
         </ul>
       )}
 
-      <SubmitLeadModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <SubmitLeadModal open={modalOpen} lead={editingLead} onClose={closeModal} />
     </>
   )
 }
