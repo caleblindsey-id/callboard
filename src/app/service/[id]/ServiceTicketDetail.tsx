@@ -11,6 +11,8 @@ import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { partLabel } from '@/lib/parts'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import VendorPicker from '@/components/VendorPicker'
+import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
@@ -468,7 +470,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [newPartNumber, setNewPartNumber] = useState('')
   const [newPartVendorItemCode, setNewPartVendorItemCode] = useState('')
   const [newPartVendor, setNewPartVendor] = useState('')
+  const [newPartVendorCode, setNewPartVendorCode] = useState('')
   const [newPartPrice, setNewPartPrice] = useState('')
+  // Set when the description is matched to a Synergy catalog item — links the
+  // request to the product (exempts it from the manual vendor/price gate) and
+  // prefills item #, price, vendor, and vendor part # from the catalog.
+  const [newPartSynergyProductId, setNewPartSynergyProductId] = useState<number | null>(null)
+  // Debounced product search backing the "Part description" combobox. Extended
+  // select includes vendor_code/vendor/vendor_item_code (migration 091) for prefill.
+  const partSearch = useProductSearch({ limit: 10 })
+  const setPartComboOpen = partSearch.setComboOpen
+  const partComboRef = useRef<HTMLDivElement | null>(null)
 
   // Completion form
   const [showCompletionForm, setShowCompletionForm] = useState(false)
@@ -553,6 +565,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [])
+
+  // Close the "Part description" product-search dropdown on outside click.
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (partComboRef.current && !partComboRef.current.contains(e.target as Node)) {
+        setPartComboOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [setPartComboOpen])
 
   // Scroll the relevant form into view when opened from a Next Step action.
   useEffect(() => {
@@ -1012,16 +1035,61 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     !!(ticket.equipment_model || ticket.equipment?.model)?.trim() &&
     !!(ticket.equipment_serial_number || ticket.equipment?.serial_number)?.trim()
 
-  // Manual part request (always off-catalog) — the office can't backfill these,
-  // so vendor name, vendor part #, description, and customer price are required.
+  // A catalog part (matched to a Synergy product) resolves vendor + price
+  // office-side, so it's exempt from the manual gate — mirrors the server-side
+  // validateNewManualPartRequests exemption. A manual (off-catalog) part can't
+  // be backfilled, so vendor name, vendor part #, description, and a customer
+  // price are all required.
+  const newPartIsCatalog = newPartSynergyProductId != null
   const newPartPriceParsed = parseFloat(newPartPrice)
   const newPartPriceValid =
     newPartPrice.trim() !== '' && Number.isFinite(newPartPriceParsed) && newPartPriceParsed >= 0
-  const addPartReady =
-    !!newPartDesc.trim() &&
-    !!newPartVendor.trim() &&
-    !!newPartVendorItemCode.trim() &&
-    newPartPriceValid
+  const addPartReady = newPartIsCatalog
+    ? !!newPartDesc.trim()
+    : !!newPartDesc.trim() &&
+      !!newPartVendor.trim() &&
+      !!newPartVendorItemCode.trim() &&
+      newPartPriceValid
+
+  // Prefill the request from a picked Synergy catalog item: description, item #,
+  // price, vendor (+ vendor_code), and vendor part #. Locks the description to a
+  // chip until cleared. Loaded cost is never fetched — tech-facing search omits it.
+  function selectCatalogPart(p: ProductSearchResult) {
+    const synergyId = Number(p.synergy_id)
+    setNewPartSynergyProductId(Number.isFinite(synergyId) ? synergyId : null)
+    setNewPartDesc(p.description?.trim() || p.number)
+    setNewPartNumber(p.number)
+    setNewPartPrice(p.unit_price != null ? String(p.unit_price) : '')
+    setNewPartVendor(p.vendor ?? '')
+    setNewPartVendorCode(p.vendor_code != null ? String(p.vendor_code) : '')
+    setNewPartVendorItemCode(p.vendor_item_code ?? '')
+    partSearch.clear()
+  }
+
+  // Unlink the catalog item and reset every prefilled field back to manual entry.
+  function clearCatalogPart() {
+    setNewPartSynergyProductId(null)
+    setNewPartDesc('')
+    setNewPartNumber('')
+    setNewPartPrice('')
+    setNewPartVendor('')
+    setNewPartVendorCode('')
+    setNewPartVendorItemCode('')
+    partSearch.clear()
+  }
+
+  function resetAddPartForm() {
+    setShowAddPart(false)
+    setNewPartDesc('')
+    setNewPartQty('1')
+    setNewPartNumber('')
+    setNewPartVendorItemCode('')
+    setNewPartVendor('')
+    setNewPartVendorCode('')
+    setNewPartPrice('')
+    setNewPartSynergyProductId(null)
+    partSearch.clear()
+  }
 
   async function handleAddPartRequest() {
     if (!addPartReady) return
@@ -1029,9 +1097,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       description: newPartDesc.trim(),
       quantity: parseInt(newPartQty) || 1,
       product_number: newPartNumber.trim() || undefined,
+      synergy_product_id: newPartSynergyProductId ?? undefined,
       vendor_item_code: newPartVendorItemCode.trim() || undefined,
-      vendor: newPartVendor.trim(),
-      unit_price: newPartPriceParsed,
+      vendor: newPartVendor.trim() || undefined,
+      vendor_code: newPartVendorCode.trim() || undefined,
+      unit_price: newPartPriceValid ? newPartPriceParsed : undefined,
       status: 'requested',
       requested_at: new Date().toISOString(),
     }
@@ -1039,13 +1109,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     await apiAction(async () => {
       await patchTicket({ parts_requested: updatedParts })
       setPartsRequested(updatedParts)
-      setNewPartDesc('')
-      setNewPartQty('1')
-      setNewPartNumber('')
-      setNewPartVendorItemCode('')
-      setNewPartVendor('')
-      setNewPartPrice('')
-      setShowAddPart(false)
+      resetAddPartForm()
     })
   }
 
@@ -2455,13 +2519,59 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 </button>
               ) : (
                 <div className="mt-3 space-y-2 max-w-lg">
-                  <input
-                    type="text"
-                    value={newPartDesc}
-                    onChange={(e) => setNewPartDesc(e.target.value)}
-                    placeholder="Part description"
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  />
+                  {/* Part description — searches the Synergy product catalog.
+                      Picking a stock item locks the description to a chip and
+                      prefills item #, price, vendor, and vendor part #. */}
+                  {newPartIsCatalog ? (
+                    <div className="flex items-center gap-1 rounded-md border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 py-3 sm:py-2 text-sm text-gray-900 dark:text-white">
+                      <span className="flex-1 truncate">
+                        {newPartNumber ? <span className="font-mono">{newPartNumber}</span> : null}
+                        {newPartNumber ? ' — ' : ''}{newPartDesc}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={clearCatalogPart}
+                        title="Clear and enter manually"
+                        className="text-gray-400 dark:text-gray-500 hover:text-red-500 shrink-0 p-1"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative" ref={partComboRef}>
+                      <input
+                        type="text"
+                        value={newPartDesc}
+                        onChange={(e) => { setNewPartDesc(e.target.value); partSearch.setQuery(e.target.value) }}
+                        onFocus={() => { if (partSearch.results.length > 0) setPartComboOpen(true) }}
+                        placeholder="Search parts or type a description"
+                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      />
+                      {partSearch.comboOpen && partSearch.results.length > 0 && (
+                        <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          {partSearch.results.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => selectCatalogPart(p)}
+                              className="w-full text-left px-3 py-3 sm:py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                            >
+                              <span className="font-mono text-gray-900 dark:text-white">{p.number}</span>
+                              {p.description && <span className="text-gray-500 dark:text-gray-400"> — {p.description}</span>}
+                              {p.unit_price != null && (
+                                <span className="text-green-700 dark:text-green-400 sm:float-right font-medium block sm:inline mt-0.5 sm:mt-0">${p.unit_price.toFixed(2)}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {partSearch.comboOpen && !partSearch.loading && partSearch.results.length === 0 && newPartDesc.trim() && (
+                        <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400">
+                          No catalog match — enter the part details manually below.
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -2479,18 +2589,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                       className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-slate-500"
                     />
                   </div>
-                  <input
-                    type="text"
-                    value={newPartVendor}
-                    onChange={(e) => setNewPartVendor(e.target.value)}
-                    placeholder="Vendor name (required)"
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  {/* Vendor — Synergy-only picker. Prefilled (with a "synergy"
+                      badge) when a catalog item is chosen; key remounts it so the
+                      collapsed badge reflects the prefilled vendor / a cleared field. */}
+                  <VendorPicker
+                    key={`add-part-vendor-${newPartSynergyProductId ?? 'manual'}`}
+                    vendor={newPartVendor}
+                    vendorCode={newPartVendorCode}
+                    onChange={({ vendor, vendor_code }) => { setNewPartVendor(vendor); setNewPartVendorCode(vendor_code) }}
                   />
                   <input
                     type="text"
                     value={newPartVendorItemCode}
                     onChange={(e) => setNewPartVendorItemCode(e.target.value)}
-                    placeholder="Vendor part # (required)"
+                    placeholder={newPartIsCatalog ? 'Vendor part # (optional)' : 'Vendor part # (required)'}
                     className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   />
                   <input
@@ -2499,7 +2611,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     min="0"
                     value={newPartPrice}
                     onChange={(e) => setNewPartPrice(e.target.value)}
-                    placeholder="Price to charge customer (required; enter 0 if warranty)"
+                    placeholder={newPartIsCatalog ? 'Price to charge customer (optional; enter 0 if warranty)' : 'Price to charge customer (required; enter 0 if warranty)'}
                     className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   />
                   <div className="flex gap-2">
@@ -2512,7 +2624,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                       {loading ? 'Adding...' : 'Add Part'}
                     </button>
                     <button
-                      onClick={() => { setShowAddPart(false); setNewPartDesc(''); setNewPartQty('1'); setNewPartNumber(''); setNewPartVendorItemCode(''); setNewPartVendor(''); setNewPartPrice('') }}
+                      onClick={resetAddPartForm}
                       className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
                     >
                       Cancel

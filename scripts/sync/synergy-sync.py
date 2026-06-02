@@ -426,20 +426,27 @@ def sync_products(conn) -> int:
     placeholders = ", ".join("?" * len(PRODUCT_COMMODITY_CODES))
 
     try:
+        # LEFT JOIN a80vm to resolve the primary vendor's display name. prod
+        # carries a single primary vendor (PrimVend, 100% populated on parts) and
+        # its vendor part # (VendItem) — both prefilled onto a service-ticket part
+        # request when a tech picks this stock item.
         cursor.execute(f"""
             SELECT
-                prod.ProdCode,
-                prod.Desc1,
-                prod.Desc2,
-                prod.ListPrice1,
-                prod.CostLoad,
-                prod.CostPO,
-                prod.SupersedeCode
-            FROM prod
-            WHERE prod.ComdtyCode IN ({placeholders})
-              AND (prod.SupersedeCode IS NULL OR prod.SupersedeCode = '')
-              AND (prod.Desc2 NOT LIKE '%OBSOLETE%' OR prod.Desc2 IS NULL)
-            ORDER BY prod.ProdCode
+                p.ProdCode,
+                p.Desc1,
+                p.Desc2,
+                p.ListPrice1,
+                p.CostLoad,
+                p.CostPO,
+                p.PrimVend,
+                p.VendItem,
+                v.Name AS VendName
+            FROM prod p
+            LEFT JOIN a80vm v ON v.VendorCode = p.PrimVend
+            WHERE p.ComdtyCode IN ({placeholders})
+              AND (p.SupersedeCode IS NULL OR p.SupersedeCode = '')
+              AND (p.Desc2 NOT LIKE '%OBSOLETE%' OR p.Desc2 IS NULL)
+            ORDER BY p.ProdCode
         """, PRODUCT_COMMODITY_CODES)
     except Exception as e:
         log.warning(f"  Could not query 'prod' table: {e}. Skipping products sync.")
@@ -463,6 +470,13 @@ def sync_products(conn) -> int:
         cost_po = float(row.CostPO) if row.CostPO is not None else None
         unit_cost = cost_load if (cost_load is not None and cost_load > 0) else cost_po
 
+        # Primary vendor + vendor part #, for prefill on the service-ticket parts
+        # request. PrimVend is the a80vm vendor code; treat blank/"0" as no vendor.
+        prim_vend = safe_str(row.PrimVend)
+        vendor_code = int(prim_vend) if (prim_vend and prim_vend != "0" and prim_vend.isdigit()) else None
+        vendor_name = safe_str(row.VendName) if vendor_code is not None else None
+        vendor_item_code = safe_str(row.VendItem)
+
         # NOTE: do NOT add `requires_detail` to this payload. It's a hand-curated
         # flag (migration 088) that marks catch-all items like SHOP SUPPLIES to
         # prompt for a free-text detail. The upsert is ON CONFLICT (synergy_id)
@@ -475,6 +489,9 @@ def sync_products(conn) -> int:
             "description": description,
             "unit_price": float(row.ListPrice1) if row.ListPrice1 is not None else None,
             "unit_cost": unit_cost,
+            "vendor_code": vendor_code,
+            "vendor": vendor_name,
+            "vendor_item_code": vendor_item_code,
             "synced_at": utcnow_iso(),
         })
 

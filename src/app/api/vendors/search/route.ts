@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 
 export async function GET(request: NextRequest) {
   try {
+    // Any authenticated role. Techs need this for the Synergy vendor picker on
+    // the service-ticket "Request Part" form; the response is only vendor
+    // name + code (not sensitive), so there's no manager-only data to protect.
     const user = await getCurrentUser()
     if (!user?.role) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    if (!MANAGER_ROLES.includes(user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const q = sanitizeOrValue(request.nextUrl.searchParams.get('q') ?? '').trim().slice(0, 64)
