@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { PartRequest } from '@/types/database'
+import { buildProductCostMap } from '@/lib/db/products'
+import { lineMarginOk } from '@/lib/margin'
 
 type Source = 'pm' | 'service'
 
@@ -38,6 +40,7 @@ const PATCH_FIELDS: ReadonlySet<keyof PartRequest> = new Set([
   'product_number',
   'vendor_item_code',
   'po_number',
+  'unit_price',
 ])
 
 const FIELD_MAX_LEN: Partial<Record<keyof PartRequest, number>> = {
@@ -56,6 +59,14 @@ function sanitizePatchFields(input: Partial<PartRequest> | undefined): Partial<P
     if (!PATCH_FIELDS.has(key)) continue
     const raw = (input as Record<string, unknown>)[key]
     if (raw === undefined) continue
+    // unit_price is numeric: accept a finite, non-negative number (0 = warranty),
+    // rounded to cents. Anything else is dropped so a bad value never lands.
+    if (key === 'unit_price') {
+      const n = typeof raw === 'number' ? raw : Number(raw)
+      if (!Number.isFinite(n) || n < 0) continue
+      ;(out as Record<string, unknown>).unit_price = Math.round(n * 100) / 100
+      continue
+    }
     if (raw !== null && typeof raw !== 'string') continue
     const max = FIELD_MAX_LEN[key]
     const value = typeof raw === 'string' && max ? raw.slice(0, max) : raw
@@ -264,6 +275,28 @@ export async function POST(request: NextRequest) {
       default:
         // Inline field edits — sanitization already restricted to PATCH_FIELDS.
         break
+    }
+
+    // Margin floor — an inline price edit on a catalog line can't drop below the
+    // 15% gross-margin floor (min = cost/0.85). Only fires when the price
+    // actually changed to a positive value on a catalog line; warranty (0) and
+    // manual parts (no catalog cost) are exempt. Cost is server-sourced — a
+    // client unit_cost is never trusted. This route is manager-only, so the
+    // min price is safe to surface (it back-derives loaded cost).
+    if (
+      next.synergy_product_id != null &&
+      typeof next.unit_price === 'number' &&
+      next.unit_price > 0 &&
+      next.unit_price !== current.unit_price
+    ) {
+      const costMap = await buildProductCostMap(supabase, [next.synergy_product_id])
+      const res = lineMarginOk(next.unit_price, costMap.get(next.synergy_product_id))
+      if (!res.ok && res.minPrice != null) {
+        return NextResponse.json(
+          { error: `Price is below the 15% margin floor — minimum is $${res.minPrice.toFixed(2)}.` },
+          { status: 400 }
+        )
+      }
     }
 
     // Backfill requested_at for legacy rows the first time we touch them.

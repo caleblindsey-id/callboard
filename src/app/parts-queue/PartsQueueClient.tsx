@@ -266,6 +266,21 @@ export default function PartsQueueClient({
     await handleFieldsCommit(row, fields)
   }, [handleFieldsCommit])
 
+  // Price is numeric, so it can't reuse handleFieldBlur (which commits strings).
+  // Blank = no change (leave as-is); "0" is a valid warranty price. The server
+  // re-checks the 15% margin floor on catalog lines and rejects a too-low price.
+  const handlePriceBlur = useCallback(async (row: PartsQueueRow, value: string) => {
+    const trimmed = value.trim()
+    const currentStr = row.unit_price == null ? '' : String(row.unit_price)
+    if (trimmed === currentStr || trimmed === '') return
+    const n = parseFloat(trimmed)
+    if (!Number.isFinite(n) || n < 0) {
+      setError('Enter a valid price (0 or more).')
+      return
+    }
+    await handleFieldsCommit(row, { unit_price: Math.round(n * 100) / 100 })
+  }, [handleFieldsCommit])
+
   const handleMarkOrdered = useCallback(async (row: PartsQueueRow) => {
     const key = rowKey(row)
     setPendingRow(key)
@@ -540,8 +555,23 @@ export default function PartsQueueClient({
                       <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
                     </td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">
-                      {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {canEditFields ? (
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">$</span>
+                          <InlineText
+                            value={row.unit_price == null ? '' : String(row.unit_price)}
+                            placeholder="0.00"
+                            disabled={isPending}
+                            onBlurCommit={v => handlePriceBlur(row, v)}
+                            widthClass="w-20"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <VendorPicker
