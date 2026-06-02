@@ -2,26 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
+import { formatDateTimeLong } from '@/lib/format'
 
 interface NoteEntry {
   id: string
   note_text: string
   created_at: string
   users: { name: string } | null
-}
-
-function timeAgo(dateStr: string): string {
-  const now = new Date()
-  const date = new Date(dateStr)
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  const diffHrs = Math.floor(diffMins / 60)
-  if (diffHrs < 24) return `${diffHrs}h ago`
-  const diffDays = Math.floor(diffHrs / 24)
-  if (diffDays < 30) return `${diffDays}d ago`
-  return date.toLocaleDateString()
 }
 
 /**
@@ -122,7 +109,7 @@ export default function CustomerNotes({ customerId }: { customerId: number }) {
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
                   {note.users?.name ?? 'Unknown'}
                 </span>
-                <span className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(note.created_at)}</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">{formatDateTimeLong(note.created_at)}</span>
               </div>
               <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{note.note_text}</p>
             </div>
