@@ -158,6 +158,7 @@ export async function PATCH(
         .from('pm_tickets')
         .select('parts_requested, equipment(make, model, serial_number)')
         .eq('id', id)
+        .is('deleted_at', null)
         .single()
       const existing = existingRaw as unknown as {
         parts_requested: PartRequest[] | null
