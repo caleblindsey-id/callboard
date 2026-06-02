@@ -599,6 +599,61 @@ export async function PATCH(
         return NextResponse.json({ error: manualError }, { status: 400 })
       }
 
+      // --- Margin floor on requested parts (catalog lines only) ---
+      // A requested part's price can't be set below the 15% gross-margin floor
+      // (min = cost/0.85) any more than an estimate or used line can. Cost is
+      // server-sourced from the products catalog; a client unit_cost is never
+      // trusted. Only NEW or price-CHANGED catalog lines with a positive price
+      // are checked, so marking an existing part ordered/received — or saving a
+      // legacy below-floor row untouched — never blocks. Warranty lines (price
+      // 0) and manual parts (no catalog cost) are exempt, mirroring the
+      // estimate/completion floor.
+      {
+        const priceOf = (p: PartRequest) =>
+          typeof p.unit_price === 'number' ? p.unit_price : NaN
+        const priorByStamp = new Map(
+          existingParts
+            .filter((p) => p.requested_at)
+            .map((p) => [p.requested_at as string, p] as const),
+        )
+        const candidates = parts.filter((p) => {
+          if (p.cancelled) return false
+          if (p.synergy_product_id == null) return false // manual — cost unknown
+          const price = priceOf(p)
+          if (!Number.isFinite(price) || price <= 0) return false // blank or warranty
+          const prior = p.requested_at ? priorByStamp.get(p.requested_at) : undefined
+          // New line, or an existing line whose price was edited (office override).
+          return !prior || priceOf(prior) !== price
+        })
+        if (candidates.length > 0) {
+          const costMap = await buildProductCostMap(
+            supabase,
+            candidates.map((l) => l.synergy_product_id),
+          )
+          const check = checkPartLines(
+            candidates.map((p) => ({
+              synergy_product_id: p.synergy_product_id,
+              description: p.description,
+              unit_price: priceOf(p),
+            })),
+            (pid) => costMap.get(pid),
+          )
+          if (!check.ok) {
+            const v = check.violations[0]
+            // Techs must never see the min price (it back-derives loaded cost).
+            return NextResponse.json(
+              isTechnician(user.role)
+                ? { error: `"${v.description}" is priced too low — please check with the office.` }
+                : {
+                    error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
+                    violations: check.violations,
+                  },
+              { status: 400 },
+            )
+          }
+        }
+      }
+
       // Machine gate: a new part request requires make/model/serial on the
       // ticket. Service resolves inline equipment_* COALESCE'd over the linked
       // equipment row (mirrors the parts_order_queue view).
