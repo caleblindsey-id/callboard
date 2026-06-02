@@ -8,7 +8,7 @@ import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/dat
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart } from '@/lib/parts'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -152,18 +152,33 @@ export async function PATCH(
 
       // Required-field gate for NEW manual part requests (vendor name, vendor
       // part #, description, customer price). Diff against the stored array so
-      // legacy rows and status changes on existing parts never hard-fail.
-      const { data: existing } = await supabase
+      // legacy rows and status changes on existing parts never hard-fail. Also
+      // pull the linked equipment row to gate on machine make/model/serial.
+      const { data: existingRaw } = await supabase
         .from('pm_tickets')
-        .select('parts_requested')
+        .select('parts_requested, equipment(make, model, serial_number)')
         .eq('id', id)
         .single()
-      const manualError = validateNewManualPartRequests(
-        (existing?.parts_requested ?? []) as PartRequest[],
-        parts,
-      )
+      const existing = existingRaw as unknown as {
+        parts_requested: PartRequest[] | null
+        equipment: { make: string | null; model: string | null; serial_number: string | null } | null
+      } | null
+      const existingParts = (existing?.parts_requested ?? []) as PartRequest[]
+      const manualError = validateNewManualPartRequests(existingParts, parts)
       if (manualError) {
         return NextResponse.json({ error: manualError }, { status: 400 })
+      }
+
+      // Machine gate: a new part request requires make/model/serial on the
+      // ticket. PM reads the linked equipment row.
+      if (hasNewRequestedPart(existingParts, parts)) {
+        const eq = existing?.equipment
+        if (!eq?.make?.trim() || !eq?.model?.trim() || !eq?.serial_number?.trim()) {
+          return NextResponse.json(
+            { error: 'Machine make, model, and serial number must be on the linked equipment before requesting parts.' },
+            { status: 400 }
+          )
+        }
       }
     }
 

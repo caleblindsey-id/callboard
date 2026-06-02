@@ -1004,6 +1004,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     })
   }
 
+  // Machine make/model/serial must be on the ticket before any part request so
+  // the office knows the machine. Service resolves inline equipment_* over the
+  // linked equipment row (presence is the same regardless of precedence).
+  const machineComplete =
+    !!(ticket.equipment_make || ticket.equipment?.make)?.trim() &&
+    !!(ticket.equipment_model || ticket.equipment?.model)?.trim() &&
+    !!(ticket.equipment_serial_number || ticket.equipment?.serial_number)?.trim()
+
   // Manual part request (always off-catalog) — the office can't backfill these,
   // so vendor name, vendor part #, description, and customer price are required.
   const newPartPriceParsed = parseFloat(newPartPrice)
@@ -2189,8 +2197,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     showVendorItemCode={true}
                     label="Estimated Parts"
                     allowPriceOverride={isStaff}
-                    onRequestPart={handleRequestEstimatePart}
+                    onRequestPart={machineComplete ? handleRequestEstimatePart : undefined}
                   />
+                  {!machineComplete && estimateParts.length > 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Add the machine make, model, and serial number above before requesting parts to be ordered.
+                    </p>
+                  )}
 
                   {/* Estimate summary */}
                   <div className="rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 max-w-lg">
@@ -2424,8 +2437,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
             </>
           )}
 
-          {/* Add part request — tech or staff */}
+          {/* Add part request — tech or staff. Blocked until the machine
+              make/model/serial are on the ticket so the office knows what it's for. */}
           {ticket.status !== 'completed' && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
+            !machineComplete ? (
+              <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                Add the machine make, model, and serial number to this ticket before requesting parts.
+              </div>
+            ) : (
             <>
               {!showAddPart ? (
                 <button
@@ -2502,6 +2521,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 </div>
               )}
             </>
+            )
           )}
 
           {/* Synergy order # — staff only, for the parts-ordering flow (pre-completion).

@@ -12,7 +12,7 @@ import {
 import { getCustomerLaborRate } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart } from '@/lib/parts'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 
@@ -194,7 +194,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, equipment(make, model, serial_number)')
       .eq('id', id)
       .single()
 
@@ -593,12 +593,28 @@ export async function PATCH(
       // Required-field gate for NEW manual part requests (vendor name, vendor
       // part #, description, customer price), diffed against the stored array
       // (current.parts_requested) so legacy rows / status changes never fail.
-      const manualError = validateNewManualPartRequests(
-        (current.parts_requested ?? []) as PartRequest[],
-        parts,
-      )
+      const existingParts = (current.parts_requested ?? []) as PartRequest[]
+      const manualError = validateNewManualPartRequests(existingParts, parts)
       if (manualError) {
         return NextResponse.json({ error: manualError }, { status: 400 })
+      }
+
+      // Machine gate: a new part request requires make/model/serial on the
+      // ticket. Service resolves inline equipment_* COALESCE'd over the linked
+      // equipment row (mirrors the parts_order_queue view).
+      if (hasNewRequestedPart(existingParts, parts)) {
+        const linked = current.equipment as
+          | { make: string | null; model: string | null; serial_number: string | null }
+          | null
+        const make = (current.equipment_make || linked?.make || '').trim()
+        const model = (current.equipment_model || linked?.model || '').trim()
+        const serial = (current.equipment_serial_number || linked?.serial_number || '').trim()
+        if (!make || !model || !serial) {
+          return NextResponse.json(
+            { error: 'Machine make, model, and serial number must be on the ticket before requesting parts.' },
+            { status: 400 }
+          )
+        }
       }
       // parts_received: ignore cancelled parts. Without this filter, a single
       // cancelled part keeps parts_received=false forever (since cancelled parts

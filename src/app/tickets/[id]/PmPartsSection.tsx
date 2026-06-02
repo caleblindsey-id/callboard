@@ -15,6 +15,9 @@ interface PmPartsSectionProps {
   isTech: boolean
   canReset: boolean
   status: TicketStatus
+  // True when the linked equipment has make, model, AND serial. A part request
+  // is blocked until then so the office knows which machine it's for.
+  machineComplete: boolean
 }
 
 const ENTRY_ALLOWED_STATUSES: TicketStatus[] = ['assigned', 'in_progress']
@@ -32,6 +35,7 @@ export default function PmPartsSection({
   isTech,
   canReset,
   status,
+  machineComplete,
 }: PmPartsSectionProps) {
   const router = useRouter()
   const [parts, setParts] = useState<PartRequest[]>(initialPartsRequested)
@@ -359,20 +363,27 @@ export default function PmPartsSection({
           </div>
         )}
 
-        {/* Request part — product-search entry, only while ticket is active */}
+        {/* Request part — product-search entry, only while ticket is active and
+            the machine make/model/serial are on file (the office needs them). */}
         {canRequestParts && (
-          <div className="mt-3">
-            <PartsEntryList
-              parts={draftParts}
-              setParts={setDraftParts}
-              showPricing={true}
-              showWarranty={false}
-              showVendorItemCode={true}
-              showVendor={true}
-              label="Request a Part"
-              onRequestPart={handleRequestDraftPart}
-            />
-          </div>
+          machineComplete ? (
+            <div className="mt-3">
+              <PartsEntryList
+                parts={draftParts}
+                setParts={setDraftParts}
+                showPricing={true}
+                showWarranty={false}
+                showVendorItemCode={true}
+                showVendor={true}
+                label="Request a Part"
+                onRequestPart={handleRequestDraftPart}
+              />
+            </div>
+          ) : (
+            <div className="mt-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+              Add the machine make, model, and serial number to the equipment record before requesting parts.
+            </div>
+          )
         )}
 
         {/* Synergy Order # — office staff only */}

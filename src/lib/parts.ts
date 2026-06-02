@@ -54,6 +54,27 @@ export function validateNewManualPartRequests(
 }
 
 /**
+ * True when `incoming` adds at least one brand-new requested part vs `existing`.
+ *
+ * Used to gate part requests on ticket machine info: the office must know which
+ * machine a part is for, so a new request is blocked until make/model/serial are
+ * on the ticket. Diffed by `requested_at` (every new-request flow stamps it) so
+ * status changes on existing parts don't trip the gate. Legacy rows without a
+ * timestamp are never counted as "new".
+ */
+export function hasNewRequestedPart(
+  existing: PartRequest[] | null | undefined,
+  incoming: PartRequest[],
+): boolean {
+  const seen = new Set(
+    (existing ?? []).map((p) => p.requested_at).filter((t): t is string => !!t),
+  )
+  return incoming.some(
+    (p) => p.status === 'requested' && !!p.requested_at && !seen.has(p.requested_at),
+  )
+}
+
+/**
  * Display label for a part line: the description, with any free-text `detail`
  * appended in-line (e.g. "SHOP SUPPLIES — rags, lubricant, fasteners").
  *
