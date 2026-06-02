@@ -29,6 +29,7 @@ type SortKey =
   | 'synergy_order_number'
   | 'description'
   | 'quantity'
+  | 'unit_price'
   | 'vendor'
   | 'product_number'
   | 'vendor_item_code'
@@ -73,6 +74,9 @@ function partToRow(row: PartsQueueRow, part: PartRequest): PartsQueueRow {
     description: part.description ?? row.description,
     detail: part.detail ?? row.detail,
     quantity: part.quantity ?? row.quantity,
+    unit_price: part.unit_price ?? row.unit_price,
+    // machine_* are ticket-level (from the view's equipment join) and aren't
+    // editable from the queue, so they're preserved from the existing row.
     vendor: part.vendor ?? null,
     vendor_code: part.vendor_code ?? null,
     product_number: part.product_number ?? null,
@@ -203,6 +207,9 @@ export default function PartsQueueClient({
           r.po_number,
           r.vendor,
           r.assigned_technician_name,
+          r.machine_make,
+          r.machine_model,
+          r.machine_serial,
         ]
           .filter(Boolean)
           .join(' ')
@@ -447,7 +454,9 @@ export default function PartsQueueClient({
               <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
               <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th
                 scope="col"
@@ -473,7 +482,7 @@ export default function PartsQueueClient({
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={14 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
+                  colSpan={16 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
                   className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
@@ -527,7 +536,13 @@ export default function PartsQueueClient({
                     <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>
                       {partLabel(row) || '—'}
                     </td>
+                    <td className="px-3 py-2">
+                      <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
+                    </td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">
+                      {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
+                    </td>
                     <td className="px-3 py-2">
                       <VendorPicker
                         vendor={row.vendor}
@@ -746,6 +761,33 @@ function SuggestedVendor({
     >
       {suggestion}
     </span>
+  )
+}
+
+function MachineCell({
+  make,
+  model,
+  serial,
+}: {
+  make: string | null
+  model: string | null
+  serial: string | null
+}) {
+  const heading = [make, model].filter(Boolean).join(' ')
+  if (!heading && !serial) return <span className="text-gray-400 dark:text-gray-500">—</span>
+  return (
+    <div className="max-w-[180px]">
+      {heading && (
+        <div className="text-gray-900 dark:text-white truncate" title={heading}>
+          {heading}
+        </div>
+      )}
+      {serial && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={serial}>
+          S/N {serial}
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -48,6 +48,13 @@ function rowKey(row: MyPartRow): string {
   return `${row.source}:${row.ticket_id}:${row.part_index}`
 }
 
+// "Make Model — S/N 12345", trimmed to whatever pieces are present.
+function machineLabel(row: MyPartRow): string {
+  const head = [row.machine_make, row.machine_model].filter(Boolean).join(' ')
+  const sn = row.machine_serial ? `S/N ${row.machine_serial}` : ''
+  return [head, sn].filter(Boolean).join(' — ')
+}
+
 export default function MyPartsClient({ rows }: Props) {
   const router = useRouter()
   const [active, setActive] = useState<MyPartStatus>('received')
@@ -148,8 +155,12 @@ export default function MyPartsClient({ rows }: Props) {
                     )}
                   </div>
                   <p className="text-sm text-gray-700 dark:text-gray-300">{row.customer_name || '—'}</p>
+                  {machineLabel(row) && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{machineLabel(row)}</p>
+                  )}
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     {row.vendor ? `${row.vendor} · ` : ''}
+                    {row.unit_price != null ? `$${row.unit_price.toFixed(2)} · ` : ''}
                     {dateLabel}: {fmtDate(rowDate(row))}
                   </p>
                 </div>
@@ -162,7 +173,9 @@ export default function MyPartsClient({ rows }: Props) {
                 <thead>
                   <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                     <th className="px-4 py-2.5">Part</th>
+                    <th className="px-4 py-2.5">Machine</th>
                     <th className="px-4 py-2.5">Qty</th>
+                    <th className="px-4 py-2.5">Price</th>
                     <th className="px-4 py-2.5">Status</th>
                     <th className="px-4 py-2.5">Customer</th>
                     <th className="px-4 py-2.5">WO #</th>
@@ -181,8 +194,14 @@ export default function MyPartsClient({ rows }: Props) {
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
                         {partLabel(row) || '—'}
                       </td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                        {machineLabel(row) || '—'}
+                      </td>
                       <td className="px-4 py-3 text-gray-700 dark:text-gray-300 tabular-nums">
                         {row.quantity ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300 tabular-nums whitespace-nowrap">
+                        {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
                       </td>
                       <td className="px-4 py-3">
                         <PartsStatusBadge status={row.status} />

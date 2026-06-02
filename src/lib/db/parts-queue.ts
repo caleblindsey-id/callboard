@@ -11,10 +11,11 @@ const QUEUE_COLUMNS = `
   source, ticket_id, work_order_number, part_index,
   customer_name, assigned_technician_name,
   synergy_order_number, synergy_validation_status, parts_validation_status, synergy_validated_at,
-  requested_at, description, detail, quantity, vendor, vendor_code,
+  requested_at, description, detail, quantity, unit_price, vendor, vendor_code,
   product_number, synergy_product_id, vendor_item_code, po_number,
   status, cancelled, cancel_reason,
-  ordered_at, received_at, ordered_by, received_by
+  ordered_at, received_at, ordered_by, received_by,
+  machine_make, machine_model, machine_serial
 `
 
 export async function getPartsQueue(): Promise<PartsQueueRow[]> {
@@ -54,7 +55,11 @@ export type MyPartRow = {
   description: string | null
   detail: string | null
   quantity: number | null
+  unit_price: number | null
   vendor: string | null
+  machine_make: string | null
+  machine_model: string | null
+  machine_serial: string | null
   status: MyPartStatus
   requested_at: string | null
   ordered_at: string | null
@@ -67,6 +72,13 @@ type TicketPartsRow = {
   status: string
   parts_requested: PartRequest[] | null
   customers: { name: string } | null
+  // Machine sourcing mirrors the parts_order_queue view: service tickets carry
+  // inline equipment_* fields COALESCE'd over the linked equipment row; PM has
+  // no inline fields and reads the linked row only.
+  equipment_make?: string | null
+  equipment_model?: string | null
+  equipment_serial_number?: string | null
+  equipment: { make: string | null; model: string | null; serial_number: string | null } | null
 }
 
 function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartRow[] {
@@ -87,6 +99,7 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
       ) {
         return
       }
+      const eq = ticket.equipment
       out.push({
         source,
         ticket_id: ticket.id,
@@ -96,7 +109,12 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
         description: part.description ?? null,
         detail: part.detail ?? null,
         quantity: part.quantity ?? null,
+        unit_price: part.unit_price ?? null,
         vendor: part.vendor ?? null,
+        // Inline (service) wins over the linked row; '' falls through to linked.
+        machine_make: ticket.equipment_make || eq?.make || null,
+        machine_model: ticket.equipment_model || eq?.model || null,
+        machine_serial: ticket.equipment_serial_number || eq?.serial_number || null,
         status,
         requested_at: part.requested_at ?? null,
         ordered_at: part.ordered_at ?? null,
@@ -113,13 +131,13 @@ export async function getMyPartsQueue(userId: string): Promise<MyPartRow[]> {
   const [pmResult, serviceResult] = await Promise.all([
     supabase
       .from('pm_tickets')
-      .select('id, work_order_number, status, parts_requested, customers(name)')
+      .select('id, work_order_number, status, parts_requested, customers(name), equipment(make, model, serial_number)')
       .eq('assigned_technician_id', userId)
       .is('deleted_at', null)
       .not('status', 'in', '("completed","billed","skipped","skip_requested")'),
     supabase
       .from('service_tickets')
-      .select('id, work_order_number, status, parts_requested, customers(name)')
+      .select('id, work_order_number, status, parts_requested, customers(name), equipment_make, equipment_model, equipment_serial_number, equipment(make, model, serial_number)')
       .eq('assigned_technician_id', userId)
       .not('status', 'in', '("billed","declined","canceled")'),
   ])
