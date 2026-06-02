@@ -24,6 +24,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/feedback$/,                                       // POST /api/feedback (FAB submission — all roles)
   /^\/api\/help\/search$/,                                   // GET /api/help/search (help center search — all roles)
   /^\/api\/ace-labor\/[0-9a-f-]{36}$/i,                      // PATCH /api/ace-labor/[uuid] (tech edits pending/rejected entry from ticket detail)
+  /^\/api\/vendors\/search(\/|$)/,                           // GET /api/vendors/search (Synergy vendor picker on the Request Part form — all roles)
 ]
 
 function isTechAllowed(pathname: string): boolean {

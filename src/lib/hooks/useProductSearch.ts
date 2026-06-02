@@ -16,6 +16,12 @@ export interface ProductSearchResult {
   description: string | null
   unit_price: number | null
   synced_at: string | null
+  // Primary vendor + vendor part # from Synergy (migration 091). Used to prefill
+  // a service-ticket part request when a stock item is picked. Never includes
+  // unit_cost — that stays server-only.
+  vendor_code: number | null
+  vendor: string | null
+  vendor_item_code: string | null
 }
 
 export interface UseProductSearchReturn {
@@ -72,7 +78,7 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
       const q = sanitizeOrValue(query.trim())
       const { data } = await supabase
         .from('products')
-        .select('id, synergy_id, number, description, unit_price, synced_at')
+        .select('id, synergy_id, number, description, unit_price, synced_at, vendor_code, vendor, vendor_item_code')
         .or(safeOrRaw([
           { column: 'number', op: 'ilike', raw: `%${q}%` },
           { column: 'description', op: 'ilike', raw: `%${q}%` },
