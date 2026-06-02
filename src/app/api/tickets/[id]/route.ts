@@ -8,7 +8,7 @@ import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/dat
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests } from '@/lib/parts'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -148,6 +148,22 @@ export async function PATCH(
           { error: 'Synergy item # is required on any part marked ordered or received.' },
           { status: 400 }
         )
+      }
+
+      // Required-field gate for NEW manual part requests (vendor name, vendor
+      // part #, description, customer price). Diff against the stored array so
+      // legacy rows and status changes on existing parts never hard-fail.
+      const { data: existing } = await supabase
+        .from('pm_tickets')
+        .select('parts_requested')
+        .eq('id', id)
+        .single()
+      const manualError = validateNewManualPartRequests(
+        (existing?.parts_requested ?? []) as PartRequest[],
+        parts,
+      )
+      if (manualError) {
+        return NextResponse.json({ error: manualError }, { status: 400 })
       }
     }
 

@@ -12,7 +12,7 @@ import {
 import { getCustomerLaborRate } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests } from '@/lib/parts'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 
@@ -589,6 +589,16 @@ export async function PATCH(
           { error: 'Synergy item # is required on any part marked ordered or received.' },
           { status: 400 }
         )
+      }
+      // Required-field gate for NEW manual part requests (vendor name, vendor
+      // part #, description, customer price), diffed against the stored array
+      // (current.parts_requested) so legacy rows / status changes never fail.
+      const manualError = validateNewManualPartRequests(
+        (current.parts_requested ?? []) as PartRequest[],
+        parts,
+      )
+      if (manualError) {
+        return NextResponse.json({ error: manualError }, { status: 400 })
       }
       // parts_received: ignore cancelled parts. Without this filter, a single
       // cancelled part keeps parts_received=false forever (since cancelled parts

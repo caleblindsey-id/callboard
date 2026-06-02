@@ -64,6 +64,7 @@ export default function PmPartsSection({
     setSaving(true)
     setError(null)
     try {
+      const priceParsed = parseFloat(entry.unitPrice)
       const newPart: PartRequest = {
         description: entry.description.trim(),
         quantity: Number(entry.quantity) || 1,
@@ -71,6 +72,8 @@ export default function PmPartsSection({
         ...(entry.productNumber?.trim() ? { product_number: entry.productNumber.trim() } : {}),
         ...(entry.synergyProductId != null ? { synergy_product_id: entry.synergyProductId } : {}),
         ...(entry.vendorItemCode?.trim() ? { vendor_item_code: entry.vendorItemCode.trim() } : {}),
+        ...(entry.vendor?.trim() ? { vendor: entry.vendor.trim() } : {}),
+        ...(entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? { unit_price: priceParsed } : {}),
         status: 'requested',
         requested_at: new Date().toISOString(),
       }
@@ -365,6 +368,7 @@ export default function PmPartsSection({
               showPricing={true}
               showWarranty={false}
               showVendorItemCode={true}
+              showVendor={true}
               label="Request a Part"
               onRequestPart={handleRequestDraftPart}
             />

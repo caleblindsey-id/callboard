@@ -45,6 +45,10 @@ export interface PartEntry {
   // Optional manufacturer / vendor part number. Only surfaced when the parent
   // opts in via showVendorItemCode (PM ticket parts requests use this).
   vendorItemCode?: string | null
+  // Vendor name (free text). Surfaced when the parent opts in via showVendor.
+  // Required on new MANUAL part requests so the office isn't left guessing who
+  // to order from; catalog parts resolve the vendor office-side.
+  vendor?: string | null
   // Local flag flipped after the row has been sent to the parts-requested
   // queue via onRequestPart. Not persisted.
   alreadyRequested?: boolean
@@ -69,6 +73,7 @@ export function emptyPart(): PartEntry {
     searching: false,
     warrantyCovered: false,
     vendorItemCode: null,
+    vendor: null,
   }
 }
 
@@ -118,13 +123,16 @@ interface PartsEntryListProps {
   allowPriceOverride?: boolean
   // Surface an optional vendor / manufacturer part # input on each row.
   showVendorItemCode?: boolean
+  // Surface a vendor-name input on each row. When set alongside onRequestPart,
+  // vendor name becomes a required field for MANUAL part requests.
+  showVendor?: boolean
   // When provided, each row renders a "Request" button that hands the entry
   // off to the caller (which creates a PartRequest on the ticket). The caller
   // is responsible for flipping `alreadyRequested` on success.
   onRequestPart?: (index: number) => Promise<void>
 }
 
-export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', allowPriceOverride = false, showVendorItemCode = false, onRequestPart }: PartsEntryListProps) {
+export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', allowPriceOverride = false, showVendorItemCode = false, showVendor = false, onRequestPart }: PartsEntryListProps) {
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
   // Tracks which dropdown result is keyboard-highlighted per row (-1 = none)
@@ -236,6 +244,26 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
       return updated
     })
     clearFocus(index)
+  }
+
+  // Required-field gate for the "Request" action. Description is always
+  // required; for MANUAL (off-catalog) parts the office can't fill the gaps
+  // later, so vendor name, vendor part #, and a customer price are also
+  // required — but only those fields that are actually visible in this context.
+  // Catalog parts (isFromDb) resolve vendor/price office-side and stay exempt.
+  function missingRequestFields(part: PartEntry): string[] {
+    const missing: string[] = []
+    if (!part.description.trim()) missing.push('description')
+    if (!part.isFromDb) {
+      if (showVendor && !(part.vendor ?? '').trim()) missing.push('vendor')
+      if (showVendorItemCode && !(part.vendorItemCode ?? '').trim()) missing.push('vendor part #')
+      if (showPricing) {
+        const v = parseFloat(part.unitPrice)
+        // A blank or non-numeric price is missing; a warranty $0 is entered as 0.
+        if (part.unitPrice.trim() === '' || !Number.isFinite(v) || v < 0) missing.push('price')
+      }
+    }
+    return missing
   }
 
   function handleClearProduct(index: number) {
@@ -425,6 +453,25 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                     Warranty
                   </label>
                 )}
+                {showVendor && (
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Vendor</label>
+                    <input
+                      type="text"
+                      value={part.vendor ?? ''}
+                      onChange={(e) => {
+                        setParts((prev) => {
+                          const u = [...prev]
+                          u[i] = { ...u[i], vendor: e.target.value }
+                          return u
+                        })
+                      }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                      placeholder={part.isFromDb ? 'optional' : 'required'}
+                      className="w-36 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-2 h-[44px] sm:h-[34px] text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    />
+                  </div>
+                )}
                 {showVendorItemCode && (
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Vendor Item #</label>
@@ -439,7 +486,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                         })
                       }}
                       onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-                      placeholder="optional"
+                      placeholder={part.isFromDb ? 'optional' : 'required'}
                       className="w-32 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-2 h-[44px] sm:h-[34px] text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
                     />
                   </div>
@@ -449,17 +496,20 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                     <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 px-2 min-h-[44px] sm:min-h-0">
                       ✓ Requested
                     </span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={!part.description.trim()}
-                      onClick={() => onRequestPart(i)}
-                      title={!part.description.trim() ? 'Add a part description first' : 'Request this part to be ordered'}
-                      className="ml-auto px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 transition-colors"
-                    >
-                      Request
-                    </button>
-                  )
+                  ) : (() => {
+                    const missing = missingRequestFields(part)
+                    return (
+                      <button
+                        type="button"
+                        disabled={missing.length > 0}
+                        onClick={() => onRequestPart(i)}
+                        title={missing.length > 0 ? `Add ${missing.join(', ')} first` : 'Request this part to be ordered'}
+                        className="ml-auto px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 transition-colors"
+                      >
+                        Request
+                      </button>
+                    )
+                  })()
                 )}
                 <button
                   type="button"

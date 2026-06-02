@@ -467,6 +467,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const [newPartQty, setNewPartQty] = useState('1')
   const [newPartNumber, setNewPartNumber] = useState('')
   const [newPartVendorItemCode, setNewPartVendorItemCode] = useState('')
+  const [newPartVendor, setNewPartVendor] = useState('')
+  const [newPartPrice, setNewPartPrice] = useState('')
 
   // Completion form
   const [showCompletionForm, setShowCompletionForm] = useState(false)
@@ -977,11 +979,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   async function handleRequestEstimatePart(index: number) {
     const entry = estimateParts[index]
     if (!entry || !entry.description.trim() || entry.alreadyRequested) return
+    const priceParsed = parseFloat(entry.unitPrice)
     const newPart: PartRequest = {
       description: entry.description.trim(),
       quantity: Number(entry.quantity) || 1,
       product_number: entry.productNumber?.trim() || undefined,
       synergy_product_id: entry.synergyProductId ?? undefined,
+      vendor_item_code: entry.vendorItemCode?.trim() || undefined,
+      vendor: entry.vendor?.trim() || undefined,
+      unit_price:
+        entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? priceParsed : undefined,
       status: 'requested',
       requested_at: new Date().toISOString(),
     }
@@ -997,13 +1004,26 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
     })
   }
 
+  // Manual part request (always off-catalog) — the office can't backfill these,
+  // so vendor name, vendor part #, description, and customer price are required.
+  const newPartPriceParsed = parseFloat(newPartPrice)
+  const newPartPriceValid =
+    newPartPrice.trim() !== '' && Number.isFinite(newPartPriceParsed) && newPartPriceParsed >= 0
+  const addPartReady =
+    !!newPartDesc.trim() &&
+    !!newPartVendor.trim() &&
+    !!newPartVendorItemCode.trim() &&
+    newPartPriceValid
+
   async function handleAddPartRequest() {
-    if (!newPartDesc.trim()) return
+    if (!addPartReady) return
     const newPart: PartRequest = {
       description: newPartDesc.trim(),
       quantity: parseInt(newPartQty) || 1,
       product_number: newPartNumber.trim() || undefined,
       vendor_item_code: newPartVendorItemCode.trim() || undefined,
+      vendor: newPartVendor.trim(),
+      unit_price: newPartPriceParsed,
       status: 'requested',
       requested_at: new Date().toISOString(),
     }
@@ -1015,6 +1035,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
       setNewPartQty('1')
       setNewPartNumber('')
       setNewPartVendorItemCode('')
+      setNewPartVendor('')
+      setNewPartPrice('')
       setShowAddPart(false)
     })
   }
@@ -2163,6 +2185,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                     setParts={setEstimateParts}
                     showPricing={true}
                     showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
+                    showVendor={true}
+                    showVendorItemCode={true}
                     label="Estimated Parts"
                     allowPriceOverride={isStaff}
                     onRequestPart={handleRequestEstimatePart}
@@ -2438,21 +2462,38 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                   </div>
                   <input
                     type="text"
+                    value={newPartVendor}
+                    onChange={(e) => setNewPartVendor(e.target.value)}
+                    placeholder="Vendor name (required)"
+                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                  <input
+                    type="text"
                     value={newPartVendorItemCode}
                     onChange={(e) => setNewPartVendorItemCode(e.target.value)}
-                    placeholder="Vendor item # (optional)"
+                    placeholder="Vendor part # (required)"
+                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={newPartPrice}
+                    onChange={(e) => setNewPartPrice(e.target.value)}
+                    placeholder="Price to charge customer (required; enter 0 if warranty)"
                     className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={handleAddPartRequest}
-                      disabled={loading || !newPartDesc.trim()}
+                      disabled={loading || !addPartReady}
+                      title={addPartReady ? 'Request this part to be ordered' : 'Enter vendor name, vendor part #, description, and price first'}
                       className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
                     >
                       {loading ? 'Adding...' : 'Add Part'}
                     </button>
                     <button
-                      onClick={() => { setShowAddPart(false); setNewPartDesc(''); setNewPartQty('1'); setNewPartNumber(''); setNewPartVendorItemCode('') }}
+                      onClick={() => { setShowAddPart(false); setNewPartDesc(''); setNewPartQty('1'); setNewPartNumber(''); setNewPartVendorItemCode(''); setNewPartVendor(''); setNewPartPrice('') }}
                       className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
                     >
                       Cancel
