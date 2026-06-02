@@ -356,6 +356,11 @@ export default async function TicketDetailPage({
             isTech={isTechnician(user?.role ?? null)}
             canReset={RESET_ROLES.includes(user?.role ?? ('' as never))}
             status={ticket.status}
+            machineComplete={
+              !!ticket.equipment?.make?.trim() &&
+              !!ticket.equipment?.model?.trim() &&
+              !!ticket.equipment?.serial_number?.trim()
+            }
           />
 
           <TicketActions

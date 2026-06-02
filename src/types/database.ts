@@ -147,6 +147,10 @@ export interface TicketPhoto {
 export interface PartRequest {
   description: string
   quantity: number
+  // Price to charge the customer for this part, captured by the tech at request
+  // time. Required on new MANUAL (off-catalog) requests; catalog parts resolve
+  // price office-side. Warranty service parts may carry an explicit 0.
+  unit_price?: number
   // Free-text detail for catch-all catalog items flagged products.requires_detail
   // (e.g. "SHOP SUPPLIES"). Optional; mirrors PartUsed.detail.
   detail?: string
@@ -215,6 +219,9 @@ export type PartsQueueRow = {
   // the parts_requested JSONB by the parts_order_queue view (migration 089).
   detail: string | null
   quantity: number | null
+  // Customer price for this part request (migration 090). Projected from the
+  // parts_requested JSONB; null on pre-090 rows that predate the field.
+  unit_price: number | null
   vendor: string | null
   vendor_code: string | null
   product_number: string | null
@@ -222,6 +229,12 @@ export type PartsQueueRow = {
   vendor_item_code: string | null
   po_number: string | null
   status: 'requested' | 'ordered' | 'received'
+  // Machine the part is for — a ticket-level attribute (migration 090). PM reads
+  // the linked equipment row; service COALESCEs inline equipment_* fields over
+  // the linked row. null when no equipment is linked / entered.
+  machine_make: string | null
+  machine_model: string | null
+  machine_serial: string | null
   cancelled: boolean
   cancel_reason: string | null
   ordered_at: string | null
