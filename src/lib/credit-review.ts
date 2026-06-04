@@ -142,43 +142,50 @@ export async function enqueueCreditReviewsForCustomer(args: {
   }
 
   const labelByKey = new Map(fresh.map((t) => [`${t.ticketType}:${t.ticketId}`, t.orderLabel]))
-  const reviews = rows.map((r) => {
+  const companyName = (await getSettingViaAdmin(admin, 'company_name')) ?? 'CallBoard'
+  const supportPhone = await getSettingViaAdmin(admin, 'support_phone')
+  const nowIso = new Date().toISOString()
+
+  // One email PER ORDER (not one per customer) so AR can Release/Block each
+  // order independently from its own message. Each row already has its own
+  // action_token. A send failure on one order is non-fatal: its row persists
+  // (still gated) and is resendable; we report emailed=false so callers surface it.
+  let allSent = true
+  for (const r of rows) {
     const key = r.pm_ticket_id ? `pm:${r.pm_ticket_id}` : `service:${r.service_ticket_id}`
-    return {
+    const review = {
       orderLabel: labelByKey.get(key) ?? 'Order',
       reviewUrl: `${appUrl}/cr/${r.action_token}`,
     }
-  })
-
-  const companyName = (await getSettingViaAdmin(admin, 'company_name')) ?? 'CallBoard'
-  const supportPhone = await getSettingViaAdmin(admin, 'support_phone')
-
-  const email = renderCreditReviewEmail({
-    customerName,
-    accountNumber,
-    reviews,
-    settings: { company_name: companyName, support_phone: supportPhone },
-  })
-
-  try {
-    const res = await sendMandrillEmail({
-      to: { email: arEmails[0] },
-      cc: arEmails.slice(1).map((e) => ({ email: e })),
-      subject: email.subject,
-      html: email.html,
-      text: email.text,
-      tags: ['credit-review'],
-      metadata: { customer_id: String(customerId) },
+    const email = renderCreditReviewEmail({
+      customerName,
+      accountNumber,
+      reviews: [review],
+      settings: { company_name: companyName, support_phone: supportPhone },
     })
-    await admin
-      .from('credit_reviews')
-      .update({ email_message_id: res.messageId, emailed_at: new Date().toISOString() })
-      .in('id', reviewIds)
-    return { created: rows.length, emailed: true, reviewIds }
-  } catch (err) {
-    console.error('credit-review email send failed:', err)
-    return { created: rows.length, emailed: false, reason: 'email_failed', reviewIds }
+    try {
+      const res = await sendMandrillEmail({
+        to: { email: arEmails[0] },
+        cc: arEmails.slice(1).map((e) => ({ email: e })),
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+        tags: ['credit-review'],
+        metadata: { customer_id: String(customerId) },
+      })
+      await admin
+        .from('credit_reviews')
+        .update({ email_message_id: res.messageId, emailed_at: nowIso })
+        .eq('id', r.id)
+    } catch (err) {
+      console.error(`credit-review email send failed for review ${r.id}:`, err)
+      allSent = false
+    }
   }
+
+  return allSent
+    ? { created: rows.length, emailed: true, reviewIds }
+    : { created: rows.length, emailed: false, reason: 'email_failed', reviewIds }
 }
 
 // Orders that have NOT been started yet — the only ones a newly-on-hold

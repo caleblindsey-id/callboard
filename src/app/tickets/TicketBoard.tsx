@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
-import { activeCreditReviewStatus } from '@/lib/credit-review-status'
+import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
@@ -128,7 +128,7 @@ function TicketList({
                     </span>
                   )}
                   {(() => {
-                    const cr = activeCreditReviewStatus(ticket.credit_reviews)
+                    const cr = displayCreditReviewStatus(ticket.credit_reviews)
                     return cr ? <CreditReviewBadge status={cr} /> : null
                   })()}
                   {deletedMode && (
@@ -256,7 +256,7 @@ function TicketList({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{ticket.customers?.name ?? '—'}</span>
                       {(() => {
-                        const cr = activeCreditReviewStatus(ticket.credit_reviews)
+                        const cr = displayCreditReviewStatus(ticket.credit_reviews)
                         return cr ? <CreditReviewBadge status={cr} /> : null
                       })()}
                     </div>

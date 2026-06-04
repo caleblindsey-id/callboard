@@ -7,7 +7,7 @@ import { UserRow } from '@/types/database'
 import { ServiceTicketWithJoins, ServiceTicketStatus, ServicePriority, ServiceTicketType } from '@/types/service-tickets'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
-import { activeCreditReviewStatus } from '@/lib/credit-review-status'
+import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { createClient } from '@/lib/supabase/client'
 
@@ -469,7 +469,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                       {ticket.customers?.name ?? '—'}
                     </p>
                     {(() => {
-                      const cr = activeCreditReviewStatus(ticket.credit_reviews)
+                      const cr = displayCreditReviewStatus(ticket.credit_reviews)
                       return cr ? <CreditReviewBadge status={cr} /> : null
                     })()}
                   </div>
@@ -561,7 +561,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span>{ticket.customers?.name ?? '—'}</span>
                     {(() => {
-                      const cr = activeCreditReviewStatus(ticket.credit_reviews)
+                      const cr = displayCreditReviewStatus(ticket.credit_reviews)
                       return cr ? <CreditReviewBadge status={cr} /> : null
                     })()}
                         </div>

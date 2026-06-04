@@ -1,9 +1,10 @@
 // Credit-review email template. Pure function — no DB, no fetch, no side
-// effects. The credit-review helper loads the customer's pending orders + the
-// company settings, builds one reviewUrl per order, and passes everything in.
+// effects. The credit-review helper loads the order + the company settings,
+// builds the reviewUrl, and passes everything in.
 //
-// One email per customer: AR sees every new order for that customer in a single
-// message, each row with its own "Review this order" link to /cr/<token>.
+// One email per ORDER: the helper sends a separate message per order so AR can
+// Release/Block each independently. `reviews` is normally a single-element array
+// (one order); the template still renders multiple rows if ever passed more.
 
 import type { EmailTemplate } from './estimate-approval'
 
@@ -27,7 +28,12 @@ export function renderCreditReviewEmail(
 
   const n = reviews.length
   const acct = accountNumber ? ` (acct ${accountNumber})` : ''
-  const subject = `Credit review required — ${customerName} (${n} order${n === 1 ? '' : 's'})`
+  // Single order (the normal case): name the order in the subject so AR can tell
+  // multiple emails for the same customer apart. Multi-order: fall back to a count.
+  const subject =
+    n === 1
+      ? `Credit review required — ${customerName} — ${reviews[0].orderLabel}`
+      : `Credit review required — ${customerName} (${n} orders)`
 
   const supportLine = settings.support_phone
     ? `Questions? Call us at ${settings.support_phone}.`
