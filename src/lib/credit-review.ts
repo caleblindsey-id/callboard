@@ -21,6 +21,8 @@ import type {
   CreditReviewInsert,
   CreditReviewTicketType,
   CreditReviewUpdate,
+  TicketStatus,
+  PartRequest,
 } from '@/types/database'
 
 export { mintToken, tokenExpiry, hashPasscode, verifyPasscode, parseEmailList, CREDIT_REVIEW_TOKEN_TTL_MS } from '@/lib/credit-review-crypto'
@@ -177,6 +179,104 @@ export async function enqueueCreditReviewsForCustomer(args: {
     console.error('credit-review email send failed:', err)
     return { created: rows.length, emailed: false, reason: 'email_failed', reviewIds }
   }
+}
+
+// Orders that have NOT been started yet — the only ones a newly-on-hold
+// customer's open work gets auto-routed to AR for. PM stops at in_progress;
+// service stops once a tech is actually working (in_progress onward).
+const PM_SWEEP_STATUSES: TicketStatus[] = ['unassigned', 'assigned']
+const SERVICE_SWEEP_STATUSES = ['open', 'estimated', 'approved']
+
+// A part already on order (or received) means the job is in motion — don't
+// disrupt it by routing the order to AR.
+function hasPartsInMotion(parts: PartRequest[] | null | undefined): boolean {
+  return (parts ?? []).some((p) => p.status === 'ordered' || p.status === 'received')
+}
+
+export type SweepResult = {
+  onHoldCustomers: number
+  customersEnqueued: number
+  created: number
+  emailed: number
+}
+
+// Idempotent backfill for orphan orders: a customer who went on credit hold
+// AFTER an order was created — or whose orders predate the credit-review feature
+// — never got an AR review. This finds their un-started open orders that have no
+// review yet and routes them through the normal AR flow (one email per customer).
+// Started work (PM in_progress+, service in_progress+) and any order with parts
+// already in motion are deliberately left alone. Safe to run repeatedly:
+// enqueueCreditReviewsForCustomer skips tickets that already have a review.
+export async function sweepCreditHoldOrphans(): Promise<SweepResult> {
+  const admin = await createAdminClient('SERVER_ONLY')
+
+  const { data: customers, error: custErr } = await admin
+    .from('customers')
+    .select('id, name, account_number')
+    .eq('credit_hold', true)
+  if (custErr) throw custErr
+  if (!customers || customers.length === 0) {
+    return { onHoldCustomers: 0, customersEnqueued: 0, created: 0, emailed: 0 }
+  }
+  const custIds = customers.map((c) => c.id)
+  const custById = new Map(customers.map((c) => [c.id, c]))
+
+  const [pmRes, svcRes] = await Promise.all([
+    admin
+      .from('pm_tickets')
+      .select('id, customer_id, month, year, parts_requested, status')
+      .in('customer_id', custIds)
+      .in('status', PM_SWEEP_STATUSES)
+      .is('deleted_at', null),
+    admin
+      .from('service_tickets')
+      .select('id, customer_id, work_order_number, parts_requested, status')
+      .in('customer_id', custIds)
+      .in('status', SERVICE_SWEEP_STATUSES)
+      .is('deleted_at', null),
+  ])
+  if (pmRes.error) throw pmRes.error
+  if (svcRes.error) throw svcRes.error
+
+  const ticketsByCustomer = new Map<number, CreditReviewTicketInput[]>()
+  const add = (cid: number | null, t: CreditReviewTicketInput) => {
+    if (cid == null) return
+    const arr = ticketsByCustomer.get(cid) ?? []
+    arr.push(t)
+    ticketsByCustomer.set(cid, arr)
+  }
+  for (const r of pmRes.data ?? []) {
+    if (hasPartsInMotion(r.parts_requested as PartRequest[] | null)) continue
+    const orderLabel = `PM ${MONTHS[(r.month - 1) % 12] ?? ''} ${r.year}`.trim()
+    add(r.customer_id, { ticketType: 'pm', ticketId: r.id, orderLabel })
+  }
+  for (const r of svcRes.data ?? []) {
+    if (hasPartsInMotion(r.parts_requested as PartRequest[] | null)) continue
+    const orderLabel = r.work_order_number ? `Service — WO-${r.work_order_number}` : 'Service Order'
+    add(r.customer_id, { ticketType: 'service', ticketId: r.id, orderLabel })
+  }
+
+  let customersEnqueued = 0
+  let created = 0
+  let emailed = 0
+  for (const [cid, tickets] of ticketsByCustomer) {
+    const c = custById.get(cid)
+    if (!c) continue
+    const res = await enqueueCreditReviewsForCustomer({
+      customerId: cid,
+      customerName: c.name,
+      accountNumber: c.account_number,
+      tickets,
+      createdById: null, // system sweep, not a user action
+    })
+    if (res.created > 0) {
+      customersEnqueued++
+      created += res.created
+      if (res.emailed) emailed++
+    }
+  }
+
+  return { onHoldCustomers: customers.length, customersEnqueued, created, emailed }
 }
 
 export type ConsumeResult =

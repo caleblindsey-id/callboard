@@ -22,6 +22,12 @@ from pathlib import Path
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
+# Deployed app — used after the sync to trigger the credit-hold sweep (backfills
+# AR credit reviews for on-hold customers' un-started open orders). Optional:
+# the sweep is skipped if either is unset.
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+CREDIT_SWEEP_SECRET = os.environ.get("CREDIT_SWEEP_SECRET", "")
+
 BATCH_SIZE = 500  # Max records per Supabase upsert request
 
 # Product commodity codes to include (service-relevant items only)
@@ -759,6 +765,36 @@ def validate_env() -> None:
 # Main
 # ============================================================
 
+def trigger_credit_hold_sweep() -> None:
+    """Ask the app to backfill AR credit reviews for on-hold customers' open,
+    un-started orders that never got one (customer went on hold after the order
+    existed, or the order predates the feature). credit_hold was just refreshed
+    by the customer sync. Non-fatal: a failure here must never fail the sync.
+    Skipped if APP_BASE_URL / CREDIT_SWEEP_SECRET are not configured."""
+    if not APP_BASE_URL or not CREDIT_SWEEP_SECRET:
+        log.info("Credit-hold sweep skipped (APP_BASE_URL / CREDIT_SWEEP_SECRET not set).")
+        return
+    url = f"{APP_BASE_URL}/api/credit-review/sweep"
+    try:
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {CREDIT_SWEEP_SECRET}"},
+            timeout=60,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            log.info(
+                "Credit-hold sweep: %s on-hold customer(s); %s order(s) routed to AR across %s customer(s).",
+                data.get("onHoldCustomers"),
+                data.get("created"),
+                data.get("customersEnqueued"),
+            )
+        else:
+            log.warning(f"Credit-hold sweep returned [{resp.status_code}]: {resp.text[:300]}")
+    except Exception as e:
+        log.warning(f"Credit-hold sweep request failed (non-fatal): {e}")
+
+
 def main() -> None:
     log.info("=" * 60)
     log.info("PM Scheduler — Nightly Synergy Sync starting")
@@ -782,12 +818,19 @@ def main() -> None:
         known_tables = discover_tables(erp_conn)
 
         # --- Customers ---
+        customers_ok = False
         try:
             count = sync_customers(erp_conn)
             total_synced += count
+            customers_ok = True
         except Exception as e:
             log.error(f"Customer sync failed: {e}", exc_info=True)
             failures.append(f"customers: {e}")
+
+        # --- Credit-hold sweep (depends on customers + credit_hold being fresh) ---
+        # Backfills AR reviews for on-hold customers' un-started open orders.
+        if customers_ok:
+            trigger_credit_hold_sweep()
 
         # --- Technicians ---
         try:
