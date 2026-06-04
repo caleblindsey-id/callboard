@@ -4,7 +4,7 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 50
 summary: Review the leads techs submit, approve them, and turn a PM lead into live equipment + schedule.
-last_verified: 2026-05-28
+last_verified: 2026-06-04
 ---
 
 Technicians submit PM and equipment-sale leads; you review them and, for PM leads, create the equipment and schedule that make the bonus real. This all lives under **Tech Payouts**.
@@ -27,7 +27,7 @@ For an approved PM lead that isn't linked to equipment yet, tap **Create equipme
 3. **PM schedule** — set the **Frequency**, **Anchor month**, **Starting year**, **Billing type**, and the **Flat rate** (required for flat-rate PMs).
 4. Tap **Create equipment**. This creates the machine and its schedule and links them to the lead in one step.
 
-CallBoard tells you live whether the lead will earn: a flat-rate, monthly/bi-monthly/quarterly schedule shows the bonus the tech will get when the first PM completes. Other frequencies or billing types stay approved but won't earn.
+CallBoard tells you live whether the lead will earn: a flat-rate monthly/bi-monthly/quarterly schedule shows the full bonus, and a semi-annual (six-month) schedule shows half. Other frequencies (4-month, annual) or non-flat billing types stay approved but won't earn.
 
 ## The lead lifecycle
 
@@ -35,5 +35,5 @@ CallBoard tells you live whether the lead will earn: a flat-rate, monthly/bi-mon
 
 ## Gotchas
 
-- **Only monthly, bi-monthly, and quarterly flat-rate PMs earn a bonus.** If you set semi-annual, annual, or a non-flat billing type, the lead stays approved but never earns — CallBoard warns you before you save.
+- **Monthly, bi-monthly, and quarterly flat-rate PMs earn the full bonus; semi-annual earns half.** If you set a 4-month, annual, or non-flat billing type, the lead stays approved but never earns — CallBoard shows the bonus (or warns you) before you save.
 - **A free-text "new customer" must be matched** to a real Synergy account when you create the equipment, or it can't be linked.

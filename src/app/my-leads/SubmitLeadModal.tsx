@@ -8,6 +8,7 @@ import { X, Camera } from 'lucide-react'
 import type { EquipmentSaleTier, TechLeadFrequency, TechLeadType, TicketPhoto } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import { EQUIPMENT_SALE_TIER_LIST } from '@/lib/tech-leads/bonus-tiers'
+import { bonusRateForInterval, bonusSuffixForInterval } from '@/lib/tech-leads/pm-bonus'
 import { compressImage } from '@/lib/image-utils'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
@@ -57,12 +58,14 @@ interface SubmitLeadModalProps {
   lead?: TechLeadWithJoins | null
 }
 
-const FREQUENCIES: { value: TechLeadFrequency; label: string; eligible: boolean }[] = [
-  { value: 'monthly', label: 'Monthly', eligible: true },
-  { value: 'bi-monthly', label: 'Bi-monthly', eligible: true },
-  { value: 'quarterly', label: 'Quarterly', eligible: true },
-  { value: 'semi-annual', label: 'Semi-annual', eligible: false },
-  { value: 'annual', label: 'Annual', eligible: false },
+// intervalMonths feeds the shared bonus helper (@/lib/tech-leads/pm-bonus) so the
+// labels match the migration 094 trigger: 1/2/3 full, 6 (semi-annual) half, 12 none.
+const FREQUENCIES: { value: TechLeadFrequency; label: string; intervalMonths: number }[] = [
+  { value: 'monthly', label: 'Monthly', intervalMonths: 1 },
+  { value: 'bi-monthly', label: 'Bi-monthly', intervalMonths: 2 },
+  { value: 'quarterly', label: 'Quarterly', intervalMonths: 3 },
+  { value: 'semi-annual', label: 'Semi-annual', intervalMonths: 6 },
+  { value: 'annual', label: 'Annual', intervalMonths: 12 },
 ]
 
 const MONTHS = [
@@ -617,7 +620,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
             )}
             {leadType === 'pm' ? (
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Customer is adding equipment to a PM schedule. Bonus = first PM&apos;s flat rate (monthly, bi-monthly, or quarterly only).
+                Customer is adding equipment to a PM schedule. Bonus = first PM&apos;s flat rate (monthly, bi-monthly, or quarterly); half rate for semi-annual.
               </p>
             ) : (
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -861,13 +864,18 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
                   <option value="">Not sure / leave to manager</option>
                   {FREQUENCIES.map(f => (
                     <option key={f.value} value={f.value}>
-                      {f.label}{!f.eligible ? ' — no bonus' : ''}
+                      {f.label}{bonusSuffixForInterval(f.intervalMonths)}
                     </option>
                   ))}
                 </select>
-                {selectedFreq && !selectedFreq.eligible && (
+                {selectedFreq && bonusRateForInterval(selectedFreq.intervalMonths) === 0.5 && (
                   <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                    Semi-annual and annual PMs are not eligible for a lead bonus.
+                    Semi-annual PMs earn half the lead bonus.
+                  </p>
+                )}
+                {selectedFreq && bonusRateForInterval(selectedFreq.intervalMonths) === 0 && (
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    Annual PMs are not eligible for a lead bonus.
                   </p>
                 )}
               </div>
