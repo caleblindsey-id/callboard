@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
-import CreditHoldBadge from '@/components/CreditHoldBadge'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
@@ -1600,22 +1599,28 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         </div>
       )}
 
-      {/* Credit hold alert */}
-      {ticket.customers?.credit_hold && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 px-4 py-3 flex items-center gap-3">
-          <CreditHoldBadge />
-          <span className="text-sm text-red-800 dark:text-red-300 font-semibold">
-            This customer is on credit hold. Verify with office before dispatching, sending an estimate, or billing.
-          </span>
-        </div>
-      )}
-
-      {/* Credit review state (per-order AR decision) */}
+      {/* Credit review state (per-order AR decision). This is the single source
+          of truth for "can this be worked?" — the customer-level credit_hold
+          flag is only the trigger that created this review. */}
       {(() => {
-        const cr = (ticket.credit_reviews ?? []).find(
-          (r) => r.status === 'pending' || r.status === 'blocked'
-        )
+        const reviews = ticket.credit_reviews ?? []
+        const cr =
+          reviews.find((r) => r.status === 'pending' || r.status === 'blocked') ??
+          reviews.find((r) => r.status === 'released') ??
+          null
         if (!cr) return null
+        if (cr.status === 'released') {
+          return (
+            <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-800 px-4 py-3">
+              <p className="text-sm text-green-800 dark:text-green-300 font-semibold">
+                Credit released — cleared by AR.
+              </p>
+              <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+                AR reviewed this order and cleared it for work and billing.
+              </p>
+            </div>
+          )
+        }
         if (cr.status === 'pending') {
           return (
             <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 px-4 py-3">
@@ -2001,11 +2006,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
           {ticket.customers?.po_required && (
             <InfoField label="PO Required">
               <span className="text-red-700 dark:text-red-400 font-bold">YES — PO REQUIRED</span>
-            </InfoField>
-          )}
-          {ticket.customers?.credit_hold && (
-            <InfoField label="Credit Hold">
-              <span className="text-red-700 dark:text-red-400 font-bold">CREDIT HOLD</span>
             </InfoField>
           )}
         </div>
