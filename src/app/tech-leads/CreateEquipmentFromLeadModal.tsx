@@ -160,8 +160,9 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
   }
 
   const isFlatRate = billingType === 'flat_rate'
+  const bonusRate = bonusRateForInterval(intervalMonths)
   const bonusAmount = isFlatRate ? bonusAmountForInterval(intervalMonths, parseFloat(flatRate || '0')) : 0
-  const intervalEarnsNothing = bonusRateForInterval(intervalMonths) === 0
+  const intervalEarnsNothing = bonusRate === 0
   const willEarnBonus = bonusAmount > 0
 
   async function handleSubmit() {
@@ -453,7 +454,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
               <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-400">
                 When the first PM completes, {lead.submitter?.name ?? 'the tech'} will earn a{' '}
                 <strong>${bonusAmount.toFixed(2)}</strong> bonus
-                {bonusRateForInterval(intervalMonths) === 0.5 ? ' (half rate for six-month PMs)' : ''}.
+                {bonusRate < 1 ? ` (${bonusRate * 100}% of the flat rate)` : ''}.
               </p>
             )}
           </div>
