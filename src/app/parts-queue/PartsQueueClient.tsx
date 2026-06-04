@@ -454,6 +454,7 @@ export default function PartsQueueClient({
               <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <th scope="col" className="px-3 py-2 text-left font-semibold" title="PM only: whether the customer is charged (Billable) or it's included in the PM agreement (Covered).">Billing</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
               <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -482,7 +483,7 @@ export default function PartsQueueClient({
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={16 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
+                  colSpan={17 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
                   className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
@@ -535,6 +536,9 @@ export default function PartsQueueClient({
                     </td>
                     <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>
                       {partLabel(row) || '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <CoverageBadge covered={row.covered_by_agreement} />
                     </td>
                     <td className="px-3 py-2">
                       <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
@@ -802,6 +806,28 @@ function SourceBadge({ source }: { source: PartsQueueSource }) {
       }`}
     >
       {isPm ? 'PM' : 'Service'}
+    </span>
+  )
+}
+
+// Covered (no customer charge) vs Billable, set by the tech at request time.
+// PM-only — service rows and pre-feature PM rows carry null and show a muted
+// dash so the office can tell "not classified" apart from a deliberate pick.
+function CoverageBadge({ covered }: { covered: boolean | null }) {
+  if (covered === null) return <span className="text-gray-400 dark:text-gray-500">—</span>
+  return covered ? (
+    <span
+      title="Included in the PM agreement — customer is not charged."
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+    >
+      Covered
+    </span>
+  ) : (
+    <span
+      title="Not included in the PM agreement — billed to the customer."
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+    >
+      Billable
     </span>
   )
 }

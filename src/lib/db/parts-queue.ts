@@ -15,7 +15,8 @@ const QUEUE_COLUMNS = `
   product_number, synergy_product_id, vendor_item_code, po_number,
   status, cancelled, cancel_reason,
   ordered_at, received_at, ordered_by, received_by,
-  machine_make, machine_model, machine_serial
+  machine_make, machine_model, machine_serial,
+  covered_by_agreement
 `
 
 export async function getPartsQueue(): Promise<PartsQueueRow[]> {

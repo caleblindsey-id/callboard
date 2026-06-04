@@ -42,6 +42,7 @@ const ALLOWED_FIELDS = [
   'synergy_order_number',
   'machine_hours',
   'date_code',
+  'completion_seeded_at',
 ] as const
 
 const TECH_ALLOWED_FIELDS = [
@@ -65,6 +66,7 @@ const TECH_ALLOWED_FIELDS = [
   'parts_requested',
   'machine_hours',
   'date_code',
+  'completion_seeded_at',
 ] as const
 
 type AllowedFieldName = typeof ALLOWED_FIELDS[number]

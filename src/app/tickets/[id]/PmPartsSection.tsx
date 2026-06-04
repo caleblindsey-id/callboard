@@ -78,6 +78,7 @@ export default function PmPartsSection({
         ...(entry.vendorItemCode?.trim() ? { vendor_item_code: entry.vendorItemCode.trim() } : {}),
         ...(entry.vendor?.trim() ? { vendor: entry.vendor.trim() } : {}),
         ...(entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? { unit_price: priceParsed } : {}),
+        ...(entry.coveredByAgreement !== undefined ? { covered_by_agreement: entry.coveredByAgreement } : {}),
         status: 'requested',
         requested_at: new Date().toISOString(),
       }
@@ -256,6 +257,16 @@ export default function PmPartsSection({
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                     )}
                     <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
+                    {part.covered_by_agreement === true && (
+                      <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Covered
+                      </span>
+                    )}
+                    {part.covered_by_agreement === false && (
+                      <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                        Billable
+                      </span>
+                    )}
                     {part.po_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
                     )}
@@ -373,6 +384,7 @@ export default function PmPartsSection({
                 setParts={setDraftParts}
                 showPricing={true}
                 showWarranty={false}
+                showCoverage={true}
                 showVendorItemCode={true}
                 showVendor={true}
                 label="Request a Part"

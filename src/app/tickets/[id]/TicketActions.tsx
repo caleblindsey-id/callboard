@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { TicketDetail } from '@/lib/db/tickets'
-import { PartUsed, TicketPhoto, UserRole, TicketStatus } from '@/types/database'
+import { PartRequest, PartUsed, TicketPhoto, UserRole, TicketStatus } from '@/types/database'
 import { VALID_TRANSITIONS } from '@/lib/ticket-transitions'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
@@ -89,6 +89,46 @@ function partsFromDefaults(defaults: { synergy_product_id: number; quantity: num
   }))
 }
 
+// ── Completion seed from requested parts ─────────────────────────────────
+// When a PM ticket has never been drafted (completion_seeded_at is null), the
+// covered / billable completion sections pre-fill from the parts the office
+// actually ordered (received, non-cancelled parts_requested), split by the
+// tech's coverage pick. Once the first auto-save stamps completion_seeded_at,
+// the saved parts_used / additional_parts_used win — so a deleted part stays
+// deleted instead of silently re-seeding (and re-billing) on reopen.
+
+function partRequestToEntry(r: PartRequest): PartEntry {
+  // unit_price MUST carry through for billable manual parts: a manual part has
+  // no synergy_product_id, so the completion server falls back to this
+  // submitted price (drop it and the part silently bills $0).
+  return partsFromSaved([{
+    synergy_product_id: r.synergy_product_id ?? null,
+    description: r.description,
+    quantity: r.quantity,
+    unit_price: r.unit_price ?? 0,
+    detail: r.detail,
+  }])[0]
+}
+
+function partsFromRequested(reqs: PartRequest[]): PartEntry[] {
+  return reqs.map(partRequestToEntry)
+}
+
+// Covered requested parts augment the equipment defaults, de-duped by
+// synergy_product_id (the billing identity — descriptions don't match because
+// catalog picks are stored as "<number> - <desc>"). A manual part (null id)
+// can't collide, so it's always added. Defaults win on a tie.
+function mergeDefaultsWithRequestedCovered(
+  defaults: { synergy_product_id: number; quantity: number; description: string }[],
+  requestedCovered: PartRequest[],
+): PartEntry[] {
+  const defaultIds = new Set(defaults.map((d) => d.synergy_product_id))
+  const extras = requestedCovered.filter(
+    (r) => r.synergy_product_id == null || !defaultIds.has(r.synergy_product_id),
+  )
+  return [...partsFromDefaults(defaults), ...partsFromRequested(extras)]
+}
+
 function toPartUsed(entries: PartEntry[]): PartUsed[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
@@ -155,19 +195,33 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
     router.refresh()
   }
 
-  // PM parts: from saved data or from equipment defaults
+  // Completion seed inputs — received, non-cancelled requested parts split by
+  // the tech's coverage pick. `completionSeeded` is the guard: once the first
+  // auto-save stamps it, the saved draft is authoritative; before that, seed
+  // from the requested parts. Unclassified (legacy) requests default to
+  // billable so they surface for review rather than silently going uncharged.
   const defaultProducts = ticket.equipment?.default_products ?? []
+  const requestedReceived = (ticket.parts_requested ?? []).filter(
+    (r) => r.status === 'received' && !r.cancelled,
+  )
+  const requestedCovered = requestedReceived.filter((r) => r.covered_by_agreement === true)
+  const requestedBillable = requestedReceived.filter((r) => r.covered_by_agreement !== true)
+  const completionSeeded = ticket.completion_seeded_at != null
+
+  // PM parts (covered): saved draft once seeded; else equipment defaults +
+  // covered requested parts.
   const [pmParts, setPmParts] = useState<PartEntry[]>(
-    ticket.parts_used && ticket.parts_used.length > 0
-      ? partsFromSaved(ticket.parts_used)
-      : partsFromDefaults(defaultProducts)
+    completionSeeded
+      ? partsFromSaved(ticket.parts_used ?? [])
+      : mergeDefaultsWithRequestedCovered(defaultProducts, requestedCovered)
   )
 
-  // Additional work state
+  // Additional work (billable): saved draft once seeded; else billable
+  // requested parts.
   const [additionalParts, setAdditionalParts] = useState<PartEntry[]>(
-    ticket.additional_parts_used && ticket.additional_parts_used.length > 0
-      ? partsFromSaved(ticket.additional_parts_used)
-      : []
+    completionSeeded
+      ? partsFromSaved(ticket.additional_parts_used ?? [])
+      : partsFromRequested(requestedBillable)
   )
   const [additionalHoursWorked, setAdditionalHoursWorked] = useState(
     ticket.additional_hours_worked != null ? String(ticket.additional_hours_worked) : ''
@@ -409,6 +463,10 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           billing_contact_phone: billingContactPhone || null,
           machine_hours: parseFloat(machineHours) || null,
           date_code: dateCode.trim() || null,
+          // Stamp the seed guard on the first save so the draft becomes
+          // authoritative and requested parts never re-seed over the tech's
+          // edits. Preserve an existing stamp rather than bumping it.
+          completion_seeded_at: ticket.completion_seeded_at ?? new Date().toISOString(),
         }),
       })
       if (!res.ok) {
