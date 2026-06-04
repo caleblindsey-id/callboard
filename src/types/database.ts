@@ -33,8 +33,10 @@ export type EquipmentSaleTier =
 
 export type EquipmentSaleCandidateStatus = 'pending' | 'confirmed' | 'dismissed'
 
-// Schedule interval_months values that earn a bonus (monthly, bi-monthly, quarterly).
-export const BONUS_ELIGIBLE_INTERVAL_MONTHS = [1, 2, 3] as const
+// Schedule interval_months values that earn a lead bonus: 1/2/3 (monthly,
+// bi-monthly, quarterly) earn the full first-PM flat rate; 6 (semi-annual) earns
+// half. See @/lib/tech-leads/pm-bonus and migration 094 for the per-interval rate.
+export const BONUS_ELIGIBLE_INTERVAL_MONTHS = [1, 2, 3, 6] as const
 
 export type SyncType = 'customers' | 'contacts' | 'products' | 'full'
 

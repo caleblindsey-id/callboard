@@ -4,7 +4,7 @@ category: Technicians
 roles: [super_admin, manager, coordinator, technician]
 order: 40
 summary: Turn what you see in the field into a PM lead or an equipment-sale lead — and earn a bonus.
-last_verified: 2026-05-28
+last_verified: 2026-06-04
 ---
 
 When you spot a machine that should be on a PM plan, or aging equipment the customer should replace, submit it as a lead. Approved leads earn you a bonus.
@@ -13,7 +13,7 @@ There are two kinds of lead. Both start the same way: tap **My Leads** in the me
 
 ## PM Lead
 
-For a machine the customer should add to a PM schedule. **The bonus equals the first PM's flat rate** — but only for monthly, bi-monthly, or quarterly schedules.
+For a machine the customer should add to a PM schedule. **The bonus equals the first PM's flat rate** for monthly, bi-monthly, or quarterly schedules, and **half the flat rate** for semi-annual (every six months).
 
 Fill in:
 
@@ -21,7 +21,7 @@ Fill in:
 - **Lead contact** — a name, plus at least an email **or** a phone.
 - **Equipment** — Make, Model, and Serial number (from the data plate) are required; Location on-site is optional.
 - **Proposed start** — the month and year the office should plan to begin the PM cycle.
-- **Proposed PM frequency** — optional. **Monthly, Bi-monthly, and Quarterly earn a bonus. Semi-annual and Annual do not** (CallBoard warns you if you pick those). If you're not sure, leave it to the manager.
+- **Proposed PM frequency** — optional. **Monthly, Bi-monthly, and Quarterly earn the full bonus. Semi-annual earns half. Annual earns nothing** (CallBoard shows the bonus next to each option). If you're not sure, leave it to the manager.
 - **Machine photos** — up to 12, optional but helpful.
 - **Notes** — anything the office should know.
 

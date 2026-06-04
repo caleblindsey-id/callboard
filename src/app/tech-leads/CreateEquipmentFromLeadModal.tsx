@@ -6,6 +6,7 @@ import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { X } from 'lucide-react'
 import type { BillingType, TechLeadFrequency } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
+import { bonusRateForInterval, bonusAmountForInterval, bonusSuffixForInterval } from '@/lib/tech-leads/pm-bonus'
 
 interface CustomerOption {
   id: number
@@ -24,13 +25,15 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
+// Bonus eligibility per interval lives in @/lib/tech-lead-bonus (mirrors the
+// migration 094 trigger): 1/2/3 full, 6 half, 4 and 12 none.
 const INTERVAL_OPTIONS = [
-  { value: 1,  label: 'Every month',      eligible: true  },
-  { value: 2,  label: 'Every 2 months',   eligible: true  },
-  { value: 3,  label: 'Every 3 months',   eligible: true  },
-  { value: 4,  label: 'Every 4 months',   eligible: false },
-  { value: 6,  label: 'Every 6 months',   eligible: false },
-  { value: 12, label: 'Once a year',      eligible: false },
+  { value: 1,  label: 'Every month'    },
+  { value: 2,  label: 'Every 2 months' },
+  { value: 3,  label: 'Every 3 months' },
+  { value: 4,  label: 'Every 4 months' },
+  { value: 6,  label: 'Every 6 months' },
+  { value: 12, label: 'Once a year'    },
 ]
 
 const BILLING_TYPES: { value: BillingType; label: string }[] = [
@@ -156,8 +159,10 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setComboOpen(false)
   }
 
-  const selectedInterval = INTERVAL_OPTIONS.find(o => o.value === intervalMonths)
-  const willEarnBonus = selectedInterval?.eligible && billingType === 'flat_rate' && parseFloat(flatRate || '0') > 0
+  const isFlatRate = billingType === 'flat_rate'
+  const bonusAmount = isFlatRate ? bonusAmountForInterval(intervalMonths, parseFloat(flatRate || '0')) : 0
+  const intervalEarnsNothing = bonusRateForInterval(intervalMonths) === 0
+  const willEarnBonus = bonusAmount > 0
 
   async function handleSubmit() {
     if (!lead) return
@@ -361,7 +366,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
                 >
                   {INTERVAL_OPTIONS.map(o => (
                     <option key={o.value} value={o.value}>
-                      {o.label}{!o.eligible ? ' — no bonus' : ''}
+                      {o.label}{bonusSuffixForInterval(o.value)}
                     </option>
                   ))}
                 </select>
@@ -431,7 +436,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
               </div>
             </div>
 
-            {selectedInterval && !selectedInterval.eligible && (
+            {intervalEarnsNothing && isFlatRate && (
               <p className="mt-3 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2">
                 <strong>Heads up:</strong> this frequency is not eligible for a lead bonus. You can still save — the
                 lead will stay Approved but will never earn. Use the Cancel action if the deal doesn&apos;t justify
@@ -447,7 +452,8 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
             {willEarnBonus && (
               <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-400">
                 When the first PM completes, {lead.submitter?.name ?? 'the tech'} will earn a{' '}
-                <strong>${parseFloat(flatRate || '0').toFixed(2)}</strong> bonus.
+                <strong>${bonusAmount.toFixed(2)}</strong> bonus
+                {bonusRateForInterval(intervalMonths) === 0.5 ? ' (half rate for six-month PMs)' : ''}.
               </p>
             )}
           </div>
