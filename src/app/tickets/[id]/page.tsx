@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
-import CreditHoldBadge from '@/components/CreditHoldBadge'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import TicketActions from './TicketActions'
 import PmPartsSection from './PmPartsSection'
@@ -71,9 +70,15 @@ export default async function TicketDetailPage({
   const showBilling = !isTechnician(user?.role ?? null)
   const isManager = !isTechnician(user?.role ?? null)
 
-  const creditReview = (ticket.credit_reviews ?? []).find(
-    (r) => r.status === 'pending' || r.status === 'blocked'
-  )
+  // The per-order AR review is the single source of truth for "can this be
+  // worked?" — the customer-level credit_hold flag is only the trigger that
+  // created this review (or nothing yet). An active review wins; a released one
+  // is the positive all-clear.
+  const reviews = ticket.credit_reviews ?? []
+  const creditReview =
+    reviews.find((r) => r.status === 'pending' || r.status === 'blocked') ??
+    reviews.find((r) => r.status === 'released') ??
+    null
 
   const equipmentLabel = [ticket.equipment?.make, ticket.equipment?.model]
     .filter(Boolean)
@@ -117,15 +122,6 @@ export default async function TicketDetailPage({
         <ReviewBanner ticketId={ticket.id} reviewReason={ticket.review_reason} />
       )}
 
-      {ticket.customers?.credit_hold && (
-        <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-          <CreditHoldBadge />
-          <span className="text-sm text-red-800 dark:text-red-300 font-semibold">
-            This customer is on credit hold. Verify with office before dispatching or billing.
-          </span>
-        </div>
-      )}
-
       {!isDeleted && creditReview?.status === 'pending' && (
         <div className="bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 rounded-lg p-4">
           <p className="text-sm text-amber-800 dark:text-amber-300 font-semibold">
@@ -155,6 +151,17 @@ export default async function TicketDetailPage({
             </p>
           </div>
         )
+      )}
+
+      {!isDeleted && creditReview?.status === 'released' && (
+        <div className="bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-800 rounded-lg p-4">
+          <p className="text-sm text-green-800 dark:text-green-300 font-semibold">
+            Credit released — cleared by AR.
+          </p>
+          <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+            AR reviewed this order and cleared it for work and billing.
+          </p>
+        </div>
       )}
 
       {/* Workflow state — what state we're in, who's next, what's blocking. */}

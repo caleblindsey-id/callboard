@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertOctagon, AlertTriangle, ChevronRight, Flag, CreditCard, Clock, Award, ShieldAlert } from 'lucide-react'
+import { AlertOctagon, AlertTriangle, ChevronRight, Flag, Clock, Award, ShieldAlert } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
 import {
   getOverdueTicketCount,
@@ -7,7 +7,6 @@ import {
   getNeedsReviewCount,
 } from '@/lib/db/tickets'
 import {
-  getCreditHoldCount,
   getStaleEstimatesCount,
   getPendingPayoutApprovalsCount,
 } from '@/lib/db/dashboard-metrics'
@@ -18,7 +17,6 @@ export default async function AlertsSection() {
     overdueCount,
     skipRequestedCount,
     needsReviewCount,
-    creditHoldCount,
     staleEstimatesCount,
     pendingPayoutApprovalsCount,
     creditReviewCounts,
@@ -26,7 +24,6 @@ export default async function AlertsSection() {
     getOverdueTicketCount(),
     getSkipRequestedCount(),
     getNeedsReviewCount(),
-    getCreditHoldCount(),
     getStaleEstimatesCount(14),
     getPendingPayoutApprovalsCount(),
     getCreditReviewCounts(),
@@ -38,7 +35,6 @@ export default async function AlertsSection() {
     overdueCount > 0 ||
     needsReviewCount > 0 ||
     skipRequestedCount > 0 ||
-    creditHoldCount > 0 ||
     staleEstimatesCount > 0 ||
     pendingPayoutApprovalsCount > 0 ||
     creditReviewOpen > 0
@@ -69,33 +65,6 @@ export default async function AlertsSection() {
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-semibold text-red-700 dark:text-red-300 tabular-nums">
                   {overdueCount}
-                </span>
-                <ChevronRight className="h-5 w-5 text-red-400 dark:text-red-500" />
-              </div>
-            </div>
-          </Link>
-        )}
-
-        {creditHoldCount > 0 && (
-          <Link
-            href="/customers?creditHold=1"
-            className="block bg-red-50 dark:bg-red-950/30 rounded-lg border border-red-200 dark:border-red-800 p-4 hover:border-red-300 dark:hover:border-red-700 hover:shadow transition-all"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5 text-red-600 dark:text-red-400" />
-                  <span className="text-sm font-semibold text-red-800 dark:text-red-300">
-                    Credit Hold
-                  </span>
-                </div>
-                <p className="text-xs text-red-700/80 dark:text-red-400/80 mt-1">
-                  Customers flagged — verify before billing or scheduling new work.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-semibold text-red-700 dark:text-red-300 tabular-nums">
-                  {creditHoldCount}
                 </span>
                 <ChevronRight className="h-5 w-5 text-red-400 dark:text-red-500" />
               </div>

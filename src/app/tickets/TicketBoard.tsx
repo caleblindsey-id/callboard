@@ -7,7 +7,6 @@ import { TicketWithJoins } from '@/lib/db/tickets'
 import { activeCreditReviewStatus } from '@/lib/credit-review-status'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
 import StatusBadge, { OverdueBadge } from '@/components/StatusBadge'
-import CreditHoldBadge from '@/components/CreditHoldBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
 import StuckIndicator from '@/components/StuckIndicator'
 import { daysOverdue } from '@/lib/overdue'
@@ -128,7 +127,6 @@ function TicketList({
                       <Flag className="h-3.5 w-3.5" />
                     </span>
                   )}
-                  {ticket.customers?.credit_hold && <CreditHoldBadge />}
                   {(() => {
                     const cr = activeCreditReviewStatus(ticket.credit_reviews)
                     return cr ? <CreditReviewBadge status={cr} /> : null
@@ -257,7 +255,6 @@ function TicketList({
                   <td className="px-4 py-3 text-gray-900 dark:text-white">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{ticket.customers?.name ?? '—'}</span>
-                      {ticket.customers?.credit_hold && <CreditHoldBadge />}
                       {(() => {
                         const cr = activeCreditReviewStatus(ticket.credit_reviews)
                         return cr ? <CreditReviewBadge status={cr} /> : null

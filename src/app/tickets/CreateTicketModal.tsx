@@ -333,10 +333,11 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">No customers found.</p>
             )}
             {customerSelected && selectedCustomerCreditHold && (
-              <div className="mt-2 bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 rounded-md px-3 py-2 flex items-center gap-2">
+              <div className="mt-2 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 rounded-md px-3 py-2 flex items-start gap-2">
                 <CreditHoldBadge />
-                <span className="text-sm text-red-800 dark:text-red-300 font-semibold">
-                  {selectedCustomerName} is on credit hold.
+                <span className="text-sm text-amber-800 dark:text-amber-300">
+                  <strong>{selectedCustomerName}</strong> is on credit hold. Creating this ticket
+                  will send it to AR for credit approval — work stays gated until AR releases it.
                 </span>
               </div>
             )}

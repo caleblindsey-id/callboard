@@ -6,7 +6,6 @@ import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { UserRow } from '@/types/database'
 import { ServiceTicketWithJoins, ServiceTicketStatus, ServicePriority, ServiceTicketType } from '@/types/service-tickets'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
-import CreditHoldBadge from '@/components/CreditHoldBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { activeCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
@@ -469,7 +468,6 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {ticket.customers?.name ?? '—'}
                     </p>
-                    {ticket.customers?.credit_hold && <CreditHoldBadge />}
                     {(() => {
                       const cr = activeCreditReviewStatus(ticket.credit_reviews)
                       return cr ? <CreditReviewBadge status={cr} /> : null
@@ -562,7 +560,6 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                       <td className="px-4 py-3 text-gray-900 dark:text-white">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span>{ticket.customers?.name ?? '—'}</span>
-                          {ticket.customers?.credit_hold && <CreditHoldBadge />}
                     {(() => {
                       const cr = activeCreditReviewStatus(ticket.credit_reviews)
                       return cr ? <CreditReviewBadge status={cr} /> : null
