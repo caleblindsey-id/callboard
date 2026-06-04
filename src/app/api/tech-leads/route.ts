@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import type { TechLeadInsert } from '@/types/database'
-import { EQUIPMENT_SALE_WINDOW_DAYS } from '@/lib/tech-leads/bonus-tiers'
+import { EQUIPMENT_SALE_WINDOW_DAYS, tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import { validateLeadFields, type LeadFieldsInput } from '@/lib/tech-leads/validate-lead'
+import { getCustomer } from '@/lib/db/customers'
+import { notifyManagersOfLeadSubmission } from '@/lib/tech-leads/notify-submission'
 
 // POST /api/tech-leads — tech submits a lead. Office users (super_admin/manager)
 // can also submit on behalf of a tech, but the normal flow is the tech filing
@@ -66,6 +68,35 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('tech-leads create error:', error)
       return NextResponse.json({ error: 'Failed to submit lead.' }, { status: 500 })
+    }
+
+    // Notify all active managers — non-fatal: a send failure must not fail the
+    // tech's submission (the lead is already saved).
+    try {
+      let customerName = f.customer_name_text ?? ''
+      if (!customerName && f.customer_id != null) {
+        const customer = await getCustomer(f.customer_id)
+        customerName = customer?.name ?? `Customer #${f.customer_id}`
+      }
+      const equipmentDescription =
+        f.equipment_description ||
+        (f.proposed_equipment_tier ? tierLabel(f.proposed_equipment_tier) : '')
+      await notifyManagersOfLeadSubmission({
+        leadId: data.id,
+        submittedById: user.id,
+        techName: user.name,
+        customerName: customerName || 'a customer',
+        leadTypeLabel: f.lead_type === 'equipment_sale' ? 'equipment sale' : 'PM',
+        equipmentDescription,
+        contact: {
+          name: f.contact_name,
+          email: f.contact_email,
+          phone: f.contact_phone,
+        },
+        notes: f.notes,
+      })
+    } catch (err) {
+      console.error('tech-lead submit notification failed:', err)
     }
 
     return NextResponse.json({ success: true, id: data.id })
