@@ -556,6 +556,10 @@ export type TechLeadRow = {
   emailed_to_rep_at: string | null
   email_rep_message_id: string | null
   emailed_cc_ids: string[]
+  // Submission-notify audit (migration 092). Set non-fatally by POST
+  // /api/tech-leads after the "new lead" email to active managers is sent.
+  submit_notified_at: string | null
+  submit_notify_message_id: string | null
   created_at: string
   updated_at: string
 }
