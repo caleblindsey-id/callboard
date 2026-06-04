@@ -478,6 +478,11 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                       [ticket.equipment_make, ticket.equipment_model].filter(Boolean).join(' ') ||
                       '—'}
                   </p>
+                  {(ticket.equipment?.serial_number || ticket.equipment_serial_number) && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      SN: {ticket.equipment?.serial_number || ticket.equipment_serial_number}
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <TypeBadge type={ticket.ticket_type} />
                     <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -567,9 +572,16 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {[ticket.equipment?.make, ticket.equipment?.model].filter(Boolean).join(' ') ||
-                          [ticket.equipment_make, ticket.equipment_model].filter(Boolean).join(' ') ||
-                          '—'}
+                        <div>
+                          {[ticket.equipment?.make, ticket.equipment?.model].filter(Boolean).join(' ') ||
+                            [ticket.equipment_make, ticket.equipment_model].filter(Boolean).join(' ') ||
+                            '—'}
+                        </div>
+                        {(ticket.equipment?.serial_number || ticket.equipment_serial_number) && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            SN: {ticket.equipment?.serial_number || ticket.equipment_serial_number}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <TypeBadge type={ticket.ticket_type} />
