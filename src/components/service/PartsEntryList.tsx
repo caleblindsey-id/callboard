@@ -42,6 +42,12 @@ export interface PartEntry {
   searchResults: ProductResult[]
   searching: boolean
   warrantyCovered: boolean
+  // PM coverage classification, surfaced only when the parent opts in via
+  // showCoverage (PM part requests). undefined = not yet chosen — the Request
+  // gate blocks until the tech picks. true = included in the PM agreement (no
+  // customer charge), false = billable. Distinct from warrantyCovered, which is
+  // the service-ticket mechanism.
+  coveredByAgreement?: boolean
   // Optional manufacturer / vendor part number. Only surfaced when the parent
   // opts in via showVendorItemCode (PM ticket parts requests use this).
   vendorItemCode?: string | null
@@ -116,6 +122,11 @@ interface PartsEntryListProps {
   setParts: React.Dispatch<React.SetStateAction<PartEntry[]>>
   showPricing: boolean
   showWarranty: boolean
+  // Surface a required covered-vs-billable selector on each row (PM part
+  // requests). When set alongside onRequestPart, the tech must pick before the
+  // Request action unlocks, and a "covered" pick waives the manual-part price
+  // requirement (covered parts are $0 to the customer).
+  showCoverage?: boolean
   label?: string
   // Staff-only: unlock the price field on catalog parts (locked by default) and
   // fetch loaded cost so a per-line 15% margin floor can be shown. Never pass
@@ -132,7 +143,7 @@ interface PartsEntryListProps {
   onRequestPart?: (index: number) => Promise<void>
 }
 
-export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, label = 'Parts', allowPriceOverride = false, showVendorItemCode = false, showVendor = false, onRequestPart }: PartsEntryListProps) {
+export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, showCoverage = false, label = 'Parts', allowPriceOverride = false, showVendorItemCode = false, showVendor = false, onRequestPart }: PartsEntryListProps) {
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
   // Tracks which dropdown result is keyboard-highlighted per row (-1 = none)
@@ -254,10 +265,17 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
   function missingRequestFields(part: PartEntry): string[] {
     const missing: string[] = []
     if (!part.description.trim()) missing.push('description')
+    // Force an explicit coverage pick on PM requests before the part can be
+    // requested — covered vs billable drives downstream billing, so it must
+    // never default silently.
+    if (showCoverage && part.coveredByAgreement === undefined) missing.push('coverage')
     if (!part.isFromDb) {
       if (showVendor && !(part.vendor ?? '').trim()) missing.push('vendor')
       if (showVendorItemCode && !(part.vendorItemCode ?? '').trim()) missing.push('vendor part #')
-      if (showPricing) {
+      // Covered parts are $0 to the customer, so a manual price isn't required
+      // for them; only billable (or coverage-not-shown) manual parts need one.
+      const priceRequired = showPricing && !(showCoverage && part.coveredByAgreement === true)
+      if (priceRequired) {
         const v = parseFloat(part.unitPrice)
         // A blank or non-numeric price is missing; a warranty $0 is entered as 0.
         if (part.unitPrice.trim() === '' || !Number.isFinite(v) || v < 0) missing.push('price')
@@ -523,6 +541,54 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                   Remove
                 </button>
               </div>
+              {/* Coverage — covered vs billable. Required pick on PM requests
+                  (drives billing). Segmented two-option control, 44px targets. */}
+              {showCoverage && (
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    Billing <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={part.coveredByAgreement === true}
+                      onClick={() => {
+                        setParts((prev) => {
+                          const u = [...prev]
+                          u[i] = { ...u[i], coveredByAgreement: true }
+                          return u
+                        })
+                      }}
+                      className={`flex-1 rounded-md border px-3 min-h-[44px] sm:min-h-[34px] text-sm font-medium transition-colors ${
+                        part.coveredByAgreement === true
+                          ? 'border-green-500 bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                          : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      Included in PM agreement (no charge)
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={part.coveredByAgreement === false}
+                      onClick={() => {
+                        setParts((prev) => {
+                          const u = [...prev]
+                          u[i] = { ...u[i], coveredByAgreement: false }
+                          return u
+                        })
+                      }}
+                      className={`flex-1 rounded-md border px-3 min-h-[44px] sm:min-h-[34px] text-sm font-medium transition-colors ${
+                        part.coveredByAgreement === false
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
+                          : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      Not included — bill customer
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Free-text detail — shown for catch-all items (products.requires_detail,
                   e.g. SHOP SUPPLIES). Optional. requiresDetail || detail so a previously
                   saved detail still renders on reload even if the flag round-trips falsy. */}

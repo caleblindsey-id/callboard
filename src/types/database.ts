@@ -166,6 +166,15 @@ export interface PartRequest {
   vendor_item_code?: string
   po_number?: string
   status: 'requested' | 'ordered' | 'received'
+  // PM coverage classification, chosen by the tech at request time:
+  //   true  = part is included in the PM agreement → customer is NOT charged
+  //   false = not included → billed to the customer
+  //   undefined = not yet chosen (pre-feature rows, or unselected). The request
+  //   UI forces an explicit pick before saving, so new PM requests always carry
+  //   true/false. Drives the covered-vs-billable split at completion (migration
+  //   097 / TicketActions seed). Service-ticket parts use `warranty_covered`
+  //   instead — this field is PM-only.
+  covered_by_agreement?: boolean
   // Vendor the part comes from. Written by VendorPicker from the Synergy
   // a80vm vendor master (migration 069). Legacy rows may have free-text
   // `vendor` with no `vendor_code` — re-pick to link.
@@ -231,6 +240,11 @@ export type PartsQueueRow = {
   vendor_item_code: string | null
   po_number: string | null
   status: 'requested' | 'ordered' | 'received'
+  // PM coverage classification (migration 096). Projected from the
+  // parts_requested JSONB: true = covered by the PM agreement (no customer
+  // charge), false = billable. NULL for service rows (they use warranty_covered)
+  // and for pre-feature PM rows.
+  covered_by_agreement: boolean | null
   // Machine the part is for — a ticket-level attribute (migration 090). PM reads
   // the linked equipment row; service COALESCEs inline equipment_* fields over
   // the linked row. null when no equipment is linked / entered.
@@ -417,6 +431,12 @@ export type PmTicketRow = {
   reviewed_by_id: string | null
   reviewed_at: string | null
   labor_rate_type: string
+  // Stamped on the first completion-form auto-save (migration 097). NULL = the
+  // form has never been drafted, so the completion view seeds covered/billable
+  // parts from received parts_requested; non-NULL = the saved
+  // parts_used/additional_parts_used are authoritative and win. Guards against
+  // a deleted (un-billed) part silently re-seeding on reopen.
+  completion_seeded_at: string | null
   created_at: string
   updated_at: string
 }
@@ -657,7 +677,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at'
 >
 
 export type SettingsRow = {
