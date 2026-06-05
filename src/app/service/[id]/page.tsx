@@ -49,7 +49,15 @@ export default async function ServiceTicketPage({
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user.role) && RESET_ROLES.includes(user.role ?? ('' as never))
 
-  const laborRate = await getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard')
+  const [standardRate, industrialRate, vacuumRate] = await Promise.all([
+    getCustomerLaborRate(ticket.customer_id, 'standard'),
+    getCustomerLaborRate(ticket.customer_id, 'industrial'),
+    getCustomerLaborRate(ticket.customer_id, 'vacuum'),
+  ])
+  const laborRates: Record<string, number> = { standard: standardRate, industrial: industrialRate, vacuum: vacuumRate }
+  // The ticket's saved type drives completion/billing math; the map above lets the
+  // estimate builder preview any of the three rates live before it's snapshotted.
+  const laborRate = laborRates[ticket.labor_rate_type ?? 'standard'] ?? standardRate
   const aceEntry = await getEntryByTicket('service', ticket.id)
 
   const equipmentLabel = ticket.equipment
@@ -140,6 +148,7 @@ export default async function ServiceTicketPage({
         userRole={user.role}
         userId={user.id}
         laborRate={laborRate}
+        laborRates={laborRates}
       />
 
       <AceLaborCard entry={aceEntry} userRole={user.role} userId={user.id} />

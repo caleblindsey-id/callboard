@@ -37,6 +37,7 @@ interface ServiceTicketDetailProps {
   userRole: UserRole | null
   userId: string
   laborRate: number
+  laborRates: Record<string, number>
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -412,7 +413,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -447,6 +448,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
 
   // Estimate form
   const [showEstimateForm, setShowEstimateForm] = useState(false)
+  const [estimateRateType, setEstimateRateType] = useState(ticket.labor_rate_type ?? 'standard')
   const [estimateLaborHours, setEstimateLaborHours] = useState(
     ticket.estimate_labor_hours != null ? String(ticket.estimate_labor_hours) : ''
   )
@@ -700,6 +702,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
         estimate_labor_hours: hours,
         estimate_parts: toServicePartUsed(estimateParts),
         diagnosis_notes: diagnosisNotes || null,
+        // Staff-only field — server re-resolves and snapshots estimate_labor_rate from it.
+        ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
       })
       if (result.status === SERVICE_STATUS.APPROVED) {
         setSuccessMsg('Estimate auto-approved (under $100)')
@@ -1363,8 +1367,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
   const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
   const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal
 
-  // Estimate computed totals
-  const estLaborTotal = (parseFloat(estimateLaborHours) || 0) * laborRate
+  // Estimate computed totals. The rate type can be re-picked in the builder, so the
+  // preview uses the resolved rate for the selected type (server re-snapshots on submit).
+  const effectiveEstRate = laborRates?.[estimateRateType] ?? laborRate
+  const estLaborTotal = (parseFloat(estimateLaborHours) || 0) * effectiveEstRate
   const estPartsTotal = estimateParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
@@ -2230,6 +2236,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                 {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
               </p>
               <form onSubmit={handleSubmitEstimate} className="space-y-4">
+                  {/* Labor Rate Type — staff can correct the rate the office picked at intake */}
+                  {isStaff && (
+                    <div className="max-w-lg">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Labor Rate Type
+                      </label>
+                      <select
+                        value={estimateRateType}
+                        onChange={(e) => setEstimateRateType(e.target.value)}
+                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      >
+                        <option value="standard">Standard — ${laborRates.standard.toFixed(2)}/hr</option>
+                        <option value="industrial">Industrial — ${laborRates.industrial.toFixed(2)}/hr</option>
+                        <option value="vacuum">Vacuum — ${laborRates.vacuum.toFixed(2)}/hr</option>
+                      </select>
+                    </div>
+                  )}
+
                   {/* Labor Hours */}
                   <div className="max-w-lg">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -2246,7 +2270,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                         placeholder="0.00"
                       />
                       <span className="text-sm text-gray-500 dark:text-gray-400">
-                        @ ${laborRate.toFixed(2)}/hr
+                        @ ${effectiveEstRate.toFixed(2)}/hr
                       </span>
                     </div>
                   </div>
@@ -2273,7 +2297,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate }: Ser
                   <div className="rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 max-w-lg">
                     <div className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
                       <div className="flex justify-between">
-                        <span>Labor: {estimateLaborHours || '0'} hrs x ${laborRate.toFixed(2)}</span>
+                        <span>Labor: {estimateLaborHours || '0'} hrs x ${effectiveEstRate.toFixed(2)}</span>
                         <span>${estLaborTotal.toFixed(2)}</span>
                       </div>
                       {estimateParts.length > 0 && (
