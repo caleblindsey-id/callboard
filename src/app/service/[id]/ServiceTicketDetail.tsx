@@ -752,6 +752,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
+  async function handleReopenEstimate() {
+    if (!confirm(
+      'Reopen this estimate for editing? The customer’s approval/signature ' +
+      'will be cleared and you’ll need to re-send it for approval. ' +
+      'The estimate numbers are kept.'
+    )) return
+    await apiAction(async () => {
+      const res = await fetch(`/api/service-tickets/${ticket.id}/reopen-estimate`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to reopen estimate')
+      }
+      setSuccessMsg('Estimate reopened for editing.')
+    })
+  }
+
   async function handleQuickComplete({
     hours,
     notes,
@@ -1526,9 +1544,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 <> | Assigned to <span className="font-medium text-gray-700 dark:text-gray-300">{ticket.assigned_technician.name}</span></>
               )}
             </span>
-            {/* Reopen — a routine manager action, kept accessible at the top.
+            {/* Reopen — undo completed work, kept accessible at the top. Shown
+                only for worked states where handleReopen's target is valid;
+                estimate-phase reopen (estimated/approved/declined) is handled by
+                the "Reopen Estimate" button in the Diagnosis & Estimate card.
                 Cancel/Delete remain in the bottom Manager Controls footer. */}
-            {isManager && ticket.status !== 'open' && ticket.status !== 'canceled' && ticket.status !== 'declined' && (
+            {isManager && (ticket.status === SERVICE_STATUS.IN_PROGRESS ||
+              ticket.status === SERVICE_STATUS.COMPLETED ||
+              ticket.status === SERVICE_STATUS.BILLED) && (
               <button
                 onClick={handleReopen}
                 disabled={loading}
@@ -2155,6 +2178,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 >
                   Email Estimate
                 </button>
+                {/* Reopen Estimate — managers/super admins only. Pulls the
+                    estimate back to an editable draft (numbers preserved) from
+                    awaiting-approval, approved, or declined so it can be revised
+                    and re-sent. */}
+                {isManager &&
+                  (ticket.status === SERVICE_STATUS.ESTIMATED ||
+                    ticket.status === SERVICE_STATUS.APPROVED ||
+                    ticket.status === SERVICE_STATUS.DECLINED) && (
+                  <button
+                    onClick={handleReopenEstimate}
+                    disabled={loading}
+                    className="px-4 py-3 sm:py-2 text-sm font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
+                  >
+                    Reopen Estimate
+                  </button>
+                )}
               </div>
 
               {/* Approval link display */}
@@ -2219,13 +2258,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   <span className="font-normal text-red-600 dark:text-red-400">{ticket.decline_reason}</span>
                 </InfoField>
               )}
-              <button
-                onClick={handleReopen}
-                disabled={loading}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-              >
-                Reopen &amp; Revise Estimate
-              </button>
+              {/* Reopen is offered by the unified "Reopen Estimate" button in the
+                  Diagnosis & Estimate card above (preserves the numbers). */}
             </div>
           )}
 
