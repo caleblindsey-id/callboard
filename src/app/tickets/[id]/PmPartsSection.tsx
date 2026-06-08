@@ -77,6 +77,7 @@ export default function PmPartsSection({
         ...(entry.synergyProductId != null ? { synergy_product_id: entry.synergyProductId } : {}),
         ...(entry.vendorItemCode?.trim() ? { vendor_item_code: entry.vendorItemCode.trim() } : {}),
         ...(entry.vendor?.trim() ? { vendor: entry.vendor.trim() } : {}),
+        ...(entry.vendorCode?.trim() ? { vendor_code: entry.vendorCode.trim() } : {}),
         ...(entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? { unit_price: priceParsed } : {}),
         ...(entry.coveredByAgreement !== undefined ? { covered_by_agreement: entry.coveredByAgreement } : {}),
         status: 'requested',

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { minPrice } from '@/lib/margin'
+import VendorPicker from '@/components/VendorPicker'
 
 // ── Types (shared with ServiceTicketDetail) ──
 
@@ -51,10 +52,15 @@ export interface PartEntry {
   // Optional manufacturer / vendor part number. Only surfaced when the parent
   // opts in via showVendorItemCode (PM ticket parts requests use this).
   vendorItemCode?: string | null
-  // Vendor name (free text). Surfaced when the parent opts in via showVendor.
-  // Required on new MANUAL part requests so the office isn't left guessing who
-  // to order from; catalog parts resolve the vendor office-side.
+  // Vendor name. Surfaced when the parent opts in via showVendor. Required on
+  // new MANUAL part requests so the office isn't left guessing who to order
+  // from; catalog parts resolve the vendor office-side. Picked from the Synergy
+  // vendor master via VendorPicker (no free text) — set atomically with
+  // vendorCode so the two never diverge.
   vendor?: string | null
+  // Synergy a80vm.VendorCode paired with `vendor`. Set together by VendorPicker
+  // when a Synergy vendor is selected; threaded into the PartRequest on Request.
+  vendorCode?: string | null
   // Local flag flipped after the row has been sent to the parts-requested
   // queue via onRequestPart. Not persisted.
   alreadyRequested?: boolean
@@ -80,6 +86,7 @@ export function emptyPart(): PartEntry {
     warrantyCovered: false,
     vendorItemCode: null,
     vendor: null,
+    vendorCode: null,
   }
 }
 
@@ -472,21 +479,22 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                   </label>
                 )}
                 {showVendor && (
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Vendor</label>
-                    <input
-                      type="text"
-                      value={part.vendor ?? ''}
-                      onChange={(e) => {
+                  <div className="w-56">
+                    {/* Synergy-only vendor picker (no free text). Sets vendor +
+                        vendorCode together so they never diverge. Keyed on the
+                        catalog product so the picker re-inits when the row's
+                        product changes. */}
+                    <VendorPicker
+                      key={`vendor-${i}-${part.synergyProductId ?? 'manual'}`}
+                      vendor={part.vendor}
+                      vendorCode={part.vendorCode}
+                      onChange={({ vendor, vendor_code }) => {
                         setParts((prev) => {
                           const u = [...prev]
-                          u[i] = { ...u[i], vendor: e.target.value }
+                          u[i] = { ...u[i], vendor, vendorCode: vendor_code }
                           return u
                         })
                       }}
-                      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-                      placeholder={part.isFromDb ? 'optional' : 'required'}
-                      className="w-36 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-2 h-[44px] sm:h-[34px] text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
                     />
                   </div>
                 )}

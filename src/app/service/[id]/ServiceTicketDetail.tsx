@@ -1031,6 +1031,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       synergy_product_id: entry.synergyProductId ?? undefined,
       vendor_item_code: entry.vendorItemCode?.trim() || undefined,
       vendor: entry.vendor?.trim() || undefined,
+      vendor_code: entry.vendorCode?.trim() || undefined,
       unit_price:
         entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? priceParsed : undefined,
       status: 'requested',
