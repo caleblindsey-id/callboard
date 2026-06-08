@@ -110,10 +110,24 @@ export function ticketDeepLink(source: PartsQueueSource, ticket_id: string): str
   return source === 'pm' ? `/tickets/${ticket_id}` : `/service/${ticket_id}`
 }
 
+// A re-check no longer runs synchronously: the route enqueues the request and
+// the office workstation drains it (the hosted app has no Python/ODBC/LAN). We
+// POST to enqueue, then poll until the queue row flips to done/error. On a long
+// wait (workstation offline / busy) we resolve to 'queued' so the UI can show a
+// soft "will re-check shortly" message instead of an error.
+export type RevalidateOutcome =
+  | { state: 'done'; result: RevalidateResult }
+  | { state: 'queued' }
+
+const REVALIDATE_POLL_INTERVAL_MS = 4_000
+const REVALIDATE_POLL_TIMEOUT_MS = 180_000
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 export async function revalidateTicket(
   source: PartsQueueSource,
   ticket_id: string,
-): Promise<RevalidateResult> {
+): Promise<RevalidateOutcome> {
   const res = await fetch(`/api/parts-queue/${ticket_id}/revalidate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -121,7 +135,37 @@ export async function revalidateTicket(
   })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to re-validate')
+    throw new Error(data.error || 'Failed to queue re-check')
   }
-  return data as RevalidateResult
+  const queueId: string | undefined = data.queue_id
+  if (!queueId) {
+    throw new Error('Re-check was not queued')
+  }
+
+  const deadline = Date.now() + REVALIDATE_POLL_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    await sleep(REVALIDATE_POLL_INTERVAL_MS)
+    const pollRes = await fetch(
+      `/api/parts-queue/${ticket_id}/revalidate?queue_id=${queueId}`,
+    )
+    if (!pollRes.ok) {
+      // Auth failures are terminal; anything else (transient 404/5xx) keeps polling.
+      if (pollRes.status === 401 || pollRes.status === 403) {
+        const e = await pollRes.json().catch(() => ({}))
+        throw new Error(e.error || 'Not authorized')
+      }
+      continue
+    }
+    const poll = await pollRes.json()
+    if (poll.status === 'done') {
+      return { state: 'done', result: poll.result as RevalidateResult }
+    }
+    if (poll.status === 'error') {
+      const detail =
+        poll.error || poll.result?.error || 'Re-check failed on the office workstation'
+      throw new Error(`Re-check failed: ${detail}`)
+    }
+    // pending / processing → keep polling
+  }
+  return { state: 'queued' }
 }

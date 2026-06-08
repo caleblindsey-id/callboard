@@ -1,117 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { spawn } from 'node:child_process'
-import path from 'node:path'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 type Source = 'pm' | 'service'
 
-// Runs the existing validate-synergy-orders.py script in single-ticket mode
-// (--ticket-id <id> --source <pm|service> --json). The script holds the
-// Synergy ODBC connection; this route is the office's "re-check" button when
-// the nightly run hasn't caught a same-day order or a typo correction.
-//
-// Local-only: the script needs DSN=ERPlinked, which is set up on the office
-// workstation that runs the nightly cron. A remote Vercel deployment would
-// not have Synergy reachable and this route would always fail with an ODBC
-// connect error.
-function runValidator(ticketId: string, source: Source): Promise<{
-  status: number
-  body: Record<string, unknown>
-}> {
-  return new Promise((resolve) => {
-    const pythonExe = process.env.PYTHON_EXE || 'python'
-    const scriptPath = path.join(
-      process.cwd(),
-      'scripts',
-      'sync',
-      'validate-synergy-orders.py'
-    )
+// On-demand Synergy re-check. The validator (validate-synergy-orders.py) needs
+// Python + the ERPlinked ODBC DSN + LAN access to Synergy — none of which exist
+// on the hosted Vercel runtime. So instead of running it here, this route
+// ENQUEUES a request in revalidation_queue (migration 098). The office
+// workstation drains the queue every ~2 min (--drain-queue), runs the same
+// single-ticket validation, and writes status + result back. The client polls
+// GET ?queue_id= until the row flips to done/error.
 
-    const child = spawn(
-      pythonExe,
-      [scriptPath, '--ticket-id', ticketId, '--source', source, '--json'],
-      {
-        env: {
-          ...process.env,
-          // The script reads bare SUPABASE_URL but Next.js .env.local exposes
-          // NEXT_PUBLIC_SUPABASE_URL — pass either through.
-          SUPABASE_URL:
-            process.env.SUPABASE_URL ||
-            process.env.NEXT_PUBLIC_SUPABASE_URL ||
-            '',
-          SUPABASE_SERVICE_ROLE_KEY:
-            process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        },
-      }
-    )
+const UUID_RE = /^[0-9a-f-]{36}$/i
 
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-
-    // 30s ceiling — the batch run completes in <10s; a stuck ODBC connection
-    // is the only realistic way to exceed that.
-    const killer = setTimeout(() => {
-      child.kill('SIGKILL')
-    }, 30_000)
-
-    child.on('error', (err) => {
-      clearTimeout(killer)
-      resolve({
-        status: 500,
-        body: { error: 'Failed to start validator', detail: err.message },
-      })
-    })
-
-    child.on('close', (code) => {
-      clearTimeout(killer)
-      if (code !== 0) {
-        resolve({
-          status: 500,
-          body: {
-            error: 'Validator exited non-zero',
-            exit_code: code,
-            stderr: stderr.slice(-2000),
-          },
-        })
-        return
-      }
-      try {
-        const parsed = JSON.parse(stdout.trim())
-        resolve({ status: 200, body: parsed })
-      } catch {
-        resolve({
-          status: 500,
-          body: {
-            error: 'Validator output was not JSON',
-            stdout: stdout.slice(-2000),
-            stderr: stderr.slice(-2000),
-          },
-        })
-      }
-    })
-  })
+async function requireManager() {
+  const user = await getCurrentUser()
+  if (!user?.role) return { error: 'Unauthorized', status: 401 as const, user: null }
+  if (!MANAGER_ROLES.includes(user.role)) {
+    return { error: 'Forbidden', status: 403 as const, user: null }
+  }
+  return { error: null, status: 200 as const, user }
 }
 
+// POST — enqueue a re-check request. Returns 202 { status: 'queued', queue_id }.
+// Repeated clicks coalesce onto the existing in-flight row (partial unique index
+// on (ticket_id, source) WHERE status IN ('pending','processing')).
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ ticket_id: string }> }
 ) {
-  const user = await getCurrentUser()
-  if (!user?.role) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  if (!MANAGER_ROLES.includes(user.role)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const auth = await requireManager()
+  if (!auth.user) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   const { ticket_id } = await params
-  if (!ticket_id || !/^[0-9a-f-]{36}$/i.test(ticket_id)) {
+  if (!ticket_id || !UUID_RE.test(ticket_id)) {
     return NextResponse.json({ error: 'Invalid ticket_id' }, { status: 400 })
   }
 
@@ -129,6 +54,72 @@ export async function POST(
     )
   }
 
-  const { status, body: payload } = await runValidator(ticket_id, source)
-  return NextResponse.json(payload, { status })
+  const supabase = await createAdminClient('ADMIN_ONLY')
+
+  // Try to enqueue. If an in-flight request already exists for this ticket the
+  // partial unique index rejects with 23505 — that's success too: return the
+  // existing row so the client polls the request already in flight.
+  const { data: inserted, error: insertErr } = await supabase
+    .from('revalidation_queue')
+    .insert({ ticket_id, source, requested_by: auth.user.id })
+    .select('id')
+    .single()
+
+  if (!insertErr && inserted) {
+    return NextResponse.json({ status: 'queued', queue_id: inserted.id }, { status: 202 })
+  }
+
+  if (insertErr?.code === '23505') {
+    const { data: existing, error: selErr } = await supabase
+      .from('revalidation_queue')
+      .select('id')
+      .eq('ticket_id', ticket_id)
+      .eq('source', source)
+      .in('status', ['pending', 'processing'])
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!selErr && existing) {
+      return NextResponse.json({ status: 'queued', queue_id: existing.id }, { status: 202 })
+    }
+  }
+
+  return NextResponse.json(
+    { error: 'Failed to enqueue re-check', detail: insertErr?.message },
+    { status: 500 }
+  )
+}
+
+// GET ?queue_id=<uuid> — poll a queued request's status. Returns
+// { status, result, error }. The drain script flips status to done/error and
+// stamps result (the validate_single() dict) on completion.
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ ticket_id: string }> }
+) {
+  const auth = await requireManager()
+  if (!auth.user) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+
+  await params // ticket_id is implied by queue_id; consume to satisfy the signature
+  const queueId = request.nextUrl.searchParams.get('queue_id')
+  if (!queueId || !UUID_RE.test(queueId)) {
+    return NextResponse.json({ error: 'Missing or invalid queue_id' }, { status: 400 })
+  }
+
+  const supabase = await createAdminClient('ADMIN_ONLY')
+  const { data, error } = await supabase
+    .from('revalidation_queue')
+    .select('status, result, error')
+    .eq('id', queueId)
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json({ error: 'Lookup failed', detail: error.message }, { status: 500 })
+  }
+  if (!data) {
+    return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+  }
+  return NextResponse.json(data, { status: 200 })
 }

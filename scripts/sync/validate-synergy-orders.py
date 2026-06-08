@@ -84,6 +84,24 @@ def supabase_patch_by_id(table: str, row_id: str, data: dict) -> None:
     response = requests.patch(url, json=data, headers=headers, timeout=15)
     response.raise_for_status()
 
+
+def claim_queue_row(row_id: str) -> bool:
+    """Atomically flip a pending revalidation_queue row to 'processing'.
+
+    Filters on status=pending so two overlapping drain runs can't both process
+    the same row. Returns True only if THIS call won the claim (PostgREST echoes
+    the updated row back; an empty array means someone else already grabbed it).
+    """
+    url = (
+        f"{SUPABASE_URL}/rest/v1/revalidation_queue"
+        f"?id=eq.{row_id}&status=eq.pending"
+    )
+    headers = supabase_headers()
+    headers["Prefer"] = "return=representation"
+    resp = requests.patch(url, json={"status": "processing"}, headers=headers, timeout=15)
+    resp.raise_for_status()
+    return len(resp.json()) > 0
+
 # ============================================================
 # Main validation logic
 # ============================================================
@@ -211,8 +229,71 @@ def classify_parts(parts: list[dict], prodcodes_for_order: set[str]) -> str | No
     return "partial"
 
 
+def process_revalidation_queue() -> int:
+    """Drain on-demand re-check requests from revalidation_queue (migration 098).
+
+    The hosted CallBoard app can't run the validator (no Python / ODBC / LAN on
+    Vercel), so its "re-check" button enqueues a row here. This runs on the
+    office workstation via Task Scheduler every ~2 min: claim each pending row,
+    run the same single-ticket validation as the --ticket-id path, and write the
+    result back so the UI poll can flip the badge. Returns the number processed.
+    """
+    pending = supabase_get("revalidation_queue", {
+        "select": "id,ticket_id,source,status",
+        "status": "eq.pending",
+        "order": "requested_at.asc",
+    })
+    if not pending:
+        log.info("Revalidation queue empty - nothing to drain.")
+        return 0
+
+    log.info(f"Draining {len(pending)} pending re-check request(s)...")
+    processed = 0
+    for row in pending:
+        qid = row["id"]
+        source = row.get("source")
+        ticket_id = row.get("ticket_id")
+
+        if not claim_queue_row(qid):
+            # A concurrent drain run already claimed this row.
+            continue
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            table = "pm_tickets" if source == "pm" else "service_tickets"
+            ticket = fetch_single_ticket(table, ticket_id)
+            result = validate_single(table, ticket) if ticket else {"ok": False, "error": "ticket_not_found"}
+        except Exception as e:  # noqa: BLE001 — surface any failure into the queue row
+            result = {"ok": False, "error": f"drain_exception: {e}"}
+
+        if result.get("ok"):
+            supabase_patch_by_id("revalidation_queue", qid, {
+                "status": "done",
+                "result": result,
+                "processed_at": now_iso,
+            })
+            log.info(f"  {source} {ticket_id} -> {result.get('synergy_validation_status')}")
+        else:
+            supabase_patch_by_id("revalidation_queue", qid, {
+                "status": "error",
+                "error": str(result.get("error") or "unknown"),
+                "result": result,
+                "processed_at": now_iso,
+            })
+            log.warning(f"  {source} {ticket_id} -> ERROR: {result.get('error')}")
+        processed += 1
+
+    log.info(f"Queue drain complete: {processed} processed.")
+    return processed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate Synergy order numbers and part numbers.")
+    parser.add_argument(
+        "--drain-queue",
+        action="store_true",
+        help="Drain pending on-demand re-check requests from revalidation_queue and exit.",
+    )
     parser.add_argument(
         "--ticket-id",
         help="If set, validate only this one ticket and exit. Requires --source.",
@@ -239,6 +320,12 @@ def main() -> None:
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         log.error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.")
         sys.exit(1)
+
+    # Drain mode — process on-demand re-check requests enqueued by the hosted
+    # app's "re-check" button. Runs every ~2 min via Task Scheduler.
+    if args.drain_queue:
+        process_revalidation_queue()
+        return
 
     # Single-ticket re-validate path (called by the /api/parts-queue/[id]/revalidate
     # endpoint). Same validation logic, no batching across the whole table.

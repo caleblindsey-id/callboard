@@ -144,6 +144,7 @@ export default function PartsQueueClient({
   const [flashedRow, setFlashedRow] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
   // Refresh the cutoff every 5 min so a long-lived session doesn't silently
   // drop parts that aged out, and so the value stays stable between unrelated
@@ -326,8 +327,17 @@ export default function PartsQueueClient({
     const key = rowKey(row)
     setPendingRow(key)
     setError(null)
+    setInfo(null)
     try {
-      const result = await revalidateTicket(row.source, row.ticket_id)
+      const outcome = await revalidateTicket(row.source, row.ticket_id)
+      if (outcome.state === 'queued') {
+        // Workstation hasn't drained the request within the poll window (offline
+        // or busy). It'll be picked up by the next drain, and the 5:30 AM nightly
+        // run catches everything regardless — so this is informational, not an error.
+        setInfo('Queued — the office sync will re-check this within a few minutes.')
+        return
+      }
+      const { result } = outcome
       // Stamp the new validation status onto every row that shares this ticket
       // (each ticket can have multiple parts, all sharing one parent status).
       setRows((rs) =>
@@ -439,6 +449,12 @@ export default function PartsQueueClient({
       {error && (
         <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {error}
+        </div>
+      )}
+
+      {info && (
+        <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-700 dark:text-blue-300">
+          {info}
         </div>
       )}
 
