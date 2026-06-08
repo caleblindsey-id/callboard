@@ -178,6 +178,48 @@ export async function getBillingTickets(
   return data as unknown as TicketWithJoins[]
 }
 
+// Awaiting-invoice queue: PM tickets that have been exported to a billing PDF
+// (billing_exported=true) but are NOT yet billed — they're waiting on a manager
+// to key the SynergyERP invoice number, which is what flips them to 'billed'.
+// MUST gate on status='completed' AND billing_exported=true. Filtering on
+// synergy_invoice_number IS NULL alone would sweep in every historically-billed
+// PM ticket (they all have null invoice + billing_exported=true). Status-gating
+// keeps already-billed tickets out, so no backfill is needed.
+export async function getPmAwaitingInvoiceTickets(
+  month?: number,
+  year?: number
+): Promise<TicketWithJoins[]> {
+  const supabase = await createClient()
+
+  let query = supabase
+    .from('pm_tickets')
+    .select(`
+      *,
+      customers(name, account_number, billing_city, po_required, ar_terms, credit_hold),
+      equipment(make, model, serial_number, ship_to_locations(name, address, city)),
+      pm_ship_to:ship_to_locations!pm_tickets_ship_to_location_id_fkey(name, address, city),
+      users!assigned_technician_id(name),
+      pm_schedules(interval_months, anchor_month),
+      credit_reviews(status)
+    `)
+    .eq('status', 'completed')
+    .eq('billing_exported', true)
+    .is('deleted_at', null)
+
+  if (month !== undefined && year !== undefined) {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
+    query = query.gte('completed_date', startDate).lt('completed_date', endDate)
+  }
+
+  const { data, error } = await query.order('completed_date', { ascending: false })
+
+  if (error) throw error
+  return data as unknown as TicketWithJoins[]
+}
+
 export async function getOverdueTicketCount(filters?: {
   technicianId?: string
   now?: Date

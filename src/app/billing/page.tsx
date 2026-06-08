@@ -1,7 +1,8 @@
-import { getBillingTickets } from '@/lib/db/tickets'
+import { getBillingTickets, getPmAwaitingInvoiceTickets } from '@/lib/db/tickets'
 import { getServiceBillingTickets } from '@/lib/db/service-tickets'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import BillingExport from './BillingExport'
+import PmAwaitingInvoice from './PmAwaitingInvoice'
 import ServiceBillingExport from './ServiceBillingExport'
 import BillingTabs from './BillingTabs'
 
@@ -24,8 +25,9 @@ export default async function BillingPage({
   const month = hasFilter ? parsedMonth : undefined
   const year = hasFilter ? parsedYear : undefined
 
-  const [pmTickets, serviceTickets] = await Promise.all([
+  const [pmTickets, pmAwaitingInvoice, serviceTickets] = await Promise.all([
     getBillingTickets(month, year),
+    getPmAwaitingInvoiceTickets(month, year),
     getServiceBillingTickets(month, year),
   ])
 
@@ -41,8 +43,9 @@ export default async function BillingPage({
         pmCount={pmTickets.length}
         serviceCount={serviceTickets.length}
         pmContent={
-          <div className="space-y-4">
+          <div className="space-y-6">
             <BillingExport tickets={pmTickets} selectedMonth={month} selectedYear={year} />
+            <PmAwaitingInvoice tickets={pmAwaitingInvoice} />
           </div>
         }
         serviceContent={
