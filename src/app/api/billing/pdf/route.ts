@@ -415,9 +415,15 @@ export async function POST(request: NextRequest) {
     // Mark tickets as exported only AFTER successful render. CAS on
     // billing_exported=false: a concurrent retry would match zero rows and
     // be skipped (the first request already won the race).
+    //
+    // Export does NOT bill. Tickets stay status='completed' and move to the
+    // "Awaiting Invoice #" queue; they only become 'billed' once a manager
+    // keys the SynergyERP invoice number (POST /api/billing/mark-billed). This
+    // is the checks-and-balance: an exported PDF is not proof the work was
+    // actually invoiced in Synergy.
     const { data: marked, error: updateError } = await supabase
       .from('pm_tickets')
-      .update({ billing_exported: true, status: 'billed' })
+      .update({ billing_exported: true })
       .in('id', ticketIds as string[])
       .eq('billing_exported', false)
       .select('id')

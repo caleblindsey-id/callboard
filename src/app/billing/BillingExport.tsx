@@ -173,7 +173,7 @@ export default function BillingExport({
       a.click()
       URL.revokeObjectURL(url)
 
-      setToast({ message: `PDF exported — ${selected.size} ticket(s) marked as billed.`, type: 'success' })
+      setToast({ message: `PDF exported — ${selected.size} ticket(s) now awaiting a Synergy invoice #. Enter it below to mark them billed.`, type: 'success' })
       setSelected(new Set())
       setPreviewOpen(false)
       router.refresh()

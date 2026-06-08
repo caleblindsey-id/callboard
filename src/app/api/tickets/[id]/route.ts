@@ -40,6 +40,10 @@ const ALLOWED_FIELDS = [
   'skip_equipment_on_site',
   'parts_requested',
   'synergy_order_number',
+  // SynergyERP invoice number — keyed by a manager on the Awaiting Invoice #
+  // billing queue. Deliberately NOT in TECH_ALLOWED_FIELDS: billing is
+  // manager-only.
+  'synergy_invoice_number',
   'machine_hours',
   'date_code',
   'completion_seeded_at',
