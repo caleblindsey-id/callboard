@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { BillingType, DefaultProduct } from '@/types/database'
 import { formatPhoneNumber } from '@/lib/phone'
-import { normalizeSerial, serialsMatch } from '@/lib/equipment'
+import { normalizeSerial, serialsMatch, serialsNearMatch } from '@/lib/equipment'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import { X, Plus, Minus, Trash2 } from 'lucide-react'
 
@@ -14,6 +14,10 @@ type DuplicateMatch = {
   id: string
   make: string | null
   model: string | null
+}
+
+type NearDuplicateMatch = DuplicateMatch & {
+  serial: string | null
 }
 
 interface CustomerOption {
@@ -65,6 +69,9 @@ export default function AddEquipmentModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null)
+  // Near-miss serial (one-character-off) on the same make+model — a soft,
+  // confirmable warning (feedback #18), distinct from the hard exact-serial block.
+  const [nearDuplicate, setNearDuplicate] = useState<NearDuplicateMatch | null>(null)
 
   // Customer combobox state
   const [customerSearch, setCustomerSearch] = useState('')
@@ -256,26 +263,36 @@ export default function AddEquipmentModal({
     setFlatRate('')
     setError(null)
     setDuplicate(null)
+    setNearDuplicate(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    await doSubmit(false)
+  }
+
+  // `confirmNearDuplicate` re-runs the submit past the near-miss serial warning
+  // once the user has confirmed the unit really is distinct.
+  async function doSubmit(confirmNearDuplicate: boolean) {
     setLoading(true)
     setError(null)
     setDuplicate(null)
+    if (!confirmNearDuplicate) setNearDuplicate(null)
 
     const supabase = createClient()
     const normalizedSerial = normalizeSerial(serialNumber)
     const customerIdNum = customerId ? parseInt(customerId) : null
 
-    // Step 0: Duplicate-serial pre-check (active records, same customer, case/whitespace-insensitive)
+    // Step 0: Duplicate-serial pre-check (active records, same customer).
     if (customerIdNum && normalizedSerial) {
+      // Fetch all active equipment for the customer so we can catch both an
+      // exact serial collision AND a near-miss (one-character-off) typo — the
+      // latter is not a substring, so the old ilike filter can't find it.
       const { data: candidates, error: dupError } = await supabase
         .from('equipment')
         .select('id, make, model, serial_number')
         .eq('customer_id', customerIdNum)
         .eq('active', true)
-        .ilike('serial_number', `%${normalizedSerial}%`)
 
       if (dupError) {
         setError(dupError.message)
@@ -289,6 +306,26 @@ export default function AddEquipmentModal({
         setError(null)
         setLoading(false)
         return
+      }
+
+      // Near-miss: same make+model, serial one edit away. Soft, confirmable.
+      if (!confirmNearDuplicate) {
+        const newMake = (make || '').trim().toLowerCase()
+        const newModel = (model || '').trim().toLowerCase()
+        const near = (candidates ?? []).find(
+          (row) =>
+            newMake !== '' &&
+            newModel !== '' &&
+            (row.make || '').trim().toLowerCase() === newMake &&
+            (row.model || '').trim().toLowerCase() === newModel &&
+            serialsNearMatch(row.serial_number, normalizedSerial)
+        )
+        if (near) {
+          setNearDuplicate({ id: near.id, make: near.make, model: near.model, serial: near.serial_number })
+          setError(null)
+          setLoading(false)
+          return
+        }
       }
     }
 
@@ -384,6 +421,35 @@ export default function AddEquipmentModal({
               View existing
             </Link>
           </p>
+        )}
+        {nearDuplicate && (
+          <div className="text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2 mb-3 space-y-2">
+            <p>
+              <strong>Possible duplicate.</strong> This customer already has a very similar active unit
+              {nearDuplicate.make || nearDuplicate.model
+                ? ` — ${[nearDuplicate.make, nearDuplicate.model].filter(Boolean).join(' ')}`
+                : ''}
+              {nearDuplicate.serial ? ` (serial ${nearDuplicate.serial})` : ''}. Check the serial number before
+              creating a second record.
+            </p>
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/equipment/${nearDuplicate.id}`}
+                target="_blank"
+                className="underline text-amber-900 dark:text-amber-200 hover:text-amber-700"
+              >
+                View existing
+              </Link>
+              <button
+                type="button"
+                onClick={() => doSubmit(true)}
+                disabled={loading}
+                className="underline text-amber-900 dark:text-amber-200 hover:text-amber-700 disabled:opacity-50"
+              >
+                It&apos;s a different unit — create anyway
+              </button>
+            </div>
+          </div>
         )}
         {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
 

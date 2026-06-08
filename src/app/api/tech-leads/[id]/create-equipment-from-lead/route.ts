@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, RESET_ROLES } from '@/lib/auth'
+import { normalizeSerial, serialsMatch, serialsNearMatch } from '@/lib/equipment'
 import type { BillingType } from '@/types/database'
 
 type Body = {
@@ -15,6 +16,24 @@ type Body = {
   starting_year?: number
   billing_type: BillingType
   flat_rate?: number | null
+  // Set true to proceed past a near-miss serial warning (the office confirmed
+  // it really is a distinct unit). Exact-serial duplicates are never bypassable.
+  confirm_near_duplicate?: boolean
+}
+
+// Same make AND model (case/whitespace-insensitive, both present) — the gate
+// that keeps the near-miss serial warning high-precision.
+function sameMakeModel(
+  a: { make: string | null; model: string | null },
+  b: { make: string | null; model: string | null }
+): boolean {
+  const norm = (s: string | null) => s?.trim().toLowerCase() ?? ''
+  return (
+    norm(a.make) !== '' &&
+    norm(a.model) !== '' &&
+    norm(a.make) === norm(b.make) &&
+    norm(a.model) === norm(b.model)
+  )
 }
 
 const VALID_BILLING_TYPES: BillingType[] = ['flat_rate', 'time_and_materials', 'contract']
@@ -119,14 +138,65 @@ export async function POST(
       )
     }
 
+    // Duplicate-equipment guard (this flow previously had NONE — feedback #18).
+    // Exact serial dupes are blocked outright; near-miss serials on the same
+    // make+model are surfaced as a confirmable warning so a typo'd re-entry of
+    // an existing machine doesn't silently spawn a second PM schedule.
+    const newMake = body.make?.trim() || null
+    const newModel = body.model?.trim() || null
+    const normalizedSerial = normalizeSerial(body.serial_number)
+    if (normalizedSerial) {
+      const { data: candidates, error: dupErr } = await supabase
+        .from('equipment')
+        .select('id, make, model, serial_number')
+        .eq('customer_id', resolvedCustomerId!)
+        .eq('active', true)
+      if (dupErr) {
+        console.error('dup-check query error:', dupErr)
+        return NextResponse.json({ error: 'Failed to check for duplicate equipment.' }, { status: 500 })
+      }
+
+      const exact = (candidates ?? []).find((row) => serialsMatch(row.serial_number, normalizedSerial))
+      if (exact) {
+        return NextResponse.json(
+          {
+            error: 'This customer already has active equipment with that serial number.',
+            existing_id: exact.id,
+          },
+          { status: 409 }
+        )
+      }
+
+      if (!body.confirm_near_duplicate) {
+        const near = (candidates ?? []).find(
+          (row) =>
+            sameMakeModel({ make: newMake, model: newModel }, row) &&
+            serialsNearMatch(row.serial_number, normalizedSerial)
+        )
+        if (near) {
+          return NextResponse.json(
+            {
+              error: 'A very similar unit already exists for this customer — check the serial number.',
+              near_duplicate: true,
+              existing_id: near.id,
+              existing_make: near.make,
+              existing_model: near.model,
+              existing_serial: near.serial_number,
+            },
+            { status: 409 }
+          )
+        }
+      }
+    }
+
     // Step 2: insert equipment
     const { data: equipmentRow, error: eqErr } = await supabase
       .from('equipment')
       .insert({
         customer_id: resolvedCustomerId!,
-        make: body.make?.trim() || null,
-        model: body.model?.trim() || null,
-        serial_number: body.serial_number?.trim() || null,
+        make: newMake,
+        model: newModel,
+        serial_number: normalizedSerial,
         description: body.description?.trim() || null,
         location_on_site: body.location_on_site?.trim() || null,
         active: true,
