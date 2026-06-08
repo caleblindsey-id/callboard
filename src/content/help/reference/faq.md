@@ -4,16 +4,17 @@ category: Reference
 roles: [super_admin, manager, coordinator, technician]
 order: 20
 summary: Quick answers to the questions that come up most.
-last_verified: 2026-05-28
+last_verified: 2026-06-08
 ---
 
 ## Why is my ticket blocked from billing?
 
-Usually one of three things:
+A few possibilities:
 
 - The customer is on **credit hold** and AR hasn't released this work yet — check the [Credit Review](/help/managers/release-a-credit-hold) page.
 - The customer requires a **PO** and none is entered — fill it in on the [Billing](/help/managers/billing) page.
 - It's a service ticket missing its **Synergy Order #** — add it before marking billed.
+- It's a **PM ticket you've exported but haven't billed** — exporting the PDF no longer marks a PM billed. Enter its **Synergy invoice number** in the **Awaiting Invoice #** section, then tap **Mark Billed**. See [Bill completed work](/help/managers/billing).
 
 ## Why won't a ticket let me mark it complete?
 
