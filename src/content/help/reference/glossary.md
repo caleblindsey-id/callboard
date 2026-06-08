@@ -4,7 +4,7 @@ category: Reference
 roles: [super_admin, manager, coordinator, technician]
 order: 10
 summary: Plain-language definitions of the terms you'll see throughout CallBoard.
-last_verified: 2026-05-28
+last_verified: 2026-06-08
 ---
 
 ## PM (Preventive Maintenance)
@@ -21,6 +21,9 @@ A customer is on credit hold when their **AR balance is over their credit limit,
 
 ## Synergy Order #
 The order number from Synergy that ties a piece of CallBoard work back to the order/invoice in Synergy. It's required to mark a service ticket **billed** and to mark parts **ordered**.
+
+## Synergy Invoice #
+The invoice number from Synergy entered on a **PM ticket** after you've exported it and created the invoice. A PM isn't marked **billed** until its Synergy invoice number is on file (one invoice per work order) — proof the work was actually invoiced. See [Bill completed work](/help/managers/billing).
 
 ## Machine hours
 The reading off the equipment's **hour meter**, entered by the tech when completing a PM (for example, `1247.5`). It tracks how much the machine has run between visits.
