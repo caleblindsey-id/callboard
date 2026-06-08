@@ -116,6 +116,29 @@ export type Vendor = {
 export type VendorInsert = Pick<Vendor, 'code' | 'name'> & Partial<Pick<Vendor, 'synced_at'>>
 export type VendorUpdate = Partial<Pick<Vendor, 'name' | 'synced_at'>>
 
+// Migration 098 — on-demand Synergy re-check queue. The hosted app enqueues a
+// row; the office workstation drains it and writes status/result back.
+export type RevalidationQueueStatus = 'pending' | 'processing' | 'done' | 'error'
+
+export type RevalidationQueueRow = {
+  id: string
+  ticket_id: string
+  source: 'pm' | 'service'
+  status: RevalidationQueueStatus
+  requested_by: string | null
+  requested_at: string
+  processed_at: string | null
+  result: Record<string, unknown> | null
+  error: string | null
+}
+
+export type RevalidationQueueInsert = Pick<RevalidationQueueRow, 'ticket_id' | 'source'> &
+  Partial<Pick<RevalidationQueueRow, 'status' | 'requested_by'>>
+
+export type RevalidationQueueUpdate = Partial<
+  Pick<RevalidationQueueRow, 'status' | 'processed_at' | 'result' | 'error'>
+>
+
 // ============================================================
 // JSONB Part type
 // ============================================================
@@ -1133,6 +1156,12 @@ export interface Database {
         Row: Vendor
         Insert: VendorInsert
         Update: VendorUpdate
+        Relationships: []
+      }
+      revalidation_queue: {
+        Row: RevalidationQueueRow
+        Insert: RevalidationQueueInsert
+        Update: RevalidationQueueUpdate
         Relationships: []
       }
     }
