@@ -84,6 +84,14 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Near-miss serial warning returned by the API (HTTP 409 + near_duplicate).
+  // Holding it lets the office confirm and re-submit past the soft block.
+  const [nearDuplicate, setNearDuplicate] = useState<{
+    id: string
+    make: string | null
+    model: string | null
+    serial: string | null
+  } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -108,6 +116,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setBillingType('flat_rate')
     setFlatRate('')
     setError(null)
+    setNearDuplicate(null)
     setSubmitting(false)
     // Focus dialog so onKeyDown captures Escape.
     dialogRef.current?.focus()
@@ -164,9 +173,12 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
   const intervalEarnsNothing = bonusRateForInterval(intervalMonths) === 0
   const willEarnBonus = bonusAmount > 0
 
-  async function handleSubmit() {
+  // `confirmNearDuplicate` re-submits past the near-miss serial warning once the
+  // office has eyeballed the existing unit and confirmed it's genuinely distinct.
+  async function handleSubmit(confirmNearDuplicate = false) {
     if (!lead) return
     setError(null)
+    if (!confirmNearDuplicate) setNearDuplicate(null)
 
     if (!customerId) {
       setError('Pick the customer this equipment belongs to.')
@@ -203,10 +215,22 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           starting_year: startingYear,
           billing_type: billingType,
           flat_rate: flatRateNum,
+          confirm_near_duplicate: confirmNearDuplicate,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        // Near-miss serial: surface a confirmable warning instead of a dead-end error.
+        if (data?.near_duplicate && data?.existing_id) {
+          setNearDuplicate({
+            id: data.existing_id as string,
+            make: (data.existing_make as string | null) ?? null,
+            model: (data.existing_model as string | null) ?? null,
+            serial: (data.existing_serial as string | null) ?? null,
+          })
+          setSubmitting(false)
+          return
+        }
         throw new Error(data?.error || 'Failed to create equipment from lead.')
       }
       onDone()
@@ -248,6 +272,37 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
 
         <div className="px-5 py-4 space-y-4">
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+          {nearDuplicate && (
+            <div className="text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2 space-y-2">
+              <p>
+                <strong>Possible duplicate.</strong> This customer already has a very similar active unit
+                {nearDuplicate.make || nearDuplicate.model
+                  ? ` — ${[nearDuplicate.make, nearDuplicate.model].filter(Boolean).join(' ')}`
+                  : ''}
+                {nearDuplicate.serial ? ` (serial ${nearDuplicate.serial})` : ''}. Check the serial number before
+                creating a second record.
+              </p>
+              <div className="flex items-center gap-3">
+                <a
+                  href={`/equipment/${nearDuplicate.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-amber-900 dark:text-amber-200 hover:text-amber-700"
+                >
+                  View existing unit
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit(true)}
+                  disabled={submitting}
+                  className="text-amber-900 dark:text-amber-200 underline hover:text-amber-700 disabled:opacity-50"
+                >
+                  It&apos;s a different unit — create anyway
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Customer */}
           <div ref={comboRef} className="relative">
@@ -470,7 +525,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           </button>
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={submitting}
             className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md disabled:opacity-50"
           >
