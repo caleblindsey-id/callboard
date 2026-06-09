@@ -88,12 +88,20 @@ export default function BillingExport({
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
     setYear(newYear)
+    // Preserve any other params (e.g. the active ?tab) the page owns.
+    const params = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : ''
+    )
     // "All months" clears the filter so the queue shows every unbilled ticket.
     if (newMonth === ALL_MONTHS) {
-      router.push('/billing')
+      params.delete('month')
+      params.delete('year')
     } else {
-      router.push(`/billing?month=${newMonth}&year=${newYear}`)
+      params.set('month', String(newMonth))
+      params.set('year', String(newYear))
     }
+    const qs = params.toString()
+    router.push(qs ? `/billing?${qs}` : '/billing')
   }
 
   function startEditPo(ticketId: string) {

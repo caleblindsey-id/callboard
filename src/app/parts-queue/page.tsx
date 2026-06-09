@@ -23,13 +23,30 @@ function firstString(raw: string | string[] | undefined): string | null {
 export default async function PartsQueuePage({
   searchParams,
 }: {
-  searchParams?: { source?: string | string[]; ticket?: string | string[] }
+  searchParams?: {
+    source?: string | string[]
+    ticket?: string | string[]
+    tab?: string | string[]
+    sort?: string | string[]
+    dir?: string | string[]
+    q?: string | string[]
+    vendor?: string | string[]
+  }
 }) {
   await requireRole(...MANAGER_ROLES)
   const rows = await getPartsQueue()
 
   const ticketFilter = firstString(searchParams?.ticket)
   const sourceFilter = normalizeSource(searchParams?.source)
+  // Seed the board's controls from the URL so the Back button restores them.
+  const initialFilters = {
+    tab: firstString(searchParams?.tab) ?? '',
+    sort: firstString(searchParams?.sort) ?? '',
+    dir: firstString(searchParams?.dir) ?? '',
+    q: firstString(searchParams?.q) ?? '',
+    source: sourceFilter ?? '',
+    vendor: firstString(searchParams?.vendor) ?? '',
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -42,7 +59,7 @@ export default async function PartsQueuePage({
       <PartsQueueClient
         rows={rows}
         initialTicketFilter={ticketFilter}
-        initialSourceFilter={sourceFilter}
+        initialFilters={initialFilters}
       />
     </div>
   )

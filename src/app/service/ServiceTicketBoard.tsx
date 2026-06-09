@@ -10,6 +10,18 @@ import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { createClient } from '@/lib/supabase/client'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+
+// `type` (not `interface`) so it satisfies the hook's `Record<string, string>`
+// constraint — interfaces have no implicit index signature.
+export type ServiceBoardInitialFilters = {
+  status: string
+  priority: string
+  type: string
+  tech: string
+  waitingOnParts: string
+  deleted: string
+}
 
 // Status tabs for the board — workflow order (actionable stages first, terminal
 // states last) so a manager can scan and follow up by stage. `all` is the count
@@ -89,19 +101,22 @@ function ticketAgeDays(createdAt: string): number {
 
 interface ServiceTicketBoardProps {
   currentUser: UserRow
+  initialFilters: ServiceBoardInitialFilters
 }
 
-export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
+export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicketBoardProps) {
   const isTech = currentUser.role === 'technician'
   const router = useRouter()
 
-  const [statusFilter, setStatusFilter] = useState<'' | ServiceTicketStatus>('')
-  const [priorityFilter, setPriorityFilter] = useState<'' | ServicePriority>('')
-  const [typeFilter, setTypeFilter] = useState<'' | ServiceTicketType>('')
-  const [techFilter, setTechFilter] = useState('')
-  const [waitingOnParts, setWaitingOnParts] = useState(false)
+  // Filters live in the URL so the Back button restores the filtered view.
+  const { filters, set, setMany } = useUrlFilters(initialFilters)
+  const statusFilter = filters.status as '' | ServiceTicketStatus
+  const priorityFilter = filters.priority as '' | ServicePriority
+  const typeFilter = filters.type as '' | ServiceTicketType
+  const techFilter = filters.tech
+  const waitingOnParts = filters.waitingOnParts === '1'
   // Manager-only "Deleted" view — shows soft-deleted tickets (restore from detail).
-  const [deletedView, setDeletedView] = useState(false)
+  const deletedView = filters.deleted === '1'
 
   const [tickets, setTickets] = useState<ServiceTicketWithJoins[]>([])
   const [users, setUsers] = useState<UserRow[]>([])
@@ -252,7 +267,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                onClick={() => { setDeletedView(false); setStatusFilter(tab.value) }}
+                onClick={() => setMany({ deleted: '', status: tab.value })}
                 className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
                   active
                     ? 'bg-slate-800 text-white'
@@ -280,7 +295,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
               type="button"
               role="tab"
               aria-selected={deletedView}
-              onClick={() => { setDeletedView(true); setStatusFilter('') }}
+              onClick={() => setMany({ deleted: '1', status: '' })}
               className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
                 deletedView
                   ? 'bg-slate-800 text-white'
@@ -311,7 +326,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
             <select
               value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value as '' | ServicePriority)}
+              onChange={(e) => set('priority', e.target.value)}
               className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {PRIORITY_OPTIONS.map((opt) => (
@@ -324,7 +339,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Type</label>
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as '' | ServiceTicketType)}
+              onChange={(e) => set('type', e.target.value)}
               className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
               {TYPE_OPTIONS.map((opt) => (
@@ -338,7 +353,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Technician</label>
               <select
                 value={techFilter}
-                onChange={(e) => setTechFilter(e.target.value)}
+                onChange={(e) => set('tech', e.target.value)}
                 className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 <option value="">All Technicians</option>
@@ -354,7 +369,7 @@ export function ServiceTicketBoard({ currentUser }: ServiceTicketBoardProps) {
               <input
                 type="checkbox"
                 checked={waitingOnParts}
-                onChange={(e) => setWaitingOnParts(e.target.checked)}
+                onChange={(e) => set('waitingOnParts', e.target.checked ? '1' : '')}
                 className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Waiting on Parts</span>

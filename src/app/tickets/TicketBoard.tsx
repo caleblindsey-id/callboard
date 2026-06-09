@@ -40,6 +40,7 @@ interface TicketBoardProps {
   currentYear: number
   userRole: import('@/types/database').UserRole | null
   initialStatus?: string
+  initialTech?: string
   overdueMode?: boolean
   skipRequestedMode?: boolean
   needsReviewMode?: boolean
@@ -316,6 +317,7 @@ export default function TicketBoard({
   currentYear,
   userRole,
   initialStatus = '',
+  initialTech = '',
   overdueMode = false,
   skipRequestedMode = false,
   needsReviewMode = false,
@@ -327,7 +329,7 @@ export default function TicketBoard({
 
   const [month, setMonth] = useState(currentMonth)
   const [year, setYear] = useState(currentYear)
-  const [techFilter, setTechFilter] = useState('')
+  const [techFilter, setTechFilter] = useState(initialTech)
   const [statusFilter, setStatusFilter] = useState(initialStatus)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [overdueSelected, setOverdueSelected] = useState<Set<string>>(new Set())

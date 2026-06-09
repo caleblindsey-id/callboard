@@ -2,8 +2,13 @@ import { getCustomers } from '@/lib/db/customers'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import CustomerList from './CustomerList'
 
-export default async function CustomersPage() {
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
   await requireRole(...MANAGER_ROLES)
+  const params = await searchParams
   const customers = await getCustomers() // first 50, ordered by name
 
   return (
@@ -14,7 +19,7 @@ export default async function CustomersPage() {
           Synced from SynergyERP — read only
         </p>
       </div>
-      <CustomerList customers={customers} />
+      <CustomerList customers={customers} initialSearch={params.q ?? ''} />
     </div>
   )
 }
