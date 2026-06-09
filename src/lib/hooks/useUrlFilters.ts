@@ -27,7 +27,10 @@ import { usePathname, useRouter } from 'next/navigation'
  */
 export interface UseUrlFiltersResult<T extends Record<string, string>> {
   filters: T
+  /** Set a single filter and rewrite the URL. */
   set: (key: keyof T, value: string, opts?: { debounce?: boolean }) => void
+  /** Set several filters at once (one URL rewrite) — e.g. a tab that changes two values. */
+  setMany: (partial: Partial<T>, opts?: { debounce?: boolean }) => void
 }
 
 const DEBOUNCE_MS = 350
@@ -38,6 +41,10 @@ export function useUrlFilters<T extends Record<string, string>>(
   const router = useRouter()
   const pathname = usePathname()
   const [filters, setFilters] = useState<T>(initial)
+  // Ref mirrors state so `set`/`setMany` compose correctly when called twice in
+  // one handler, and so URL writes stay out of the state updater (no double
+  // navigation under StrictMode). Same ref-alongside-state pattern as useFormDraft.
+  const filtersRef = useRef<T>(initial)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sync = useCallback(
@@ -63,16 +70,22 @@ export function useUrlFilters<T extends Record<string, string>>(
     [pathname, router]
   )
 
-  const set = useCallback(
-    (key: keyof T, value: string, opts?: { debounce?: boolean }) => {
-      setFilters((prev) => {
-        const next = { ...prev, [key]: value }
-        sync(next, opts?.debounce ?? false)
-        return next
-      })
+  const setMany = useCallback(
+    (partial: Partial<T>, opts?: { debounce?: boolean }) => {
+      const next = { ...filtersRef.current, ...partial }
+      filtersRef.current = next
+      setFilters(next)
+      sync(next, opts?.debounce ?? false)
     },
     [sync]
   )
 
-  return { filters, set }
+  const set = useCallback(
+    (key: keyof T, value: string, opts?: { debounce?: boolean }) => {
+      setMany({ [key]: value } as Partial<T>, opts)
+    },
+    [setMany]
+  )
+
+  return { filters, set, setMany }
 }
