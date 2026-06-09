@@ -62,9 +62,8 @@ export default function ServiceBillingExport({
   const thisYear = new Date().getFullYear()
   const [month, setMonth] = useState(selectedMonth ?? ALL_MONTHS)
   const [year, setYear] = useState(selectedYear ?? thisYear)
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(tickets.filter((t) => !needsSynergyOrder(t)).map((t) => t.id))
-  )
+  // Default to nothing selected so bulk mark-billed is an intentional opt-in (feedback #26).
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [marking, setMarking] = useState(false)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
