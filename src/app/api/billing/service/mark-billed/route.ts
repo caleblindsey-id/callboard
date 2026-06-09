@@ -11,7 +11,7 @@ type ServiceTicketBillingRow = {
   id: string
   work_order_number: number | null
   status: string
-  synergy_order_number: string | null
+  synergy_invoice_number: string | null
   customers: { name: string } | null
 }
 
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     const { data: rawTickets, error: fetchError } = await supabase
       .from('service_tickets')
       .select(`
-        id, work_order_number, status, synergy_order_number,
+        id, work_order_number, status, synergy_invoice_number,
         customers ( name )
       `)
       .in('id', ticketIds as string[])
@@ -78,13 +78,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const missingSynergy = tickets.filter((t) => !t.synergy_order_number)
+    const missingSynergy = tickets.filter((t) => !t.synergy_invoice_number)
     if (missingSynergy.length > 0) {
       const names = missingSynergy
         .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
         .join(', ')
       return NextResponse.json(
-        { error: `Missing Synergy order #: ${names}` },
+        { error: `Missing Synergy invoice #: ${names}` },
         { status: 400 }
       )
     }

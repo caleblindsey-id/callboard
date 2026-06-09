@@ -24,7 +24,7 @@ CallBoard runs in your web browser at **callboard.services**. There is nothing t
 
 Synergy is still the system of record for customers, products, and invoicing. Every night CallBoard pulls the latest customers, contacts, products, and ship-to locations from Synergy. That means customer and product information in CallBoard is **read-only** — if something looks wrong, it gets fixed in Synergy and flows over on the next sync.
 
-Billing works the other way around: you complete work in CallBoard, then enter the resulting invoice in Synergy. CallBoard records the **Synergy order number** so the two systems stay tied together.
+Billing works the other way around: you complete work in CallBoard, then enter the resulting invoice in Synergy. CallBoard records the **Synergy invoice number** so the two systems stay tied together.
 
 ## Where to go next
 

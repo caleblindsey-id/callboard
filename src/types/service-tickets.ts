@@ -65,6 +65,7 @@ export type ServiceTicketRow = {
   parts_requested: PartRequest[]
   parts_received: boolean
   synergy_order_number: string | null
+  synergy_invoice_number: string | null
   started_at: string | null
   completed_at: string | null
   hours_worked: number | null

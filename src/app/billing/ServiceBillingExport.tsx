@@ -27,8 +27,8 @@ interface ServiceBillingExportProps {
 // 0 is the "All months" sentinel for the month picker — no date narrowing.
 const ALL_MONTHS = 0
 
-function needsSynergyOrder(t: ServiceBillingTicket): boolean {
-  return !t.synergy_order_number
+function needsSynergyInvoice(t: ServiceBillingTicket): boolean {
+  return !t.synergy_invoice_number
 }
 
 function renderEquipment(t: ServiceBillingTicket): string {
@@ -73,11 +73,11 @@ export default function ServiceBillingExport({
   const [editingValue, setEditingValue] = useState('')
   const [savingValue, setSavingValue] = useState(false)
 
-  const missingCount = tickets.filter(needsSynergyOrder).length
+  const missingCount = tickets.filter(needsSynergyInvoice).length
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
-    if (ticket && needsSynergyOrder(ticket)) return
+    if (ticket && needsSynergyInvoice(ticket)) return
     const next = new Set(selected)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -85,7 +85,7 @@ export default function ServiceBillingExport({
   }
 
   function toggleAll() {
-    const selectable = tickets.filter((t) => !needsSynergyOrder(t))
+    const selectable = tickets.filter((t) => !needsSynergyInvoice(t))
     if (selected.size === selectable.length) {
       setSelected(new Set())
     } else {
@@ -124,7 +124,7 @@ export default function ServiceBillingExport({
       const res = await fetch(`/api/service-tickets/${editingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ synergy_order_number: trimmed }),
+        body: JSON.stringify({ synergy_invoice_number: trimmed }),
       })
 
       if (!res.ok) {
@@ -136,7 +136,7 @@ export default function ServiceBillingExport({
       setEditingValue('')
       router.refresh()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save Synergy order #.'
+      const message = err instanceof Error ? err.message : 'Failed to save Synergy invoice #.'
       setToast({ message, type: 'error' })
     } finally {
       setSavingValue(false)
@@ -179,16 +179,16 @@ export default function ServiceBillingExport({
     .filter((t) => selected.has(t.id))
     .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
 
-  const selectableCount = tickets.filter((t) => !needsSynergyOrder(t)).length
+  const selectableCount = tickets.filter((t) => !needsSynergyInvoice(t)).length
 
   function renderSynergyStatus(t: ServiceBillingTicket) {
-    if (t.synergy_order_number) {
+    if (t.synergy_invoice_number) {
       return (
         <span
           className="text-green-700 dark:text-green-400 truncate max-w-[140px] inline-block align-bottom"
-          title={t.synergy_order_number}
+          title={t.synergy_invoice_number}
         >
-          {t.synergy_order_number}
+          {t.synergy_invoice_number}
         </span>
       )
     }
@@ -203,7 +203,7 @@ export default function ServiceBillingExport({
               if (e.key === 'Enter') handleSaveSynergy()
               if (e.key === 'Escape') cancelEdit()
             }}
-            placeholder="Synergy #"
+            placeholder="Invoice #"
             autoFocus
             disabled={savingValue}
             className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -230,7 +230,7 @@ export default function ServiceBillingExport({
         onClick={(e) => { e.stopPropagation(); startEdit(t.id) }}
         className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
       >
-        Synergy # Needed
+        Invoice # Needed
       </button>
     )
   }
@@ -305,7 +305,7 @@ export default function ServiceBillingExport({
       {/* Synergy # missing banner */}
       {missingCount > 0 && (
         <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
-          {missingCount} ticket{missingCount === 1 ? '' : 's'} need{missingCount === 1 ? 's' : ''} a Synergy order # before {missingCount === 1 ? 'it' : 'they'} can be marked billed.
+          {missingCount} ticket{missingCount === 1 ? '' : 's'} need{missingCount === 1 ? 's' : ''} a Synergy invoice # before {missingCount === 1 ? 'it' : 'they'} can be marked billed.
         </div>
       )}
 
@@ -335,7 +335,7 @@ export default function ServiceBillingExport({
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {tickets.map((t) => {
-                const blocked = needsSynergyOrder(t)
+                const blocked = needsSynergyInvoice(t)
                 return (
                   <div
                     key={t.id}
@@ -408,7 +408,7 @@ export default function ServiceBillingExport({
                       />
                     </th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Synergy #</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Invoice #</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Billing</th>
@@ -419,7 +419,7 @@ export default function ServiceBillingExport({
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {tickets.map((t) => {
-                    const blocked = needsSynergyOrder(t)
+                    const blocked = needsSynergyInvoice(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id ? 'opacity-50' : ''}`}>
                         <td className="px-4 py-3">
