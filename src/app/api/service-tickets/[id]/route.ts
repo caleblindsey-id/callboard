@@ -48,6 +48,7 @@ const STAFF_ALLOWED_FIELDS = [
   'parts_requested',
   'parts_received',
   'synergy_order_number',
+  'synergy_invoice_number',
   'billing_amount',
   'diagnostic_charge',
   'diagnostic_invoice_number',
@@ -357,20 +358,23 @@ export async function PATCH(
         filtered.manual_decision_note = note
       }
 
-      // --- Hard block: completed → billed requires synergy_order_number ---
+      // --- Hard block: completed → billed requires synergy_invoice_number ---
+      // The invoice # is the proof the completed work was billed in SynergyERP.
+      // (synergy_order_number is the separate parts-ordering order #, not a
+      // billing gate — mirrors the PM gate on pm_tickets.synergy_invoice_number.)
       if (nextStatus === 'billed') {
-        // Check if synergy_order_number is being set in this request or already exists
-        const synergyOrderNum = filtered.synergy_order_number ?? null
-        if (!synergyOrderNum) {
+        // Check if synergy_invoice_number is being set in this request or already exists
+        const synergyInvoiceNum = filtered.synergy_invoice_number ?? null
+        if (!synergyInvoiceNum) {
           // Check existing value
           const { data: full } = await supabase
             .from('service_tickets')
-            .select('synergy_order_number')
+            .select('synergy_invoice_number')
             .eq('id', id)
             .single()
-          if (!full?.synergy_order_number) {
+          if (!full?.synergy_invoice_number) {
             return NextResponse.json(
-              { error: 'Synergy order number is required to mark a ticket as billed' },
+              { error: 'Synergy invoice number is required to mark a ticket as billed' },
               { status: 400 }
             )
           }
@@ -445,6 +449,9 @@ export async function PATCH(
           synergy_order_number: null,
           synergy_validation_status: null,
           synergy_validated_at: null,
+          // Clear the billing invoice # too — a reopened ticket must be re-billed
+          // against a fresh invoice rather than inheriting the stale one.
+          synergy_invoice_number: null,
           // Reopening a billed unit pulls it out of the pickup queue; the aging
           // clock restarts when it's re-billed.
           awaiting_pickup: false,
