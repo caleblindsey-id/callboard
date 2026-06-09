@@ -47,7 +47,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth check for public routes
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/auth/') || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/')) {
+  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/auth/') || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/')) {
     return supabaseResponse
   }
 

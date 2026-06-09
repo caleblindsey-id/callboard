@@ -3,14 +3,16 @@
 // re-notify scanner route (Round 4). One code path so the email + audit trail
 // never drift between the two callers.
 
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import { getSetting } from '@/lib/db/settings'
 import { sendMandrillEmail, MandrillError } from '@/lib/mandrill'
 import { renderPickupReadyEmail } from '@/lib/email-templates/pickup-ready'
 
 export type PickupNoticeResult =
   | { sent: true; messageId: string; notifyCount: number }
   | { sent: false; reason: 'no_email' | 'already_picked_up' | 'not_awaiting' }
+
+const SETTING_KEYS = ['company_name', 'service_phone', 'pickup_address', 'pickup_hours', 'email_from_address'] as const
 
 function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
   for (const v of vals) {
@@ -25,8 +27,14 @@ function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
 // surface or swallow it). Returns {sent:false} when there's nothing to send
 // (no email on file → the unit stays in the "Needs Call" queue; or the unit is
 // no longer awaiting pickup).
-export async function sendPickupNotice(ticketId: string): Promise<PickupNoticeResult> {
-  const supabase = await createClient()
+// Pass `db` to run under a service-role client (the cron re-notify path has no
+// user session); omit it to use the request-scoped cookie client (the instant
+// billed-transition path, which already runs as a manager).
+export async function sendPickupNotice(
+  ticketId: string,
+  db?: SupabaseClient,
+): Promise<PickupNoticeResult> {
+  const supabase = db ?? (await createClient())
 
   const { data: ticket, error } = await supabase
     .from('service_tickets')
@@ -45,7 +53,7 @@ export async function sendPickupNotice(ticketId: string): Promise<PickupNoticeRe
   if (ticket.picked_up_at) return { sent: false, reason: 'already_picked_up' }
   if (!ticket.awaiting_pickup) return { sent: false, reason: 'not_awaiting' }
 
-  const equip = (ticket.equipment as {
+  const equip = (ticket.equipment as unknown as {
     make: string | null
     model: string | null
     serial_number: string | null
@@ -68,13 +76,20 @@ export async function sendPickupNotice(ticketId: string): Promise<PickupNoticeRe
   const toEmail = firstNonEmpty(ticket.contact_email, equip?.contact_email, primaryEmail)
   if (!toEmail) return { sent: false, reason: 'no_email' }
 
-  const [companyName, servicePhone, pickupAddress, pickupHours, fromEmail] = await Promise.all([
-    getSetting('company_name'),
-    getSetting('service_phone'),
-    getSetting('pickup_address'),
-    getSetting('pickup_hours'),
-    getSetting('email_from_address'),
-  ])
+  // Read settings through the same client so the cron (service-role) path isn't
+  // blocked by RLS the way a getSetting() cookie client would be.
+  const { data: settingsRows } = await supabase
+    .from('settings')
+    .select('key, value')
+    .in('key', SETTING_KEYS as unknown as string[])
+  const settings = new Map<string, string | null>(
+    (settingsRows ?? []).map((r: { key: string; value: string | null }) => [r.key, r.value]),
+  )
+  const companyName = settings.get('company_name')
+  const servicePhone = settings.get('service_phone')
+  const pickupAddress = settings.get('pickup_address')
+  const pickupHours = settings.get('pickup_hours')
+  const fromEmail = settings.get('email_from_address')
 
   if (!fromEmail || fromEmail === 'no-reply@example.com') {
     throw new MandrillError('Email from-address has not been configured. Update settings.email_from_address.')
