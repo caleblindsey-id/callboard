@@ -14,10 +14,14 @@ $trigger.Repetition = (New-ScheduledTaskTrigger -Once -At "06:00AM" `
     -RepetitionInterval (New-TimeSpan -Minutes 2) `
     -RepetitionDuration (New-TimeSpan -Hours 13)).Repetition
 
-# Quote the run-script path - it lives under "C:\Users\Caleb Lindsey\..." (space).
+# Launch via a hidden VBS shim (wscript window style 0) so no console window
+# flashes on the desktop every 2 min. The shim runs run-drain-queue.ps1, which
+# keeps the interactive full-network token needed for the ERP query.
+# Quote the path - it lives under "C:\Users\Caleb Lindsey\..." (space).
+$vbsLauncher = Join-Path $scriptDir "run-drain-queue-hidden.vbs"
 $action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-ExecutionPolicy Bypass -File `"$runScript`"" `
+    -Execute "wscript.exe" `
+    -Argument "`"$vbsLauncher`"" `
     -WorkingDirectory $scriptDir
 
 $settings = New-ScheduledTaskSettingsSet `
