@@ -1501,7 +1501,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // actions live in their own footer at the very bottom of the page. Render
   // the secondary card only when it has content so we don't ship an empty one.
   const showPickupToggle =
-    ticket.ticket_type === 'inside' && ticket.status === SERVICE_STATUS.COMPLETED && isStaff
+    ticket.ticket_type === 'inside' &&
+    (ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED) &&
+    isStaff
   const showBilledRef =
     ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyInvoiceNumber.trim().length > 0
   const showSecondaryControls = showPickupToggle || showBilledRef

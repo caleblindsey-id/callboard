@@ -54,6 +54,8 @@ const STAFF_ALLOWED_FIELDS = [
   'diagnostic_invoice_number',
   'awaiting_pickup',
   'picked_up_at',
+  'picked_up_by_name',
+  'shop_location',
   'generate_approval_token',
   'manual_decision_note',
   'request_info_note',
@@ -195,7 +197,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, equipment(make, model, serial_number)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number)')
       .eq('id', id)
       .single()
 
@@ -450,6 +452,10 @@ export async function PATCH(
           // Clear the billing invoice # too — a reopened ticket must be re-billed
           // against a fresh invoice rather than inheriting the stale one.
           synergy_invoice_number: null,
+          // Reopening a billed unit pulls it out of the pickup queue; the aging
+          // clock restarts when it's re-billed.
+          awaiting_pickup: false,
+          ready_for_pickup_at: null,
         })
       }
       if (nextStatus === 'open') {
@@ -484,6 +490,37 @@ export async function PATCH(
           approval_token_expires_at: null,
         })
       }
+    }
+
+    // --- Ready-for-pickup custody bookkeeping ---
+    // Auto-stage an INSIDE (bench/depot) ticket the moment it's invoiced
+    // (billed), exactly once. This is what surfaces the unit in the pickup queue
+    // and (R2) fires the customer notification. Guarded so a reopen→re-bill or an
+    // unrelated field edit can't re-stamp the aging clock.
+    if (
+      filtered.status === 'billed' &&
+      current.ticket_type === 'inside' &&
+      current.status !== 'billed' &&
+      !current.awaiting_pickup &&
+      !current.ready_for_pickup_at
+    ) {
+      filtered.awaiting_pickup = true
+      filtered.ready_for_pickup_at = new Date().toISOString()
+    }
+    // Any path that flips awaiting_pickup true (e.g. the manual "Mark Ready"
+    // toggle on an inside ticket invoiced outside the app) starts the aging
+    // clock if it isn't already running.
+    if (
+      filtered.awaiting_pickup === true &&
+      !current.ready_for_pickup_at &&
+      !filtered.ready_for_pickup_at
+    ) {
+      filtered.ready_for_pickup_at = new Date().toISOString()
+    }
+    // Confirming pickup captures who released custody (server-authoritative —
+    // the client never supplies released_by_id).
+    if (filtered.picked_up_at) {
+      filtered.released_by_id = user.id
     }
 
     // --- Estimate recomputation ---

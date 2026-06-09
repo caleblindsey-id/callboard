@@ -324,6 +324,51 @@ export async function getReadyToBillCounts(): Promise<ReadyToBillCounts> {
   }
 }
 
+// --- Ready for Pickup (invoiced inside/bench units awaiting customer) ----
+// Inside tickets auto-stage when billed (route bookkeeping sets awaiting_pickup
+// + ready_for_pickup_at). This card counts units still in custody and breaks out
+// the two states that need a human nudge: no contact on file (CSR must call) and
+// units aged past 30 days.
+
+export type ReadyForPickupCounts = {
+  total: number
+  needsCall: number
+  aged30: number
+}
+
+export async function getReadyForPickupCounts(): Promise<ReadyForPickupCounts> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .select('ready_for_pickup_at, pickup_notified_at, pickup_called_at, contact_email, equipment(contact_email)')
+    .eq('awaiting_pickup', true)
+    .is('picked_up_at', null)
+  if (error) throw error
+
+  type Row = {
+    ready_for_pickup_at: string | null
+    pickup_notified_at: string | null
+    pickup_called_at: string | null
+    contact_email: string | null
+    equipment: { contact_email: string | null } | null
+  }
+  const rows = (data ?? []) as unknown as Row[]
+  const now = Date.now()
+  let needsCall = 0
+  let aged30 = 0
+  for (const r of rows) {
+    const hasEmail = !!(r.contact_email?.trim() || r.equipment?.contact_email?.trim())
+    // No way to reach them yet: no email on file and no call logged.
+    if (!hasEmail && !r.pickup_notified_at && !r.pickup_called_at) needsCall++
+    if (r.ready_for_pickup_at) {
+      const days = (now - new Date(r.ready_for_pickup_at).getTime()) / 86_400_000
+      if (days >= 30) aged30++
+    }
+  }
+  return { total: rows.length, needsCall, aged30 }
+}
+
 // --- Alert: Pending Payout Approvals ------------------------------------
 // Combined count of pending tech_leads and pending ace_labor_entries. Drives
 // the dashboard "Tech Payouts" alert; both flows resolve on /tech-payouts.
