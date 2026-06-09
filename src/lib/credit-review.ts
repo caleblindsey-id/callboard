@@ -194,10 +194,13 @@ export async function enqueueCreditReviewsForCustomer(args: {
 const PM_SWEEP_STATUSES: TicketStatus[] = ['unassigned', 'assigned']
 const SERVICE_SWEEP_STATUSES = ['open', 'estimated', 'approved']
 
-// A part already on order (or received) means the job is in motion — don't
-// disrupt it by routing the order to AR.
+// A part already on order, received, or pulled from stock means the job is in
+// motion — don't disrupt it by routing the order to AR. A bare request
+// (pending_review / requested) isn't committed yet, so it doesn't count.
 function hasPartsInMotion(parts: PartRequest[] | null | undefined): boolean {
-  return (parts ?? []).some((p) => p.status === 'ordered' || p.status === 'received')
+  return (parts ?? []).some(
+    (p) => p.status === 'ordered' || p.status === 'received' || p.status === 'from_stock'
+  )
 }
 
 export type SweepResult = {

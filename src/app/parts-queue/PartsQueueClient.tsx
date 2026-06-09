@@ -12,15 +12,17 @@ import {
   revalidateTicket,
   setSynergyOrderNumber,
   ticketDeepLink,
+  triagePart,
   updatePartFields,
 } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import CancelPartDialog from './CancelPartDialog'
+import TriageOrderDialog from './TriageOrderDialog'
 import VendorPicker from '@/components/VendorPicker'
 import { formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 
-type Tab = 'to_order' | 'ordered' | 'received'
+type Tab = 'review' | 'to_order' | 'ordered' | 'received'
 type SortKey =
   | 'requested_at'
   | 'source'
@@ -129,7 +131,9 @@ export default function PartsQueueClient({
 }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
-  const [tab, setTab] = useState<Tab>('to_order')
+  // Review is the new front door (un-triaged requests land there). A deep-link
+  // from a source ticket wants the ordering view, so it opens on To Order.
+  const [tab, setTab] = useState<Tab>(initialTicketFilter ? 'to_order' : 'review')
   const [sortKey, setSortKey] = useState<SortKey>('requested_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [search, setSearch] = useState('')
@@ -143,6 +147,7 @@ export default function PartsQueueClient({
   const [pendingRow, setPendingRow] = useState<string | null>(null)
   const [flashedRow, setFlashedRow] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
+  const [orderJustifyTarget, setOrderJustifyTarget] = useState<PartsQueueRow | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
 
@@ -157,17 +162,19 @@ export default function PartsQueueClient({
   const receivedCutoffMs = useMemo(() => now - RECEIVED_WINDOW_MS, [now])
 
   const tabCounts = useMemo(() => {
+    let review = 0
     let toOrder = 0
     let ordered = 0
     let received = 0
     for (const r of rows) {
       if (r.cancelled) continue
-      if (r.status === 'requested') toOrder++
+      if (r.status === 'pending_review') review++
+      else if (r.status === 'requested') toOrder++
       else if (r.status === 'ordered') ordered++
       else if (r.status === 'received' && r.received_at && new Date(r.received_at).getTime() >= receivedCutoffMs)
         received++
     }
-    return { toOrder, ordered, received }
+    return { review, toOrder, ordered, received }
   }, [rows, receivedCutoffMs])
 
   const vendorOptions = useMemo(() => {
@@ -181,6 +188,7 @@ export default function PartsQueueClient({
     const result = rows.filter(r => {
       if (r.cancelled) return false
       // Tab filter
+      if (tab === 'review' && r.status !== 'pending_review') return false
       if (tab === 'to_order' && r.status !== 'requested') return false
       if (tab === 'ordered' && r.status !== 'ordered') return false
       if (tab === 'received') {
@@ -378,7 +386,54 @@ export default function PartsQueueClient({
     }
   }, [cancelTarget, applyUpdate])
 
-  const canEditFields = tab !== 'received'
+  // Stock-vs-order triage of a pending_review part. After it lands, the part's
+  // status changes and the row drops out of the Review tab automatically.
+  const handleTriage = useCallback(
+    async (row: PartsQueueRow, decision: 'order' | 'stock', reason?: string) => {
+      const key = rowKey(row)
+      setPendingRow(key)
+      setError(null)
+      try {
+        const part = await triagePart(row.source, row.ticket_id, row.part_index, decision, reason)
+        applyUpdate(row, part)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to triage part')
+      } finally {
+        setPendingRow(cur => (cur === key ? null : cur))
+      }
+    },
+    [applyUpdate],
+  )
+
+  // Ordering a part we already stock requires a justification, so it routes
+  // through the dialog; ordering a part with no stock/PO goes straight through.
+  const handleOrderClick = useCallback(
+    (row: PartsQueueRow) => {
+      const haveStock = (row.qty_on_hand ?? 0) > 0 || (row.qty_on_po ?? 0) > 0
+      if (haveStock) {
+        setOrderJustifyTarget(row)
+      } else {
+        void handleTriage(row, 'order')
+      }
+    },
+    [handleTriage],
+  )
+
+  const handleConfirmOrderJustify = useCallback(
+    async (reason: string) => {
+      if (!orderJustifyTarget) return
+      const row = orderJustifyTarget
+      try {
+        await handleTriage(row, 'order', reason)
+        setOrderJustifyTarget(null)
+      } catch (err) {
+        throw err
+      }
+    },
+    [orderJustifyTarget, handleTriage],
+  )
+
+  const canEditFields = tab !== 'received' && tab !== 'review'
   const canMarkOrdered = tab === 'to_order'
   const canMarkReceived = tab === 'ordered'
   // canCancel is now derived per-row inline (status-aware) instead of tab-driven —
@@ -388,6 +443,7 @@ export default function PartsQueueClient({
     <div className="space-y-4">
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+        <TabButton active={tab === 'review'} onClick={() => setTab('review')} label="Review" count={tabCounts.review} />
         <TabButton active={tab === 'to_order'} onClick={() => setTab('to_order')} label="To Order" count={tabCounts.toOrder} />
         <TabButton active={tab === 'ordered'} onClick={() => setTab('ordered')} label="Ordered" count={tabCounts.ordered} />
         <TabButton active={tab === 'received'} onClick={() => setTab('received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
@@ -459,6 +515,16 @@ export default function PartsQueueClient({
       )}
 
       {/* Table */}
+      {tab === 'review' ? (
+        <ReviewTable
+          rows={filteredRows}
+          pendingRow={pendingRow}
+          flashedRow={flashedRow}
+          onOrder={handleOrderClick}
+          onStock={(row) => void handleTriage(row, 'stock')}
+          onCancel={setCancelTarget}
+        />
+      ) : (
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -680,6 +746,7 @@ export default function PartsQueueClient({
           </tbody>
         </table>
       </div>
+      )}
 
       <CancelPartDialog
         open={!!cancelTarget}
@@ -687,6 +754,145 @@ export default function PartsQueueClient({
         onCancel={() => setCancelTarget(null)}
         onConfirm={handleConfirmCancel}
       />
+
+      <TriageOrderDialog
+        open={!!orderJustifyTarget}
+        description={orderJustifyTarget?.description ?? ''}
+        qtyOnHand={orderJustifyTarget?.qty_on_hand ?? null}
+        qtyOnPo={orderJustifyTarget?.qty_on_po ?? null}
+        onCancel={() => setOrderJustifyTarget(null)}
+        onConfirm={handleConfirmOrderJustify}
+      />
+    </div>
+  )
+}
+
+// Stock-position chip for the Review tab. null = no catalog stock record (manual
+// part); <= 0 shows a muted zero; > 0 highlights so the office sees it at a glance.
+function StockBadge({ value, tone }: { value: number | null; tone: 'hand' | 'po' }) {
+  if (value == null) return <span className="text-gray-400 dark:text-gray-500">—</span>
+  if (value <= 0) return <span className="text-gray-400 dark:text-gray-500 tabular-nums">{value}</span>
+  const classes =
+    tone === 'hand'
+      ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
+      : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300'
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${classes}`}>
+      {value}
+    </span>
+  )
+}
+
+// Dedicated triage table for the Review tab. Surfaces On-Hand / On-PO so the
+// office can decide "pull from stock" vs "order" per part. Intentionally separate
+// from the ordering table (whose 17 PO/vendor/validation columns don't apply yet).
+function ReviewTable({
+  rows,
+  pendingRow,
+  flashedRow,
+  onOrder,
+  onStock,
+  onCancel,
+}: {
+  rows: PartsQueueRow[]
+  pendingRow: string | null
+  flashedRow: string | null
+  onOrder: (row: PartsQueueRow) => void
+  onStock: (row: PartsQueueRow) => void
+  onCancel: (row: PartsQueueRow) => void
+}) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <table className="min-w-full text-sm">
+        <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <tr>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Requested</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Source</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">WO #</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Customer</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Part</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Qty</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units on hand at the branch (Whse 1).">On Hand</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units inbound on an open purchase order.">On PO</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold">Requested by</th>
+            <th scope="col" className="px-3 py-2 text-right">Decision</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                No parts waiting on a stock-vs-order decision.
+              </td>
+            </tr>
+          ) : (
+            rows.map(row => {
+              const key = rowKey(row)
+              const isPending = pendingRow === key
+              const isFlashed = flashedRow === key
+              return (
+                <tr
+                  key={key}
+                  className={`transition-colors ${
+                    isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'
+                  }`}
+                >
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{formatDay(row.requested_at)}</td>
+                  <td className="px-3 py-2"><SourceBadge source={row.source} /></td>
+                  <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">{row.work_order_number ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[200px] truncate" title={row.customer_name ?? ''}>{row.customer_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>{partLabel(row) || '—'}</td>
+                  <td className="px-3 py-2"><MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} /></td>
+                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">{row.quantity ?? 1}</td>
+                  <td className="px-3 py-2"><StockBadge value={row.qty_on_hand} tone="hand" /></td>
+                  <td className="px-3 py-2"><StockBadge value={row.qty_on_po} tone="po" /></td>
+                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">{row.assigned_technician_name ?? '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-right">
+                    <div className="flex items-center gap-1 justify-end">
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => onStock(row)}
+                        title="Fulfill this part from existing stock — no PO"
+                        className="px-2 py-1 text-xs font-medium text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 rounded hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Pull from Stock
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => onOrder(row)}
+                        title="Send this part to the order queue"
+                        className="px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Order
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => onCancel(row)}
+                        title="Cancel request"
+                        className="p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 rounded disabled:opacity-40 transition-colors"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </button>
+                      <Link
+                        href={ticketDeepLink(row.source, row.ticket_id)}
+                        title={row.source === 'pm' ? 'Open source PM ticket' : 'Open source service ticket'}
+                        aria-label="Open source ticket"
+                        className="p-1 text-gray-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })
+          )}
+        </tbody>
+      </table>
     </div>
   )
 }

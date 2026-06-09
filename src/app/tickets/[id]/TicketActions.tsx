@@ -16,7 +16,7 @@ import { equipmentNeedsVerification } from '@/lib/equipment'
 import SkipDialog from '../SkipDialog'
 import SkipRequestForm, { SkipRequestPayload } from './SkipRequestForm'
 import { renderPartsSection } from './renderPartsSection'
-import { partLabel } from '@/lib/parts'
+import { partLabel, partsOnOrder } from '@/lib/parts'
 import { calcNextServiceMonth, formatMonthYear } from '@/lib/utils/schedule'
 import { skipReasonLabel, isStopReason } from '@/lib/skip-reasons'
 
@@ -201,8 +201,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   // from the requested parts. Unclassified (legacy) requests default to
   // billable so they surface for review rather than silently going uncharged.
   const defaultProducts = ticket.equipment?.default_products ?? []
+  // Parts fulfilled (received from a PO, or pulled from stock) seed the
+  // completion billing split. from_stock is billable to the customer just like a
+  // received part, so it must be included or a pulled-from-stock part goes
+  // uncharged.
   const requestedReceived = (ticket.parts_requested ?? []).filter(
-    (r) => r.status === 'received' && !r.cancelled,
+    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled,
   )
   const requestedCovered = requestedReceived.filter((r) => r.covered_by_agreement === true)
   const requestedBillable = requestedReceived.filter((r) => r.covered_by_agreement !== true)
@@ -392,11 +396,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
       }
     }
 
-    const pendingParts = (ticket.parts_requested ?? []).filter(
-      (p: { status: string }) => p.status !== 'received'
-    )
+    // from_stock + received both count as fulfilled; cancelled is skipped.
+    // pending_review/requested/ordered still block (mirrors the server gate).
+    const pendingParts = partsOnOrder(ticket.parts_requested)
     if (pendingParts.length > 0) {
-      setError(`Cannot complete: ${pendingParts.length} part(s) are not yet received.`)
+      setError(`Cannot complete: ${pendingParts.length} part(s) are not yet received or pulled from stock.`)
       return
     }
 

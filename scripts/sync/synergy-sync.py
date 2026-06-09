@@ -436,6 +436,13 @@ def sync_products(conn) -> int:
         # carries a single primary vendor (PrimVend, 100% populated on parts) and
         # its vendor part # (VendItem) — both prefilled onto a service-ticket part
         # request when a tech picks this stock item.
+        #
+        # LEFT JOIN prodwhse (Whse = 1, Birmingham bench stock) carries the branch
+        # stock position — QtyOnHand (on hand) + QtyOnPO (inbound on open POs) —
+        # onto the catalog so the parts-queue Review step can show "pull from stock
+        # vs order". LEFT JOIN so non-stocked parts still sync (qty stays NULL).
+        # QtyOnPO is the purchasing-side inbound column; do NOT use rolnew (that's
+        # outbound sales demand). QtyOnHand may be negative when oversold.
         cursor.execute(f"""
             SELECT
                 p.ProdCode,
@@ -446,9 +453,12 @@ def sync_products(conn) -> int:
                 p.CostPO,
                 p.PrimVend,
                 p.VendItem,
-                v.Name AS VendName
+                v.Name AS VendName,
+                pw.QtyOnHand,
+                pw.QtyOnPO
             FROM prod p
             LEFT JOIN a80vm v ON v.VendorCode = p.PrimVend
+            LEFT JOIN prodwhse pw ON pw.ProdCode = p.ProdCode AND pw.Whse = 1
             WHERE p.ComdtyCode IN ({placeholders})
               AND (p.SupersedeCode IS NULL OR p.SupersedeCode = '')
               AND (p.Desc2 NOT LIKE '%OBSOLETE%' OR p.Desc2 IS NULL)
@@ -483,6 +493,13 @@ def sync_products(conn) -> int:
         vendor_name = safe_str(row.VendName) if vendor_code is not None else None
         vendor_item_code = safe_str(row.VendItem)
 
+        # Branch stock position (Whse 1) for the parts-queue Review step. NULL =
+        # no stock record at Whse 1 (non-stocked part). Cast through int() so the
+        # decimal/int ODBC value lands as a plain JSON integer; negatives are kept
+        # (oversold), and the Review UI treats anything <= 0 as "not in stock".
+        qty_on_hand = int(row.QtyOnHand) if row.QtyOnHand is not None else None
+        qty_on_po = int(row.QtyOnPO) if row.QtyOnPO is not None else None
+
         # NOTE: do NOT add `requires_detail` to this payload. It's a hand-curated
         # flag (migration 088) that marks catch-all items like SHOP SUPPLIES to
         # prompt for a free-text detail. The upsert is ON CONFLICT (synergy_id)
@@ -498,6 +515,8 @@ def sync_products(conn) -> int:
             "vendor_code": vendor_code,
             "vendor": vendor_name,
             "vendor_item_code": vendor_item_code,
+            "qty_on_hand": qty_on_hand,
+            "qty_on_po": qty_on_po,
             "synced_at": utcnow_iso(),
         })
 
@@ -795,7 +814,49 @@ def trigger_credit_hold_sweep() -> None:
         log.warning(f"Credit-hold sweep request failed (non-fatal): {e}")
 
 
+def main_products_only() -> None:
+    """Lightweight refresh of just the product catalog (incl. qty_on_hand /
+    qty_on_po). Scheduled hourly so the parts-queue Review step shows fresh stock
+    numbers, without re-running the heavy customer/contact/ship-to sync. Reuses
+    sync_products (full upsert with complete data, so no risk of junk rows)."""
+    log.info("=" * 60)
+    log.info("PM Scheduler — Hourly Product/Inventory Refresh starting")
+    log.info("=" * 60)
+
+    validate_env()
+
+    started_at = utcnow_iso()
+    sync_log_id = write_sync_log_start("products", started_at)
+
+    erp_conn = None
+    total_synced = 0
+    error_message = None
+    try:
+        log.info("Connecting to SynergyERP via ODBC DSN 'ERPlinked'...")
+        erp_conn = pyodbc.connect("DSN=ERPlinked", autocommit=True)
+        total_synced = sync_products(erp_conn)
+    except Exception as e:
+        log.error(f"Product/inventory refresh failed: {e}", exc_info=True)
+        error_message = str(e)
+    finally:
+        if erp_conn:
+            erp_conn.close()
+
+    completed_at = utcnow_iso()
+    if error_message:
+        write_sync_log_complete(sync_log_id, completed_at, total_synced,
+                                status="failed", error_message=error_message)
+        sys.exit(1)
+    log.info(f"Product/inventory refresh complete. Products synced: {total_synced}")
+    write_sync_log_complete(sync_log_id, completed_at, total_synced, status="success")
+    sys.exit(0)
+
+
 def main() -> None:
+    if "--products-only" in sys.argv:
+        main_products_only()
+        return
+
     log.info("=" * 60)
     log.info("PM Scheduler — Nightly Synergy Sync starting")
     log.info("=" * 60)

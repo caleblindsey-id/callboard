@@ -11,7 +11,9 @@ function manual(over: Partial<PartRequest> = {}): PartRequest {
     vendor: 'Grainger',
     vendor_item_code: 'AB-123',
     unit_price: 42.5,
-    status: 'requested',
+    // New requests now enter the office Review step as 'pending_review' — the
+    // status the field-validators gate on.
+    status: 'pending_review',
     requested_at: '2026-06-02T10:00:00.000Z',
     ...over,
   }
@@ -70,7 +72,7 @@ test('does not re-validate a part already present in the stored array', () => {
   assert.equal(validateNewManualPartRequests([stored], [advanced]), null)
 })
 
-test('only gates entries with status requested', () => {
+test('only gates entries with status pending_review', () => {
   const ordered = manual({ status: 'ordered', vendor: undefined, requested_at: '2026-06-02T11:00:00.000Z' })
   assert.equal(validateNewManualPartRequests([], [ordered]), null)
 })

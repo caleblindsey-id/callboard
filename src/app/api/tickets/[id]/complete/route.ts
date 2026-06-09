@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { PartUsed, TicketPhoto } from '@/types/database'
+import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
+import { partsOnOrder } from '@/lib/parts'
 import { getCustomerLaborRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
@@ -167,13 +168,13 @@ export async function POST(
       )
     }
 
-    // Hard block: all requested parts must be received before completing
-    const pendingParts = ((current.parts_requested ?? []) as Array<{ status: string }>).filter(
-      p => p.status !== 'received'
-    )
+    // Hard block: every live part must be resolved before completing. partsOnOrder
+    // treats 'received' and 'from_stock' (pulled in-house) as done and skips
+    // cancelled parts; anything still 'pending_review'/'requested'/'ordered' blocks.
+    const pendingParts = partsOnOrder(current.parts_requested as PartRequest[] | null)
     if (pendingParts.length > 0) {
       return NextResponse.json(
-        { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received.` },
+        { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received or pulled from stock.` },
         { status: 400 }
       )
     }

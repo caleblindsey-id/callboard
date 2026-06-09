@@ -10,7 +10,12 @@ import type { PartRequest } from '@/types/database'
 export function partsOnOrder(
   parts: PartRequest[] | null | undefined
 ): PartRequest[] {
-  return (parts ?? []).filter((p) => p.status !== 'received' && !p.cancelled)
+  // 'from_stock' is fulfilled in-house (pulled from the shelf, no PO), so it's
+  // NOT on order — treated like 'received' for the completion/deletion gates.
+  // 'pending_review' IS still in flight (not yet triaged) and correctly blocks.
+  return (parts ?? []).filter(
+    (p) => p.status !== 'received' && p.status !== 'from_stock' && !p.cancelled
+  )
 }
 
 /**
@@ -33,7 +38,7 @@ export function validateNewManualPartRequests(
     (existing ?? []).map((p) => p.requested_at).filter((t): t is string => !!t),
   )
   for (const p of incoming) {
-    if (p.status !== 'requested') continue
+    if (p.status !== 'pending_review') continue // new requests land in review
     if (!p.requested_at || seen.has(p.requested_at)) continue // legacy or pre-existing
     if (p.synergy_product_id != null) continue // catalog part — exempt
     if (!p.description?.trim()) {
@@ -70,7 +75,7 @@ export function hasNewRequestedPart(
     (existing ?? []).map((p) => p.requested_at).filter((t): t is string => !!t),
   )
   return incoming.some(
-    (p) => p.status === 'requested' && !!p.requested_at && !seen.has(p.requested_at),
+    (p) => p.status === 'pending_review' && !!p.requested_at && !seen.has(p.requested_at),
   )
 }
 

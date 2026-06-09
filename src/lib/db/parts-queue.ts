@@ -16,7 +16,9 @@ const QUEUE_COLUMNS = `
   status, cancelled, cancel_reason,
   ordered_at, received_at, ordered_by, received_by,
   machine_make, machine_model, machine_serial,
-  covered_by_agreement
+  covered_by_agreement,
+  qty_on_hand, qty_on_po,
+  triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage
 `
 
 export async function getPartsQueue(): Promise<PartsQueueRow[]> {
@@ -45,7 +47,12 @@ export async function getPartsQueue(): Promise<PartsQueueRow[]> {
 // under any row cap.
 // ---------------------------------------------------------------------------
 
-export type MyPartStatus = 'requested' | 'ordered' | 'received'
+export type MyPartStatus =
+  | 'pending_review'
+  | 'requested'
+  | 'ordered'
+  | 'received'
+  | 'from_stock'
 
 export type MyPartRow = {
   source: PartsQueueSource
@@ -65,6 +72,7 @@ export type MyPartRow = {
   requested_at: string | null
   ordered_at: string | null
   received_at: string | null
+  triaged_at: string | null
 }
 
 type TicketPartsRow = {
@@ -89,13 +97,20 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
     parts.forEach((part, idx) => {
       if (part.cancelled) return
       const status = (part.status ?? 'requested') as MyPartStatus
-      if (status !== 'requested' && status !== 'ordered' && status !== 'received') return
-      // Mirror the parts_order_queue view rule: hide service 'requested' parts
-      // until the estimate is approved — uncommitted estimates aren't "awaiting
-      // order" yet. PM 'requested' parts always show.
+      if (
+        status !== 'pending_review' &&
+        status !== 'requested' &&
+        status !== 'ordered' &&
+        status !== 'received' &&
+        status !== 'from_stock'
+      )
+        return
+      // Mirror the parts_order_queue view rule: hide service parts still awaiting
+      // an estimate decision (pending_review or requested) until the estimate is
+      // approved — uncommitted estimates aren't actionable yet. PM parts always show.
       if (
         source === 'service' &&
-        status === 'requested' &&
+        (status === 'requested' || status === 'pending_review') &&
         (ticket.status === 'open' || ticket.status === 'estimated')
       ) {
         return
@@ -120,6 +135,7 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
         requested_at: part.requested_at ?? null,
         ordered_at: part.ordered_at ?? null,
         received_at: part.received_at ?? null,
+        triaged_at: part.triaged_at ?? null,
       })
     })
   }
