@@ -8,6 +8,9 @@ import type { PickupQueueRow } from '@/lib/db/pickup-queue'
 
 type Tab = 'all' | 'call'
 
+// Units waiting at least this long can be sent a formal abandonment notice.
+const ABANDON_DAYS = 30
+
 function agingBadge(days: number | null): { label: string; classes: string } {
   if (days == null) return { label: '—', classes: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' }
   const label = days === 0 ? 'Today' : `${days}d`
@@ -46,6 +49,9 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
   // Call-log inline form
   const [callingId, setCallingId] = useState<string | null>(null)
   const [callNotes, setCallNotes] = useState('')
+  // Shop-location inline edit
+  const [editingLocId, setEditingLocId] = useState<string | null>(null)
+  const [locValue, setLocValue] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -120,6 +126,47 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to log the call')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function saveLocation(id: string) {
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/service-tickets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop_location: locValue.trim() || null }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error || 'Failed to save location')
+      }
+      setEditingLocId(null)
+      setLocValue('')
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save location')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function sendAbandonment(id: string) {
+    if (!confirm('Send a formal abandonment notice to this customer? This sets a 14-day collection deadline.')) return
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/service-tickets/${id}/abandonment-notice`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error || 'Failed to send notice')
+      }
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send notice')
     } finally {
       setBusyId(null)
     }
@@ -205,13 +252,33 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                      {r.shop_location ? (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-3.5 w-3.5 text-gray-400" />
-                          {r.shop_location}
-                        </span>
+                      {editingLocId === r.id ? (
+                        <div className="inline-flex items-center gap-1">
+                          <input
+                            autoFocus
+                            value={locValue}
+                            onChange={(e) => setLocValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveLocation(r.id); if (e.key === 'Escape') setEditingLocId(null) }}
+                            placeholder="Shelf / bin"
+                            className="w-24 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          />
+                          <button
+                            onClick={() => saveLocation(r.id)}
+                            disabled={busyId === r.id}
+                            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 disabled:opacity-50"
+                          >
+                            {busyId === r.id ? '…' : 'Save'}
+                          </button>
+                        </div>
                       ) : (
-                        <span className="text-gray-300 dark:text-gray-600">—</span>
+                        <button
+                          onClick={() => { setEditingLocId(r.id); setLocValue(r.shop_location ?? ''); setError(null) }}
+                          className="inline-flex items-center gap-1 hover:text-indigo-600 dark:hover:text-indigo-400"
+                          title="Set shop location"
+                        >
+                          <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                          {r.shop_location || <span className="text-gray-300 dark:text-gray-600">Set location</span>}
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -240,6 +307,11 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                           Called {fmtDate(r.pickup_called_at)}
                           {r.pickup_called_by_name ? ` by ${r.pickup_called_by_name}` : ''}
                           {r.pickup_call_notes ? ` — ${r.pickup_call_notes}` : ''}
+                        </div>
+                      )}
+                      {r.abandonment_notice_sent_at && (
+                        <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                          Abandonment notice sent {fmtDate(r.abandonment_notice_sent_at)}
                         </div>
                       )}
                     </td>
@@ -310,6 +382,15 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                               className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
                             >
                               {r.pickup_called_at ? 'Log follow-up call' : 'Mark Called'}
+                            </button>
+                          )}
+                          {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
+                            <button
+                              onClick={() => sendAbandonment(r.id)}
+                              disabled={busyId === r.id}
+                              className="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
+                            >
+                              {busyId === r.id ? 'Sending…' : r.abandonment_notice_sent_at ? 'Resend Abandonment Notice' : 'Send Abandonment Notice'}
                             </button>
                           )}
                         </div>

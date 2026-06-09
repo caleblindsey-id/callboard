@@ -22,6 +22,7 @@ export type PickupQueueRow = {
   pickup_called_at: string | null
   pickup_called_by_name: string | null
   pickup_call_notes: string | null
+  abandonment_notice_sent_at: string | null
 }
 
 type RawRow = {
@@ -37,6 +38,7 @@ type RawRow = {
   pickup_called_at: string | null
   pickup_call_notes: string | null
   pickup_called_by_id: string | null
+  abandonment_notice_sent_at: string | null
   equipment_make: string | null
   equipment_model: string | null
   equipment_serial_number: string | null
@@ -66,7 +68,7 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
     .select(
       `id, work_order_number, customer_id, ready_for_pickup_at, shop_location,
        contact_email, contact_phone, pickup_notified_at, pickup_notify_count,
-       pickup_called_at, pickup_call_notes, pickup_called_by_id,
+       pickup_called_at, pickup_call_notes, pickup_called_by_id, abandonment_notice_sent_at,
        equipment_make, equipment_model, equipment_serial_number,
        customers(name),
        equipment(make, model, serial_number, contact_email, contact_phone)`
@@ -144,6 +146,7 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
       pickup_called_at: r.pickup_called_at,
       pickup_called_by_name: r.pickup_called_by_id ? callerNameById.get(r.pickup_called_by_id) ?? null : null,
       pickup_call_notes: r.pickup_call_notes,
+      abandonment_notice_sent_at: r.abandonment_notice_sent_at,
     }
   })
 }
