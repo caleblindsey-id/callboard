@@ -357,6 +357,26 @@ export async function getPartsToOrderCount(ticketType?: 'pm' | 'service'): Promi
   return count ?? 0
 }
 
+// --- Get count of parts awaiting the stock-vs-order review (dashboard) ---
+// New tech requests land in 'pending_review' before the office triages them, so
+// they no longer appear in getPartsToOrderCount — count them here instead.
+
+export async function getPartsToReviewCount(ticketType?: 'pm' | 'service'): Promise<number> {
+  const supabase = await createClient()
+
+  const source = ticketType === 'pm' ? 'pm' : 'service'
+
+  const { count, error } = await supabase
+    .from('parts_order_queue')
+    .select('ticket_id', { count: 'exact', head: true })
+    .eq('source', source)
+    .eq('status', 'pending_review')
+    .eq('cancelled', false)
+
+  if (error) throw error
+  return count ?? 0
+}
+
 // --- Parts on Order: tickets with at least one part in 'ordered' status ---
 // ticketType: undefined → service + PM combined; 'service' or 'pm' → that table only
 

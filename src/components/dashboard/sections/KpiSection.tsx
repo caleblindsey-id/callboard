@@ -2,6 +2,7 @@ import KpiStrip, { type KpiCardProps } from '@/components/dashboard/KpiStrip'
 import { getOverdueTicketCount } from '@/lib/db/tickets'
 import {
   getPartsToOrderCount,
+  getPartsToReviewCount,
   getPartsOnOrderCount,
 } from '@/lib/db/service-tickets'
 import {
@@ -23,8 +24,10 @@ export default async function KpiSection() {
     mtdRevenue,
     creditHoldCount,
     overdueCount,
+    pmPartsToReview,
     pmPartsToOrder,
     pmPartsOnOrder,
+    svcPartsToReview,
     svcPartsToOrder,
     svcPartsOnOrder,
   ] = await Promise.all([
@@ -33,14 +36,19 @@ export default async function KpiSection() {
     getMtdRevenue(),
     getCreditHoldCount(),
     getOverdueTicketCount(),
+    getPartsToReviewCount('pm'),
     getPartsToOrderCount('pm'),
     getPartsOnOrderCount(undefined, 'pm'),
+    getPartsToReviewCount('service'),
     getPartsToOrderCount('service'),
     getPartsOnOrderCount(undefined, 'service'),
   ])
 
   const moneyAtRiskTotal = creditHoldCount + overdueCount
-  const partsBlocked = pmPartsToOrder + pmPartsOnOrder + svcPartsToOrder + svcPartsOnOrder
+  // Parts in review, awaiting order, or on order all keep a ticket waiting.
+  const partsBlocked =
+    pmPartsToReview + pmPartsToOrder + pmPartsOnOrder +
+    svcPartsToReview + svcPartsToOrder + svcPartsOnOrder
 
   const cards: KpiCardProps[] = [
     {
