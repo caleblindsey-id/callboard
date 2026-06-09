@@ -21,6 +21,7 @@ import PartsPipelineSection from '@/components/dashboard/sections/PartsPipelineS
 import MoneySection from '@/components/dashboard/sections/MoneySection'
 import ScheduleSection from '@/components/dashboard/sections/ScheduleSection'
 import ReadyToBillSection from '@/components/dashboard/sections/ReadyToBillSection'
+import ReadyForPickupSection from '@/components/dashboard/sections/ReadyForPickupSection'
 import {
   KpiSkeleton,
   AlertsSkeleton,
@@ -124,6 +125,10 @@ export default async function DashboardPage() {
 
       <Suspense fallback={<ReadyToBillSkeleton />}>
         <ReadyToBillSection />
+      </Suspense>
+
+      <Suspense fallback={<ReadyToBillSkeleton />}>
+        <ReadyForPickupSection />
       </Suspense>
 
       <Suspense fallback={<MoneySkeleton />}>

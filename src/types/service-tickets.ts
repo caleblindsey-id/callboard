@@ -81,6 +81,19 @@ export type ServiceTicketRow = {
   diagnostic_invoice_number: string | null
   awaiting_pickup: boolean
   picked_up_at: string | null
+  ready_for_pickup_at: string | null
+  picked_up_by_name: string | null
+  released_by_id: string | null
+  shop_location: string | null
+  pickup_notified_at: string | null
+  pickup_notify_message_id: string | null
+  pickup_notify_channel: 'email' | 'phone' | null
+  pickup_notify_count: number
+  pickup_last_notified_at: string | null
+  pickup_called_at: string | null
+  pickup_called_by_id: string | null
+  pickup_call_notes: string | null
+  abandonment_notice_sent_at: string | null
   work_order_number: number | null
   synergy_validated_at: string | null
   synergy_validation_status: 'valid' | 'invalid' | 'pending' | null

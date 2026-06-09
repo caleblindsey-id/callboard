@@ -33,6 +33,7 @@ const allNavItems = [
   { label: 'Service Tickets', icon: Headset, route: '/service' },
   { label: 'Credit Review', icon: ShieldAlert, route: '/credit-review' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
+  { label: 'Ready for Pickup', icon: PackageCheck, route: '/pickup-queue' },
   { label: 'Tech Payouts', icon: Award, route: '/tech-payouts' },
   { label: 'Billing', icon: FileText, route: '/billing' },
   { label: 'Equipment', icon: Wrench, route: '/equipment' },
