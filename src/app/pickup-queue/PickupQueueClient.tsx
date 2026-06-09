@@ -30,21 +30,36 @@ function contactBadge(row: PickupQueueRow): { label: string; classes: string } {
   }
 }
 
+function fmtDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('all')
   const [query, setQuery] = useState('')
+  // Pickup-confirm inline form
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [pickedUpName, setPickedUpName] = useState('')
+  // Call-log inline form
+  const [callingId, setCallingId] = useState<string | null>(null)
+  const [callNotes, setCallNotes] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const callCount = useMemo(() => rows.filter((r) => r.contact_status === 'no_contact').length, [rows])
+  // Actionable backlog: phone-only units (no email) that haven't been called yet.
+  const callCount = useMemo(
+    () => rows.filter((r) => r.resolved_email == null && !r.pickup_called_at).length,
+    [rows],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return rows.filter((r) => {
-      if (tab === 'call' && r.contact_status !== 'no_contact') return false
+    const list = rows.filter((r) => {
+      // Needs Call = phone-only units; called ones stay for follow-up.
+      if (tab === 'call' && r.resolved_email != null) return false
       if (!q) return true
       return (
         r.customer_name.toLowerCase().includes(q) ||
@@ -53,6 +68,11 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
         String(r.work_order_number ?? '').includes(q)
       )
     })
+    // In the call tab, surface not-yet-called units first.
+    if (tab === 'call') {
+      return [...list].sort((a, b) => Number(!!a.pickup_called_at) - Number(!!b.pickup_called_at))
+    }
+    return list
   }, [rows, tab, query])
 
   async function confirmPickup(id: string) {
@@ -77,6 +97,29 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to confirm pickup')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function markCalled(id: string) {
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/service-tickets/${id}/mark-called`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: callNotes.trim() || undefined }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error || 'Failed to log the call')
+      }
+      setCallingId(null)
+      setCallNotes('')
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to log the call')
     } finally {
       setBusyId(null)
     }
@@ -144,9 +187,10 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
               {filtered.map((r) => {
                 const aging = agingBadge(r.days_ready)
                 const contact = contactBadge(r)
+                const noEmail = r.resolved_email == null
                 return (
-                  <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                    <td className="px-4 py-3 align-top">
+                  <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 align-top">
+                    <td className="px-4 py-3">
                       <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
                         {r.customer_name}
                       </Link>
@@ -154,13 +198,13 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                         <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
                       )}
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3">
                       <div className="text-gray-900 dark:text-gray-100">{r.equipment_label}</div>
                       {r.serial_number && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">S/N {r.serial_number}</div>
                       )}
                     </td>
-                    <td className="px-4 py-3 align-top text-gray-600 dark:text-gray-300">
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                       {r.shop_location ? (
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="h-3.5 w-3.5 text-gray-400" />
@@ -170,29 +214,36 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                         <span className="text-gray-300 dark:text-gray-600">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
                         {aging.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${contact.classes}`}>
                         {contact.label}
                       </span>
-                      {r.contact_status === 'no_contact' && r.resolved_phone && (
+                      {noEmail && r.resolved_phone && (
                         <div className="mt-1 text-xs text-gray-600 dark:text-gray-300 inline-flex items-center gap-1">
                           <Phone className="h-3 w-3 text-gray-400" />
                           {r.resolved_phone}
                         </div>
                       )}
-                      {r.resolved_email && r.contact_status !== 'no_contact' && (
+                      {r.resolved_email && !noEmail && (
                         <div className="mt-1 text-xs text-gray-400 dark:text-gray-500 inline-flex items-center gap-1">
                           <Mail className="h-3 w-3" />
                           {r.resolved_email}
                         </div>
                       )}
+                      {r.pickup_called_at && (
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Called {fmtDate(r.pickup_called_at)}
+                          {r.pickup_called_by_name ? ` by ${r.pickup_called_by_name}` : ''}
+                          {r.pickup_call_notes ? ` — ${r.pickup_call_notes}` : ''}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-3 align-top text-right">
+                    <td className="px-4 py-3 text-right">
                       {confirmingId === r.id ? (
                         <div className="inline-flex flex-col items-end gap-1.5">
                           <input
@@ -219,13 +270,49 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                             </button>
                           </div>
                         </div>
+                      ) : callingId === r.id ? (
+                        <div className="inline-flex flex-col items-end gap-1.5">
+                          <input
+                            autoFocus
+                            value={callNotes}
+                            onChange={(e) => setCallNotes(e.target.value)}
+                            placeholder="Call notes (optional)"
+                            className="w-52 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          />
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => markCalled(r.id)}
+                              disabled={busyId === r.id}
+                              className="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                              {busyId === r.id ? 'Saving…' : 'Log call'}
+                            </button>
+                            <button
+                              onClick={() => { setCallingId(null); setCallNotes('') }}
+                              disabled={busyId === r.id}
+                              className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <button
-                          onClick={() => { setConfirmingId(r.id); setPickedUpName(''); setError(null) }}
-                          className="px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
-                        >
-                          Confirm Pickup
-                        </button>
+                        <div className="inline-flex flex-col items-end gap-1.5">
+                          <button
+                            onClick={() => { setConfirmingId(r.id); setPickedUpName(''); setCallingId(null); setError(null) }}
+                            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                          >
+                            Confirm Pickup
+                          </button>
+                          {noEmail && (
+                            <button
+                              onClick={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
+                              className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              {r.pickup_called_at ? 'Log follow-up call' : 'Mark Called'}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>

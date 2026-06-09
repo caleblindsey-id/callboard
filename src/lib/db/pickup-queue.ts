@@ -20,6 +20,8 @@ export type PickupQueueRow = {
   contact_status: PickupContactStatus
   pickup_notify_count: number
   pickup_called_at: string | null
+  pickup_called_by_name: string | null
+  pickup_call_notes: string | null
 }
 
 type RawRow = {
@@ -33,6 +35,8 @@ type RawRow = {
   pickup_notified_at: string | null
   pickup_notify_count: number | null
   pickup_called_at: string | null
+  pickup_call_notes: string | null
+  pickup_called_by_id: string | null
   equipment_make: string | null
   equipment_model: string | null
   equipment_serial_number: string | null
@@ -61,7 +65,8 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
     .from('service_tickets')
     .select(
       `id, work_order_number, customer_id, ready_for_pickup_at, shop_location,
-       contact_email, contact_phone, pickup_notified_at, pickup_notify_count, pickup_called_at,
+       contact_email, contact_phone, pickup_notified_at, pickup_notify_count,
+       pickup_called_at, pickup_call_notes, pickup_called_by_id,
        equipment_make, equipment_model, equipment_serial_number,
        customers(name),
        equipment(make, model, serial_number, contact_email, contact_phone)`
@@ -88,6 +93,17 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
   for (const c of (contactsData ?? []) as { customer_id: number; email: string | null; phone: string | null }[]) {
     if (!primaryByCustomer.has(c.customer_id)) {
       primaryByCustomer.set(c.customer_id, { email: c.email, phone: c.phone })
+    }
+  }
+
+  // Resolve who logged each call (JS join, not a PostgREST embed — service_tickets
+  // has several FKs to users, and the pickup_called_by_id FK is freshly added).
+  const callerIds = [...new Set(rows.map((r) => r.pickup_called_by_id).filter((v): v is string => !!v))]
+  const callerNameById = new Map<string, string | null>()
+  if (callerIds.length > 0) {
+    const { data: callers } = await supabase.from('users').select('id, name').in('id', callerIds)
+    for (const u of (callers ?? []) as { id: string; name: string | null }[]) {
+      callerNameById.set(u.id, u.name)
     }
   }
 
@@ -126,6 +142,8 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
       contact_status,
       pickup_notify_count: r.pickup_notify_count ?? 0,
       pickup_called_at: r.pickup_called_at,
+      pickup_called_by_name: r.pickup_called_by_id ? callerNameById.get(r.pickup_called_by_id) ?? null : null,
+      pickup_call_notes: r.pickup_call_notes,
     }
   })
 }
