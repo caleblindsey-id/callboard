@@ -16,8 +16,16 @@ type UpdateArgs = {
   ticket_id: string
   part_index: number
   fields?: Partial<PartRequest>
-  action?: 'patch' | 'mark_ordered' | 'mark_received' | 'cancel' | 'reopen'
+  action?:
+    | 'patch'
+    | 'mark_ordered'
+    | 'mark_received'
+    | 'cancel'
+    | 'reopen'
+    | 'order'
+    | 'pull_from_stock'
   reason?: string
+  triage_reason?: string
 }
 
 async function postUpdate(args: UpdateArgs): Promise<PartRequest> {
@@ -66,6 +74,25 @@ export function cancelPart(
   reason: string,
 ): Promise<PartRequest> {
   return postUpdate({ source, ticket_id, part_index, action: 'cancel', reason })
+}
+
+// Stock-vs-order triage of a 'pending_review' part. 'order' advances it into the
+// To-Order queue (justification required when we have stock/PO on hand); 'stock'
+// marks it pulled from the shelf (fulfilled in-house, no PO).
+export function triagePart(
+  source: PartsQueueSource,
+  ticket_id: string,
+  part_index: number,
+  decision: 'order' | 'stock',
+  triage_reason?: string,
+): Promise<PartRequest> {
+  return postUpdate({
+    source,
+    ticket_id,
+    part_index,
+    action: decision === 'order' ? 'order' : 'pull_from_stock',
+    triage_reason,
+  })
 }
 
 // Writes synergy_order_number on the parent service/PM ticket (not the

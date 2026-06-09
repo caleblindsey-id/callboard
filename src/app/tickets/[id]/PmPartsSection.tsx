@@ -23,9 +23,20 @@ interface PmPartsSectionProps {
 const ENTRY_ALLOWED_STATUSES: TicketStatus[] = ['assigned', 'in_progress']
 
 const STATUS_TEXT: Record<PartRequest['status'], string> = {
+  pending_review: 'text-slate-600 dark:text-slate-400',
   requested: 'text-yellow-600 dark:text-yellow-400',
   ordered:   'text-blue-600 dark:text-blue-400',
   received:  'text-green-600 dark:text-green-400',
+  from_stock: 'text-teal-600 dark:text-teal-400',
+}
+
+// Display label for the per-part status chip (the raw enum has underscores).
+const STATUS_LABEL: Record<PartRequest['status'], string> = {
+  pending_review: 'In Review',
+  requested: 'Requested',
+  ordered:   'Ordered',
+  received:  'Received',
+  from_stock: 'From Stock',
 }
 
 export default function PmPartsSection({
@@ -80,7 +91,9 @@ export default function PmPartsSection({
         ...(entry.vendorCode?.trim() ? { vendor_code: entry.vendorCode.trim() } : {}),
         ...(entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? { unit_price: priceParsed } : {}),
         ...(entry.coveredByAgreement !== undefined ? { covered_by_agreement: entry.coveredByAgreement } : {}),
-        status: 'requested',
+        // New requests enter the office Review step (stock-vs-order triage) before
+        // they reach the To-Order queue.
+        status: 'pending_review',
         requested_at: new Date().toISOString(),
       }
       const updated = [...parts, newPart]
@@ -280,10 +293,10 @@ export default function PmPartsSection({
                       <span className="text-xs font-medium uppercase text-red-600 dark:text-red-400">Cancelled</span>
                     ) : (
                       <span className={`text-xs font-medium uppercase ${STATUS_TEXT[part.status]}`}>
-                        {part.status}
+                        {STATUS_LABEL[part.status]}
                       </span>
                     )}
-                    {!part.cancelled && part.status === 'requested' && (
+                    {!part.cancelled && (part.status === 'pending_review' || part.status === 'requested') && (
                       <button
                         onClick={() => handleDeletePart(i)}
                         disabled={saving}

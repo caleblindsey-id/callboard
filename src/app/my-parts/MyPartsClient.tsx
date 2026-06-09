@@ -14,18 +14,22 @@ type Props = {
   initialTab: string
 }
 
-const VALID_TABS: MyPartStatus[] = ['received', 'ordered', 'requested']
+const VALID_TABS: MyPartStatus[] = ['received', 'from_stock', 'ordered', 'requested', 'pending_review']
 
 const TABS: { key: MyPartStatus; label: string }[] = [
   { key: 'received', label: 'Ready for Pickup' },
+  { key: 'from_stock', label: 'From Stock' },
   { key: 'ordered', label: 'On Order' },
   { key: 'requested', label: 'Awaiting Order' },
+  { key: 'pending_review', label: 'Pending Review' },
 ]
 
 const EMPTY_COPY: Record<MyPartStatus, string> = {
   received: 'No parts are ready for pickup right now.',
+  from_stock: 'No parts are being pulled from stock.',
   ordered: 'No parts are currently on order.',
   requested: 'No parts are awaiting an order.',
+  pending_review: 'No parts are awaiting office review.',
 }
 
 function fmtDate(value: string | null): string {
@@ -38,12 +42,14 @@ function fmtDate(value: string | null): string {
 // The date that matters depends on where the part is in its lifecycle.
 function rowDate(row: MyPartRow): string | null {
   if (row.status === 'received') return row.received_at
+  if (row.status === 'from_stock') return row.triaged_at
   if (row.status === 'ordered') return row.ordered_at
   return row.requested_at
 }
 
 function dateColumnLabel(status: MyPartStatus): string {
   if (status === 'received') return 'Received'
+  if (status === 'from_stock') return 'Pulled'
   if (status === 'ordered') return 'Ordered'
   return 'Requested'
 }
@@ -70,8 +76,10 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
   const byStatus = useMemo(() => {
     const buckets: Record<MyPartStatus, MyPartRow[]> = {
       received: [],
+      from_stock: [],
       ordered: [],
       requested: [],
+      pending_review: [],
     }
     for (const row of rows) buckets[row.status].push(row)
     // Most recent first within each tab.

@@ -1037,7 +1037,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       vendor_code: entry.vendorCode?.trim() || undefined,
       unit_price:
         entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? priceParsed : undefined,
-      status: 'requested',
+      // New requests enter the office Review step (stock-vs-order triage) before
+      // the To-Order queue. Service parts stay hidden until the estimate is approved.
+      status: 'pending_review',
       requested_at: new Date().toISOString(),
     }
     const updatedRequests = [...partsRequested, newPart]
@@ -1127,7 +1129,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       vendor: newPartVendor.trim() || undefined,
       vendor_code: newPartVendorCode.trim() || undefined,
       unit_price: newPartPriceValid ? newPartPriceParsed : undefined,
-      status: 'requested',
+      // New requests enter the office Review step (stock-vs-order triage) first.
+      status: 'pending_review',
       requested_at: new Date().toISOString(),
     }
     const updatedParts = [...partsRequested, newPart]
@@ -2463,9 +2466,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               <div className="space-y-2">
                 {partsRequested.map((part, i) => {
                   const statusColors: Record<string, string> = {
+                    pending_review: 'text-slate-600 dark:text-slate-400',
                     requested: 'text-yellow-600 dark:text-yellow-400',
                     ordered: 'text-blue-600 dark:text-blue-400',
                     received: 'text-green-600 dark:text-green-400',
+                    from_stock: 'text-teal-600 dark:text-teal-400',
+                  }
+                  const statusLabels: Record<string, string> = {
+                    pending_review: 'In Review',
+                    requested: 'Requested',
+                    ordered: 'Ordered',
+                    received: 'Received',
+                    from_stock: 'From Stock',
                   }
                   return (
                     <div key={i} className="flex flex-col gap-2 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
@@ -2488,7 +2500,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                             <span className="text-xs font-medium uppercase text-red-600 dark:text-red-400">Cancelled</span>
                           ) : (
                             <span className={`text-xs font-medium uppercase ${statusColors[part.status] ?? ''}`}>
-                              {part.status}
+                              {statusLabels[part.status] ?? part.status}
                             </span>
                           )}
                           {!part.cancelled && isStaff && part.status === 'requested' && (

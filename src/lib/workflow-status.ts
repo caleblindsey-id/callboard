@@ -13,6 +13,7 @@
  * alarm."
  */
 import type { PartRequest, PmTicketRow } from '@/types/database'
+import { partsOnOrder } from '@/lib/parts'
 
 /**
  * Minimal shape `deriveWorkflowProps` needs. Both `TicketWithJoins` (board
@@ -77,9 +78,9 @@ function pickBlocker(ticket: WorkflowTicket): string | undefined {
     return 'Customer PO required before billing'
   }
 
-  // Tech requested parts that haven't been received yet.
-  const requested = (ticket.parts_requested ?? []) as PartRequest[]
-  const unreceived = requested.filter((p) => p.status !== 'received')
+  // Parts still in flight — received and from_stock (pulled in-house) are done,
+  // cancelled is skipped; anything else still keeps the ticket waiting.
+  const unreceived = partsOnOrder(ticket.parts_requested as PartRequest[] | null)
   if (
     unreceived.length > 0 &&
     (ticket.status === 'in_progress' || ticket.status === 'assigned')

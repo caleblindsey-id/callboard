@@ -14,15 +14,26 @@ type UpdateBody = {
   source: Source
   ticket_id: string
   part_index: number
-  action?: 'patch' | 'mark_ordered' | 'mark_received' | 'cancel' | 'reopen' | 'set_synergy_order'
+  action?:
+    | 'patch'
+    | 'mark_ordered'
+    | 'mark_received'
+    | 'cancel'
+    | 'reopen'
+    | 'set_synergy_order'
+    | 'order'
+    | 'pull_from_stock'
   fields?: Partial<PartRequest>
   reason?: string
   // Used only by 'set_synergy_order' — written to the parent ticket column,
   // not the parts_requested JSONB.
   synergy_order_number?: string | null
+  // Justification for the 'order' triage action when we already have stock / a PO.
+  triage_reason?: string
 }
 
 const SYNERGY_ORDER_MAX_LEN = 100
+const TRIAGE_REASON_MAX_LEN = 1000
 
 function tableFor(source: Source): 'pm_tickets' | 'service_tickets' {
   return source === 'pm' ? 'pm_tickets' : 'service_tickets'
@@ -121,14 +132,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
 
-    // Service tickets: estimate must be approved before parts can be ordered.
+    // Service tickets: estimate must be approved before parts can be triaged or
+    // ordered — you don't decide sourcing on a part the customer hasn't bought.
     if (
       source === 'service' &&
-      (action === 'mark_ordered' || action === 'mark_received') &&
+      (action === 'mark_ordered' ||
+        action === 'mark_received' ||
+        action === 'order' ||
+        action === 'pull_from_stock') &&
       (ticket.status === 'open' || ticket.status === 'estimated')
     ) {
       return NextResponse.json(
-        { error: 'The estimate must be approved before parts can be ordered.' },
+        { error: 'The estimate must be approved before parts can be reviewed or ordered.' },
         { status: 409 }
       )
     }
@@ -236,6 +251,67 @@ export async function POST(request: NextRequest) {
         }
         break
       }
+      case 'order':
+      case 'pull_from_stock': {
+        // Stock-vs-order triage of a freshly requested part. Strictly from
+        // 'pending_review' so a re-triage can't rewrite an already-ordered part.
+        if (current.status !== 'pending_review') {
+          return NextResponse.json(
+            { error: 'This part is no longer awaiting review. Refresh and try again.' },
+            { status: 409 }
+          )
+        }
+        // Snapshot the stock position server-side (authoritative — don't trust a
+        // client-sent number for the justification gate). Manual / non-catalog
+        // parts have no product_number, so qty stays null and ordering is free.
+        let qoh: number | null = null
+        let qopo: number | null = null
+        if (current.product_number?.trim()) {
+          const { data: prod } = await supabase
+            .from('products')
+            .select('qty_on_hand, qty_on_po')
+            .eq('number', current.product_number.trim())
+            .maybeSingle()
+          qoh = prod?.qty_on_hand ?? null
+          qopo = prod?.qty_on_po ?? null
+        }
+
+        if (action === 'order') {
+          // Justify ordering only when we actually have it on hand or inbound.
+          const haveStock = (qoh ?? 0) > 0 || (qopo ?? 0) > 0
+          const trimmed = body.triage_reason?.trim() ?? ''
+          if (haveStock && !trimmed) {
+            return NextResponse.json(
+              { error: 'A justification is required to order a part we have on hand or on a PO.' },
+              { status: 400 }
+            )
+          }
+          if (trimmed.length > TRIAGE_REASON_MAX_LEN) {
+            return NextResponse.json({ error: 'Justification is too long.' }, { status: 400 })
+          }
+          next = {
+            ...next,
+            status: 'requested',
+            triaged_by: user.id,
+            triaged_at: now,
+            triage_reason: trimmed || undefined,
+            qoh_at_triage: qoh,
+            qopo_at_triage: qopo,
+          }
+        } else {
+          // pull_from_stock — fulfilled in-house, no PO, no justification.
+          next = {
+            ...next,
+            status: 'from_stock',
+            triaged_by: user.id,
+            triaged_at: now,
+            triage_reason: undefined,
+            qoh_at_triage: qoh,
+            qopo_at_triage: qopo,
+          }
+        }
+        break
+      }
       case 'cancel': {
         next = {
           ...next,
@@ -280,8 +356,11 @@ export async function POST(request: NextRequest) {
     const updatePayload: Record<string, unknown> = { parts_requested: updated }
     if (source === 'service') {
       const live = updated.filter((p) => !p.cancelled)
+      // from_stock is fulfilled in-house, same as received, for the "all parts in"
+      // flag that gates service completion.
       const allReceived =
-        live.length > 0 && live.every((p) => p.status === 'received')
+        live.length > 0 &&
+        live.every((p) => p.status === 'received' || p.status === 'from_stock')
       updatePayload.parts_received = allReceived
     }
 

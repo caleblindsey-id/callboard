@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { PackageSearch, Truck, PackageCheck } from 'lucide-react'
+import { ClipboardCheck, PackageSearch, Truck, PackageCheck } from 'lucide-react'
 import ZoneHeader from './ZoneHeader'
 
 type Card = {
@@ -46,9 +46,11 @@ function PartsCard({ card }: { card: Card }) {
 
 type Props = {
   isTech: boolean
+  pmPartsToReview?: number
   pmPartsToOrder: number
   pmPartsOnOrder: number
   pmPartsReady: number
+  svcPartsToReview?: number
   svcPartsToOrder: number
   svcPartsOnOrder: number
   svcPartsReady: number
@@ -56,10 +58,21 @@ type Props = {
 
 export default function PartsPipeline(props: Props) {
   const partsHref = props.isTech ? '/tickets' : '/parts-queue'
-  const cols = props.isTech ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+  const cols = props.isTech ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-4'
 
   const cards: Card[] = []
   if (!props.isTech) {
+    const pmReview = props.pmPartsToReview ?? 0
+    const svcReview = props.svcPartsToReview ?? 0
+    cards.push({
+      title: 'Parts to Review',
+      total: pmReview + svcReview,
+      pm: pmReview,
+      service: svcReview,
+      icon: ClipboardCheck,
+      iconColor: 'text-slate-500',
+      href: partsHref,
+    })
     cards.push({
       title: 'Parts to Order',
       total: props.pmPartsToOrder + props.svcPartsToOrder,

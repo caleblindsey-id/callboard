@@ -169,6 +169,18 @@ export interface TicketPhoto {
   uploaded_at: string
 }
 
+// Per-part lifecycle. A tech's new request now lands in 'pending_review' (the
+// office triages stock-vs-order); choosing "order" advances it to 'requested'
+// (the existing To-Order → ordered → received flow), choosing "pull from stock"
+// sets 'from_stock' (fulfilled in-house, no PO — treated like 'received' for
+// completion + billing). Legacy rows with no status default to 'requested'.
+export type PartRequestStatus =
+  | 'pending_review'
+  | 'requested'
+  | 'ordered'
+  | 'received'
+  | 'from_stock'
+
 export interface PartRequest {
   description: string
   quantity: number
@@ -188,7 +200,7 @@ export interface PartRequest {
   // the office can order against the correct SKU with the outside vendor.
   vendor_item_code?: string
   po_number?: string
-  status: 'requested' | 'ordered' | 'received'
+  status: PartRequestStatus
   // PM coverage classification, chosen by the tech at request time:
   //   true  = part is included in the PM agreement → customer is NOT charged
   //   false = not included → billed to the customer
@@ -218,6 +230,16 @@ export interface PartRequest {
   cancel_reason?: string
   cancelled_at?: string
   cancelled_by?: string
+  // Stock-vs-order triage (Review step). Set when the office acts on a
+  // 'pending_review' part: triaged_by/at record who/when; triage_reason is the
+  // justification, required only when ordering despite stock/PO on hand.
+  // qoh/qopo_at_triage snapshot what the office actually saw at decision time
+  // (the synced products.qty_* numbers drift, so the audit keeps the seen value).
+  triaged_by?: string
+  triaged_at?: string
+  triage_reason?: string
+  qoh_at_triage?: number | null
+  qopo_at_triage?: number | null
 }
 
 // ============================================================
@@ -267,7 +289,18 @@ export type PartsQueueRow = {
   synergy_product_id: number | null
   vendor_item_code: string | null
   po_number: string | null
-  status: 'requested' | 'ordered' | 'received'
+  status: PartRequestStatus
+  // Branch stock position for the Review step (migration 102). Joined from the
+  // products catalog by product_number; null for manual / non-catalog parts.
+  qty_on_hand: number | null
+  qty_on_po: number | null
+  // Stock-vs-order triage audit (migration 102). Projected from the
+  // parts_requested JSONB; null until the office triages the part.
+  triaged_by: string | null
+  triaged_at: string | null
+  triage_reason: string | null
+  qoh_at_triage: number | null
+  qopo_at_triage: number | null
   // PM coverage classification (migration 096). Projected from the
   // parts_requested JSONB: true = covered by the PM agreement (no customer
   // charge), false = billable. NULL for service rows (they use warranty_covered)
@@ -355,6 +388,11 @@ export type ProductRow = {
   // prompts for a free-text detail of what the supplies were. Manually curated
   // — NOT written by the nightly Synergy sync, so it sticks across syncs.
   requires_detail: boolean
+  // Service-dept stock position (Synergy prodwhse, Whse 4), refreshed by the sync.
+  // Drives the parts-queue Review step's stock-vs-order signal. Nullable — a
+  // part with no Whse-4 stock record (never stocked there) stays null.
+  qty_on_hand: number | null
+  qty_on_po: number | null
   synced_at: string | null
 }
 
@@ -689,7 +727,7 @@ export type ContactInsert = MakeOptional<
 
 export type ProductInsert = MakeOptional<
   Omit<ProductRow, 'id'>,
-  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail'
+  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail' | 'qty_on_hand' | 'qty_on_po'
 >
 
 export type UserInsert = MakeOptional<
