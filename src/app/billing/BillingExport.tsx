@@ -53,9 +53,8 @@ export default function BillingExport({
   const thisYear = new Date().getFullYear()
   const [month, setMonth] = useState(selectedMonth ?? ALL_MONTHS)
   const [year, setYear] = useState(selectedYear ?? thisYear)
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(tickets.filter((t) => !needsPo(t)).map((t) => t.id))
-  )
+  // Default to nothing selected so bulk export is an intentional opt-in (feedback #26).
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [exporting, setExporting] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
