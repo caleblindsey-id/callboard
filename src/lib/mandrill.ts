@@ -18,6 +18,10 @@ export type SendMandrillEmailInput = {
   text: string
   tags?: string[]
   metadata?: Record<string, string>
+  // Per-send from-name override. Defaults to MANDRILL_FROM_NAME env ('CallBoard').
+  // Customer-facing sends (e.g. pickup-ready) override this with a recognizable
+  // branch name so the recipient doesn't see the internal tool name.
+  fromName?: string
 }
 
 export type SendMandrillEmailResult = {
@@ -44,7 +48,7 @@ export async function sendMandrillEmail(
 ): Promise<SendMandrillEmailResult> {
   const apiKey = process.env.MANDRILL_API_KEY
   const fromEmail = process.env.MANDRILL_FROM_EMAIL
-  const fromName = process.env.MANDRILL_FROM_NAME ?? 'CallBoard'
+  const fromName = input.fromName?.trim() || process.env.MANDRILL_FROM_NAME || 'CallBoard'
 
   if (!apiKey) throw new MandrillError('MANDRILL_API_KEY is not configured')
   if (!fromEmail) throw new MandrillError('MANDRILL_FROM_EMAIL is not configured')

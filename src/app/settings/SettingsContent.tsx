@@ -28,6 +28,8 @@ interface SettingsContentProps {
   serviceEmail: string
   servicePhone: string
   arEmail: string
+  pickupAddress: string
+  pickupHours: string
   passcodeConfigured: boolean
   salesReps: SalesRep[]
 }
@@ -42,6 +44,8 @@ export default function SettingsContent({
   serviceEmail,
   servicePhone,
   arEmail,
+  pickupAddress,
+  pickupHours,
   passcodeConfigured,
   salesReps,
 }: SettingsContentProps) {
@@ -62,6 +66,12 @@ export default function SettingsContent({
         initialCompanyName={companyName}
         initialServiceEmail={serviceEmail}
         initialServicePhone={servicePhone}
+      />
+
+      {/* Pickup Notifications — address/hours shown in the ready-for-pickup email */}
+      <PickupNotificationsSetting
+        initialAddress={pickupAddress}
+        initialHours={pickupHours}
       />
 
       {/* Credit Review — AR notification + release passcode */}
@@ -537,6 +547,99 @@ function PdfBrandingSetting({
         <p className="text-xs text-gray-500 dark:text-gray-400">
           Shown in the header of the customer PM work order PDF. Leave email or phone blank to omit those rows.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function PickupNotificationsSetting({
+  initialAddress,
+  initialHours,
+}: {
+  initialAddress: string
+  initialHours: string
+}) {
+  const [address, setAddress] = useState(initialAddress)
+  const [hours, setHours] = useState(initialHours)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    setError(null)
+    try {
+      const patches = [
+        { key: 'pickup_address', value: address },
+        { key: 'pickup_hours', value: hours },
+      ].map((body) =>
+        fetch('/api/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      )
+      const responses = await Promise.all(patches)
+      if (responses.every((r) => r.ok)) {
+        setSaved(true)
+      } else {
+        setError('One or more values failed to save.')
+      }
+    } catch {
+      setError('Could not save pickup settings.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+          Pickup Notifications
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Shown in the &quot;ready for pickup&quot; email customers receive when an inside repair is
+          invoiced. Leave either blank to omit it from the email.
+        </p>
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Pickup Address
+          </label>
+          <textarea
+            rows={3}
+            value={address}
+            onChange={(e) => { setAddress(e.target.value); setSaved(false) }}
+            placeholder={'Imperial Dade\n1234 Example Rd\nBirmingham, AL 35201'}
+            className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Pickup Hours
+          </label>
+          <input
+            type="text"
+            value={hours}
+            onChange={(e) => { setHours(e.target.value); setSaved(false) }}
+            placeholder="Mon–Fri, 7:30 AM – 4:30 PM"
+            className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+          {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
+        </div>
       </div>
     </div>
   )
