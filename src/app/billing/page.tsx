@@ -9,7 +9,7 @@ import BillingTabs from './BillingTabs'
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; year?: string }>
+  searchParams: Promise<{ month?: string; year?: string; tab?: string }>
 }) {
   await requireRole(...MANAGER_ROLES)
   const params = await searchParams
@@ -42,6 +42,7 @@ export default async function BillingPage({
       <BillingTabs
         pmCount={pmTickets.length}
         serviceCount={serviceTickets.length}
+        initialTab={params.tab ?? ''}
         pmContent={
           <div className="space-y-6">
             <BillingExport tickets={pmTickets} selectedMonth={month} selectedYear={year} />

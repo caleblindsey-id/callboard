@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ExternalLink, RefreshCw, XCircle } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
-import SortHeader from '@/components/SortHeader'
-import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import {
   cancelPart,
   markPartOrdered,
@@ -21,6 +19,7 @@ import CancelPartDialog from './CancelPartDialog'
 import VendorPicker from '@/components/VendorPicker'
 import { formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 type Tab = 'to_order' | 'ordered' | 'received'
 type SortKey =
@@ -101,52 +100,47 @@ function formatDay(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString()
 }
 
-// Every sortable column maps to a direct PartsQueueRow field, so the accessor
-// is just the property getter. Module-level so its identity stays stable.
-const PARTS_SORT_ACCESSORS: SortAccessors<PartsQueueRow, SortKey> = {
-  requested_at: r => r.requested_at,
-  source: r => r.source,
-  work_order_number: r => r.work_order_number,
-  customer_name: r => r.customer_name,
-  synergy_order_number: r => r.synergy_order_number,
-  description: r => r.description,
-  quantity: r => r.quantity,
-  unit_price: r => r.unit_price,
-  vendor: r => r.vendor,
-  product_number: r => r.product_number,
-  vendor_item_code: r => r.vendor_item_code,
-  po_number: r => r.po_number,
-  assigned_technician_name: r => r.assigned_technician_name,
-  ordered_at: r => r.ordered_at,
-  received_at: r => r.received_at,
+function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): PartsQueueRow[] {
+  const mult = dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const av = a[key] as unknown
+    const bv = b[key] as unknown
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult
+    return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' }) * mult
+  })
 }
 
 interface Props {
   rows: PartsQueueRow[]
-  // Round B (service-ticket deep-link) sets these from ?source=&ticket= query
-  // params on the URL. When initialTicketFilter is set, the table is narrowed
-  // to just that ticket and a "clear filter" chip surfaces above the table.
-  // Both default to null when navigating to /parts-queue directly.
+  // Round B (service-ticket deep-link) sets this from ?ticket= on the URL. When
+  // set, the table is narrowed to just that ticket and a "clear filter" chip
+  // surfaces above the table. Defaults to null on a direct /parts-queue visit.
   initialTicketFilter?: string | null
-  initialSourceFilter?: PartsQueueSource | null
+  // tab/sort/dir/q/source/vendor seeded from the URL so Back restores the view.
+  initialFilters: { tab: string; sort: string; dir: string; q: string; source: string; vendor: string }
 }
 
 export default function PartsQueueClient({
   rows: initialRows,
   initialTicketFilter = null,
-  initialSourceFilter = null,
+  initialFilters,
 }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
-  const [tab, setTab] = useState<Tab>('to_order')
-  const [search, setSearch] = useState('')
-  const [sourceFilter, setSourceFilter] = useState<'all' | PartsQueueSource>(
-    initialSourceFilter ?? 'all',
-  )
-  const [vendorFilter, setVendorFilter] = useState('')
-  // Ticket-prefilter survives only on initial load; clearing it removes the
-  // chip and falls back to the normal full-queue view.
-  const [ticketFilter, setTicketFilter] = useState<string | null>(initialTicketFilter)
+  // Filter controls live in the URL so the Back button restores them. The
+  // ?ticket deep-link prefilter is part of the same managed set so clearing the
+  // chip drops it from the URL too.
+  const { filters, set, setMany } = useUrlFilters({ ...initialFilters, ticket: initialTicketFilter ?? '' })
+  const tab = (filters.tab || 'to_order') as Tab
+  const sortKey = (filters.sort || 'requested_at') as SortKey
+  const sortDir: 'asc' | 'desc' = filters.dir === 'desc' ? 'desc' : 'asc'
+  const search = filters.q
+  const sourceFilter = (filters.source || 'all') as 'all' | PartsQueueSource
+  const vendorFilter = filters.vendor
+  const ticketFilter = filters.ticket
   const [pendingRow, setPendingRow] = useState<string | null>(null)
   const [flashedRow, setFlashedRow] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
@@ -226,19 +220,16 @@ export default function PartsQueueClient({
       }
       return true
     })
-    return result
-  }, [rows, tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter])
+    return sortRows(result, sortKey, sortDir)
+  }, [rows, tab, sourceFilter, vendorFilter, search, sortKey, sortDir, receivedCutoffMs, ticketFilter])
 
-  // Sorting runs after filtering. Defaults to requested-date ascending (the
-  // prior behaviour) and reuses the shared table-sort hook.
-  const {
-    sorted: displayRows,
-    sortKey,
-    sortDir,
-    toggleSort,
-  } = useSortableTable<PartsQueueRow, SortKey>(filteredRows, PARTS_SORT_ACCESSORS, {
-    key: 'requested_at',
-  })
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setMany({ dir: sortDir === 'asc' ? 'desc' : 'asc' })
+    } else {
+      setMany({ sort: key, dir: 'asc' })
+    }
+  }
 
   const flash = useCallback((key: string) => {
     setFlashedRow(key)
@@ -283,7 +274,7 @@ export default function PartsQueueClient({
     try {
       const part = await markPartOrdered(row.source, row.ticket_id, row.part_index)
       applyUpdate(row, part)
-      setTab('ordered')
+      set('tab', 'ordered')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark ordered')
     } finally {
@@ -397,9 +388,9 @@ export default function PartsQueueClient({
     <div className="space-y-4">
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        <TabButton active={tab === 'to_order'} onClick={() => setTab('to_order')} label="To Order" count={tabCounts.toOrder} />
-        <TabButton active={tab === 'ordered'} onClick={() => setTab('ordered')} label="Ordered" count={tabCounts.ordered} />
-        <TabButton active={tab === 'received'} onClick={() => setTab('received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
+        <TabButton active={tab === 'to_order'} onClick={() => set('tab', 'to_order')} label="To Order" count={tabCounts.toOrder} />
+        <TabButton active={tab === 'ordered'} onClick={() => set('tab', 'ordered')} label="Ordered" count={tabCounts.ordered} />
+        <TabButton active={tab === 'received'} onClick={() => set('tab', 'received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
       </div>
 
       {/* Ticket prefilter chip — only present when the page was loaded via a
@@ -409,14 +400,13 @@ export default function PartsQueueClient({
         <div className="flex items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3 py-2 text-xs">
           <span className="text-slate-600 dark:text-slate-300">
             Filtered to one ticket
-            {initialSourceFilter ? ` (${initialSourceFilter === 'pm' ? 'PM' : 'Service'})` : ''}
+            {initialFilters.source ? ` (${initialFilters.source === 'pm' ? 'PM' : 'Service'})` : ''}
             .
           </span>
           <button
             type="button"
             onClick={() => {
-              setTicketFilter(null)
-              setSourceFilter('all')
+              setMany({ ticket: '', source: 'all' })
             }}
             className="text-slate-700 dark:text-slate-200 underline hover:text-slate-900 dark:hover:text-white"
           >
@@ -430,13 +420,13 @@ export default function PartsQueueClient({
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => set('q', e.target.value, { debounce: true })}
           placeholder="Search customer, WO #, part, PO #…"
           className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <select
           value={sourceFilter}
-          onChange={e => setSourceFilter(e.target.value as 'all' | PartsQueueSource)}
+          onChange={e => set('source', e.target.value)}
           className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="all">All sources</option>
@@ -445,7 +435,7 @@ export default function PartsQueueClient({
         </select>
         <select
           value={vendorFilter}
-          onChange={e => setVendorFilter(e.target.value)}
+          onChange={e => set('vendor', e.target.value)}
           className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="">All vendors</option>
@@ -472,19 +462,19 @@ export default function PartsQueueClient({
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
-              <SortHeader label="Requested" colKey="requested_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Source" colKey="source" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Requested" colKey="requested_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Source" colKey="source" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th scope="col" className="px-3 py-2 text-left font-semibold">Status</th>
-              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th scope="col" className="px-3 py-2 text-left font-semibold" title="PM only: whether the customer is charged (Billable) or it's included in the PM agreement (Covered).">Billing</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
-              <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th
                 scope="col"
                 className="px-3 py-2 text-left font-semibold"
@@ -492,20 +482,20 @@ export default function PartsQueueClient({
               >
                 Suggested
               </th>
-              <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-              <SortHeader label="Requested by" colKey="assigned_technician_name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Requested by" colKey="assigned_technician_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               {tab === 'ordered' && (
-                <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               )}
               {tab === 'received' && (
-                <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               )}
               <th scope="col" className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {displayRows.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={17 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
@@ -517,7 +507,7 @@ export default function PartsQueueClient({
                 </td>
               </tr>
             ) : (
-              displayRows.map(row => {
+              filteredRows.map(row => {
                 const key = rowKey(row)
                 const isPending = pendingRow === key
                 const isFlashed = flashedRow === key
@@ -722,6 +712,38 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
         {count}
       </span>
     </button>
+  )
+}
+
+function SortHeader({
+  label,
+  colKey,
+  sortKey,
+  sortDir,
+  onClick,
+}: {
+  label: string
+  colKey: SortKey
+  sortKey: SortKey
+  sortDir: 'asc' | 'desc'
+  onClick: (k: SortKey) => void
+}) {
+  const active = sortKey === colKey
+  const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return (
+    <th scope="col" className="px-3 py-2 text-left font-semibold">
+      <button
+        type="button"
+        onClick={() => onClick(colKey)}
+        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+        className={`inline-flex items-center gap-1 hover:text-gray-800 dark:hover:text-gray-200 transition-colors ${
+          active ? 'text-gray-800 dark:text-gray-200' : ''
+        }`}
+      >
+        {label}
+        <Icon className="h-3 w-3 opacity-70" />
+      </button>
+    </th>
   )
 }
 

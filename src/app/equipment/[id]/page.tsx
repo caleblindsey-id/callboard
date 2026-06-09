@@ -4,8 +4,7 @@ import { getUsers } from '@/lib/db/users'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import BackButton from '@/components/BackButton'
 import EquipmentForm from './EquipmentForm'
 import ScheduleSection from './ScheduleSection'
 import DefaultProductsSection from './DefaultProductsSection'
@@ -74,12 +73,7 @@ export default async function EquipmentDetailPage({
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-3">
-        <Link
-          href={isTech ? '/tickets' : '/equipment'}
-          className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
+        <BackButton fallbackHref={isTech ? '/tickets' : '/equipment'} />
         <div>
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
             {[equipment.make, equipment.model].filter(Boolean).join(' ') || 'Equipment'}

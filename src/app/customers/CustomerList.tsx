@@ -9,9 +9,11 @@ import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 interface CustomerListProps {
   customers: CustomerRow[]
+  initialSearch: string
 }
 
 type CustomerSortKey = 'account' | 'name' | 'ar_terms' | 'status'
@@ -23,9 +25,11 @@ const CUSTOMER_SORT_ACCESSORS: SortAccessors<CustomerRow, CustomerSortKey> = {
   status: c => (c.credit_hold ? 1 : 0),
 }
 
-export default function CustomerList({ customers }: CustomerListProps) {
+export default function CustomerList({ customers, initialSearch }: CustomerListProps) {
   const router = useRouter()
-  const [search, setSearch] = useState('')
+  // Search term lives in the URL so the Back button restores it.
+  const { filters, set } = useUrlFilters({ q: initialSearch })
+  const search = filters.q
   const [displayedCustomers, setDisplayedCustomers] = useState<CustomerRow[]>(customers)
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -73,7 +77,7 @@ export default function CustomerList({ customers }: CustomerListProps) {
           type="text"
           placeholder="Search by customer name or account number..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => set('q', e.target.value, { debounce: true })}
           className="w-full max-w-md rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         {searching && (

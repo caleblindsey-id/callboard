@@ -8,9 +8,11 @@ import AddEquipmentModal from './AddEquipmentModal'
 import { formatDate } from '@/lib/format'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 interface EquipmentListProps {
   equipment: EquipmentListItem[]
+  initialFilters: { q: string; active: string }
 }
 
 type EquipmentSortKey =
@@ -57,10 +59,12 @@ function formatNextService(dateStr: string | null): { text: string; className: s
   return { text: label, className: 'text-gray-600 dark:text-gray-400' }
 }
 
-export default function EquipmentList({ equipment }: EquipmentListProps) {
+export default function EquipmentList({ equipment, initialFilters }: EquipmentListProps) {
   const router = useRouter()
-  const [search, setSearch] = useState('')
-  const [showActive, setShowActive] = useState(true)
+  // Filters live in the URL so the Back button restores the filtered view.
+  const { filters, set } = useUrlFilters(initialFilters)
+  const search = filters.q
+  const showActive = filters.active !== 'inactive'
   const [modalOpen, setModalOpen] = useState(false)
 
   // useDeferredValue lets React keep the input snappy on every keystroke and
@@ -95,12 +99,12 @@ export default function EquipmentList({ equipment }: EquipmentListProps) {
             type="text"
             placeholder="Search by customer or serial number..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => set('q', e.target.value, { debounce: true })}
             className="flex-1 min-w-[200px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
           />
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowActive(true)}
+              onClick={() => set('active', '')}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                 showActive
                   ? 'bg-slate-800 text-white'
@@ -110,7 +114,7 @@ export default function EquipmentList({ equipment }: EquipmentListProps) {
               Active
             </button>
             <button
-              onClick={() => setShowActive(false)}
+              onClick={() => set('active', 'inactive')}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                 !showActive
                   ? 'bg-slate-800 text-white'

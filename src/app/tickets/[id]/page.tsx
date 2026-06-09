@@ -2,8 +2,9 @@ import { getTicket } from '@/lib/db/tickets'
 import { getEquipmentServiceHistory } from '@/lib/db/equipment'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
+import BackButton from '@/components/BackButton'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import TicketActions from './TicketActions'
 import PmPartsSection from './PmPartsSection'
@@ -88,12 +89,7 @@ export default async function TicketDetailPage({
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex items-center gap-3">
-          <Link
-            href="/tickets"
-            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors p-3 -m-3 rounded-md"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+          <BackButton fallbackHref="/tickets" />
           <div className="flex-1 min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
               Ticket Detail
