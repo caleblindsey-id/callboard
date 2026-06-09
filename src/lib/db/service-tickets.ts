@@ -71,7 +71,7 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       problem_description, customer_id, equipment_id, assigned_technician_id,
       contact_name, contact_phone, service_address, service_city, service_state,
       equipment_make, equipment_model, estimate_amount, billing_amount,
-      synergy_order_number, synergy_validation_status, parts_received,
+      synergy_order_number, synergy_invoice_number, synergy_validation_status, parts_received,
       created_at, updated_at, started_at, completed_at, deleted_at,
       customers ( name, account_number, credit_hold ),
       equipment ( make, model, serial_number, description,
@@ -254,6 +254,7 @@ export type ServiceBillingTicket = {
   billing_amount: number | null
   hours_worked: number | null
   synergy_order_number: string | null
+  synergy_invoice_number: string | null
   completed_at: string | null
   customer_id: number | null
   service_address: string | null
@@ -292,7 +293,7 @@ export async function getServiceBillingTickets(
     .from('service_tickets')
     .select(`
       id, work_order_number, status, billing_type, billing_amount, hours_worked,
-      synergy_order_number, completed_at, customer_id, equipment_make, equipment_model,
+      synergy_order_number, synergy_invoice_number, completed_at, customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
       customers ( name, account_number, po_required, ar_terms, credit_hold ),
       equipment ( make, model, serial_number,

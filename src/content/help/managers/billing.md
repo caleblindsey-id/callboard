@@ -34,7 +34,7 @@ Exported a ticket by mistake? Tap **Un-export** on its row to send it back to **
 
 ## Bill service tickets
 
-Service tickets follow the same idea: each must have its **Synergy Order #** entered before it can be marked billed — that's the number tying the work back to the order in Synergy. (Service tickets don't produce a PDF; you re-key them into Synergy directly.)
+Service tickets follow the same idea: each must have its **Synergy Invoice #** entered before it can be marked billed — that's the number proving the work was invoiced in Synergy. (Service tickets don't produce a PDF; you re-key them into Synergy directly.)
 
 ## What's on the PDF
 
@@ -45,5 +45,5 @@ Per ticket: customer and account, equipment, technician, completion date, machin
 - **Exporting no longer bills anything.** A PM ticket is billed only after you enter its **Synergy invoice number** and tap **Mark Billed**. This keeps "billed" meaning the work was actually invoiced.
 - **One Synergy invoice per work order** on PM tickets.
 - **A required PO blocks export** until it's entered (it's checked again at export). Fill it inline from this page.
-- **A missing Synergy Order # blocks a service ticket** from being marked billed.
+- **A missing Synergy Invoice # blocks a service ticket** from being marked billed.
 - **Un-export** is the undo for an accidental export — it returns the ticket to Ready to Export and clears the invoice number.

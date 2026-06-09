@@ -244,6 +244,11 @@ export type PartsQueueRow = {
   assigned_technician_id: string | null
   assigned_technician_name: string | null
   synergy_order_number: string | null
+  // SynergyERP invoice number, keyed in at billing to prove the completed work
+  // was invoiced. A completed ticket can't be marked 'billed' without it
+  // (migration 099). Distinct from synergy_order_number, which is the
+  // parts-ordering order # validated against the ERP order table.
+  synergy_invoice_number: string | null
   synergy_validation_status: SynergyValidationStatus
   parts_validation_status: PartsValidationStatus
   synergy_validated_at: string | null

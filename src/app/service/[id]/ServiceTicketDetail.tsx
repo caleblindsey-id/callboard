@@ -514,8 +514,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Billing / Synergy
+  // Billing / Synergy. Two distinct numbers: the order # is the parts-ordering
+  // reference (ERP-validated, set during the job); the invoice # is the billing
+  // gate (set at billing to mark the ticket 'billed').
   const [synergyOrderNumber, setSynergyOrderNumber] = useState(ticket.synergy_order_number ?? '')
+  const [synergyInvoiceNumber, setSynergyInvoiceNumber] = useState(ticket.synergy_invoice_number ?? '')
   const [diagnosticCharge, setDiagnosticCharge] = useState(
     ticket.diagnostic_charge != null ? String(ticket.diagnostic_charge) : ''
   )
@@ -1238,6 +1241,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
+  async function handleSaveSynergyInvoiceNumber(synergyInvoice: string) {
+    await apiAction(async () => {
+      await patchTicket({
+        synergy_invoice_number: synergyInvoice || null,
+      })
+      setSynergyInvoiceNumber(synergyInvoice)
+    })
+  }
+
   function handleEquipmentVerified() {
     setEquipmentJustVerified(true)
     setError(null)
@@ -1304,14 +1316,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   }
 
   async function handleMarkBilled() {
-    if (!synergyOrderNumber.trim()) {
-      setError('Synergy order number is required to mark as billed')
+    if (!synergyInvoiceNumber.trim()) {
+      setError('Synergy invoice number is required to mark as billed')
       return
     }
     await apiAction(async () => {
       await patchTicket({
         status: 'billed',
-        synergy_order_number: synergyOrderNumber.trim(),
+        synergy_invoice_number: synergyInvoiceNumber.trim(),
       })
     })
   }
@@ -1491,7 +1503,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const showPickupToggle =
     ticket.ticket_type === 'inside' && ticket.status === SERVICE_STATUS.COMPLETED && isStaff
   const showBilledRef =
-    ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyOrderNumber.trim().length > 0
+    ticket.status === SERVICE_STATUS.BILLED && isStaff && synergyInvoiceNumber.trim().length > 0
   const showSecondaryControls = showPickupToggle || showBilledRef
 
   // Mobile sticky bottom action bar: keeps the single-tap primary action
@@ -1693,14 +1705,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         </div>
       )}
 
-      {/* Ready-to-bill nudge: completed without a Synergy order # */}
-      {isStaff && ticket.status === SERVICE_STATUS.COMPLETED && !ticket.synergy_order_number && (
+      {/* Ready-to-bill nudge: completed without a Synergy invoice # */}
+      {isStaff && ticket.status === SERVICE_STATUS.COMPLETED && !ticket.synergy_invoice_number && (
         <div className="rounded-md bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-4 py-3 flex items-center gap-2">
           <svg className="h-5 w-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
           </svg>
           <p className="text-sm text-amber-800 dark:text-amber-300">
-            Add a Synergy order # below before this ticket can be marked billed.
+            Add a Synergy invoice # below before this ticket can be marked billed.
           </p>
         </div>
       )}
@@ -1850,22 +1862,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </button>
           )}
 
-          {/* Completed + staff → record Synergy order #, then bill */}
+          {/* Completed + staff → record Synergy invoice #, then bill */}
           {ticket.status === SERVICE_STATUS.COMPLETED && isStaff && (
             <div className="space-y-2">
-              <SynergyOrderFields
-                initialOrder={synergyOrderNumber}
-                onSave={handleSaveSynergyOrderNumber}
+              <SynergyNumberField
+                initialValue={synergyInvoiceNumber}
+                onSave={handleSaveSynergyInvoiceNumber}
                 loading={loading}
+                heading="Synergy Billing"
+                fieldLabel="Invoice #"
               />
-              {!synergyOrderNumber.trim() && (
+              {!synergyInvoiceNumber.trim() && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Enter and save the Synergy Order # above before billing.
+                  Enter and save the Synergy Invoice # above before billing.
                 </p>
               )}
               <button
                 onClick={handleMarkBilled}
-                disabled={loading || !synergyOrderNumber.trim()}
+                disabled={loading || !synergyInvoiceNumber.trim()}
                 className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors min-h-[44px]"
               >
                 {loading ? 'Saving...' : 'Mark Billed'}
@@ -2698,8 +2712,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           {/* Synergy order # — staff only, for the parts-ordering flow (pre-completion).
               On completed/billed tickets the field lives in the Actions card instead. */}
           {isStaff && !['open', 'canceled', 'declined', 'completed', 'billed'].includes(ticket.status) && (
-            <SynergyOrderFields
-              initialOrder={ticket.synergy_order_number ?? ''}
+            <SynergyNumberField
+              initialValue={ticket.synergy_order_number ?? ''}
               onSave={handleSaveSynergyOrderNumber}
               loading={loading}
             />
@@ -3019,6 +3033,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             <InfoField label="Synergy Order #">
               {ticket.synergy_order_number ?? '—'}
             </InfoField>
+            {ticket.synergy_invoice_number && (
+              <InfoField label="Synergy Invoice #">
+                {ticket.synergy_invoice_number}
+              </InfoField>
+            )}
             {ticket.diagnostic_charge != null && (
               <InfoField label="Diagnostic Charge">
                 ${ticket.diagnostic_charge.toFixed(2)}
@@ -3097,10 +3116,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       {showSecondaryControls && (
         <Card title="Actions">
           <div className="space-y-3">
-            {/* Billed: show the recorded Synergy order # for reference (staff) */}
+            {/* Billed: show the recorded Synergy invoice # for reference (staff) */}
             {showBilledRef && (
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Billed under Synergy Order # <span className="font-medium text-gray-900 dark:text-white">{synergyOrderNumber}</span>
+                Billed under Synergy Invoice # <span className="font-medium text-gray-900 dark:text-white">{synergyInvoiceNumber}</span>
               </p>
             )}
 
@@ -3257,34 +3276,42 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
 // ── Sub-components ──
 
-function SynergyOrderFields({
-  initialOrder,
+// Single Synergy number field with a Save button. Used in two contexts on a
+// service ticket: the parts-ordering order # (default labels) and the billing
+// invoice # (override the heading/fieldLabel). They write to different columns,
+// so each instance gets its own initial value and onSave handler.
+function SynergyNumberField({
+  initialValue,
   onSave,
   loading,
+  heading = 'Synergy Ordering',
+  fieldLabel = 'Order #',
 }: {
-  initialOrder: string
-  onSave: (order: string) => Promise<void>
+  initialValue: string
+  onSave: (value: string) => Promise<void>
   loading: boolean
+  heading?: string
+  fieldLabel?: string
 }) {
-  const [order, setOrder] = useState(initialOrder)
+  const [value, setValue] = useState(initialValue)
   const [dirty, setDirty] = useState(false)
 
   return (
     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
-      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide">Synergy Ordering</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide">{heading}</p>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Order #</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">{fieldLabel}</label>
           <input
             type="text"
-            value={order}
-            onChange={(e) => { setOrder(e.target.value); setDirty(true) }}
+            value={value}
+            onChange={(e) => { setValue(e.target.value); setDirty(true) }}
             className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
           />
         </div>
         {dirty && (
           <button
-            onClick={() => { onSave(order); setDirty(false) }}
+            onClick={() => { onSave(value); setDirty(false) }}
             disabled={loading}
             className="self-end px-4 py-3 sm:py-2 text-sm font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px]"
           >
