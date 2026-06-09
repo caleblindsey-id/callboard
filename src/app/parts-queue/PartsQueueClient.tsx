@@ -466,15 +466,16 @@ export default function PartsQueueClient({
               <SortHeader label="Requested" colKey="requested_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Source" colKey="source" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th scope="col" className="px-3 py-2 text-left font-semibold">Status</th>
-              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th scope="col" className="px-3 py-2 text-left font-semibold" title="PM only: whether the customer is charged (Billable) or it's included in the PM agreement (Covered).">Billing</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
               <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <th
                 scope="col"
                 className="px-3 py-2 text-left font-semibold"
@@ -484,7 +485,6 @@ export default function PartsQueueClient({
               </th>
               <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeader label="Requested by" colKey="assigned_technician_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               {tab === 'ordered' && (
                 <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -535,11 +535,14 @@ export default function PartsQueueClient({
                         disabled={isPending}
                       />
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">
-                      {row.work_order_number ?? '—'}
-                    </td>
-                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[200px] truncate" title={row.customer_name ?? ''}>
-                      {row.customer_name ?? '—'}
+                    <td className="px-3 py-2">
+                      <InlineText
+                        value={row.po_number ?? ''}
+                        placeholder="Synergy PO #"
+                        disabled={!canEditFields || isPending}
+                        onBlurCommit={v => handleFieldBlur(row, 'po_number', v)}
+                        widthClass="w-24"
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <InlineText
@@ -549,6 +552,22 @@ export default function PartsQueueClient({
                         onBlurCommit={v => handleSynergyOrderCommit(row, v)}
                         widthClass="w-24"
                       />
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">
+                      {row.work_order_number ?? '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <VendorPicker
+                        vendor={row.vendor}
+                        vendorCode={row.vendor_code}
+                        disabled={!canEditFields || isPending}
+                        onChange={picked =>
+                          handleFieldsCommit(row, { vendor: picked.vendor, vendor_code: picked.vendor_code })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[200px] truncate" title={row.customer_name ?? ''}>
+                      {row.customer_name ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>
                       {partLabel(row) || '—'}
@@ -562,16 +581,6 @@ export default function PartsQueueClient({
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">
                       {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
-                    </td>
-                    <td className="px-3 py-2">
-                      <VendorPicker
-                        vendor={row.vendor}
-                        vendorCode={row.vendor_code}
-                        disabled={!canEditFields || isPending}
-                        onChange={picked =>
-                          handleFieldsCommit(row, { vendor: picked.vendor, vendor_code: picked.vendor_code })
-                        }
-                      />
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
                       <SuggestedVendor description={row.description} pickedVendor={row.vendor} />
@@ -592,15 +601,6 @@ export default function PartsQueueClient({
                         disabled={!canEditFields || isPending}
                         onBlurCommit={v => handleFieldBlur(row, 'vendor_item_code', v)}
                         widthClass="w-28"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <InlineText
-                        value={row.po_number ?? ''}
-                        placeholder="Synergy PO #"
-                        disabled={!canEditFields || isPending}
-                        onBlurCommit={v => handleFieldBlur(row, 'po_number', v)}
-                        widthClass="w-24"
                       />
                     </td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">
