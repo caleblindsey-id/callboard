@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TicketWithJoins } from '@/lib/db/tickets'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 // PM tickets that have been exported to a billing PDF but are NOT yet billed.
 // They become 'billed' only once a manager keys the SynergyERP invoice number
@@ -17,6 +19,24 @@ interface PmAwaitingInvoiceProps {
 
 function needsInvoice(t: TicketWithJoins): boolean {
   return !t.synergy_invoice_number?.trim()
+}
+
+type PmInvoiceSortKey =
+  | 'customer'
+  | 'invoice'
+  | 'equipment'
+  | 'technician'
+  | 'billing'
+  | 'completed'
+
+const PM_INVOICE_SORT_ACCESSORS: SortAccessors<TicketWithJoins, PmInvoiceSortKey> = {
+  customer: t => t.customers?.name,
+  // Invoice-needed rows first (they block mark-billed).
+  invoice: t => (needsInvoice(t) ? 0 : 1),
+  equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
+  technician: t => t.users?.name,
+  billing: t => t.billing_amount,
+  completed: t => t.completed_date,
 }
 
 // Compact ship-to label so identically-named machines can be told apart. The
@@ -49,6 +69,11 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const [savingValue, setSavingValue] = useState(false)
 
   const missingCount = tickets.filter(needsInvoice).length
+
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    TicketWithJoins,
+    PmInvoiceSortKey
+  >(tickets, PM_INVOICE_SORT_ACCESSORS)
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
@@ -304,7 +329,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {tickets.map((t) => {
+              {sorted.map((t) => {
                 const blocked = needsInvoice(t)
                 return (
                   <div
@@ -374,17 +399,17 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Invoice #</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Billing</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                    <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                    <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {tickets.map((t) => {
+                  {sorted.map((t) => {
                     const blocked = needsInvoice(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id ? 'opacity-60' : ''}`}>

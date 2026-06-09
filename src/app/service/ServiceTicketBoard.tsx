@@ -10,7 +10,40 @@ import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { createClient } from '@/lib/supabase/client'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+
+type ServiceSortKey =
+  | 'work_order_number'
+  | 'status'
+  | 'priority'
+  | 'customer'
+  | 'equipment'
+  | 'type'
+  | 'technician'
+  | 'created'
+
+// Sort priority by severity (emergency first), not alphabetically.
+const PRIORITY_RANK: Record<ServicePriority, number> = {
+  emergency: 0,
+  standard: 1,
+  low: 2,
+}
+
+const SERVICE_SORT_ACCESSORS: SortAccessors<ServiceTicketWithJoins, ServiceSortKey> = {
+  work_order_number: t => t.work_order_number,
+  status: t => t.status,
+  priority: t => PRIORITY_RANK[t.priority] ?? 99,
+  customer: t => t.customers?.name,
+  equipment: t =>
+    [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') ||
+    [t.equipment_make, t.equipment_model].filter(Boolean).join(' ') ||
+    null,
+  type: t => t.ticket_type,
+  technician: t => t.assigned_technician?.name,
+  created: t => t.created_at,
+}
 
 // `type` (not `interface`) so it satisfies the hook's `Record<string, string>`
 // constraint — interfaces have no implicit index signature.
@@ -119,6 +152,10 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
   const deletedView = filters.deleted === '1'
 
   const [tickets, setTickets] = useState<ServiceTicketWithJoins[]>([])
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    ServiceTicketWithJoins,
+    ServiceSortKey
+  >(tickets, SERVICE_SORT_ACCESSORS)
   const [users, setUsers] = useState<UserRow[]>([])
   const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -446,7 +483,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {tickets.map((ticket) => (
+              {sorted.map((ticket) => (
                 <div
                   key={ticket.id}
                   className={`px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700 ${
@@ -533,18 +570,18 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                         />
                       </th>
                     )}
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">WO #</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Priority</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Type</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Created</th>
+                    <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Priority" colKey="priority" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Created" colKey="created" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {tickets.map((ticket) => (
+                  {sorted.map((ticket) => (
                     <tr
                       key={ticket.id}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${

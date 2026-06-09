@@ -5,8 +5,28 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Phone, Mail, MapPin, PackageCheck } from 'lucide-react'
 import type { PickupQueueRow } from '@/lib/db/pickup-queue'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type Tab = 'all' | 'call'
+
+type PickupSortKey = 'customer' | 'equipment' | 'location' | 'waiting' | 'contact'
+
+// Sort Contact by how much follow-up is still owed: no contact info first,
+// then has-email, called, emailed.
+const CONTACT_RANK: Record<string, number> = {
+  has_contact: 1,
+  called: 2,
+  emailed: 3,
+}
+
+const PICKUP_SORT_ACCESSORS: SortAccessors<PickupQueueRow, PickupSortKey> = {
+  customer: r => r.customer_name,
+  equipment: r => r.equipment_label,
+  location: r => r.shop_location,
+  waiting: r => r.days_ready,
+  contact: r => CONTACT_RANK[r.contact_status] ?? 0,
+}
 
 // Units waiting at least this long can be sent a formal abandonment notice.
 const ABANDON_DAYS = 30
@@ -80,6 +100,11 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     }
     return list
   }, [rows, tab, query])
+
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    PickupQueueRow,
+    PickupSortKey
+  >(filtered, PICKUP_SORT_ACCESSORS)
 
   async function confirmPickup(id: string) {
     setBusyId(id)
@@ -222,16 +247,16 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Equipment</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Waiting</th>
-                <th className="px-4 py-3">Contact</th>
+                <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
+                <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
+                <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
+                <SortHeader label="Waiting" colKey="waiting" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
+                <SortHeader label="Contact" colKey="contact" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-              {filtered.map((r) => {
+              {sorted.map((r) => {
                 const aging = agingBadge(r.days_ready)
                 const contact = contactBadge(r)
                 const noEmail = r.resolved_email == null

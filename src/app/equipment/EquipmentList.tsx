@@ -6,11 +6,32 @@ import { ChevronRight } from 'lucide-react'
 import type { EquipmentListItem } from './page'
 import AddEquipmentModal from './AddEquipmentModal'
 import { formatDate } from '@/lib/format'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 interface EquipmentListProps {
   equipment: EquipmentListItem[]
   initialFilters: { q: string; active: string }
+}
+
+type EquipmentSortKey =
+  | 'customer'
+  | 'makeModel'
+  | 'serial'
+  | 'location'
+  | 'lastService'
+  | 'nextService'
+  | 'status'
+
+const EQUIPMENT_SORT_ACCESSORS: SortAccessors<EquipmentListItem, EquipmentSortKey> = {
+  customer: e => e.customers?.name,
+  makeModel: e => [e.make, e.model].filter(Boolean).join(' ') || null,
+  serial: e => e.serial_number,
+  location: e => e.location_on_site,
+  lastService: e => e.lastServiceDate,
+  nextService: e => e.nextServiceDate,
+  status: e => (e.active ? 0 : 1),
 }
 
 function formatNextService(dateStr: string | null): { text: string; className: string } {
@@ -63,6 +84,11 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
       return true
     })
   }, [equipment, showActive, deferredSearch])
+
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    EquipmentListItem,
+    EquipmentSortKey
+  >(filtered, EQUIPMENT_SORT_ACCESSORS)
 
   return (
     <>
@@ -117,7 +143,7 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
           <>
             {/* Mobile cards — hidden on desktop */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {filtered.map((e) => {
+              {sorted.map((e) => {
                 const next = formatNextService(e.nextServiceDate)
                 return (
                   <div
@@ -162,17 +188,17 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Make / Model</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Serial Number</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Location</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Last Service</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Next Service</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                    <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Make / Model" colKey="makeModel" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Serial Number" colKey="serial" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Last Service" colKey="lastService" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Next Service" colKey="nextService" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {filtered.map((e) => {
+                  {sorted.map((e) => {
                     const next = formatNextService(e.nextServiceDate)
                     return (
                       <tr
