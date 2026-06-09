@@ -6,6 +6,8 @@ import { TicketWithJoins } from '@/lib/db/tickets'
 import BillingPreviewModal from './BillingPreviewModal'
 import BillingNotesDrawer from './BillingNotesDrawer'
 import { MessageSquare } from 'lucide-react'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -44,6 +46,28 @@ function customerSubline(t: TicketWithJoins): string | null {
 // 0 is the "All months" sentinel for the month picker — no date narrowing.
 const ALL_MONTHS = 0
 
+type BillingSortKey =
+  | 'customer'
+  | 'poStatus'
+  | 'equipment'
+  | 'technician'
+  | 'hours'
+  | 'billing'
+  | 'terms'
+  | 'completed'
+
+const BILLING_SORT_ACCESSORS: SortAccessors<TicketWithJoins, BillingSortKey> = {
+  customer: t => t.customers?.name,
+  // Group PO-needed rows first (they block export), then has-PO, then not-required.
+  poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
+  equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
+  technician: t => t.users?.name,
+  hours: t => t.hours_worked,
+  billing: t => t.billing_amount,
+  terms: t => t.customers?.ar_terms,
+  completed: t => t.completed_date,
+}
+
 export default function BillingExport({
   tickets,
   selectedMonth,
@@ -66,6 +90,11 @@ export default function BillingExport({
   const [savingPo, setSavingPo] = useState(false)
 
   const poMissingCount = tickets.filter(needsPo).length
+
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    TicketWithJoins,
+    BillingSortKey
+  >(tickets, BILLING_SORT_ACCESSORS)
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
@@ -349,7 +378,7 @@ export default function BillingExport({
           <>
             {/* Mobile cards — hidden on desktop */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {tickets.map((t) => {
+              {sorted.map((t) => {
                 const blocked = needsPo(t)
                 return (
                   <div
@@ -423,19 +452,19 @@ export default function BillingExport({
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">PO Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Hours</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Billing</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Terms</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                    <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Hours" colKey="hours" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                    <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                    <SortHeader label="Terms" colKey="terms" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {tickets.map((t) => {
+                  {sorted.map((t) => {
                     const blocked = needsPo(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingPoId !== t.id ? 'opacity-50' : ''}`}>

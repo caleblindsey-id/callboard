@@ -15,6 +15,33 @@ import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
 import CreateTicketModal from './CreateTicketModal'
 import GeneratePmModal from './GeneratePmModal'
 import SkipDialog from './SkipDialog'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+
+type TicketSortKey =
+  | 'work_order_number'
+  | 'status'
+  | 'customer'
+  | 'equipment'
+  | 'location'
+  | 'scheduled'
+  | 'technician'
+
+const TICKET_SORT_ACCESSORS: SortAccessors<TicketWithJoins, TicketSortKey> = {
+  work_order_number: t => t.work_order_number,
+  status: t => t.status,
+  customer: t => t.customers?.name,
+  equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
+  location: t => {
+    const { name } = formatShipToLines(resolveTicketShipTo(t))
+    return name ?? t.customers?.billing_city ?? null
+  },
+  // Overdue mode shows month/year instead of a scheduled_date; fall back to a
+  // sortable YYYY-MM so both views order chronologically.
+  scheduled: t =>
+    t.scheduled_date ?? `${t.year}-${String(t.month).padStart(2, '0')}`,
+  technician: t => t.users?.name,
+}
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -92,6 +119,10 @@ function TicketList({
   restoringId,
 }: TicketListProps) {
   const router = useRouter()
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    TicketWithJoins,
+    TicketSortKey
+  >(tickets, TICKET_SORT_ACCESSORS)
   if (tickets.length === 0) {
     return (
       <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -103,7 +134,7 @@ function TicketList({
   return (
     <>
       <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-        {tickets.map((ticket) => {
+        {sorted.map((ticket) => {
           const days = showOverdueBadges ? daysOverdue(ticket) : 0
           const stuckProps = deriveWorkflowProps(ticket)
           return (
@@ -199,22 +230,20 @@ function TicketList({
                   />
                 </th>
               )}
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">WO #</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Location</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
-                {showOverdueBadges ? 'Scheduled' : 'Scheduled Date'}
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
+              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHeader label={showOverdueBadges ? 'Scheduled' : 'Scheduled Date'} colKey="scheduled" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               {deletedMode && isManager && (
                 <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
               )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {tickets.map((ticket) => {
+            {sorted.map((ticket) => {
               const days = showOverdueBadges ? daysOverdue(ticket) : 0
               const stuckProps = deriveWorkflowProps(ticket)
               return (

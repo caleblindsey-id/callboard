@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react'
+import { ExternalLink, RefreshCw, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import {
   cancelPart,
   markPartOrdered,
@@ -99,17 +101,24 @@ function formatDay(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString()
 }
 
-function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): PartsQueueRow[] {
-  const mult = dir === 'asc' ? 1 : -1
-  return [...rows].sort((a, b) => {
-    const av = a[key] as unknown
-    const bv = b[key] as unknown
-    if (av == null && bv == null) return 0
-    if (av == null) return 1
-    if (bv == null) return -1
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult
-    return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' }) * mult
-  })
+// Every sortable column maps to a direct PartsQueueRow field, so the accessor
+// is just the property getter. Module-level so its identity stays stable.
+const PARTS_SORT_ACCESSORS: SortAccessors<PartsQueueRow, SortKey> = {
+  requested_at: r => r.requested_at,
+  source: r => r.source,
+  work_order_number: r => r.work_order_number,
+  customer_name: r => r.customer_name,
+  synergy_order_number: r => r.synergy_order_number,
+  description: r => r.description,
+  quantity: r => r.quantity,
+  unit_price: r => r.unit_price,
+  vendor: r => r.vendor,
+  product_number: r => r.product_number,
+  vendor_item_code: r => r.vendor_item_code,
+  po_number: r => r.po_number,
+  assigned_technician_name: r => r.assigned_technician_name,
+  ordered_at: r => r.ordered_at,
+  received_at: r => r.received_at,
 }
 
 interface Props {
@@ -130,8 +139,6 @@ export default function PartsQueueClient({
   const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
   const [tab, setTab] = useState<Tab>('to_order')
-  const [sortKey, setSortKey] = useState<SortKey>('requested_at')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [search, setSearch] = useState('')
   const [sourceFilter, setSourceFilter] = useState<'all' | PartsQueueSource>(
     initialSourceFilter ?? 'all',
@@ -219,17 +226,19 @@ export default function PartsQueueClient({
       }
       return true
     })
-    return sortRows(result, sortKey, sortDir)
-  }, [rows, tab, sourceFilter, vendorFilter, search, sortKey, sortDir, receivedCutoffMs, ticketFilter])
+    return result
+  }, [rows, tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter])
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
-  }
+  // Sorting runs after filtering. Defaults to requested-date ascending (the
+  // prior behaviour) and reuses the shared table-sort hook.
+  const {
+    sorted: displayRows,
+    sortKey,
+    sortDir,
+    toggleSort,
+  } = useSortableTable<PartsQueueRow, SortKey>(filteredRows, PARTS_SORT_ACCESSORS, {
+    key: 'requested_at',
+  })
 
   const flash = useCallback((key: string) => {
     setFlashedRow(key)
@@ -463,19 +472,19 @@ export default function PartsQueueClient({
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
-              <SortHeader label="Requested" colKey="requested_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Source" colKey="source" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Requested" colKey="requested_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Source" colKey="source" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
               <th scope="col" className="px-3 py-2 text-left font-semibold">Status</th>
-              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
               <th scope="col" className="px-3 py-2 text-left font-semibold" title="PM only: whether the customer is charged (Billable) or it's included in the PM agreement (Covered).">Billing</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
-              <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
               <th
                 scope="col"
                 className="px-3 py-2 text-left font-semibold"
@@ -483,20 +492,20 @@ export default function PartsQueueClient({
               >
                 Suggested
               </th>
-              <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Requested by" colKey="assigned_technician_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+              <SortHeader label="Requested by" colKey="assigned_technician_name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
               {tab === 'ordered' && (
-                <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
               )}
               {tab === 'received' && (
-                <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
               )}
               <th scope="col" className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {filteredRows.length === 0 ? (
+            {displayRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={17 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
@@ -508,7 +517,7 @@ export default function PartsQueueClient({
                 </td>
               </tr>
             ) : (
-              filteredRows.map(row => {
+              displayRows.map(row => {
                 const key = rowKey(row)
                 const isPending = pendingRow === key
                 const isFlashed = flashedRow === key
@@ -713,38 +722,6 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
         {count}
       </span>
     </button>
-  )
-}
-
-function SortHeader({
-  label,
-  colKey,
-  sortKey,
-  sortDir,
-  onClick,
-}: {
-  label: string
-  colKey: SortKey
-  sortKey: SortKey
-  sortDir: 'asc' | 'desc'
-  onClick: (k: SortKey) => void
-}) {
-  const active = sortKey === colKey
-  const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-  return (
-    <th scope="col" className="px-3 py-2 text-left font-semibold">
-      <button
-        type="button"
-        onClick={() => onClick(colKey)}
-        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-        className={`inline-flex items-center gap-1 hover:text-gray-800 dark:hover:text-gray-200 transition-colors ${
-          active ? 'text-gray-800 dark:text-gray-200' : ''
-        }`}
-      >
-        {label}
-        <Icon className="h-3 w-3 opacity-70" />
-      </button>
-    </th>
   )
 }
 

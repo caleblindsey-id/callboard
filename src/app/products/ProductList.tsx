@@ -1,8 +1,19 @@
 'use client'
 
-import { useProductSearch } from '@/lib/hooks/useProductSearch'
+import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import { sanitizeOrValue } from '@/lib/db/safe-or'
 import { formatDate } from '@/lib/format'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+
+type ProductSortKey = 'number' | 'description' | 'unit_price' | 'synced_at'
+
+const PRODUCT_SORT_ACCESSORS: SortAccessors<ProductSearchResult, ProductSortKey> = {
+  number: p => p.number,
+  description: p => p.description,
+  unit_price: p => p.unit_price,
+  synced_at: p => p.synced_at,
+}
 
 function formatCurrency(value: number | null): string {
   if (value === null) return '—'
@@ -11,6 +22,10 @@ function formatCurrency(value: number | null): string {
 
 export default function ProductList() {
   const { query, setQuery, debouncedQuery, results, loading } = useProductSearch({ limit: 50 })
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    ProductSearchResult,
+    ProductSortKey
+  >(results, PRODUCT_SORT_ACCESSORS)
 
   const trimmed = query.trim()
   // "Settled" = the latest fetch reflects the current input (not mid-debounce or in-flight).
@@ -47,7 +62,7 @@ export default function ProductList() {
           <>
             {/* Mobile cards — hidden on desktop */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {results.map((p) => (
+              {sorted.map((p) => (
                 <div key={p.id} className="px-4 py-3">
                   <div className="flex items-center justify-between mb-0.5">
                     <span className="text-xs font-mono text-gray-500 dark:text-gray-400 shrink-0">{p.number}</span>
@@ -63,14 +78,14 @@ export default function ProductList() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">#</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Description</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Unit Price</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Last Synced</th>
+                    <SortHeader label="#" colKey="number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Description" colKey="description" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Unit Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Last Synced" colKey="synced_at" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {results.map((p) => (
+                  {sorted.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-5 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">{p.number}</td>
                       <td className="px-5 py-3 text-gray-900 dark:text-white">{p.description ?? '—'}</td>
