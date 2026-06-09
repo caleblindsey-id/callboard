@@ -388,9 +388,9 @@ export type ProductRow = {
   // prompts for a free-text detail of what the supplies were. Manually curated
   // — NOT written by the nightly Synergy sync, so it sticks across syncs.
   requires_detail: boolean
-  // Branch stock position (Synergy prodwhse, Whse 1), refreshed by the sync.
+  // Service-dept stock position (Synergy prodwhse, Whse 4), refreshed by the sync.
   // Drives the parts-queue Review step's stock-vs-order signal. Nullable — a
-  // part with no Whse-1 stock record (never stocked here) stays null.
+  // part with no Whse-4 stock record (never stocked there) stays null.
   qty_on_hand: number | null
   qty_on_po: number | null
   synced_at: string | null

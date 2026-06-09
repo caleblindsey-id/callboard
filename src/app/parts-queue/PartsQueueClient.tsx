@@ -813,7 +813,7 @@ function ReviewTable({
             <th scope="col" className="px-3 py-2 text-left font-semibold">Part</th>
             <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
             <th scope="col" className="px-3 py-2 text-left font-semibold">Qty</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units on hand at the branch (Whse 1).">On Hand</th>
+            <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units on hand in the service warehouse (Whse 4).">On Hand</th>
             <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units inbound on an open purchase order.">On PO</th>
             <th scope="col" className="px-3 py-2 text-left font-semibold">Requested by</th>
             <th scope="col" className="px-3 py-2 text-right">Decision</th>

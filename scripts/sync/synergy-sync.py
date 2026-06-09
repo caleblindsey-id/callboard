@@ -437,12 +437,12 @@ def sync_products(conn) -> int:
         # its vendor part # (VendItem) — both prefilled onto a service-ticket part
         # request when a tech picks this stock item.
         #
-        # LEFT JOIN prodwhse (Whse = 1, Birmingham bench stock) carries the branch
-        # stock position — QtyOnHand (on hand) + QtyOnPO (inbound on open POs) —
-        # onto the catalog so the parts-queue Review step can show "pull from stock
-        # vs order". LEFT JOIN so non-stocked parts still sync (qty stays NULL).
-        # QtyOnPO is the purchasing-side inbound column; do NOT use rolnew (that's
-        # outbound sales demand). QtyOnHand may be negative when oversold.
+        # LEFT JOIN prodwhse (Whse = 4, the service department's warehouse) carries
+        # the service stock position — QtyOnHand (on hand) + QtyOnPO (inbound on
+        # open POs) — onto the catalog so the parts-queue Review step can show "pull
+        # from stock vs order". LEFT JOIN so non-stocked parts still sync (qty stays
+        # NULL). QtyOnPO is the purchasing-side inbound column; do NOT use rolnew
+        # (that's outbound sales demand). QtyOnHand may be negative when oversold.
         cursor.execute(f"""
             SELECT
                 p.ProdCode,
@@ -458,7 +458,7 @@ def sync_products(conn) -> int:
                 pw.QtyOnPO
             FROM prod p
             LEFT JOIN a80vm v ON v.VendorCode = p.PrimVend
-            LEFT JOIN prodwhse pw ON pw.ProdCode = p.ProdCode AND pw.Whse = 1
+            LEFT JOIN prodwhse pw ON pw.ProdCode = p.ProdCode AND pw.Whse = 4
             WHERE p.ComdtyCode IN ({placeholders})
               AND (p.SupersedeCode IS NULL OR p.SupersedeCode = '')
               AND (p.Desc2 NOT LIKE '%OBSOLETE%' OR p.Desc2 IS NULL)
@@ -493,8 +493,8 @@ def sync_products(conn) -> int:
         vendor_name = safe_str(row.VendName) if vendor_code is not None else None
         vendor_item_code = safe_str(row.VendItem)
 
-        # Branch stock position (Whse 1) for the parts-queue Review step. NULL =
-        # no stock record at Whse 1 (non-stocked part). Cast through int() so the
+        # Service-dept stock position (Whse 4) for the parts-queue Review step. NULL
+        # = no stock record at Whse 4 (non-stocked part). Cast through int() so the
         # decimal/int ODBC value lands as a plain JSON integer; negatives are kept
         # (oversold), and the Review UI treats anything <= 0 as "not in stock".
         qty_on_hand = int(row.QtyOnHand) if row.QtyOnHand is not None else None
