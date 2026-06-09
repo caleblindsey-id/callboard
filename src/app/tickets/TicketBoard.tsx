@@ -331,7 +331,10 @@ export default function TicketBoard({
   const [statusFilter, setStatusFilter] = useState(initialStatus)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [overdueSelected, setOverdueSelected] = useState<Set<string>>(new Set())
-  const [overdueExpanded, setOverdueExpanded] = useState(overdueTickets.length > 0)
+  // Managers, coordinators, and super admins start with the overdue section
+  // collapsed so it isn't a wall of red on every visit; techs keep it expanded
+  // for immediate visibility of their backlog.
+  const [overdueExpanded, setOverdueExpanded] = useState(overdueTickets.length > 0 && !isManager)
   const [assignTo, setAssignTo] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
