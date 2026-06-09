@@ -49,9 +49,15 @@ export function useUrlFilters<T extends Record<string, string>>(
 
   const sync = useCallback(
     (next: T, debounce: boolean) => {
-      const params = new URLSearchParams()
+      // Start from the live URL and only touch the keys this hook manages, so we
+      // preserve params owned by other writers on the page (e.g. billing's
+      // month/year, or a parts-queue ?ticket deep-link). Empty = remove the key.
+      const params = new URLSearchParams(
+        typeof window !== 'undefined' ? window.location.search : ''
+      )
       for (const [k, v] of Object.entries(next)) {
         if (v) params.set(k, v)
+        else params.delete(k)
       }
       const qs = params.toString()
       const url = qs ? `${pathname}?${qs}` : pathname

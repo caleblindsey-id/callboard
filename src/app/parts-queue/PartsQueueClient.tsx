@@ -130,17 +130,17 @@ export default function PartsQueueClient({
 }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
-  // Filter controls live in the URL so the Back button restores them.
-  const { filters, set, setMany } = useUrlFilters(initialFilters)
+  // Filter controls live in the URL so the Back button restores them. The
+  // ?ticket deep-link prefilter is part of the same managed set so clearing the
+  // chip drops it from the URL too.
+  const { filters, set, setMany } = useUrlFilters({ ...initialFilters, ticket: initialTicketFilter ?? '' })
   const tab = (filters.tab || 'to_order') as Tab
   const sortKey = (filters.sort || 'requested_at') as SortKey
   const sortDir: 'asc' | 'desc' = filters.dir === 'desc' ? 'desc' : 'asc'
   const search = filters.q
   const sourceFilter = (filters.source || 'all') as 'all' | PartsQueueSource
   const vendorFilter = filters.vendor
-  // Ticket-prefilter survives only on initial load; clearing it removes the
-  // chip and falls back to the normal full-queue view.
-  const [ticketFilter, setTicketFilter] = useState<string | null>(initialTicketFilter)
+  const ticketFilter = filters.ticket
   const [pendingRow, setPendingRow] = useState<string | null>(null)
   const [flashedRow, setFlashedRow] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
@@ -406,8 +406,7 @@ export default function PartsQueueClient({
           <button
             type="button"
             onClick={() => {
-              setTicketFilter(null)
-              set('source', 'all')
+              setMany({ ticket: '', source: 'all' })
             }}
             className="text-slate-700 dark:text-slate-200 underline hover:text-slate-900 dark:hover:text-white"
           >
