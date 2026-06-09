@@ -1,16 +1,20 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, PackageCheck } from 'lucide-react'
 import PartsStatusBadge from '@/components/PartsStatusBadge'
 import { ticketDeepLink } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 type Props = {
   rows: MyPartRow[]
+  initialTab: string
 }
+
+const VALID_TABS: MyPartStatus[] = ['received', 'from_stock', 'ordered', 'requested', 'pending_review']
 
 const TABS: { key: MyPartStatus; label: string }[] = [
   { key: 'received', label: 'Ready for Pickup' },
@@ -61,9 +65,13 @@ function machineLabel(row: MyPartRow): string {
   return [head, sn].filter(Boolean).join(' — ')
 }
 
-export default function MyPartsClient({ rows }: Props) {
+export default function MyPartsClient({ rows, initialTab }: Props) {
   const router = useRouter()
-  const [active, setActive] = useState<MyPartStatus>('received')
+  // Active tab lives in the URL so Back from a ticket restores it.
+  const { filters, set } = useUrlFilters({
+    tab: VALID_TABS.includes(initialTab as MyPartStatus) ? initialTab : '',
+  })
+  const active: MyPartStatus = (filters.tab || 'received') as MyPartStatus
 
   const byStatus = useMemo(() => {
     const buckets: Record<MyPartStatus, MyPartRow[]> = {
@@ -98,7 +106,7 @@ export default function MyPartsClient({ rows }: Props) {
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setActive(tab.key)}
+                onClick={() => set('tab', tab.key)}
                 className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
                   isActive
                     ? 'bg-slate-800 text-white'

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
 import BillingNotesDrawer from './BillingNotesDrawer'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -29,6 +31,29 @@ const ALL_MONTHS = 0
 
 function needsSynergyInvoice(t: ServiceBillingTicket): boolean {
   return !t.synergy_invoice_number
+}
+
+type ServiceBillingSortKey =
+  | 'customer'
+  | 'invoice'
+  | 'equipment'
+  | 'technician'
+  | 'billing'
+  | 'type'
+  | 'completed'
+
+const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, ServiceBillingSortKey> = {
+  customer: t => t.customers?.name,
+  // Invoice-needed rows first (they block mark-billed).
+  invoice: t => (needsSynergyInvoice(t) ? 0 : 1),
+  equipment: t =>
+    [t.equipment?.make ?? t.equipment_make, t.equipment?.model ?? t.equipment_model]
+      .filter(Boolean)
+      .join(' ') || null,
+  technician: t => t.assigned_technician?.name,
+  billing: t => t.billing_amount,
+  type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
+  completed: t => t.completed_at,
 }
 
 function renderEquipment(t: ServiceBillingTicket): string {
@@ -75,6 +100,11 @@ export default function ServiceBillingExport({
 
   const missingCount = tickets.filter(needsSynergyInvoice).length
 
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    ServiceBillingTicket,
+    ServiceBillingSortKey
+  >(tickets, SERVICE_BILLING_SORT_ACCESSORS)
+
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
     if (ticket && needsSynergyInvoice(ticket)) return
@@ -96,12 +126,20 @@ export default function ServiceBillingExport({
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
     setYear(newYear)
+    // Preserve any other params (e.g. the active ?tab) the page owns.
+    const params = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : ''
+    )
     // "All months" clears the filter so the queue shows every unbilled ticket.
     if (newMonth === ALL_MONTHS) {
-      router.push('/billing')
+      params.delete('month')
+      params.delete('year')
     } else {
-      router.push(`/billing?month=${newMonth}&year=${newYear}`)
+      params.set('month', String(newMonth))
+      params.set('year', String(newYear))
     }
+    const qs = params.toString()
+    router.push(qs ? `/billing?${qs}` : '/billing')
   }
 
   function startEdit(ticketId: string) {
@@ -334,7 +372,7 @@ export default function ServiceBillingExport({
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {tickets.map((t) => {
+              {sorted.map((t) => {
                 const blocked = needsSynergyInvoice(t)
                 return (
                   <div
@@ -407,18 +445,18 @@ export default function ServiceBillingExport({
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Invoice #</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Billing</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Type</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                    <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                    <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {tickets.map((t) => {
+                  {sorted.map((t) => {
                     const blocked = needsSynergyInvoice(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id ? 'opacity-50' : ''}`}>

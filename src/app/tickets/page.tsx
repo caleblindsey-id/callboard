@@ -100,6 +100,7 @@ export default async function TicketsPage({
         currentYear={year}
         userRole={user?.role ?? null}
         initialStatus={params.status ?? ''}
+        initialTech={params.tech ?? ''}
         overdueMode={overdueMode}
         skipRequestedMode={skipRequestedMode}
         needsReviewMode={needsReviewMode}

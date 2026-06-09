@@ -7,17 +7,36 @@ import { CustomerRow } from '@/types/database'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 interface CustomerListProps {
   customers: CustomerRow[]
+  initialSearch: string
 }
 
-export default function CustomerList({ customers }: CustomerListProps) {
+type CustomerSortKey = 'account' | 'name' | 'ar_terms' | 'status'
+
+const CUSTOMER_SORT_ACCESSORS: SortAccessors<CustomerRow, CustomerSortKey> = {
+  account: c => c.account_number,
+  name: c => c.name,
+  ar_terms: c => c.ar_terms,
+  status: c => (c.credit_hold ? 1 : 0),
+}
+
+export default function CustomerList({ customers, initialSearch }: CustomerListProps) {
   const router = useRouter()
-  const [search, setSearch] = useState('')
+  // Search term lives in the URL so the Back button restores it.
+  const { filters, set } = useUrlFilters({ q: initialSearch })
+  const search = filters.q
   const [displayedCustomers, setDisplayedCustomers] = useState<CustomerRow[]>(customers)
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
+    CustomerRow,
+    CustomerSortKey
+  >(displayedCustomers, CUSTOMER_SORT_ACCESSORS)
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -58,7 +77,7 @@ export default function CustomerList({ customers }: CustomerListProps) {
           type="text"
           placeholder="Search by customer name or account number..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => set('q', e.target.value, { debounce: true })}
           className="w-full max-w-md rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         {searching && (
@@ -75,7 +94,7 @@ export default function CustomerList({ customers }: CustomerListProps) {
           <>
             {/* Mobile cards — hidden on desktop */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {displayedCustomers.map((c) => (
+              {sorted.map((c) => (
                 <div
                   key={c.id}
                   className="px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
@@ -109,15 +128,15 @@ export default function CustomerList({ customers }: CustomerListProps) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Account #</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer Name</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">AR Terms</th>
-                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                    <SortHeader label="Account #" colKey="account" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Customer Name" colKey="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="AR Terms" colKey="ar_terms" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                    <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {displayedCustomers.map((c) => (
+                  {sorted.map((c) => (
                     <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-5 py-3 text-gray-600 dark:text-gray-400 font-mono text-xs">
                         {c.account_number ?? '—'}

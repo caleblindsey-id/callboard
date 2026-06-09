@@ -2,9 +2,8 @@ import { getServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { getCustomerLaborRate } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
+import BackButton from '@/components/BackButton'
 import DeletedBanner from '@/app/tickets/[id]/DeletedBanner'
 import { ServiceTicketDetail } from './ServiceTicketDetail'
 import AuditHistorySection from '@/components/AuditHistorySection'
@@ -69,12 +68,7 @@ export default async function ServiceTicketPage({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex items-center gap-3">
-          <Link
-            href="/service"
-            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors p-3 -m-3 rounded-md"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+          <BackButton fallbackHref="/service" />
           <div className="flex-1 min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
               Service Ticket

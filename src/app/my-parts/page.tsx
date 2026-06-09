@@ -5,10 +5,15 @@ import MyPartsClient from './MyPartsClient'
 
 export const dynamic = 'force-dynamic'
 
-export default async function MyPartsPage() {
+export default async function MyPartsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
 
+  const params = await searchParams
   const rows = await getMyPartsQueue(user.id)
 
   return (
@@ -19,7 +24,7 @@ export default async function MyPartsPage() {
           Parts on your PM and service tickets — what&apos;s ready for pickup, on order, and awaiting order.
         </p>
       </div>
-      <MyPartsClient rows={rows} />
+      <MyPartsClient rows={rows} initialTab={params.tab ?? ''} />
     </div>
   )
 }

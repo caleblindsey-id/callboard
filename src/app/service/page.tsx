@@ -2,9 +2,31 @@ import { getCurrentUser } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { ServiceTicketBoard } from './ServiceTicketBoard'
 
-export default async function ServicePage() {
+export default async function ServicePage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    status?: string
+    priority?: string
+    type?: string
+    tech?: string
+    waitingOnParts?: string
+    deleted?: string
+  }>
+}) {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
+  const params = await searchParams
+  // Seed the board's filters from the URL so the Back button (and dashboard
+  // deep links like /service?status=open) restore the filtered view.
+  const initialFilters = {
+    status: params.status ?? '',
+    priority: params.priority ?? '',
+    type: params.type ?? '',
+    tech: params.tech ?? '',
+    waitingOnParts: params.waitingOnParts ?? '',
+    deleted: params.deleted ?? '',
+  }
   // Both office staff AND techs can access (techs see their own tickets only)
   return (
     <div className="p-6 space-y-6">
@@ -14,7 +36,7 @@ export default async function ServicePage() {
           On-demand service requests — inside shop and field calls
         </p>
       </div>
-      <ServiceTicketBoard currentUser={user} />
+      <ServiceTicketBoard currentUser={user} initialFilters={initialFilters} />
     </div>
   )
 }

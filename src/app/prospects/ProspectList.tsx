@@ -4,6 +4,29 @@ import { Fragment, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { InactiveEquipmentProspect } from '@/lib/db/equipment'
 import { Star, Trash2, Eye, EyeOff, ChevronRight, X } from 'lucide-react'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+
+type ProspectSortKey =
+  | 'customer'
+  | 'equipment'
+  | 'location'
+  | 'lastService'
+  | 'lastTech'
+  | 'revenue'
+  | 'contact'
+  | 'status'
+
+const PROSPECT_SORT_ACCESSORS: SortAccessors<InactiveEquipmentProspect, ProspectSortKey> = {
+  customer: p => p.customerName,
+  equipment: p => [p.make, p.model].filter(Boolean).join(' ') || null,
+  location: p => p.locationOnSite,
+  lastService: p => p.lastServiceDate,
+  lastTech: p => p.lastTechnician,
+  revenue: p => p.totalRevenue,
+  contact: p => p.contactName,
+  status: p => (p.isProspect ? 1 : 0),
+}
 
 const REMOVAL_REASONS = [
   'Equipment no longer in operation',
@@ -26,6 +49,15 @@ export default function ProspectList({ prospects }: ProspectListProps) {
 
   const active = prospects.filter((p) => !p.removed)
   const removed = prospects.filter((p) => p.removed)
+  const {
+    sorted: sortedActive,
+    sortKey,
+    sortDir,
+    toggleSort,
+  } = useSortableTable<InactiveEquipmentProspect, ProspectSortKey>(
+    active,
+    PROSPECT_SORT_ACCESSORS,
+  )
 
   async function handleMarkProspect(equipmentId: string) {
     setLoading((prev) => ({ ...prev, [equipmentId]: true }))
@@ -91,7 +123,7 @@ export default function ProspectList({ prospects }: ProspectListProps) {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               {/* Mobile cards */}
               <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-                {active.map((p) => (
+                {sortedActive.map((p) => (
                   <div key={p.equipmentId} className="px-4 py-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
@@ -173,19 +205,19 @@ export default function ProspectList({ prospects }: ProspectListProps) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Location</th>
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Last Service</th>
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Last Tech</th>
-                      <th className="px-5 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Revenue</th>
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">PM Contact</th>
-                      <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                      <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="Last Service" colKey="lastService" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="Last Tech" colKey="lastTech" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="Revenue" colKey="revenue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="PM Contact" colKey="contact" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
+                      <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
                       <th className="px-5 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                    {active.map((p) => (
+                    {sortedActive.map((p) => (
                       <Fragment key={p.equipmentId}>
                         <tr
                           className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
