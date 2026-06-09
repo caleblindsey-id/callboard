@@ -15,6 +15,8 @@ const ALLOWED_KEYS = new Set([
   'service_email',
   'service_phone',
   'ar_email',
+  'pickup_address',
+  'pickup_hours',
 ])
 
 const NUMERIC_RATE_KEYS = new Set([

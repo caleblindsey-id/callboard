@@ -15,6 +15,7 @@ import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart } from '@/lib/parts'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
+import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -522,6 +523,10 @@ export async function PATCH(
     if (filtered.picked_up_at) {
       filtered.released_by_id = user.id
     }
+    // True when this PATCH moves the unit INTO the ready state (auto on billed,
+    // or the manual Mark-Ready toggle). Drives the instant customer email after
+    // the write commits.
+    const enteringPickup = filtered.awaiting_pickup === true && current.awaiting_pickup !== true
 
     // --- Estimate recomputation ---
     // Recompute estimate_amount whenever estimate_parts or estimate_labor_hours
@@ -684,6 +689,22 @@ export async function PATCH(
     }
 
     const updated = await updateServiceTicket(id, filtered)
+
+    // Instant pickup-ready email. Fire only after the staging write commits, so a
+    // send failure can never undo the staging — the unit stays visible in the
+    // pickup queue and the Round 4 scanner retries the email. Swallowed on
+    // purpose: the billing/staging action itself succeeded.
+    if (enteringPickup) {
+      try {
+        const notice = await sendPickupNotice(id)
+        if (!notice.sent && notice.reason === 'no_email') {
+          console.info(`pickup-notice: ${id} has no email on file — routed to Needs Call queue`)
+        }
+      } catch (notifyErr) {
+        console.error('pickup-notice: send failed (unit staged; scanner will retry)', notifyErr)
+      }
+    }
+
     return NextResponse.json(updated)
   } catch (err) {
     console.error('service-tickets/[id] PATCH error:', err)
