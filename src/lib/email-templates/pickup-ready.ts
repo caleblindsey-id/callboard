@@ -42,8 +42,8 @@ export function renderPickupReadyEmail(input: PickupReadyTemplateInput): EmailTe
   const company = settings.company_name?.trim() || 'our service department'
 
   const callLine = phone
-    ? `Questions, or would you like us to arrange delivery instead? Call our service department at ${phone}.`
-    : `Questions, or would you like us to arrange delivery instead? Just reply to this email.`
+    ? `If you have any questions, please call our service department at ${phone}.`
+    : `If you have any questions, please reply to this email.`
 
   const refLine = woLabel
     ? `When you come by, just reference ${woLabel} and we'll have it ready for you.`

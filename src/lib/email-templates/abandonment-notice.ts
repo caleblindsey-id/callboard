@@ -47,8 +47,8 @@ export function renderAbandonmentNoticeEmail(input: AbandonmentNoticeTemplateInp
       : `has been repaired and ready for pickup and remains uncollected`
 
   const callLine = phone
-    ? `Please call our service department at ${phone} to arrange collection or delivery.`
-    : `Please reply to this email to arrange collection or delivery.`
+    ? `Please call our service department at ${phone} to arrange collection.`
+    : `Please reply to this email to arrange collection.`
 
   const subject = woLabel
     ? `Action needed: uncollected equipment — ${woLabel}`
