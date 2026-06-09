@@ -36,9 +36,8 @@ function customerSubline(t: TicketWithJoins): string | null {
 
 export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const router = useRouter()
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(tickets.filter((t) => !needsInvoice(t)).map((t) => t.id))
-  )
+  // Default to nothing selected so bulk mark-billed is an intentional opt-in (feedback #26).
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [marking, setMarking] = useState(false)
   const [unexportingId, setUnexportingId] = useState<string | null>(null)
