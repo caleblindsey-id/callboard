@@ -9,8 +9,13 @@ export type EquipmentListItem = Awaited<ReturnType<typeof getEquipment>>[number]
   nextServiceDate: string | null
 }
 
-export default async function EquipmentPage() {
+export default async function EquipmentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; active?: string }>
+}) {
   await requireRole(...MANAGER_ROLES)
+  const params = await searchParams
   const equipment = await getEquipment()
 
   const equipmentIds = equipment.map((e) => e.id)
@@ -83,7 +88,10 @@ export default async function EquipmentPage() {
           Manage customer equipment and PM schedules
         </p>
       </div>
-      <EquipmentList equipment={enriched} />
+      <EquipmentList
+        equipment={enriched}
+        initialFilters={{ q: params.q ?? '', active: params.active === 'inactive' ? 'inactive' : '' }}
+      />
     </div>
   )
 }

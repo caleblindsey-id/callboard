@@ -19,6 +19,7 @@ import CancelPartDialog from './CancelPartDialog'
 import VendorPicker from '@/components/VendorPicker'
 import { formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 type Tab = 'to_order' | 'ordered' | 'received'
 type SortKey =
@@ -114,29 +115,29 @@ function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): Par
 
 interface Props {
   rows: PartsQueueRow[]
-  // Round B (service-ticket deep-link) sets these from ?source=&ticket= query
-  // params on the URL. When initialTicketFilter is set, the table is narrowed
-  // to just that ticket and a "clear filter" chip surfaces above the table.
-  // Both default to null when navigating to /parts-queue directly.
+  // Round B (service-ticket deep-link) sets this from ?ticket= on the URL. When
+  // set, the table is narrowed to just that ticket and a "clear filter" chip
+  // surfaces above the table. Defaults to null on a direct /parts-queue visit.
   initialTicketFilter?: string | null
-  initialSourceFilter?: PartsQueueSource | null
+  // tab/sort/dir/q/source/vendor seeded from the URL so Back restores the view.
+  initialFilters: { tab: string; sort: string; dir: string; q: string; source: string; vendor: string }
 }
 
 export default function PartsQueueClient({
   rows: initialRows,
   initialTicketFilter = null,
-  initialSourceFilter = null,
+  initialFilters,
 }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
-  const [tab, setTab] = useState<Tab>('to_order')
-  const [sortKey, setSortKey] = useState<SortKey>('requested_at')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [search, setSearch] = useState('')
-  const [sourceFilter, setSourceFilter] = useState<'all' | PartsQueueSource>(
-    initialSourceFilter ?? 'all',
-  )
-  const [vendorFilter, setVendorFilter] = useState('')
+  // Filter controls live in the URL so the Back button restores them.
+  const { filters, set, setMany } = useUrlFilters(initialFilters)
+  const tab = (filters.tab || 'to_order') as Tab
+  const sortKey = (filters.sort || 'requested_at') as SortKey
+  const sortDir: 'asc' | 'desc' = filters.dir === 'desc' ? 'desc' : 'asc'
+  const search = filters.q
+  const sourceFilter = (filters.source || 'all') as 'all' | PartsQueueSource
+  const vendorFilter = filters.vendor
   // Ticket-prefilter survives only on initial load; clearing it removes the
   // chip and falls back to the normal full-queue view.
   const [ticketFilter, setTicketFilter] = useState<string | null>(initialTicketFilter)
@@ -224,10 +225,9 @@ export default function PartsQueueClient({
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
-      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+      setMany({ dir: sortDir === 'asc' ? 'desc' : 'asc' })
     } else {
-      setSortKey(key)
-      setSortDir('asc')
+      setMany({ sort: key, dir: 'asc' })
     }
   }
 
@@ -274,7 +274,7 @@ export default function PartsQueueClient({
     try {
       const part = await markPartOrdered(row.source, row.ticket_id, row.part_index)
       applyUpdate(row, part)
-      setTab('ordered')
+      set('tab', 'ordered')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark ordered')
     } finally {
@@ -388,9 +388,9 @@ export default function PartsQueueClient({
     <div className="space-y-4">
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        <TabButton active={tab === 'to_order'} onClick={() => setTab('to_order')} label="To Order" count={tabCounts.toOrder} />
-        <TabButton active={tab === 'ordered'} onClick={() => setTab('ordered')} label="Ordered" count={tabCounts.ordered} />
-        <TabButton active={tab === 'received'} onClick={() => setTab('received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
+        <TabButton active={tab === 'to_order'} onClick={() => set('tab', 'to_order')} label="To Order" count={tabCounts.toOrder} />
+        <TabButton active={tab === 'ordered'} onClick={() => set('tab', 'ordered')} label="Ordered" count={tabCounts.ordered} />
+        <TabButton active={tab === 'received'} onClick={() => set('tab', 'received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
       </div>
 
       {/* Ticket prefilter chip — only present when the page was loaded via a
@@ -400,14 +400,14 @@ export default function PartsQueueClient({
         <div className="flex items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3 py-2 text-xs">
           <span className="text-slate-600 dark:text-slate-300">
             Filtered to one ticket
-            {initialSourceFilter ? ` (${initialSourceFilter === 'pm' ? 'PM' : 'Service'})` : ''}
+            {initialFilters.source ? ` (${initialFilters.source === 'pm' ? 'PM' : 'Service'})` : ''}
             .
           </span>
           <button
             type="button"
             onClick={() => {
               setTicketFilter(null)
-              setSourceFilter('all')
+              set('source', 'all')
             }}
             className="text-slate-700 dark:text-slate-200 underline hover:text-slate-900 dark:hover:text-white"
           >
@@ -421,13 +421,13 @@ export default function PartsQueueClient({
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => set('q', e.target.value, { debounce: true })}
           placeholder="Search customer, WO #, part, PO #…"
           className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
         />
         <select
           value={sourceFilter}
-          onChange={e => setSourceFilter(e.target.value as 'all' | PartsQueueSource)}
+          onChange={e => set('source', e.target.value)}
           className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="all">All sources</option>
@@ -436,7 +436,7 @@ export default function PartsQueueClient({
         </select>
         <select
           value={vendorFilter}
-          onChange={e => setVendorFilter(e.target.value)}
+          onChange={e => set('vendor', e.target.value)}
           className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
         >
           <option value="">All vendors</option>
