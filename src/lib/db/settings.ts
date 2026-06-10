@@ -43,27 +43,27 @@ export async function getCustomerLaborRate(
   return getLaborRate(type)
 }
 
-// Global default trip charge (a flat per-ticket fee for sending a tech out).
-// Falls back to 0 — the feature is off until a dollar amount is set in Settings.
-export async function getTripCharge(): Promise<number> {
+// Per-trip trip-charge RATE — a dollar amount, like the labor rate. Falls back
+// to 0 (feature off until a rate is set in Settings). Billed trip charge is this
+// rate × the per-ticket trip count (see effectiveTripChargeQty).
+export async function getTripChargeRate(): Promise<number> {
   const val = await getSetting('trip_charge_amount')
   const n = parseFloat(val ?? '')
   return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
-// Resolve the trip charge actually billed on a ticket. One rule, used in every
-// billing path so the on-screen total and the stored billing_amount agree:
-//   - An explicit per-ticket value (including 0) always wins.
-//   - Service tickets dropped off at the shop ('inside') default to 0 (no travel).
-//   - Field service ('outside') and all PM tickets default to the global setting.
-export function effectiveTripCharge(
-  ticketTripCharge: number | null | undefined,
+// Number of trips billed on a ticket (mirrors labor hours). One rule, used in
+// every billing path so the on-screen total and the stored billing_amount agree:
+//   - An explicit per-ticket qty (including 0) always wins.
+//   - Service tickets dropped off at the shop ('inside') default to 0 trips.
+//   - Field service ('outside') and all PM tickets default to 1 trip.
+export function effectiveTripChargeQty(
+  ticketQty: number | null | undefined,
   ticketType: string | null | undefined,
-  settingsDefault: number,
 ): number {
-  if (ticketTripCharge != null) return ticketTripCharge
+  if (ticketQty != null) return ticketQty
   if (ticketType === 'inside') return 0
-  return settingsDefault
+  return 1
 }
 
 export async function getSetting(key: string): Promise<string | null> {

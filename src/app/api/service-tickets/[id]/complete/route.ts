@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getCustomerLaborRate, getTripCharge, effectiveTripCharge } from '@/lib/db/settings'
+import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines } from '@/lib/margin'
@@ -19,7 +19,7 @@ interface CompleteServiceTicketBody {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   warranty_labor_covered?: boolean
-  trip_charge?: number
+  trip_charge_qty?: number
   machine_hours?: number | null
   date_code?: string | null
   ace_labor?: { hours: number; reason: string } | null
@@ -103,7 +103,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, trip_charge, labor_rate_type, equipment_id, customer_id')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, trip_charge_qty, labor_rate_type, equipment_id, customer_id')
       .eq('id', id)
       .single()
 
@@ -214,16 +214,13 @@ export async function POST(
             (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
           )
 
-      // Flat trip charge: the completer's inline edit (body) wins, else the
-      // stored per-ticket value, else the ticket-type default — bench ('inside')
-      // defaults to 0, field to the global setting. partial_warranty still bills it.
-      const tripCharge = isNonNegativeNumber(body.trip_charge)
-        ? body.trip_charge
-        : effectiveTripCharge(
-            current.trip_charge as number | null,
-            current.ticket_type as string,
-            await getTripCharge(),
-          )
+      // Trip charge = trips × per-trip rate (mirrors labor). The completer's
+      // inline qty (body) wins, else the stored qty, else the ticket-type default
+      // (bench 'inside' = 0 trips, field = 1). partial_warranty still bills it.
+      const tripQty = isNonNegativeNumber(body.trip_charge_qty)
+        ? body.trip_charge_qty
+        : effectiveTripChargeQty(current.trip_charge_qty as number | null, current.ticket_type as string)
+      const tripCharge = tripQty * await getTripChargeRate()
 
       finalBillingAmount = laborTotal + billablePartsTotal + diagnosticCharge + tripCharge
     }

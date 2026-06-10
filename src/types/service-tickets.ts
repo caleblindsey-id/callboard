@@ -84,10 +84,12 @@ export type ServiceTicketRow = {
   billing_exported: boolean
   billing_exported_at: string | null
   diagnostic_charge: number | null
-  // Flat trip charge for sending a tech out (migration 105). NULL = use the
-  // ticket-type default: settings 'trip_charge_amount' for field ('outside'),
-  // 0 for shop/bench drop-off ('inside'). Resolve via effectiveTripCharge().
+  // Trip charge = trip_charge_qty × the settings 'trip_charge_amount' rate
+  // (mirrors labor: hours × rate). trip_charge_qty is the number of trips
+  // (migration 107); NULL = ticket-type default (field=1, bench 'inside'=0).
+  // trip_charge (migration 105, flat dollars) is retained but no longer read.
   trip_charge: number | null
+  trip_charge_qty: number | null
   diagnostic_invoice_number: string | null
   awaiting_pickup: boolean
   picked_up_at: string | null

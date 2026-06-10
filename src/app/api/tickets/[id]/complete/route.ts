@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
 import { partsOnOrder } from '@/lib/parts'
-import { getCustomerLaborRate, getTripCharge } from '@/lib/db/settings'
+import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 
@@ -28,7 +28,7 @@ interface CompleteTicketBody {
   billingContactPhone?: string
   additionalPartsUsed?: PartUsed[]
   additionalHoursWorked?: number
-  tripCharge?: number
+  tripChargeQty?: number
   machineHours: number
   dateCode: string
   aceLabor?: { hours: number; reason: string } | null
@@ -50,7 +50,7 @@ export async function POST(
       completedDate, hoursWorked, partsUsed, completionNotes,
       customerSignature, customerSignatureName, photos, poNumber,
       billingContactName, billingContactEmail, billingContactPhone,
-      additionalPartsUsed, additionalHoursWorked, tripCharge: tripChargeIn, machineHours, dateCode,
+      additionalPartsUsed, additionalHoursWorked, tripChargeQty: tripChargeQtyIn, machineHours, dateCode,
       aceLabor,
     } = body
 
@@ -130,7 +130,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('pm_tickets')
-      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
+      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -243,9 +243,12 @@ export async function POST(
     // drift can cause the PDF total and the export-list total to diverge).
     // Flat trip charge: the completer's value (body) wins, else the stored
     // per-ticket value, else the global default. PM is always field work.
-    const tripCharge = isNonNegativeNumber(tripChargeIn)
-      ? tripChargeIn
-      : ((current.trip_charge as number | null) ?? await getTripCharge())
+    // Trip charge = trips × per-trip rate (mirrors labor). Completer's qty wins,
+    // else the stored qty, else 1 (PM is always field work).
+    const tripQty = isNonNegativeNumber(tripChargeQtyIn)
+      ? tripChargeQtyIn
+      : ((current.trip_charge_qty as number | null) ?? 1)
+    const tripCharge = tripQty * await getTripChargeRate()
     const finalBillingAmount = Math.round((flatRate + (finalAdditionalHours * laborRate) + additionalPartsTotal + tripCharge) * 100) / 100
 
     // Snapshot the customer's pricing-visibility flag onto the ticket so future

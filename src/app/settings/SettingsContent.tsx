@@ -457,13 +457,13 @@ function TripChargeSetting({ initialTripCharge }: { initialTripCharge: string })
       </div>
       <div className="px-5 py-4 space-y-4">
         <LaborRateInput
-          label="Trip Charge"
+          label="Trip Charge Rate"
           settingKey="trip_charge_amount"
           initialRate={initialTripCharge}
-          suffix="per ticket"
+          suffix="per trip"
         />
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Flat fee added to field service and PM ticket billing. Shop / bench drop-offs default to $0. Set to 0 to turn it off. Editable per ticket.
+          Per-trip rate billed on field service and PM tickets — each ticket sets the number of trips (qty × this rate, like labor). Shop / bench drop-offs default to 0 trips. Set to $0 to turn it off.
         </p>
       </div>
     </div>

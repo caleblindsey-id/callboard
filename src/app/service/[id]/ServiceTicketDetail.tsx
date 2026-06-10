@@ -38,7 +38,7 @@ interface ServiceTicketDetailProps {
   userId: string
   laborRate: number
   laborRates: Record<string, number>
-  tripChargeDefault: number
+  tripChargeRate: number
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -414,7 +414,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeDefault }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -526,13 +526,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [diagnosticInvoiceNumber, setDiagnosticInvoiceNumber] = useState(
     ticket.diagnostic_invoice_number ?? ''
   )
-  // Trip charge: seed the input with the effective value (per-ticket override,
-  // else 0 for bench 'inside', else the Settings default) so what staff see is
-  // what bills. Saved value rolls into billing_amount and the estimate total.
+  // Trip charge = number of trips × the per-trip rate (mirrors labor hours × rate).
+  // Seed the qty with the effective value (per-ticket override, else 1 for field,
+  // 0 for bench 'inside'). Billed dollar = qty × tripChargeRate.
   const tripChargeIsBench = ticket.ticket_type === 'inside'
-  const effectiveTripChargeValue =
-    ticket.trip_charge != null ? ticket.trip_charge : (tripChargeIsBench ? 0 : tripChargeDefault)
-  const [tripCharge, setTripCharge] = useState(String(effectiveTripChargeValue))
+  const effectiveTripChargeQtyValue =
+    ticket.trip_charge_qty != null ? ticket.trip_charge_qty : (tripChargeIsBench ? 0 : 1)
+  const [tripChargeQty, setTripChargeQty] = useState(String(effectiveTripChargeQtyValue))
 
   // Equipment registration (for tickets with denormalized equipment fields)
   const [registeringEquipment, setRegisteringEquipment] = useState(false)
@@ -715,8 +715,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         diagnosis_notes: diagnosisNotes || null,
         // Staff-only field — server re-resolves and snapshots estimate_labor_rate from it.
         ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
-        // Trip charge lives inline under labor hours; persist it with the estimate.
-        ...(isStaff ? { trip_charge: parseFloat(tripCharge) || 0 } : {}),
+        // Trip charge qty lives inline under labor hours; persist it with the estimate.
+        ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
       })
       if (result.status === SERVICE_STATUS.APPROVED) {
         setSuccessMsg('Estimate auto-approved (under $100)')
@@ -975,9 +975,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           completion_notes: completionNotes || null,
           parts_used: completionParts.length > 0 ? toServicePartUsed(completionParts) : [],
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-          // Trip charge lives inline under Hours Worked; persist staff edits so a
-          // refresh doesn't drop them (server filters it out for techs).
-          ...(isStaff ? { trip_charge: parseFloat(tripCharge) || 0 } : {}),
+          // Trip charge qty lives inline under Hours Worked; persist staff edits so
+          // a refresh doesn't drop them (server filters it out for techs).
+          ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
         }),
       })
       if (!res.ok) {
@@ -1312,7 +1312,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         body: JSON.stringify({
           completed_at: new Date().toISOString(),
           hours_worked: hours,
-          trip_charge: parseFloat(tripCharge) || 0,
+          trip_charge_qty: parseFloat(tripChargeQty) || 0,
           parts_used: toServicePartUsed(completionParts),
           completion_notes: completionNotes || null,
           machine_hours: machineHours.trim() !== '' ? parseFloat(machineHours) : null,
@@ -1414,7 +1414,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
   // Trip charge billed (0 on full-warranty tickets, matching the server).
-  const tripChargeNum = ticket.billing_type === 'warranty' ? 0 : (parseFloat(tripCharge) || 0)
+  // Billed trip charge = trips × per-trip rate (0 on full-warranty tickets).
+  const tripChargeQtyNum = parseFloat(tripChargeQty) || 0
+  const tripChargeNum = ticket.billing_type === 'warranty' ? 0 : tripChargeQtyNum * tripChargeRate
   const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum
 
   // Estimate computed totals. The rate type can be re-picked in the builder, so the
@@ -2351,19 +2353,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Trip Charge
                       </label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">$</span>
+                      <div className="flex items-center gap-3">
                         <input
                           type="number"
-                          step="0.01"
+                          step="1"
                           min="0"
-                          value={tripCharge}
-                          onChange={(e) => setTripCharge(e.target.value)}
+                          value={tripChargeQty}
+                          onChange={(e) => setTripChargeQty(e.target.value)}
                           className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                          placeholder="0.00"
+                          placeholder="0"
                         />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {tripChargeIsBench ? 'shop drop-off — defaults to $0' : 'flat fee for the trip out'}
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          {tripChargeRate > 0
+                            ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
+                            : 'trips — set the rate in Settings'}
                         </span>
                       </div>
                     </div>
@@ -2402,7 +2405,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                       )}
                       {tripChargeNum > 0 && (
                         <div className="flex justify-between">
-                          <span>Trip Charge</span>
+                          <span>Trip: {tripChargeQtyNum} × ${tripChargeRate.toFixed(2)}</span>
                           <span>${tripChargeNum.toFixed(2)}</span>
                         </div>
                       )}
@@ -2832,19 +2835,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Trip Charge
                 </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">$</span>
+                <div className="flex items-center gap-3">
                   <input
                     type="number"
-                    step="0.01"
+                    step="1"
                     min="0"
-                    value={tripCharge}
-                    onChange={(e) => setTripCharge(e.target.value)}
+                    value={tripChargeQty}
+                    onChange={(e) => setTripChargeQty(e.target.value)}
                     className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                    placeholder="0.00"
+                    placeholder="0"
                   />
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {tripChargeIsBench ? 'shop drop-off — defaults to $0' : 'flat fee for the trip out'}
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {tripChargeRate > 0
+                      ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
+                      : 'trips — set the rate in Settings'}
                   </span>
                 </div>
               </div>
@@ -2920,7 +2924,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 )}
                 {tripChargeNum > 0 && (
                   <div className="flex justify-between">
-                    <span>Trip Charge</span>
+                    <span>Trip: {tripChargeQtyNum} × ${tripChargeRate.toFixed(2)}</span>
                     <span>${tripChargeNum.toFixed(2)}</span>
                   </div>
                 )}
@@ -3128,11 +3132,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 {ticket.synergy_invoice_number}
               </InfoField>
             )}
-            {ticket.trip_charge != null && ticket.trip_charge > 0 && (
-              <InfoField label="Trip Charge">
-                ${ticket.trip_charge.toFixed(2)}
-              </InfoField>
-            )}
+            {(() => {
+              const qty = ticket.trip_charge_qty != null ? ticket.trip_charge_qty : (tripChargeIsBench ? 0 : 1)
+              return qty > 0 && tripChargeRate > 0 ? (
+                <InfoField label="Trip Charge">
+                  {qty} × ${tripChargeRate.toFixed(2)} = ${(qty * tripChargeRate).toFixed(2)}
+                </InfoField>
+              ) : null
+            })()}
             {ticket.diagnostic_charge != null && (
               <InfoField label="Diagnostic Charge">
                 ${ticket.diagnostic_charge.toFixed(2)}
