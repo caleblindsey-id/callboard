@@ -3,14 +3,17 @@ import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/types/database'
 
-// Batch-flip completed service tickets to 'billed'. No PDF this round — Tamara
-// re-keys into SynergyERP manually. The CAS on status='completed' prevents
-// double-billing if two tabs hit the button at once.
+// Batch-flip exported service tickets to 'billed'. Export-first (migration 106):
+// a ticket must already be billing_exported (manager pulled the work-order PDF)
+// AND have a Synergy invoice # keyed before it can be billed. The CAS on
+// status='completed' + billing_exported=true prevents double-billing and blocks
+// any not-yet-exported ticket from skipping the queue.
 
 type ServiceTicketBillingRow = {
   id: string
   work_order_number: number | null
   status: string
+  billing_exported: boolean
   synergy_invoice_number: string | null
   customers: { name: string } | null
 }
@@ -49,7 +52,7 @@ export async function POST(request: NextRequest) {
     const { data: rawTickets, error: fetchError } = await supabase
       .from('service_tickets')
       .select(`
-        id, work_order_number, status, synergy_invoice_number,
+        id, work_order_number, status, billing_exported, synergy_invoice_number,
         customers ( name )
       `)
       .in('id', ticketIds as string[])
@@ -78,6 +81,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const notExported = tickets.filter((t) => !t.billing_exported)
+    if (notExported.length > 0) {
+      const names = notExported
+        .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
+        .join(', ')
+      return NextResponse.json(
+        { error: `Tickets must be exported before billing: ${names}` },
+        { status: 409 }
+      )
+    }
+
     const missingSynergy = tickets.filter((t) => !t.synergy_invoice_number)
     if (missingSynergy.length > 0) {
       const names = missingSynergy
@@ -96,6 +110,7 @@ export async function POST(request: NextRequest) {
       .update({ status: 'billed' })
       .in('id', ticketIds as string[])
       .eq('status', 'completed')
+      .eq('billing_exported', true)
       .select('id')
 
     if (updateError) {

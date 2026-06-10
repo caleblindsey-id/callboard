@@ -453,6 +453,11 @@ export async function PATCH(
           // Clear the billing invoice # too — a reopened ticket must be re-billed
           // against a fresh invoice rather than inheriting the stale one.
           synergy_invoice_number: null,
+          // Reset the export gate so a reopened ticket re-enters "Ready to Export"
+          // and must be re-exported before its new invoice # can be keyed
+          // (mirrors the PM billed -> completed re-export reset).
+          billing_exported: false,
+          billing_exported_at: null,
           // Reopening a billed unit pulls it out of the pickup queue; the aging
           // clock restarts when it's re-billed.
           awaiting_pickup: false,

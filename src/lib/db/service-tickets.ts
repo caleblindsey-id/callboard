@@ -240,11 +240,13 @@ export async function completeServiceTicket(
 }
 
 // --- Service tickets ready to bill (parallel to PM getBillingTickets) ---
+// Two-phase, export-first flow mirroring PM billing (migration 106):
+//   getServiceBillingTickets        → "Ready to Export"   (completed, NOT exported)
+//   getServiceAwaitingInvoiceTickets → "Awaiting Invoice #" (completed, exported)
 // Default scope is ALL completed service tickets regardless of month, so a
 // prior-month completion that was never billed stays visible. month/year are
 // optional and narrow on completed_at only when both are supplied. Status flips
-// to 'billed' on Mark Billed, which naturally drops rows from this query — no
-// separate billing_exported column on service_tickets.
+// to 'billed' on Mark Billed, which naturally drops rows from both queries.
 
 export type ServiceBillingTicket = {
   id: string
@@ -253,6 +255,7 @@ export type ServiceBillingTicket = {
   billing_type: ServiceBillingType
   billing_amount: number | null
   hours_worked: number | null
+  billing_exported: boolean
   synergy_order_number: string | null
   synergy_invoice_number: string | null
   completed_at: string | null
@@ -283,7 +286,10 @@ export type ServiceBillingTicket = {
   assigned_technician: { name: string } | null
 }
 
-export async function getServiceBillingTickets(
+// Shared loader for both billing queues — identical select/scope, differing only
+// on the billing_exported gate (false = Ready to Export, true = Awaiting Invoice #).
+async function getServiceBillingByExported(
+  exported: boolean,
   month?: number,
   year?: number
 ): Promise<ServiceBillingTicket[]> {
@@ -293,7 +299,8 @@ export async function getServiceBillingTickets(
     .from('service_tickets')
     .select(`
       id, work_order_number, status, billing_type, billing_amount, hours_worked,
-      synergy_order_number, synergy_invoice_number, completed_at, customer_id, equipment_make, equipment_model,
+      billing_exported, synergy_order_number, synergy_invoice_number, completed_at,
+      customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
       customers ( name, account_number, po_required, ar_terms, credit_hold ),
       equipment ( make, model, serial_number,
@@ -302,6 +309,7 @@ export async function getServiceBillingTickets(
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
     `)
     .eq('status', 'completed')
+    .eq('billing_exported', exported)
     .is('deleted_at', null)
 
   if (month !== undefined && year !== undefined) {
@@ -316,6 +324,23 @@ export async function getServiceBillingTickets(
 
   if (error) throw error
   return (data ?? []) as unknown as ServiceBillingTicket[]
+}
+
+// "Ready to Export" — completed service tickets not yet exported.
+export function getServiceBillingTickets(
+  month?: number,
+  year?: number
+): Promise<ServiceBillingTicket[]> {
+  return getServiceBillingByExported(false, month, year)
+}
+
+// "Awaiting Invoice #" — exported tickets where the coordinator keys the Synergy
+// invoice # and marks billed (mirrors getPmAwaitingInvoiceTickets).
+export function getServiceAwaitingInvoiceTickets(
+  month?: number,
+  year?: number
+): Promise<ServiceBillingTicket[]> {
+  return getServiceBillingByExported(true, month, year)
 }
 
 // --- Get service tickets for equipment (for unified service history) ---
