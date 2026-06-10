@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, ExternalLink, PackageCheck, RefreshCw, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
 import {
   cancelPart,
   markPartOrdered,
+  markPartPulled,
   markPartReceived,
   revalidateTicket,
   setSynergyOrderNumber,
@@ -23,7 +24,7 @@ import { formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
-type Tab = 'review' | 'to_order' | 'ordered' | 'received'
+type Tab = 'review' | 'to_pull' | 'to_order' | 'ordered' | 'received'
 type SortKey =
   | 'requested_at'
   | 'source'
@@ -93,6 +94,8 @@ function partToRow(row: PartsQueueRow, part: PartRequest): PartsQueueRow {
     received_at: part.received_at ?? null,
     ordered_by: part.ordered_by ?? null,
     received_by: part.received_by ?? null,
+    pulled_at: part.pulled_at ?? null,
+    pulled_by: part.pulled_by ?? null,
     requested_at: part.requested_at ?? row.requested_at,
   }
 }
@@ -113,6 +116,53 @@ function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): Par
     if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult
     return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' }) * mult
   })
+}
+
+// Escape one CSV cell: wrap in quotes and double any embedded quotes so commas /
+// newlines / quotes in part descriptions don't break the columns.
+function csvCell(value: string | number | null | undefined): string {
+  const s = value == null ? '' : String(value)
+  return `"${s.replace(/"/g, '""')}"`
+}
+
+// Build + download a pick list for the To-Pull rows. Sorted by Synergy Item #
+// so the puller walks the service-dept shelf in order. Client-side only — no
+// route, no dependency.
+function exportPickList(rows: PartsQueueRow[]) {
+  const sorted = [...rows].sort((a, b) =>
+    String(a.product_number ?? '').localeCompare(String(b.product_number ?? ''), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  )
+  const header = ['Synergy Item #', 'Part', 'Qty', 'Machine', 'Customer', 'WO #', 'Tech']
+  const lines = [header.map(csvCell).join(',')]
+  for (const r of sorted) {
+    const machine = [r.machine_make, r.machine_model, r.machine_serial ? `S/N ${r.machine_serial}` : '']
+      .filter(Boolean)
+      .join(' ')
+    lines.push(
+      [
+        csvCell(r.product_number),
+        csvCell(partLabel(r) || r.description),
+        csvCell(r.quantity ?? 1),
+        csvCell(machine),
+        csvCell(r.customer_name),
+        csvCell(r.work_order_number),
+        csvCell(r.assigned_technician_name),
+      ].join(','),
+    )
+  }
+  // Prepend a BOM so Excel opens the UTF-8 file with the right encoding.
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `pick-list-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 interface Props {
@@ -164,18 +214,20 @@ export default function PartsQueueClient({
 
   const tabCounts = useMemo(() => {
     let review = 0
+    let toPull = 0
     let toOrder = 0
     let ordered = 0
     let received = 0
     for (const r of rows) {
       if (r.cancelled) continue
       if (r.status === 'pending_review') review++
+      else if (r.status === 'from_stock' && !r.pulled_at) toPull++
       else if (r.status === 'requested') toOrder++
       else if (r.status === 'ordered') ordered++
       else if (r.status === 'received' && r.received_at && new Date(r.received_at).getTime() >= receivedCutoffMs)
         received++
     }
-    return { review, toOrder, ordered, received }
+    return { review, toPull, toOrder, ordered, received }
   }, [rows, receivedCutoffMs])
 
   const vendorOptions = useMemo(() => {
@@ -190,6 +242,7 @@ export default function PartsQueueClient({
       if (r.cancelled) return false
       // Tab filter
       if (tab === 'review' && r.status !== 'pending_review') return false
+      if (tab === 'to_pull' && (r.status !== 'from_stock' || !!r.pulled_at)) return false
       if (tab === 'to_order' && r.status !== 'requested') return false
       if (tab === 'ordered' && r.status !== 'ordered') return false
       if (tab === 'received') {
@@ -299,6 +352,20 @@ export default function PartsQueueClient({
       applyUpdate(row, part)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark received')
+    } finally {
+      setPendingRow(cur => (cur === key ? null : cur))
+    }
+  }, [applyUpdate])
+
+  const handleMarkPulled = useCallback(async (row: PartsQueueRow) => {
+    const key = rowKey(row)
+    setPendingRow(key)
+    setError(null)
+    try {
+      const part = await markPartPulled(row.source, row.ticket_id, row.part_index)
+      applyUpdate(row, part)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark pulled')
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
@@ -440,6 +507,7 @@ export default function PartsQueueClient({
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
         <TabButton active={tab === 'review'} onClick={() => set('tab', 'review')} label="Review" count={tabCounts.review} />
+        <TabButton active={tab === 'to_pull'} onClick={() => set('tab', 'to_pull')} label="To Pull" count={tabCounts.toPull} />
         <TabButton active={tab === 'to_order'} onClick={() => set('tab', 'to_order')} label="To Order" count={tabCounts.toOrder} />
         <TabButton active={tab === 'ordered'} onClick={() => set('tab', 'ordered')} label="Ordered" count={tabCounts.ordered} />
         <TabButton active={tab === 'received'} onClick={() => set('tab', 'received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
@@ -518,6 +586,14 @@ export default function PartsQueueClient({
           onOrder={handleOrderClick}
           onStock={(row) => void handleTriage(row, 'stock')}
           onCancel={setCancelTarget}
+        />
+      ) : tab === 'to_pull' ? (
+        <ToPullTable
+          rows={filteredRows}
+          pendingRow={pendingRow}
+          flashedRow={flashedRow}
+          onMarkPulled={handleMarkPulled}
+          onExport={() => exportPickList(filteredRows)}
         />
       ) : (
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -888,6 +964,119 @@ function ReviewTable({
           )}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// Fulfillment table for the To-Pull tab: 'from_stock' parts the office decided
+// to pull off the shelf but hasn't physically staged yet. Export builds a pick
+// list (sorted by Synergy Item #); Mark Pulled stages the part for the tech and
+// drops it from the tab. Separate from the ordering table — none of the
+// PO/vendor/validation columns apply to a stock pull.
+function ToPullTable({
+  rows,
+  pendingRow,
+  flashedRow,
+  onMarkPulled,
+  onExport,
+}: {
+  rows: PartsQueueRow[]
+  pendingRow: string | null
+  flashedRow: string | null
+  onMarkPulled: (row: PartsQueueRow) => void
+  onExport: () => void
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Parts decided to pull from stock. Export the pick list, pull them off the shelf, then mark
+          each pulled — the tech is notified once the whole order is staged.
+        </p>
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={rows.length === 0}
+          title="Download a pick list (CSV) sorted by Synergy Item #"
+          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px] lg:min-h-0"
+        >
+          <Download className="h-4 w-4" />
+          Export pick list
+        </button>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <tr>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Decided</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Source</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">WO #</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Customer</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Part</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Synergy Item #</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Qty</th>
+              <th scope="col" className="px-3 py-2 text-left font-semibold">Requested by</th>
+              <th scope="col" className="px-3 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  Nothing waiting to be pulled from stock.
+                </td>
+              </tr>
+            ) : (
+              rows.map(row => {
+                const key = rowKey(row)
+                const isPending = pendingRow === key
+                const isFlashed = flashedRow === key
+                return (
+                  <tr
+                    key={key}
+                    className={`transition-colors ${
+                      isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'
+                    }`}
+                  >
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{formatDay(row.triaged_at)}</td>
+                    <td className="px-3 py-2"><SourceBadge source={row.source} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">{row.work_order_number ?? '—'}</td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[200px] truncate" title={row.customer_name ?? ''}>{row.customer_name ?? '—'}</td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>{partLabel(row) || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">{row.product_number ?? '—'}</td>
+                    <td className="px-3 py-2"><MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} /></td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">{row.quantity ?? 1}</td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">{row.assigned_technician_name ?? '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => onMarkPulled(row)}
+                          title="Mark this part pulled from stock and staged for the tech"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 rounded hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <PackageCheck className="h-3.5 w-3.5" />
+                          Mark Pulled
+                        </button>
+                        <Link
+                          href={ticketDeepLink(row.source, row.ticket_id)}
+                          title={row.source === 'pm' ? 'Open source PM ticket' : 'Open source service ticket'}
+                          aria-label="Open source ticket"
+                          className="p-1 text-gray-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

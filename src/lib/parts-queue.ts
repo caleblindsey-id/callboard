@@ -24,6 +24,7 @@ type UpdateArgs = {
     | 'reopen'
     | 'order'
     | 'pull_from_stock'
+    | 'mark_pulled'
   reason?: string
   triage_reason?: string
 }
@@ -65,6 +66,16 @@ export function markPartReceived(
   part_index: number,
 ): Promise<PartRequest> {
   return postUpdate({ source, ticket_id, part_index, action: 'mark_received' })
+}
+
+// Marks a 'from_stock' part as physically pulled off the shelf and staged for
+// the tech. Idempotent server-side if already pulled.
+export function markPartPulled(
+  source: PartsQueueSource,
+  ticket_id: string,
+  part_index: number,
+): Promise<PartRequest> {
+  return postUpdate({ source, ticket_id, part_index, action: 'mark_pulled' })
 }
 
 export function cancelPart(

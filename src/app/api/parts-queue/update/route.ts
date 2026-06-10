@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { PartRequest } from '@/types/database'
+import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
 
 type Source = 'pm' | 'service'
 
@@ -23,6 +24,7 @@ type UpdateBody = {
     | 'set_synergy_order'
     | 'order'
     | 'pull_from_stock'
+    | 'mark_pulled'
   fields?: Partial<PartRequest>
   reason?: string
   // Used only by 'set_synergy_order' — written to the parent ticket column,
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
     // overwriting each other.
     const { data: ticket, error: fetchErr } = await supabase
       .from(table)
-      .select('id, parts_requested, status, updated_at')
+      .select('id, parts_requested, status, updated_at, parts_ready_notified_at')
       .eq('id', ticket_id)
       .single()
 
@@ -251,6 +253,26 @@ export async function POST(request: NextRequest) {
         }
         break
       }
+      case 'mark_pulled': {
+        // Physically pull a 'from_stock' part off the shelf and stage it for the
+        // tech. Idempotent — silently no-op if already pulled so retries / double-
+        // clicks don't overwrite the original pulled_at / pulled_by.
+        if (current.status !== 'from_stock') {
+          return NextResponse.json(
+            { error: 'Only parts pulled from stock can be marked pulled.' },
+            { status: 409 }
+          )
+        }
+        if (current.pulled_at) {
+          return NextResponse.json({ success: true, part: current })
+        }
+        next = {
+          ...next,
+          pulled_at: now,
+          pulled_by: user.id,
+        }
+        break
+      }
       case 'order':
       case 'pull_from_stock': {
         // Stock-vs-order triage of a freshly requested part. Strictly from
@@ -364,6 +386,19 @@ export async function POST(request: NextRequest) {
       updatePayload.parts_received = allReceived
     }
 
+    // "Whole order filled" tech notification. Stricter than parts_received above:
+    // a from_stock part only counts as IN HAND once it's been physically pulled
+    // (pulled_at set), not merely triaged. We fire the notification once on the
+    // transition into fully-staged, and reset the flag if the order later falls
+    // back out (a part added/reopened) so a re-fill notifies again.
+    const liveAll = updated.filter((p) => !p.cancelled)
+    const allStaged =
+      liveAll.length > 0 &&
+      liveAll.every((p) => p.status === 'received' || (p.status === 'from_stock' && !!p.pulled_at))
+    const wasNotified = ticket.parts_ready_notified_at != null
+    const shouldNotify = allStaged && !wasNotified
+    const shouldReset = !allStaged && wasNotified
+
     // Optimistic-lock on updated_at via fn_update_parts_queue. If another
     // writer touched the row between our read and write, the function raises
     // OPTIMISTIC_LOCK (40001) and we return 409 for the client to retry.
@@ -383,6 +418,28 @@ export async function POST(request: NextRequest) {
       }
       console.error('parts-queue update RPC error:', rpcErr)
       return NextResponse.json({ error: 'Failed to update part' }, { status: 500 })
+    }
+
+    // Stamp/reset the dedup flag with a direct update (mirrors sendPickupNotice's
+    // audit stamp — sidesteps the fn_update_parts_queue column whitelist). Then
+    // fire the notification. Both are non-fatal: the part write already landed,
+    // so a stamp or send failure must never turn this into an error response.
+    if (shouldNotify || shouldReset) {
+      try {
+        await supabase
+          .from(table)
+          .update({ parts_ready_notified_at: shouldNotify ? now : null })
+          .eq('id', ticket_id)
+      } catch (stampErr) {
+        console.error('parts-queue: parts_ready_notified_at stamp failed', stampErr)
+      }
+    }
+    if (shouldNotify) {
+      try {
+        await sendPartsReadyNotice(source, ticket_id)
+      } catch (notifyErr) {
+        console.error('parts-queue: sendPartsReadyNotice failed', notifyErr)
+      }
     }
 
     return NextResponse.json({ success: true, part: next })

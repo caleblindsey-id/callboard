@@ -240,6 +240,11 @@ export interface PartRequest {
   triage_reason?: string
   qoh_at_triage?: number | null
   qopo_at_triage?: number | null
+  // Physical-pull state for 'from_stock' parts (migration 104). A from_stock
+  // part with no pulled_at is still on the shelf ("To Pull"); pulled_at/pulled_by
+  // record who staged it for the tech and when.
+  pulled_at?: string
+  pulled_by?: string
 }
 
 // ============================================================
@@ -301,6 +306,10 @@ export type PartsQueueRow = {
   triage_reason: string | null
   qoh_at_triage: number | null
   qopo_at_triage: number | null
+  // Physical-pull state for 'from_stock' parts (migration 104). pulled_at null
+  // = still on the shelf (To Pull); set = staged for the tech.
+  pulled_at: string | null
+  pulled_by: string | null
   // PM coverage classification (migration 096). Projected from the
   // parts_requested JSONB: true = covered by the PM agreement (no customer
   // charge), false = billable. NULL for service rows (they use warranty_covered)
@@ -507,6 +516,9 @@ export type PmTicketRow = {
   // parts_used/additional_parts_used are authoritative and win. Guards against
   // a deleted (un-billed) part silently re-seeding on reopen.
   completion_seeded_at: string | null
+  // Stamped when the whole order's parts are staged and the tech was notified
+  // (migration 104). Reset to NULL if the order later falls out of fully-staged.
+  parts_ready_notified_at: string | null
   created_at: string
   updated_at: string
 }
@@ -747,7 +759,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at'
 >
 
 export type SettingsRow = {
