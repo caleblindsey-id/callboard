@@ -74,6 +74,9 @@ export type MyPartRow = {
   ordered_at: string | null
   received_at: string | null
   triaged_at: string | null
+  // Set when a from_stock part has been physically pulled and staged for the
+  // tech (migration 104). null = still being pulled.
+  pulled_at: string | null
 }
 
 type TicketPartsRow = {
@@ -137,6 +140,7 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
         ordered_at: part.ordered_at ?? null,
         received_at: part.received_at ?? null,
         triaged_at: part.triaged_at ?? null,
+        pulled_at: part.pulled_at ?? null,
       })
     })
   }
