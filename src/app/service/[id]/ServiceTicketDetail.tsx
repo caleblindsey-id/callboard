@@ -13,6 +13,7 @@ import PartSynergyPicker from '@/components/PartSynergyPicker'
 import VendorPicker from '@/components/VendorPicker'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
+import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
@@ -548,6 +549,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
   // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
   const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
+  // Post-completion confirmation popup ("where to next")
+  const [completed, setCompleted] = useState(false)
   // Set once the tech verifies the unit this session, for instant UI feedback
   // ahead of the router.refresh() that re-fetches details_verified_at.
   const [equipmentJustVerified, setEquipmentJustVerified] = useState(false)
@@ -804,6 +807,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         throw new Error(data.error || 'Failed to complete ticket')
       }
       setQuickCompleteOpen(false)
+      setCompleted(true)
     })
   }
 
@@ -1315,6 +1319,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         const data = await res.json()
         throw new Error(data.error || 'Failed to complete ticket')
       }
+      setCompleted(true)
     })
   }
 
@@ -3283,6 +3288,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         signatureRequired={signatureRequired}
         onCancel={() => setQuickCompleteOpen(false)}
         onSubmit={handleQuickComplete}
+      />
+      <CompletionSuccessDialog
+        open={completed}
+        ticketsHref="/service"
+        ticketsLabel="Back to Service Tickets"
+        onViewWorkOrder={() => setCompleted(false)}
       />
     </div>
   )

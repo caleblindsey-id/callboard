@@ -11,6 +11,7 @@ import { formatPhoneNumber } from '@/lib/phone'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import SkipDialog from '../SkipDialog'
@@ -437,6 +438,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
         throw new Error(data.error || 'Failed to complete ticket')
       }
       router.push(pathname)
+      setCompleted(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -648,6 +650,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   }
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [completed, setCompleted] = useState(false)
 
   async function handleDelete() {
     setDeleteConfirmOpen(false)
@@ -1632,6 +1635,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
       )}
       {superAdminOverride}
       {deleteButton}
+      <CompletionSuccessDialog
+        open={completed}
+        ticketsHref="/tickets"
+        ticketsLabel="Back to Tickets"
+        onViewWorkOrder={() => setCompleted(false)}
+      />
     </div>
   )
 }
