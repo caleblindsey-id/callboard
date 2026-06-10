@@ -8,7 +8,7 @@ import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
-import { partLabel } from '@/lib/parts'
+import { partLabel, partsOnOrder } from '@/lib/parts'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import VendorPicker from '@/components/VendorPicker'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
@@ -1412,8 +1412,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // Mirrors the server-side parts_received derivation in
   // api/parts-queue/update/route.ts and api/service-tickets/[id]/route.ts.
   const livePartsRequested = partsRequested.filter((p) => !p.cancelled)
-  const partsReceivedCount = livePartsRequested.filter((p) => p.status === 'received').length
-  const allPartsReceived = livePartsRequested.length > 0 && partsReceivedCount === livePartsRequested.length
+  // 'from_stock' (pulled in-house) counts as fulfilled, same as 'received' —
+  // single source of truth via partsOnOrder(), matching the server-side
+  // parts_received derivation. A from_stock part never becomes 'received', so
+  // counting received-only left the ticket stuck "Waiting on parts 1 of 1".
+  const partsWaitingCount = partsOnOrder(partsRequested).length
+  const partsReceivedCount = livePartsRequested.length - partsWaitingCount
+  const allPartsReceived = livePartsRequested.length > 0 && partsWaitingCount === 0
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
@@ -1460,7 +1465,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // (Render helpers moved outside component — see Badge, Card, InfoField above)
 
   // Workflow card props — derived from current state + parts queue.
-  const partsWaitingCount = livePartsRequested.filter((p) => p.status !== 'received').length
+  // (partsWaitingCount computed above with the other parts totals.)
   const workflowProps = computeWorkflowProps({
     status: ticket.status,
     isManager,

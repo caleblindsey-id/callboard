@@ -6,7 +6,7 @@ import { PartRequest, TicketStatus } from '@/types/database'
 import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
-import { partLabel } from '@/lib/parts'
+import { partLabel, partsOnOrder } from '@/lib/parts'
 
 interface PmPartsSectionProps {
   ticketId: string
@@ -58,8 +58,11 @@ export default function PmPartsSection({
   const canRequestParts = ENTRY_ALLOWED_STATUSES.includes(status)
 
   const activeParts = parts.filter(p => !p.cancelled)
-  const receivedCount = activeParts.filter(p => p.status === 'received').length
-  const allReceived = activeParts.length > 0 && receivedCount === activeParts.length
+  // 'from_stock' (pulled in-house) counts as fulfilled like 'received' — via
+  // partsOnOrder(), matching the server parts_received derivation. Counting
+  // received-only never showed "All Received" once a part was pulled from stock.
+  const receivedCount = activeParts.length - partsOnOrder(parts).length
+  const allReceived = activeParts.length > 0 && partsOnOrder(parts).length === 0
 
   async function patchTicket(body: Record<string, unknown>) {
     const res = await fetch(`/api/tickets/${ticketId}`, {
