@@ -18,7 +18,8 @@ const QUEUE_COLUMNS = `
   machine_make, machine_model, machine_serial,
   covered_by_agreement,
   qty_on_hand, qty_on_po,
-  triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage
+  triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage,
+  pulled_at, pulled_by, bin_location
 `
 
 export async function getPartsQueue(): Promise<PartsQueueRow[]> {
@@ -73,6 +74,9 @@ export type MyPartRow = {
   ordered_at: string | null
   received_at: string | null
   triaged_at: string | null
+  // Set when a from_stock part has been physically pulled and staged for the
+  // tech (migration 104). null = still being pulled.
+  pulled_at: string | null
 }
 
 type TicketPartsRow = {
@@ -136,6 +140,7 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
         ordered_at: part.ordered_at ?? null,
         received_at: part.received_at ?? null,
         triaged_at: part.triaged_at ?? null,
+        pulled_at: part.pulled_at ?? null,
       })
     })
   }

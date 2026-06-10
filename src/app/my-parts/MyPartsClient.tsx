@@ -39,17 +39,25 @@ function fmtDate(value: string | null): string {
   return d.toLocaleDateString()
 }
 
+// A from_stock part that's been physically pulled is staged and ready for the
+// tech — so it belongs under "Ready for Pickup" alongside received parts, not in
+// the "From Stock" (being-pulled) bucket. Un-pulled from_stock stays in From Stock.
+function displayStatus(row: MyPartRow): MyPartStatus {
+  if (row.status === 'from_stock' && row.pulled_at) return 'received'
+  return row.status
+}
+
 // The date that matters depends on where the part is in its lifecycle.
 function rowDate(row: MyPartRow): string | null {
+  if (row.status === 'from_stock') return row.pulled_at ?? row.triaged_at
   if (row.status === 'received') return row.received_at
-  if (row.status === 'from_stock') return row.triaged_at
   if (row.status === 'ordered') return row.ordered_at
   return row.requested_at
 }
 
 function dateColumnLabel(status: MyPartStatus): string {
-  if (status === 'received') return 'Received'
-  if (status === 'from_stock') return 'Pulled'
+  if (status === 'received') return 'Ready'
+  if (status === 'from_stock') return 'Decided'
   if (status === 'ordered') return 'Ordered'
   return 'Requested'
 }
@@ -81,7 +89,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
       requested: [],
       pending_review: [],
     }
-    for (const row of rows) buckets[row.status].push(row)
+    for (const row of rows) buckets[displayStatus(row)].push(row)
     // Most recent first within each tab.
     for (const key of Object.keys(buckets) as MyPartStatus[]) {
       buckets[key].sort((a, b) => (rowDate(b) ?? '').localeCompare(rowDate(a) ?? ''))
@@ -163,7 +171,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                     <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0 mt-0.5" />
                   </div>
                   <div className="flex items-center gap-2 mb-1">
-                    <PartsStatusBadge status={row.status} />
+                    <PartsStatusBadge status={displayStatus(row)} />
                     {row.work_order_number != null && (
                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                         WO-{row.work_order_number}
@@ -220,7 +228,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                         {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
                       </td>
                       <td className="px-4 py-3">
-                        <PartsStatusBadge status={row.status} />
+                        <PartsStatusBadge status={displayStatus(row)} />
                       </td>
                       <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                         {row.customer_name || '—'}
