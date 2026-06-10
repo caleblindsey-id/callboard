@@ -8,7 +8,7 @@ import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/dat
 import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -144,12 +144,12 @@ export async function PATCH(
       }
     }
 
-    // Synergy item # gate: any part past 'requested' must have product_number set
+    // Synergy item # gate: any part that has moved past 'requested'
+    // (ordered/received) must have product_number set. New 'pending_review'
+    // requests — including off-catalog manual parts — are exempt (feedback #30).
     if (filtered.parts_requested !== undefined) {
       const parts = filtered.parts_requested as PartRequest[]
-      const missingItemNo = parts.find(
-        (p) => p.status !== 'requested' && !p.product_number?.trim()
-      )
+      const missingItemNo = findPartMissingSynergyItemNumber(parts)
       if (missingItemNo) {
         return NextResponse.json(
           { error: 'Synergy item # is required on any part marked ordered or received.' },

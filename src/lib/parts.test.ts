@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { validateNewManualPartRequests, hasNewRequestedPart } from './parts'
+import {
+  validateNewManualPartRequests,
+  hasNewRequestedPart,
+  findPartMissingSynergyItemNumber,
+} from './parts'
 import type { PartRequest } from '../types/database'
 
 // Helper: a fully-valid new manual request entry.
@@ -75,6 +79,53 @@ test('does not re-validate a part already present in the stored array', () => {
 test('only gates entries with status pending_review', () => {
   const ordered = manual({ status: 'ordered', vendor: undefined, requested_at: '2026-06-02T11:00:00.000Z' })
   assert.equal(validateNewManualPartRequests([], [ordered]), null)
+})
+
+// ── findPartMissingSynergyItemNumber ──
+// A Synergy item # (product_number) is only mandatory once a part is being
+// ordered or has been received. New requests (pending_review) and queued
+// 'requested' parts may not have one yet, and 'from_stock' parts are pulled
+// in-house. Regression guard for feedback #30: a new manual part with no
+// product_number must NOT be rejected on request.
+
+test('does not flag a new manual part (pending_review, no item #) — feedback #30', () => {
+  assert.equal(findPartMissingSynergyItemNumber([manual()]), undefined)
+})
+
+test('does not flag a queued requested part with no item #', () => {
+  assert.equal(
+    findPartMissingSynergyItemNumber([manual({ status: 'requested' })]),
+    undefined,
+  )
+})
+
+test('does not flag a from_stock part with no item #', () => {
+  assert.equal(
+    findPartMissingSynergyItemNumber([manual({ status: 'from_stock' })]),
+    undefined,
+  )
+})
+
+test('flags an ordered part missing its Synergy item #', () => {
+  const part = manual({ status: 'ordered' })
+  assert.equal(findPartMissingSynergyItemNumber([part]), part)
+})
+
+test('flags a received part missing its Synergy item #', () => {
+  const part = manual({ status: 'received' })
+  assert.equal(findPartMissingSynergyItemNumber([part]), part)
+})
+
+test('does not flag an ordered part that has a Synergy item #', () => {
+  assert.equal(
+    findPartMissingSynergyItemNumber([manual({ status: 'ordered', product_number: '146400019' })]),
+    undefined,
+  )
+})
+
+test('treats a whitespace-only item # as missing on an ordered part', () => {
+  const part = manual({ status: 'ordered', product_number: '   ' })
+  assert.equal(findPartMissingSynergyItemNumber([part]), part)
 })
 
 // ── hasNewRequestedPart ──
