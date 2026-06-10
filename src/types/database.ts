@@ -310,6 +310,9 @@ export type PartsQueueRow = {
   // = still on the shelf (To Pull); set = staged for the tech.
   pulled_at: string | null
   pulled_by: string | null
+  // Whse-4 bin location(s) from products (migration 105), for the pick list.
+  // Comma-joined primary-first; null when the part has no Whse-4 bin record.
+  bin_location: string | null
   // PM coverage classification (migration 096). Projected from the
   // parts_requested JSONB: true = covered by the PM agreement (no customer
   // charge), false = billable. NULL for service rows (they use warranty_covered)
@@ -402,6 +405,10 @@ export type ProductRow = {
   // part with no Whse-4 stock record (never stocked there) stays null.
   qty_on_hand: number | null
   qty_on_po: number | null
+  // Whse-4 bin/shelf location(s) from Synergy prodloc, refreshed by the sync.
+  // Comma-joined primary-first when a part sits in >1 bin (e.g. "E5, E5-D").
+  // Null = no bin record. Drives the parts pick list.
+  bin_location: string | null
   synced_at: string | null
 }
 
@@ -739,7 +746,7 @@ export type ContactInsert = MakeOptional<
 
 export type ProductInsert = MakeOptional<
   Omit<ProductRow, 'id'>,
-  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail' | 'qty_on_hand' | 'qty_on_po'
+  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail' | 'qty_on_hand' | 'qty_on_po' | 'bin_location'
 >
 
 export type UserInsert = MakeOptional<
