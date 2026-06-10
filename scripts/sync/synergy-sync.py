@@ -455,10 +455,16 @@ def sync_products(conn) -> int:
                 p.VendItem,
                 v.Name AS VendName,
                 pw.QtyOnHand,
-                pw.QtyOnPO
+                pw.QtyOnPO,
+                pl.BinLoc
             FROM prod p
             LEFT JOIN a80vm v ON v.VendorCode = p.PrimVend
             LEFT JOIN prodwhse pw ON pw.ProdCode = p.ProdCode AND pw.Whse = 4
+            LEFT JOIN (
+                SELECT ProdCode,
+                       GROUP_CONCAT(Loc ORDER BY PermPrim DESC, PLDATE DESC SEPARATOR ', ') AS BinLoc
+                FROM prodloc WHERE Whse = 4 GROUP BY ProdCode
+            ) pl ON pl.ProdCode = p.ProdCode
             WHERE p.ComdtyCode IN ({placeholders})
               AND (p.SupersedeCode IS NULL OR p.SupersedeCode = '')
               AND (p.Desc2 NOT LIKE '%OBSOLETE%' OR p.Desc2 IS NULL)
@@ -500,6 +506,12 @@ def sync_products(conn) -> int:
         qty_on_hand = int(row.QtyOnHand) if row.QtyOnHand is not None else None
         qty_on_po = int(row.QtyOnPO) if row.QtyOnPO is not None else None
 
+        # Service-dept (Whse 4) bin/shelf location(s) from prodloc, for the
+        # parts pick list. A part can sit in >1 bin; the subquery GROUP_CONCATs
+        # them primary-first (PermPrim DESC), comma-joined (e.g. "E5, E5-D").
+        # NULL = no bin record (shows blank on the pick list).
+        bin_location = safe_str(row.BinLoc)
+
         # NOTE: do NOT add `requires_detail` to this payload. It's a hand-curated
         # flag (migration 088) that marks catch-all items like SHOP SUPPLIES to
         # prompt for a free-text detail. The upsert is ON CONFLICT (synergy_id)
@@ -517,6 +529,7 @@ def sync_products(conn) -> int:
             "vendor_item_code": vendor_item_code,
             "qty_on_hand": qty_on_hand,
             "qty_on_po": qty_on_po,
+            "bin_location": bin_location,
             "synced_at": utcnow_iso(),
         })
 

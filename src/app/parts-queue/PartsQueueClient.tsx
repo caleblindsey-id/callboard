@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, ExternalLink, PackageCheck, RefreshCw, XCircle } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, ExternalLink, FileText, PackageCheck, RefreshCw, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
 import {
   cancelPart,
@@ -135,7 +135,7 @@ function exportPickList(rows: PartsQueueRow[]) {
       sensitivity: 'base',
     }),
   )
-  const header = ['Synergy Item #', 'Part', 'Qty', 'Machine', 'Customer', 'WO #', 'Tech']
+  const header = ['Bin', 'Synergy Item #', 'Part', 'Qty', 'Machine', 'Customer', 'WO #', 'Tech']
   const lines = [header.map(csvCell).join(',')]
   for (const r of sorted) {
     const machine = [r.machine_make, r.machine_model, r.machine_serial ? `S/N ${r.machine_serial}` : '']
@@ -143,6 +143,7 @@ function exportPickList(rows: PartsQueueRow[]) {
       .join(' ')
     lines.push(
       [
+        csvCell(r.bin_location),
         csvCell(r.product_number),
         csvCell(partLabel(r) || r.description),
         csvCell(r.quantity ?? 1),
@@ -155,14 +156,53 @@ function exportPickList(rows: PartsQueueRow[]) {
   }
   // Prepend a BOM so Excel opens the UTF-8 file with the right encoding.
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  triggerDownload(blob, `pick-list-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+// Shared blob → download helper.
+function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `pick-list-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+// PDF pick list — same data as the CSV, rendered server-side (@react-pdf) into a
+// printable sheet. POSTs the trimmed To-Pull rows; the route is manager-gated.
+async function exportPickListPdf(rows: PartsQueueRow[]) {
+  const sorted = [...rows].sort((a, b) =>
+    String(a.product_number ?? '').localeCompare(String(b.product_number ?? ''), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  )
+  const payload = sorted.map((r) => ({
+    bin_location: r.bin_location,
+    product_number: r.product_number,
+    part: partLabel(r) || r.description,
+    quantity: r.quantity,
+    machine: [r.machine_make, r.machine_model, r.machine_serial ? `S/N ${r.machine_serial}` : '']
+      .filter(Boolean)
+      .join(' ') || null,
+    customer_name: r.customer_name,
+    work_order_number: r.work_order_number,
+    technician_name: r.assigned_technician_name,
+  }))
+  const res = await fetch('/api/parts-queue/pick-list-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows: payload }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Failed to generate PDF')
+  }
+  const blob = await res.blob()
+  triggerDownload(blob, `pick-list-${new Date().toISOString().slice(0, 10)}.pdf`)
 }
 
 interface Props {
@@ -370,6 +410,19 @@ export default function PartsQueueClient({
       setPendingRow(cur => (cur === key ? null : cur))
     }
   }, [applyUpdate])
+
+  const [pdfPending, setPdfPending] = useState(false)
+  const handleExportPdf = useCallback(async (rowsToExport: PartsQueueRow[]) => {
+    setPdfPending(true)
+    setError(null)
+    try {
+      await exportPickListPdf(rowsToExport)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate PDF')
+    } finally {
+      setPdfPending(false)
+    }
+  }, [])
 
   const handleSynergyOrderCommit = useCallback(async (row: PartsQueueRow, value: string) => {
     const trimmed = value.trim()
@@ -593,7 +646,9 @@ export default function PartsQueueClient({
           pendingRow={pendingRow}
           flashedRow={flashedRow}
           onMarkPulled={handleMarkPulled}
-          onExport={() => exportPickList(filteredRows)}
+          onExportCsv={() => exportPickList(filteredRows)}
+          onExportPdf={() => handleExportPdf(filteredRows)}
+          pdfPending={pdfPending}
         />
       ) : (
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
@@ -978,36 +1033,55 @@ function ToPullTable({
   pendingRow,
   flashedRow,
   onMarkPulled,
-  onExport,
+  onExportCsv,
+  onExportPdf,
+  pdfPending,
 }: {
   rows: PartsQueueRow[]
   pendingRow: string | null
   flashedRow: string | null
   onMarkPulled: (row: PartsQueueRow) => void
-  onExport: () => void
+  onExportCsv: () => void
+  onExportPdf: () => void
+  pdfPending: boolean
 }) {
+  const exportBtn =
+    'shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px] lg:min-h-0'
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Parts decided to pull from stock. Export the pick list, pull them off the shelf, then mark
-          each pulled — the tech is notified once the whole order is staged.
+          Parts decided to pull from stock, with their Whse 4 bin. Export the pick list, pull them off
+          the shelf, then mark each pulled — the tech is notified once the whole order is staged.
         </p>
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={rows.length === 0}
-          title="Download a pick list (CSV) sorted by Synergy Item #"
-          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px] lg:min-h-0"
-        >
-          <Download className="h-4 w-4" />
-          Export pick list
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onExportCsv}
+            disabled={rows.length === 0}
+            title="Download the pick list as CSV (sorted by Synergy Item #)"
+            className={exportBtn}
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={onExportPdf}
+            disabled={rows.length === 0 || pdfPending}
+            title="Download the pick list as a printable PDF"
+            className={exportBtn}
+          >
+            <FileText className="h-4 w-4" />
+            {pdfPending ? 'Generating…' : 'PDF'}
+          </button>
+        </div>
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
+              <th scope="col" className="px-3 py-2 text-left font-semibold" title="Whse 4 bin/shelf location(s)">Bin</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">Decided</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">Source</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold">WO #</th>
@@ -1023,7 +1097,7 @@ function ToPullTable({
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nothing waiting to be pulled from stock.
                 </td>
               </tr>
@@ -1039,6 +1113,7 @@ function ToPullTable({
                       isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'
                     }`}
                   >
+                    <td className="px-3 py-2 whitespace-nowrap font-semibold text-gray-900 dark:text-white">{row.bin_location ?? '—'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{formatDay(row.triaged_at)}</td>
                     <td className="px-3 py-2"><SourceBadge source={row.source} /></td>
                     <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">{row.work_order_number ?? '—'}</td>
