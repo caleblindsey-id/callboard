@@ -59,6 +59,29 @@ export function validateNewManualPartRequests(
 }
 
 /**
+ * Find the first part that is being ordered / has been received but is missing
+ * its Synergy item # (`product_number`). Returns the offending part, or
+ * undefined when all clear — callers reject the PATCH with a 400.
+ *
+ * A Synergy item # is only mandatory once a part moves to 'ordered' or
+ * 'received' (the office captures it at the ordering step). It is deliberately
+ * NOT required on a fresh 'pending_review' request, a queued 'requested' part,
+ * or a 'from_stock' pull — requiring it earlier blocked every off-catalog
+ * (manual) part request, which have no Synergy item # by definition (feedback
+ * #30). The earlier `status !== 'requested'` check wrongly caught
+ * 'pending_review' (which is *before* 'requested', not after).
+ */
+export function findPartMissingSynergyItemNumber(
+  parts: PartRequest[],
+): PartRequest | undefined {
+  return parts.find(
+    (p) =>
+      (p.status === 'ordered' || p.status === 'received') &&
+      !p.product_number?.trim(),
+  )
+}
+
+/**
  * True when `incoming` adds at least one brand-new requested part vs `existing`.
  *
  * Used to gate part requests on ticket machine info: the office must know which

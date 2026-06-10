@@ -12,7 +12,7 @@ import {
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
@@ -653,10 +653,10 @@ export async function PATCH(
     // --- Parts received check + Synergy item # gate ---
     if (filtered.parts_requested !== undefined) {
       const parts = filtered.parts_requested as PartRequest[]
-      // Any part that has moved past 'requested' must have a Synergy item # (product_number) captured
-      const missingItemNo = parts.find(
-        (p: PartRequest) => p.status !== 'requested' && !p.product_number?.trim()
-      )
+      // Any part that has moved past 'requested' (ordered/received) must have a
+      // Synergy item # (product_number) captured. New 'pending_review' requests
+      // — including off-catalog manual parts — are exempt (see feedback #30).
+      const missingItemNo = findPartMissingSynergyItemNumber(parts)
       if (missingItemNo) {
         return NextResponse.json(
           { error: 'Synergy item # is required on any part marked ordered or received.' },
