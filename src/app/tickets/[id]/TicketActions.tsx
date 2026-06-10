@@ -1010,6 +1010,28 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
                 </div>
               </div>
 
+              {/* Trip Charge — flat fee for the trip out, billed alongside labor */}
+              {!isTech && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Trip Charge
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500 dark:text-gray-400">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={tripCharge}
+                      onChange={(e) => setTripCharge(e.target.value)}
+                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      placeholder="0.00"
+                    />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">flat fee for the trip out (defaults from Settings)</span>
+                  </div>
+                </div>
+              )}
+
               {/* Additional Parts */}
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Additional Parts
@@ -1044,28 +1066,6 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
                 </div>
               )}
             </div>
-
-            {/* ── Trip Charge (staff-only flat fee for the trip out) ── */}
-            {!isTech && (
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Trip Charge
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500 dark:text-gray-400">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={tripCharge}
-                    onChange={(e) => setTripCharge(e.target.value)}
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                    placeholder="0.00"
-                  />
-                  <span className="text-xs text-gray-500 dark:text-gray-400">flat fee for the trip out (defaults from Settings)</span>
-                </div>
-              </div>
-            )}
 
             {/* ── GRAND TOTAL ── */}
             <div className="rounded-lg bg-gray-900 px-4 py-3 flex items-center justify-between">

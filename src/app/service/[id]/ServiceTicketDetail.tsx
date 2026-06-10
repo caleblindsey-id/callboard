@@ -21,7 +21,6 @@ import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
-import TripChargeCard from './TripChargeCard'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
@@ -716,6 +715,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         diagnosis_notes: diagnosisNotes || null,
         // Staff-only field — server re-resolves and snapshots estimate_labor_rate from it.
         ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
+        // Trip charge lives inline under labor hours; persist it with the estimate.
+        ...(isStaff ? { trip_charge: parseFloat(tripCharge) || 0 } : {}),
       })
       if (result.status === SERVICE_STATUS.APPROVED) {
         setSuccessMsg('Estimate auto-approved (under $100)')
@@ -933,24 +934,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  async function handleSubmitTripCharge() {
-    const trimmed = tripCharge.trim()
-    // Blank clears the per-ticket override (server falls back to the default).
-    let amount: number | null = null
-    if (trimmed) {
-      const parsed = parseFloat(trimmed)
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        setError('Please enter a valid trip charge')
-        return
-      }
-      amount = parsed
-    }
-    await apiAction(async () => {
-      await patchTicket({ trip_charge: amount })
-      setSuccessMsg('Trip charge saved')
-    })
-  }
-
   async function handleStartWork() {
     await apiAction(async () => {
       // PATCH returns the full updated row. On the approved -> in_progress
@@ -992,6 +975,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           completion_notes: completionNotes || null,
           parts_used: completionParts.length > 0 ? toServicePartUsed(completionParts) : [],
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
+          // Trip charge lives inline under Hours Worked; persist staff edits so a
+          // refresh doesn't drop them (server filters it out for techs).
+          ...(isStaff ? { trip_charge: parseFloat(tripCharge) || 0 } : {}),
         }),
       })
       if (!res.ok) {
@@ -1326,6 +1312,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         body: JSON.stringify({
           completed_at: new Date().toISOString(),
           hours_worked: hours,
+          trip_charge: parseFloat(tripCharge) || 0,
           parts_used: toServicePartUsed(completionParts),
           completion_notes: completionNotes || null,
           machine_hours: machineHours.trim() !== '' ? parseFloat(machineHours) : null,
@@ -2358,6 +2345,30 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     </div>
                   </div>
 
+                  {/* Trip Charge — flat fee for the trip out, billed alongside labor */}
+                  {isStaff && (
+                    <div className="max-w-lg">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Trip Charge
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={tripCharge}
+                          onChange={(e) => setTripCharge(e.target.value)}
+                          className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                          placeholder="0.00"
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {tripChargeIsBench ? 'shop drop-off — defaults to $0' : 'flat fee for the trip out'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Estimated Parts */}
                   <PartsEntryList
                     parts={estimateParts}
@@ -2458,17 +2469,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           loading={loading}
           currentCharge={ticket.diagnostic_charge}
           currentInvoiceNumber={ticket.diagnostic_invoice_number}
-        />
-      )}
-
-      {/* ── Trip Charge (staff, any active stage) ── */}
-      {isStaff && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
-        <TripChargeCard
-          amount={tripCharge}
-          setAmount={setTripCharge}
-          onSave={handleSubmitTripCharge}
-          loading={loading}
-          isBench={tripChargeIsBench}
         />
       )}
 
@@ -2825,6 +2825,30 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 placeholder="0.00"
               />
             </div>
+
+            {/* Trip Charge — flat fee for the trip out, billed alongside labor */}
+            {isStaff && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Trip Charge
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={tripCharge}
+                    onChange={(e) => setTripCharge(e.target.value)}
+                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    placeholder="0.00"
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {tripChargeIsBench ? 'shop drop-off — defaults to $0' : 'flat fee for the trip out'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Machine Hours + Date Code — optional equipment service-life data
                 (parity with PM completion; optional since not every service unit

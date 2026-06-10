@@ -19,6 +19,7 @@ interface CompleteServiceTicketBody {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   warranty_labor_covered?: boolean
+  trip_charge?: number
   machine_hours?: number | null
   date_code?: string | null
   ace_labor?: { hours: number; reason: string } | null
@@ -213,13 +214,16 @@ export async function POST(
             (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
           )
 
-      // Flat trip charge: per-ticket value wins; bench ('inside') defaults to 0;
-      // field defaults to the global setting. partial_warranty still bills it.
-      const tripCharge = effectiveTripCharge(
-        current.trip_charge as number | null,
-        current.ticket_type as string,
-        await getTripCharge(),
-      )
+      // Flat trip charge: the completer's inline edit (body) wins, else the
+      // stored per-ticket value, else the ticket-type default — bench ('inside')
+      // defaults to 0, field to the global setting. partial_warranty still bills it.
+      const tripCharge = isNonNegativeNumber(body.trip_charge)
+        ? body.trip_charge
+        : effectiveTripCharge(
+            current.trip_charge as number | null,
+            current.ticket_type as string,
+            await getTripCharge(),
+          )
 
       finalBillingAmount = laborTotal + billablePartsTotal + diagnosticCharge + tripCharge
     }
