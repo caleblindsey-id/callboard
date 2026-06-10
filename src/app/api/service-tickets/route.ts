@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid priority' }, { status: 400 })
     }
 
-    if (body.labor_rate_type && !['standard', 'industrial', 'vacuum'].includes(body.labor_rate_type)) {
+    if (!body.labor_rate_type) {
+      return NextResponse.json({ error: 'labor_rate_type is required' }, { status: 400 })
+    }
+    if (!['standard', 'industrial', 'vacuum'].includes(body.labor_rate_type)) {
       return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
     }
 
@@ -108,7 +111,7 @@ export async function POST(request: NextRequest) {
       diagnostic_invoice_number: body.diagnostic_invoice_number
         ? String(body.diagnostic_invoice_number).trim() || null
         : null,
-      labor_rate_type: body.labor_rate_type || 'standard',
+      labor_rate_type: body.labor_rate_type,
     }
 
     const { data, error } = await supabase

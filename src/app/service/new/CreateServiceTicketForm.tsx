@@ -84,7 +84,7 @@ export function CreateServiceTicketForm() {
   const [ticketType, setTicketType] = useState<ServiceTicketType>('inside')
   const [billingType, setBillingType] = useState<ServiceBillingType>('non_warranty')
   const [priority, setPriority] = useState<ServicePriority>('standard')
-  const [laborRateType, setLaborRateType] = useState('standard')
+  const [laborRateType, setLaborRateType] = useState('')
   const [problemDescription, setProblemDescription] = useState('')
 
   // --- Diagnostic fee (optional — captured when already billed in Synergy) ---
@@ -184,7 +184,7 @@ export function CreateServiceTicketForm() {
       if (d.ticketType === 'inside' || d.ticketType === 'outside') setTicketType(d.ticketType)
       if (d.billingType) setBillingType(d.billingType)
       if (d.priority) setPriority(d.priority)
-      setLaborRateType(d.laborRateType || 'standard')
+      setLaborRateType(d.laborRateType || '')
       setProblemDescription(d.problemDescription || '')
       setDiagnosticInvoiceNumber(d.diagnosticInvoiceNumber || '')
       setDiagnosticCharge(d.diagnosticCharge || '')
@@ -448,6 +448,10 @@ export function CreateServiceTicketForm() {
     }
     if (!contactEmail.trim() && !contactPhone.trim()) {
       setError('Provide at least a contact email or phone number.')
+      return
+    }
+    if (!laborRateType) {
+      setError('Labor rate is required.')
       return
     }
 
@@ -882,12 +886,15 @@ export function CreateServiceTicketForm() {
               </div>
 
               <div>
-                <label className={labelClass}>Labor Rate</label>
+                <label className={labelClass}>
+                  Labor Rate <span className="text-red-500">*</span>
+                </label>
                 <select
                   value={laborRateType}
                   onChange={(e) => setLaborRateType(e.target.value)}
                   className={inputClass}
                 >
+                  <option value="" disabled>Select labor rate…</option>
                   <option value="standard">Standard</option>
                   <option value="industrial">Industrial</option>
                   <option value="vacuum">Vacuum</option>
