@@ -21,6 +21,7 @@ interface PricingSummary {
   additionalHours: number | null
   laborRatePerHour: number
   pmPartsPriced: boolean
+  tripCharge: number
   grandTotal: number
 }
 
@@ -404,6 +405,11 @@ function PricingSummarySection({
         total: totalHrs * laborRate,
       })
     }
+  }
+
+  // Flat trip charge — applies regardless of billing type.
+  if ((pricing.tripCharge ?? 0) > 0) {
+    rows.push({ desc: 'Trip Charge', total: pricing.tripCharge })
   }
 
   return (

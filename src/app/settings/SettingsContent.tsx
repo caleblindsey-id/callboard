@@ -24,6 +24,7 @@ interface SettingsContentProps {
   laborRate: string
   industrialLaborRate: string
   vacuumLaborRate: string
+  tripCharge: string
   companyName: string
   serviceEmail: string
   servicePhone: string
@@ -40,6 +41,7 @@ export default function SettingsContent({
   laborRate,
   industrialLaborRate,
   vacuumLaborRate,
+  tripCharge,
   companyName,
   serviceEmail,
   servicePhone,
@@ -60,6 +62,9 @@ export default function SettingsContent({
         initialIndustrialRate={industrialLaborRate}
         initialVacuumRate={vacuumLaborRate}
       />
+
+      {/* Trip Charge — flat per-ticket fee for sending a tech out */}
+      <TripChargeSetting initialTripCharge={tripCharge} />
 
       {/* Customer PDF Branding */}
       <PdfBrandingSetting
@@ -343,10 +348,12 @@ function LaborRateInput({
   label,
   settingKey,
   initialRate,
+  suffix = '/hr',
 }: {
   label: string
   settingKey: string
   initialRate: string
+  suffix?: string
 }) {
   const [rate, setRate] = useState(initialRate)
   const [saving, setSaving] = useState(false)
@@ -384,7 +391,7 @@ function LaborRateInput({
             className="w-full rounded-md border border-gray-300 dark:border-gray-600 pl-6 pr-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
           />
         </div>
-        <span className="text-sm text-gray-500 dark:text-gray-400">/hr</span>
+        {suffix && <span className="text-sm text-gray-500 dark:text-gray-400">{suffix}</span>}
         <button
           onClick={handleSave}
           disabled={saving}
@@ -434,6 +441,29 @@ function LaborRatesSetting({
         />
         <p className="text-xs text-gray-500 dark:text-gray-400">
           Used to calculate billing amounts on ticket completion. Select the rate type per ticket at creation time.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function TripChargeSetting({ initialTripCharge }: { initialTripCharge: string }) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+          Trip Charge
+        </h2>
+      </div>
+      <div className="px-5 py-4 space-y-4">
+        <LaborRateInput
+          label="Trip Charge"
+          settingKey="trip_charge_amount"
+          initialRate={initialTripCharge}
+          suffix="per ticket"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Flat fee added to field service and PM ticket billing. Shop / bench drop-offs default to $0. Set to 0 to turn it off. Editable per ticket.
         </p>
       </div>
     </div>

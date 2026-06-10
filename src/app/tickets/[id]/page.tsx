@@ -20,7 +20,7 @@ import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
-import { getCustomerLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate, getTripCharge } from '@/lib/db/settings'
 import { getEntryByTicket } from '@/lib/db/ace-labor'
 import { describeSchedule, formatMonthYear } from '@/lib/utils/schedule'
 
@@ -66,6 +66,7 @@ export default async function TicketDetailPage({
   const canRestore = !isTechnician(user?.role ?? null) && RESET_ROLES.includes(user?.role ?? ('' as never))
 
   const laborRate = await getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard')
+  const tripChargeDefault = await getTripCharge()
   const aceEntry = await getEntryByTicket('pm', ticket.id)
 
   const showBilling = !isTechnician(user?.role ?? null)
@@ -371,6 +372,7 @@ export default async function TicketDetailPage({
             userRole={user?.role ?? null}
             userId={user?.id ?? null}
             laborRate={laborRate}
+            tripChargeDefault={tripChargeDefault}
           />
         </>
       )}

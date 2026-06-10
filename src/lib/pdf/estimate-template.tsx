@@ -31,6 +31,7 @@ interface EstimateData {
   laborHours: number
   laborRate: number
   parts: EstimatePart[]
+  tripCharge: number
   estimateTotal: number
   createdDate: string
 }
@@ -329,6 +330,16 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
               </Text>
             </View>
           ))}
+
+          {/* Trip charge line */}
+          {estimate.tripCharge > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.colDescription}>Trip Charge</Text>
+              <Text style={styles.colQty}></Text>
+              <Text style={styles.colPrice}></Text>
+              <Text style={styles.colTotal}>{money(estimate.tripCharge)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Summary */}
@@ -341,6 +352,12 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Parts Subtotal:</Text>
               <Text style={styles.summaryValue}>{money(partsTotal)}</Text>
+            </View>
+          )}
+          {estimate.tripCharge > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Trip Charge:</Text>
+              <Text style={styles.summaryValue}>{money(estimate.tripCharge)}</Text>
             </View>
           )}
           <View style={styles.totalRow}>

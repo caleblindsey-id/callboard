@@ -1,6 +1,6 @@
 import { getServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
-import { getCustomerLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate, getTripCharge } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import BackButton from '@/components/BackButton'
@@ -48,10 +48,11 @@ export default async function ServiceTicketPage({
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user.role) && RESET_ROLES.includes(user.role ?? ('' as never))
 
-  const [standardRate, industrialRate, vacuumRate] = await Promise.all([
+  const [standardRate, industrialRate, vacuumRate, tripChargeDefault] = await Promise.all([
     getCustomerLaborRate(ticket.customer_id, 'standard'),
     getCustomerLaborRate(ticket.customer_id, 'industrial'),
     getCustomerLaborRate(ticket.customer_id, 'vacuum'),
+    getTripCharge(),
   ])
   const laborRates: Record<string, number> = { standard: standardRate, industrial: industrialRate, vacuum: vacuumRate }
   // The ticket's saved type drives completion/billing math; the map above lets the
@@ -143,6 +144,7 @@ export default async function ServiceTicketPage({
         userId={user.id}
         laborRate={laborRate}
         laborRates={laborRates}
+        tripChargeDefault={tripChargeDefault}
       />
 
       <AceLaborCard entry={aceEntry} userRole={user.role} userId={user.id} />

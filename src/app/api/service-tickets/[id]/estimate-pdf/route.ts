@@ -112,6 +112,15 @@ export async function POST(
 
     const estimateParts = (raw.estimate_parts as ServicePartUsed[]) ?? []
 
+    // Trip charge is already baked into estimate_amount (server recompute).
+    // Derive the line as total − labor − parts so the printed row always
+    // reconciles with the bottom line, regardless of when it was snapshotted.
+    const laborTotalPdf = ((raw.estimate_labor_hours as number) ?? 0) * ((raw.estimate_labor_rate as number) ?? 0)
+    const partsTotalPdf = estimateParts
+      .filter((p) => !p.warranty_covered)
+      .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+    const tripChargePdf = Math.max(0, ((raw.estimate_amount as number) ?? 0) - laborTotalPdf - partsTotalPdf)
+
     const estimate = {
       workOrderNumber: raw.work_order_number as number | null,
       customerName: customer?.name ?? '—',
@@ -134,6 +143,7 @@ export async function POST(
         unitPrice: p.unit_price,
         warrantyCovered: p.warranty_covered ?? false,
       })),
+      tripCharge: tripChargePdf,
       estimateTotal: raw.estimate_amount as number,
       createdDate: new Date(raw.created_at).toLocaleDateString('en-US', {
         year: 'numeric',
