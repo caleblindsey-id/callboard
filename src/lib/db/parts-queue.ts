@@ -18,7 +18,8 @@ const QUEUE_COLUMNS = `
   machine_make, machine_model, machine_serial,
   covered_by_agreement,
   qty_on_hand, qty_on_po,
-  triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage
+  triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage,
+  pulled_at, pulled_by
 `
 
 export async function getPartsQueue(): Promise<PartsQueueRow[]> {

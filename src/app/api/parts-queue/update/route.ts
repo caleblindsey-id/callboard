@@ -23,6 +23,7 @@ type UpdateBody = {
     | 'set_synergy_order'
     | 'order'
     | 'pull_from_stock'
+    | 'mark_pulled'
   fields?: Partial<PartRequest>
   reason?: string
   // Used only by 'set_synergy_order' — written to the parent ticket column,
@@ -248,6 +249,26 @@ export async function POST(request: NextRequest) {
           status: 'received',
           received_at: now,
           received_by: user.id,
+        }
+        break
+      }
+      case 'mark_pulled': {
+        // Physically pull a 'from_stock' part off the shelf and stage it for the
+        // tech. Idempotent — silently no-op if already pulled so retries / double-
+        // clicks don't overwrite the original pulled_at / pulled_by.
+        if (current.status !== 'from_stock') {
+          return NextResponse.json(
+            { error: 'Only parts pulled from stock can be marked pulled.' },
+            { status: 409 }
+          )
+        }
+        if (current.pulled_at) {
+          return NextResponse.json({ success: true, part: current })
+        }
+        next = {
+          ...next,
+          pulled_at: now,
+          pulled_by: user.id,
         }
         break
       }

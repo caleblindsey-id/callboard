@@ -240,6 +240,11 @@ export interface PartRequest {
   triage_reason?: string
   qoh_at_triage?: number | null
   qopo_at_triage?: number | null
+  // Physical-pull state for 'from_stock' parts (migration 104). A from_stock
+  // part with no pulled_at is still on the shelf ("To Pull"); pulled_at/pulled_by
+  // record who staged it for the tech and when.
+  pulled_at?: string
+  pulled_by?: string
 }
 
 // ============================================================
@@ -301,6 +306,10 @@ export type PartsQueueRow = {
   triage_reason: string | null
   qoh_at_triage: number | null
   qopo_at_triage: number | null
+  // Physical-pull state for 'from_stock' parts (migration 104). pulled_at null
+  // = still on the shelf (To Pull); set = staged for the tech.
+  pulled_at: string | null
+  pulled_by: string | null
   // PM coverage classification (migration 096). Projected from the
   // parts_requested JSONB: true = covered by the PM agreement (no customer
   // charge), false = billable. NULL for service rows (they use warranty_covered)
