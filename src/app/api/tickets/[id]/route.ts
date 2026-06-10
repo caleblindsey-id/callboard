@@ -26,6 +26,7 @@ const ALLOWED_FIELDS = [
   'hours_worked',
   'parts_used',
   'billing_amount',
+  'trip_charge',
   'photos',
   'po_number',
   'billing_contact_name',

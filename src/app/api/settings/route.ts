@@ -11,6 +11,7 @@ const ALLOWED_KEYS = new Set([
   'labor_rate_per_hour',
   'industrial_labor_rate_per_hour',
   'vacuum_labor_rate_per_hour',
+  'trip_charge_amount',
   'company_name',
   'service_email',
   'service_phone',
@@ -23,6 +24,7 @@ const NUMERIC_RATE_KEYS = new Set([
   'labor_rate_per_hour',
   'industrial_labor_rate_per_hour',
   'vacuum_labor_rate_per_hour',
+  'trip_charge_amount',
 ])
 
 // Keys holding a comma/semicolon/whitespace-separated email list. A non-empty

@@ -39,6 +39,7 @@ interface ServiceWorkOrderData {
   laborHours: number
   laborRate: number
   parts: ServiceWorkOrderPart[]
+  tripCharge: number
   diagnosticCharge: number
   billingTotal: number
   customerSignature: string | null
@@ -306,6 +307,15 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             </View>
           ))}
 
+          {workOrder.tripCharge > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.colDescription}>Trip Charge</Text>
+              <Text style={styles.colQty}>—</Text>
+              <Text style={styles.colPrice}>—</Text>
+              <Text style={styles.colTotal}>{money(workOrder.tripCharge)}</Text>
+            </View>
+          )}
+
           {workOrder.diagnosticCharge > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.colDescription}>Diagnostic Fee</Text>
@@ -326,6 +336,12 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Parts Subtotal:</Text>
               <Text style={styles.summaryValue}>{money(partsTotal)}</Text>
+            </View>
+          )}
+          {workOrder.tripCharge > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Trip Charge:</Text>
+              <Text style={styles.summaryValue}>{money(workOrder.tripCharge)}</Text>
             </View>
           )}
           {workOrder.diagnosticCharge > 0 && (

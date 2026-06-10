@@ -199,6 +199,7 @@ export async function POST(
       additionalHours: number | null
       laborRatePerHour: number
       pmPartsPriced: boolean
+      tripCharge: number
       grandTotal: number
     } | null = null
 
@@ -218,6 +219,19 @@ export async function POST(
         (activeSchedule?.billing_type as 'flat_rate' | 'time_and_materials' | 'contract' | null) ?? 'flat_rate'
       const isFlatRate = billingType === 'flat_rate'
 
+      // Trip charge is baked into billing_amount. Derive it as total − the
+      // other priced rows (the same rows the template renders) so the printed
+      // breakdown reconciles with the Grand Total.
+      const partsSum = (arr: RawPart[]) =>
+        arr.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+      const addlPartsTotal = partsSum((raw.additional_parts_used as RawPart[]) ?? [])
+      const addlHrs = (raw.additional_hours_worked as number | null) ?? 0
+      const nonTrip = isFlatRate
+        ? (activeSchedule?.flat_rate ?? 0) + addlPartsTotal + addlHrs * laborRatePerHour
+        : partsSum((raw.parts_used as RawPart[]) ?? []) + addlPartsTotal
+            + (((raw.hours_worked as number | null) ?? 0) + addlHrs) * laborRatePerHour
+      const tripChargePdf = Math.max(0, Number(raw.billing_amount) - nonTrip)
+
       pricing = {
         billingType,
         flatRate: isFlatRate ? (activeSchedule?.flat_rate ?? null) : null,
@@ -225,6 +239,7 @@ export async function POST(
         additionalHours: raw.additional_hours_worked as number | null,
         laborRatePerHour,
         pmPartsPriced: !isFlatRate,
+        tripCharge: tripChargePdf,
         grandTotal: Number(raw.billing_amount),
       }
     }

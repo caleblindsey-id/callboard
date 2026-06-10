@@ -21,6 +21,7 @@ import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
+import TripChargeCard from './TripChargeCard'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
@@ -38,6 +39,7 @@ interface ServiceTicketDetailProps {
   userId: string
   laborRate: number
   laborRates: Record<string, number>
+  tripChargeDefault: number
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -413,7 +415,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeDefault }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -525,6 +527,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [diagnosticInvoiceNumber, setDiagnosticInvoiceNumber] = useState(
     ticket.diagnostic_invoice_number ?? ''
   )
+  // Trip charge: seed the input with the effective value (per-ticket override,
+  // else 0 for bench 'inside', else the Settings default) so what staff see is
+  // what bills. Saved value rolls into billing_amount and the estimate total.
+  const tripChargeIsBench = ticket.ticket_type === 'inside'
+  const effectiveTripChargeValue =
+    ticket.trip_charge != null ? ticket.trip_charge : (tripChargeIsBench ? 0 : tripChargeDefault)
+  const [tripCharge, setTripCharge] = useState(String(effectiveTripChargeValue))
 
   // Equipment registration (for tickets with denormalized equipment fields)
   const [registeringEquipment, setRegisteringEquipment] = useState(false)
@@ -921,6 +930,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         diagnostic_invoice_number: trimmedInvoice || null,
       })
       setSuccessMsg('Diagnostic fee saved')
+    })
+  }
+
+  async function handleSubmitTripCharge() {
+    const trimmed = tripCharge.trim()
+    // Blank clears the per-ticket override (server falls back to the default).
+    let amount: number | null = null
+    if (trimmed) {
+      const parsed = parseFloat(trimmed)
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setError('Please enter a valid trip charge')
+        return
+      }
+      amount = parsed
+    }
+    await apiAction(async () => {
+      await patchTicket({ trip_charge: amount })
+      setSuccessMsg('Trip charge saved')
     })
   }
 
@@ -1399,7 +1426,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
-  const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal
+  // Trip charge billed (0 on full-warranty tickets, matching the server).
+  const tripChargeNum = ticket.billing_type === 'warranty' ? 0 : (parseFloat(tripCharge) || 0)
+  const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum
 
   // Estimate computed totals. The rate type can be re-picked in the builder, so the
   // preview uses the resolved rate for the selected type (server re-snapshots on submit).
@@ -1408,7 +1437,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const estPartsTotal = estimateParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
-  const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal
+  const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal + tripChargeNum
 
   // Service address
   const serviceAddress = ticket.ticket_type === 'outside'
@@ -2360,6 +2389,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                           <span>${estPartsTotal.toFixed(2)}</span>
                         </div>
                       )}
+                      {tripChargeNum > 0 && (
+                        <div className="flex justify-between">
+                          <span>Trip Charge</span>
+                          <span>${tripChargeNum.toFixed(2)}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-300 dark:border-gray-700">
                       <span className="text-base font-bold text-gray-900 dark:text-white">Estimate Total</span>
@@ -2423,6 +2458,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           loading={loading}
           currentCharge={ticket.diagnostic_charge}
           currentInvoiceNumber={ticket.diagnostic_invoice_number}
+        />
+      )}
+
+      {/* ── Trip Charge (staff, any active stage) ── */}
+      {isStaff && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
+        <TripChargeCard
+          amount={tripCharge}
+          setAmount={setTripCharge}
+          onSave={handleSubmitTripCharge}
+          loading={loading}
+          isBench={tripChargeIsBench}
         />
       )}
 
@@ -2848,6 +2894,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     <span>${partsTotal.toFixed(2)}</span>
                   </div>
                 )}
+                {tripChargeNum > 0 && (
+                  <div className="flex justify-between">
+                    <span>Trip Charge</span>
+                    <span>${tripChargeNum.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
               <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-300 dark:border-gray-700">
                 <span className="text-base font-bold text-gray-900 dark:text-white">Billing Total</span>
@@ -3050,6 +3102,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             {ticket.synergy_invoice_number && (
               <InfoField label="Synergy Invoice #">
                 {ticket.synergy_invoice_number}
+              </InfoField>
+            )}
+            {ticket.trip_charge != null && ticket.trip_charge > 0 && (
+              <InfoField label="Trip Charge">
+                ${ticket.trip_charge.toFixed(2)}
               </InfoField>
             )}
             {ticket.diagnostic_charge != null && (

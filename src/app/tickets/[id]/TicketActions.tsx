@@ -55,6 +55,7 @@ interface TicketActionsProps {
   userRole: UserRole | null
   userId: string | null
   laborRate: number
+  tripChargeDefault: number
 }
 
 
@@ -149,7 +150,7 @@ function forceTransitionsFor(status: TicketStatus): TicketStatus[] {
   return (VALID_TRANSITIONS[status] ?? []).filter(t => t !== 'completed')
 }
 
-export default function TicketActions({ ticket, userRole, userId, laborRate }: TicketActionsProps) {
+export default function TicketActions({ ticket, userRole, userId, laborRate, tripChargeDefault }: TicketActionsProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -229,6 +230,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   )
   const [additionalHoursWorked, setAdditionalHoursWorked] = useState(
     ticket.additional_hours_worked != null ? String(ticket.additional_hours_worked) : ''
+  )
+  // Trip charge: per-ticket value or the Settings default (PM is always field
+  // work). Staff-editable; rolls into the grand total and billing_amount.
+  const [tripCharge, setTripCharge] = useState(
+    String(ticket.trip_charge != null ? ticket.trip_charge : tripChargeDefault)
   )
 
   const [machineHours, setMachineHours] = useState(
@@ -336,7 +342,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
   const additionalLaborTotal = (parseFloat(additionalHoursWorked) || 0) * laborRate
   const additionalSubtotal = additionalLaborTotal + additionalPartsTotal
   const pmSubtotal = isFlatRate ? flatRate! : 0
-  const grandTotal = pmSubtotal + additionalSubtotal
+  const tripChargeNum = parseFloat(tripCharge) || 0
+  const grandTotal = pmSubtotal + additionalSubtotal + tripChargeNum
 
   // ── Actions ──
 
@@ -416,6 +423,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           partsUsed: toPartUsed(pmParts),
           additionalPartsUsed: toPartUsed(additionalParts),
           additionalHoursWorked: parseFloat(additionalHoursWorked) || 0,
+          tripCharge: tripChargeNum,
           completionNotes,
           billingAmount: grandTotal,
           customerSignature: signatureImage,
@@ -460,6 +468,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           parts_used: pmParts.length > 0 ? toPartUsed(pmParts) : null,
           additional_parts_used: additionalParts.length > 0 ? toPartUsed(additionalParts) : [],
           additional_hours_worked: parseFloat(additionalHoursWorked) || null,
+          trip_charge: tripChargeNum,
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
           po_number: poNumber || null,
           billing_contact_name: billingContactName || null,
@@ -1036,6 +1045,28 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
               )}
             </div>
 
+            {/* ── Trip Charge (staff-only flat fee for the trip out) ── */}
+            {!isTech && (
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Trip Charge
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 dark:text-gray-400">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={tripCharge}
+                    onChange={(e) => setTripCharge(e.target.value)}
+                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    placeholder="0.00"
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">flat fee for the trip out (defaults from Settings)</span>
+                </div>
+              </div>
+            )}
+
             {/* ── GRAND TOTAL ── */}
             <div className="rounded-lg bg-gray-900 px-4 py-3 flex items-center justify-between">
               <div>
@@ -1043,6 +1074,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
                   {isFlatRate && `PM: $${pmSubtotal.toFixed(2)}`}
                   {isFlatRate && additionalSubtotal > 0 && ' + '}
                   {additionalSubtotal > 0 && `Additional: $${additionalSubtotal.toFixed(2)}`}
+                  {tripChargeNum > 0 && (isFlatRate || additionalSubtotal > 0) && ' + '}
+                  {tripChargeNum > 0 && `Trip: $${tripChargeNum.toFixed(2)}`}
                 </div>
                 <span className="text-base font-bold text-white">Grand Total</span>
               </div>
@@ -1513,6 +1546,22 @@ export default function TicketActions({ ticket, userRole, userId, laborRate }: T
           </div>
         </div>
       )}
+
+      {/* Trip Charge (read-only) — derived from the stored total so it always
+          reconciles with billing_amount and the work-order PDF. */}
+      {ticket.billing_amount != null && (() => {
+        const roPmSubtotal = isFlatRate && flatRate != null ? flatRate : 0
+        const roAdditionalSubtotal =
+          ((ticket.additional_hours_worked ?? 0) * laborRate) +
+          (ticket.additional_parts_used ?? []).reduce((s, p) => s + p.quantity * p.unit_price, 0)
+        const roTripCharge = Math.max(0, ticket.billing_amount - roPmSubtotal - roAdditionalSubtotal)
+        return roTripCharge > 0 ? (
+          <div className="flex justify-between mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+            <span>Trip Charge</span>
+            <span>${roTripCharge.toFixed(2)}</span>
+          </div>
+        ) : null
+      })()}
 
       {/* Grand Total (read-only) */}
       {ticket.billing_amount != null && (

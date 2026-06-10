@@ -79,6 +79,10 @@ export type ServiceTicketRow = {
   photos: TicketPhoto[]
   billing_amount: number | null
   diagnostic_charge: number | null
+  // Flat trip charge for sending a tech out (migration 105). NULL = use the
+  // ticket-type default: settings 'trip_charge_amount' for field ('outside'),
+  // 0 for shop/bench drop-off ('inside'). Resolve via effectiveTripCharge().
+  trip_charge: number | null
   diagnostic_invoice_number: string | null
   awaiting_pickup: boolean
   picked_up_at: string | null

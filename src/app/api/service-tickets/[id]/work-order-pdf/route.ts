@@ -151,6 +151,19 @@ export async function POST(
 
     const companyName = (await getSetting('company_name')) || undefined
 
+    // Trip charge is baked into billing_amount (server-computed). Derive the
+    // line as total − labor − parts − diagnostic so the printed breakdown
+    // always reconciles with the authoritative Total. 0 on warranty tickets.
+    const partsTotalPdf = partsUsed
+      .filter((p) => !p.warranty_covered)
+      .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+    const laborTotalPdf = ((raw.hours_worked as number | null) ?? 0) * laborRate
+    const diagnosticPdf = (raw.diagnostic_charge as number | null) ?? 0
+    const tripChargePdf = Math.max(
+      0,
+      ((raw.billing_amount as number | null) ?? 0) - laborTotalPdf - partsTotalPdf - diagnosticPdf,
+    )
+
     const workOrder = {
       workOrderNumber: raw.work_order_number as number | null,
       customerName: customer?.name ?? '—',
@@ -182,6 +195,7 @@ export async function POST(
         unitPrice: p.unit_price,
         warrantyCovered: p.warranty_covered ?? false,
       })),
+      tripCharge: tripChargePdf,
       diagnosticCharge: (raw.diagnostic_charge as number | null) ?? 0,
       billingTotal: (raw.billing_amount as number | null) ?? 0,
       customerSignature: raw.customer_signature as string | null,

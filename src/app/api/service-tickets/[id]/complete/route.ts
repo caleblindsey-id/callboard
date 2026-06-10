@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getCustomerLaborRate } from '@/lib/db/settings'
+import { getCustomerLaborRate, getTripCharge, effectiveTripCharge } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines } from '@/lib/margin'
@@ -102,7 +102,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, labor_rate_type, equipment_id, customer_id')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, trip_charge, labor_rate_type, equipment_id, customer_id')
       .eq('id', id)
       .single()
 
@@ -213,7 +213,15 @@ export async function POST(
             (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
           )
 
-      finalBillingAmount = laborTotal + billablePartsTotal + diagnosticCharge
+      // Flat trip charge: per-ticket value wins; bench ('inside') defaults to 0;
+      // field defaults to the global setting. partial_warranty still bills it.
+      const tripCharge = effectiveTripCharge(
+        current.trip_charge as number | null,
+        current.ticket_type as string,
+        await getTripCharge(),
+      )
+
+      finalBillingAmount = laborTotal + billablePartsTotal + diagnosticCharge + tripCharge
     }
     // Round to cents to avoid stored vs. displayed drift.
     finalBillingAmount = Math.round(finalBillingAmount * 100) / 100
