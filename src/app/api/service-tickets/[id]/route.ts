@@ -9,7 +9,7 @@ import {
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
-import { getCustomerLaborRate, getTripCharge, effectiveTripCharge } from '@/lib/db/settings'
+import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart } from '@/lib/parts'
@@ -52,7 +52,7 @@ const STAFF_ALLOWED_FIELDS = [
   'synergy_invoice_number',
   'billing_amount',
   'diagnostic_charge',
-  'trip_charge',
+  'trip_charge_qty',
   'diagnostic_invoice_number',
   'awaiting_pickup',
   'picked_up_at',
@@ -158,11 +158,11 @@ export async function PATCH(
       }
     }
 
-    // trip_charge validation (null clears the per-ticket override → ticket-type default)
-    if (filtered.trip_charge !== undefined && filtered.trip_charge !== null) {
-      const tc = filtered.trip_charge
-      if (typeof tc !== 'number' || !Number.isFinite(tc) || tc < 0) {
-        return NextResponse.json({ error: 'trip_charge must be a non-negative number' }, { status: 400 })
+    // trip_charge_qty validation (null clears the per-ticket override → ticket-type default)
+    if (filtered.trip_charge_qty !== undefined && filtered.trip_charge_qty !== null) {
+      const tq = filtered.trip_charge_qty
+      if (typeof tq !== 'number' || !Number.isFinite(tq) || tq < 0) {
+        return NextResponse.json({ error: 'trip_charge_qty must be a non-negative number' }, { status: 400 })
       }
     }
 
@@ -207,7 +207,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number)')
       .eq('id', id)
       .single()
 
@@ -595,13 +595,13 @@ export async function PATCH(
             .reduce((sum: number, p: ServicePartUsed) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
 
       // Trip charge on the estimate so the approved total matches the final bill.
-      // Use the new value if this PATCH is changing it, else the stored value.
-      const tripChargeRaw = (filtered.trip_charge !== undefined
-        ? filtered.trip_charge
-        : current.trip_charge) as number | null
+      // trips × per-trip rate; use the new qty if this PATCH changes it, else stored.
+      const tripQtyRaw = (filtered.trip_charge_qty !== undefined
+        ? filtered.trip_charge_qty
+        : current.trip_charge_qty) as number | null
       const tripCharge = billingType === 'warranty'
         ? 0
-        : effectiveTripCharge(tripChargeRaw, current.ticket_type as string, await getTripCharge())
+        : effectiveTripChargeQty(tripQtyRaw, current.ticket_type as string) * await getTripChargeRate()
 
       const total = laborTotal + partsTotal + tripCharge
 

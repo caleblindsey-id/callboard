@@ -55,7 +55,7 @@ interface TicketActionsProps {
   userRole: UserRole | null
   userId: string | null
   laborRate: number
-  tripChargeDefault: number
+  tripChargeRate: number
 }
 
 
@@ -150,7 +150,7 @@ function forceTransitionsFor(status: TicketStatus): TicketStatus[] {
   return (VALID_TRANSITIONS[status] ?? []).filter(t => t !== 'completed')
 }
 
-export default function TicketActions({ ticket, userRole, userId, laborRate, tripChargeDefault }: TicketActionsProps) {
+export default function TicketActions({ ticket, userRole, userId, laborRate, tripChargeRate }: TicketActionsProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -231,10 +231,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   const [additionalHoursWorked, setAdditionalHoursWorked] = useState(
     ticket.additional_hours_worked != null ? String(ticket.additional_hours_worked) : ''
   )
-  // Trip charge: per-ticket value or the Settings default (PM is always field
-  // work). Staff-editable; rolls into the grand total and billing_amount.
-  const [tripCharge, setTripCharge] = useState(
-    String(ticket.trip_charge != null ? ticket.trip_charge : tripChargeDefault)
+  // Trip charge = number of trips × the per-trip rate (mirrors labor). PM is
+  // always field work, so qty defaults to 1. Staff-editable; rolls into the
+  // grand total and billing_amount.
+  const [tripChargeQty, setTripChargeQty] = useState(
+    String(ticket.trip_charge_qty != null ? ticket.trip_charge_qty : 1)
   )
 
   const [machineHours, setMachineHours] = useState(
@@ -342,7 +343,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   const additionalLaborTotal = (parseFloat(additionalHoursWorked) || 0) * laborRate
   const additionalSubtotal = additionalLaborTotal + additionalPartsTotal
   const pmSubtotal = isFlatRate ? flatRate! : 0
-  const tripChargeNum = parseFloat(tripCharge) || 0
+  const tripChargeQtyNum = parseFloat(tripChargeQty) || 0
+  const tripChargeNum = tripChargeQtyNum * tripChargeRate
   const grandTotal = pmSubtotal + additionalSubtotal + tripChargeNum
 
   // ── Actions ──
@@ -423,7 +425,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           partsUsed: toPartUsed(pmParts),
           additionalPartsUsed: toPartUsed(additionalParts),
           additionalHoursWorked: parseFloat(additionalHoursWorked) || 0,
-          tripCharge: tripChargeNum,
+          tripChargeQty: tripChargeQtyNum,
           completionNotes,
           billingAmount: grandTotal,
           customerSignature: signatureImage,
@@ -468,7 +470,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           parts_used: pmParts.length > 0 ? toPartUsed(pmParts) : null,
           additional_parts_used: additionalParts.length > 0 ? toPartUsed(additionalParts) : [],
           additional_hours_worked: parseFloat(additionalHoursWorked) || null,
-          trip_charge: tripChargeNum,
+          trip_charge_qty: tripChargeQtyNum,
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
           po_number: poNumber || null,
           billing_contact_name: billingContactName || null,
@@ -1010,24 +1012,27 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
                 </div>
               </div>
 
-              {/* Trip Charge — flat fee for the trip out, billed alongside labor */}
+              {/* Trip Charge — trips × per-trip rate, billed alongside labor */}
               {!isTech && (
                 <div className="mb-3">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Trip Charge
                   </label>
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-500 dark:text-gray-400">$</span>
                     <input
                       type="number"
-                      step="0.01"
+                      step="1"
                       min="0"
-                      value={tripCharge}
-                      onChange={(e) => setTripCharge(e.target.value)}
+                      value={tripChargeQty}
+                      onChange={(e) => setTripChargeQty(e.target.value)}
                       className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                      placeholder="0.00"
+                      placeholder="0"
                     />
-                    <span className="text-xs text-gray-500 dark:text-gray-400">flat fee for the trip out (defaults from Settings)</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {tripChargeRate > 0
+                        ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
+                        : 'trips — set the rate in Settings'}
+                    </span>
                   </div>
                 </div>
               )}
