@@ -1,9 +1,10 @@
 import { getBillingTickets, getPmAwaitingInvoiceTickets } from '@/lib/db/tickets'
-import { getServiceBillingTickets } from '@/lib/db/service-tickets'
+import { getServiceBillingTickets, getServiceAwaitingInvoiceTickets } from '@/lib/db/service-tickets'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import BillingExport from './BillingExport'
 import PmAwaitingInvoice from './PmAwaitingInvoice'
 import ServiceBillingExport from './ServiceBillingExport'
+import ServiceAwaitingInvoice from './ServiceAwaitingInvoice'
 import BillingTabs from './BillingTabs'
 
 export default async function BillingPage({
@@ -25,10 +26,11 @@ export default async function BillingPage({
   const month = hasFilter ? parsedMonth : undefined
   const year = hasFilter ? parsedYear : undefined
 
-  const [pmTickets, pmAwaitingInvoice, serviceTickets] = await Promise.all([
+  const [pmTickets, pmAwaitingInvoice, serviceTickets, serviceAwaitingInvoice] = await Promise.all([
     getBillingTickets(month, year),
     getPmAwaitingInvoiceTickets(month, year),
     getServiceBillingTickets(month, year),
+    getServiceAwaitingInvoiceTickets(month, year),
   ])
 
   return (
@@ -41,7 +43,7 @@ export default async function BillingPage({
       </div>
       <BillingTabs
         pmCount={pmTickets.length}
-        serviceCount={serviceTickets.length}
+        serviceCount={serviceTickets.length + serviceAwaitingInvoice.length}
         initialTab={params.tab ?? ''}
         pmContent={
           <div className="space-y-6">
@@ -50,8 +52,9 @@ export default async function BillingPage({
           </div>
         }
         serviceContent={
-          <div className="space-y-4">
+          <div className="space-y-6">
             <ServiceBillingExport tickets={serviceTickets} selectedMonth={month} selectedYear={year} />
+            <ServiceAwaitingInvoice tickets={serviceAwaitingInvoice} />
           </div>
         }
       />

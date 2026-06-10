@@ -78,6 +78,11 @@ export type ServiceTicketRow = {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   billing_amount: number | null
+  // Export-first billing gate (migration 106), mirrors pm_tickets.billing_exported:
+  // a completed service ticket must be exported (work-order PDF pulled) before its
+  // Synergy invoice # can be keyed. Stays status='completed' while exported.
+  billing_exported: boolean
+  billing_exported_at: string | null
   diagnostic_charge: number | null
   // Flat trip charge for sending a tech out (migration 105). NULL = use the
   // ticket-type default: settings 'trip_charge_amount' for field ('outside'),
