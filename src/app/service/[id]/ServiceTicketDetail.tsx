@@ -529,12 +529,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     ticket.diagnostic_invoice_number ?? ''
   )
   // Trip charge = number of trips × the per-trip rate (mirrors labor hours × rate).
-  // Seed the qty with the effective value (per-ticket override, else 1 for field,
-  // 0 for bench 'inside'). Billed dollar = qty × tripChargeRate.
-  const tripChargeIsBench = ticket.ticket_type === 'inside'
-  const effectiveTripChargeQtyValue =
-    ticket.trip_charge_qty != null ? ticket.trip_charge_qty : (tripChargeIsBench ? 0 : 1)
-  const [tripChargeQty, setTripChargeQty] = useState(String(effectiveTripChargeQtyValue))
+  // Opt-in: seed the saved per-ticket qty, else leave the field BLANK so no trip
+  // charge is added unless someone enters a quantity. Billed dollar = qty × rate.
+  const [tripChargeQty, setTripChargeQty] = useState(
+    ticket.trip_charge_qty != null ? String(ticket.trip_charge_qty) : ''
+  )
 
   // Equipment registration (for tickets with denormalized equipment fields)
   const [registeringEquipment, setRegisteringEquipment] = useState(false)
@@ -3230,7 +3229,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               </InfoField>
             )}
             {(() => {
-              const qty = ticket.trip_charge_qty != null ? ticket.trip_charge_qty : (tripChargeIsBench ? 0 : 1)
+              const qty = ticket.trip_charge_qty != null ? ticket.trip_charge_qty : 0
               return qty > 0 && tripChargeRate > 0 ? (
                 <InfoField label="Trip Charge">
                   {qty} × ${tripChargeRate.toFixed(2)} = ${(qty * tripChargeRate).toFixed(2)}

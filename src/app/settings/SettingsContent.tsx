@@ -490,7 +490,7 @@ function TripChargeSetting({ initialTripCharge }: { initialTripCharge: string })
           suffix="per trip"
         />
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Per-trip rate billed on field service and PM tickets — each ticket sets the number of trips (qty × this rate, like labor). Shop / bench drop-offs default to 0 trips. Set to $0 to turn it off.
+          Per-trip rate billed on field service and PM tickets — each ticket sets the number of trips (qty × this rate, like labor). Opt-in: tickets default to 0 trips, so no trip charge is added unless someone enters a quantity. Set to $0 to turn it off entirely.
         </p>
       </div>
     </div>
