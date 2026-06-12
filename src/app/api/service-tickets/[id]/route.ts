@@ -427,6 +427,30 @@ export async function PATCH(
       // reopen branch below already cleared completion data while preserving the
       // estimate, so a restart naturally re-prefills.
       if (nextStatus === 'in_progress') {
+        // Pre-authorized work: a non-warranty ticket may start work straight
+        // from 'open' without an estimate, but only with an authorizer on
+        // record (who told us to proceed). Warranty/partial-warranty tickets
+        // already skip the estimate and stay note-free — that path is unchanged.
+        // Mirrors the manual approve/decline note requirement above.
+        if (currentStatus === 'open') {
+          const billingType = (current.billing_type as string | null) ?? 'non_warranty'
+          const isWarranty = billingType === 'warranty' || billingType === 'partial_warranty'
+          if (!isWarranty) {
+            const note = typeof filtered.manual_decision_note === 'string'
+              ? filtered.manual_decision_note.trim()
+              : ''
+            if (note.length < 2) {
+              return NextResponse.json(
+                { error: 'An authorization note is required to start work without an estimate.' },
+                { status: 400 }
+              )
+            }
+            filtered.manual_decision_note = note
+            filtered.estimate_bypassed = true
+            filtered.estimate_approved = true
+            filtered.estimate_approved_at = new Date().toISOString()
+          }
+        }
         const { data: ticketData } = await supabase
           .from('service_tickets')
           .select(
