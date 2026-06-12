@@ -13,6 +13,7 @@ import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from 
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
@@ -211,7 +212,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -495,6 +496,23 @@ export async function PATCH(
         })
       }
 
+      // Verify-first gate (parity with the client estimate builder): a linked
+      // unit must be tech-verified (make/model + details_verified_at) before the
+      // estimate can be submitted, since parts are ordered off the estimate.
+      // Mirrors the completion gate in /complete. Inline-only and equipment-less
+      // tickets are unaffected (no row to verify).
+      if (nextStatus === 'estimated' && currentStatus === 'open') {
+        const linked = current.equipment as
+          | { make: string | null; model: string | null; details_verified_at: string | null }
+          | null
+        if (equipmentNeedsVerification(linked)) {
+          return NextResponse.json(
+            { error: 'Verify the equipment make and model before submitting the estimate.' },
+            { status: 409 }
+          )
+        }
+      }
+
       // Resubmitting an estimate after a Request-More-Info round-trip clears
       // the manager's note so the tech doesn't see a stale prompt next time.
       if (nextStatus === 'estimated' && currentStatus === 'open') {
@@ -681,14 +699,20 @@ export async function PATCH(
       // equipment row (mirrors the parts_order_queue view).
       if (hasNewRequestedPart(existingParts, parts)) {
         const linked = current.equipment as
-          | { make: string | null; model: string | null; serial_number: string | null }
+          | { make: string | null; model: string | null; details_verified_at: string | null }
           | null
-        const make = (current.equipment_make || linked?.make || '').trim()
-        const model = (current.equipment_model || linked?.model || '').trim()
-        const serial = (current.equipment_serial_number || linked?.serial_number || '').trim()
-        if (!make || !model || !serial) {
+        // Shared with the client gate: a LINKED unit is ready once verified
+        // (serial optional — a verified blank serial is a deliberate "no serial");
+        // inline-only tickets still require make/model/serial field presence.
+        const ready = equipmentReadyForParts({
+          inlineMake: current.equipment_make,
+          inlineModel: current.equipment_model,
+          inlineSerial: current.equipment_serial_number,
+          linked,
+        })
+        if (!ready) {
           return NextResponse.json(
-            { error: 'Machine make, model, and serial number must be on the ticket before requesting parts.' },
+            { error: 'Verify the machine make, model, and serial number on the ticket before requesting parts.' },
             { status: 400 }
           )
         }
