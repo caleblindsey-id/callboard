@@ -4,7 +4,7 @@ category: Overview
 roles: [super_admin, manager, coordinator, technician]
 order: 50
 summary: The four roles in CallBoard and what each one can see and do.
-last_verified: 2026-05-27
+last_verified: 2026-06-12
 ---
 
 Every CallBoard user has one of four roles. Your role decides which sections you see in the menu and what actions you're allowed to take. This keeps the field view simple for technicians and reserves sensitive actions — deleting tickets, changing settings, managing users — for the people who should have them.
@@ -21,6 +21,7 @@ Every CallBoard user has one of four roles. Your role decides which sections you
 ## A few things to know
 
 - **Technicians see only their own work.** A tech can't open another technician's ticket or browse the full customer list — this is by design, not a bug.
+- **Some technicians can create service tickets.** By default only office staff open service tickets, but a manager can enable **Create service tickets** for an individual tech in Settings. A tech with it on gets a **+ New Service Ticket** button; tickets they create are assigned to themselves. See [Create a service ticket](/help/technicians/create-a-service-ticket).
 - **Customers and products are read-only for everyone.** They come from Synergy. To correct one, fix it in Synergy; the change flows over on the next nightly sync.
 - **Some actions are deliberately limited.** If a button you expect isn't there, your role probably doesn't permit that action. A manager or admin can do it, or change your role if appropriate.
 
