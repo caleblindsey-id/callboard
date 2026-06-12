@@ -525,6 +525,11 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                       return cr ? <CreditReviewBadge status={cr} /> : null
                     })()}
                   </div>
+                  {ticket.customers?.account_number && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Acct #{ticket.customers.account_number}
+                    </p>
+                  )}
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     {[ticket.equipment?.make, ticket.equipment?.model].filter(Boolean).join(' ') ||
                       [ticket.equipment_make, ticket.equipment_model].filter(Boolean).join(' ') ||
@@ -622,6 +627,11 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                       return cr ? <CreditReviewBadge status={cr} /> : null
                     })()}
                         </div>
+                        {ticket.customers?.account_number && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            Acct #{ticket.customers.account_number}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         <div>
