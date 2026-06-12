@@ -56,8 +56,10 @@ export async function getTripChargeRate(): Promise<number> {
 // used in every service billing path so the on-screen total and the stored
 // billing_amount agree:
 //   - An explicit per-ticket qty (including 0) always wins.
-//   - Service tickets dropped off at the shop ('inside') default to 0 trips.
-//   - Field service ('outside') defaults to 1 trip.
+//   - Otherwise the trip charge is opt-in: default 0 trips. Nothing is billed
+//     unless someone enters a quantity on the estimate or at completion.
+// (ticketType is kept for callers / future per-type defaults; both bench
+// 'inside' and field service now default to 0.)
 // PM tickets do NOT flow through this helper: they're flat-rate under agreement
 // and default to 0 trips in the PM complete route (feedback #36).
 export function effectiveTripChargeQty(
@@ -66,7 +68,7 @@ export function effectiveTripChargeQty(
 ): number {
   if (ticketQty != null) return ticketQty
   if (ticketType === 'inside') return 0
-  return 1
+  return 0
 }
 
 export async function getSetting(key: string): Promise<string | null> {
