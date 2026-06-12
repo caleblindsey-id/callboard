@@ -4,7 +4,7 @@ category: Technicians
 roles: [super_admin, manager, coordinator, technician]
 order: 20
 summary: Record the work on an assigned service (repair) ticket and mark it complete.
-last_verified: 2026-05-28
+last_verified: 2026-06-11
 ---
 
 A service ticket is reactive repair work — the customer called with a problem, rather than a scheduled PM. Completing one is simpler than a PM: you log your time, any parts used, notes, photos, and (for field work) a customer signature.
@@ -15,6 +15,8 @@ A service ticket is reactive repair work — the customer called with a problem,
 2. Open the ticket assigned to you that's marked **In Progress**.
 
 > If the ticket was created from an estimate the customer already approved, the hours, parts, and notes may be **pre-filled from that estimate**. CallBoard shows an amber reminder — update those fields to reflect the *actual* work you did before marking it complete.
+
+> **Got a PO from the customer?** Enter it in the **Customer PO #** field in the *Customer & Equipment* section and tap **Save**. If the customer requires a PO, that field is flagged **PO REQUIRED** in red — record the number there as soon as you have it.
 
 ## Step 2 — Record the work
 

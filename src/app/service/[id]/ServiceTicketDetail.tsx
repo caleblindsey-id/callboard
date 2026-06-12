@@ -546,6 +546,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const hasInitialized = useRef(false)
   const flushRef = useRef<() => void>(() => {})
 
+  // Customer PO # — techs and staff can record the customer's purchase order
+  // number on the ticket. The PO often arrives while the tech is on-site
+  // mid-repair (feedback #38). Explicit Save (not auto-save) so an in-app nav
+  // can't drop an unsaved edit.
+  const [poNumber, setPoNumber] = useState(ticket.po_number ?? '')
+  const [poSaved, setPoSaved] = useState(!!ticket.po_number)
+  const [poSaving, setPoSaving] = useState(false)
+
   // Contact edit state — staff can update name/email/phone after submission
   const [editingContact, setEditingContact] = useState(false)
   const [contactDraftName, setContactDraftName] = useState(ticket.contact_name ?? '')
@@ -908,6 +916,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       setEditingContact(false)
       setSuccessMsg('Contact updated')
     })
+  }
+
+  async function handleSavePoNumber() {
+    setPoSaving(true)
+    setError(null)
+    try {
+      await patchTicket({ po_number: poNumber.trim() || null })
+      setPoSaved(!!poNumber.trim())
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save PO number')
+    } finally {
+      setPoSaving(false)
+    }
   }
 
   function handleCancelContactEdit() {
@@ -2080,11 +2102,35 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               )}
             </InfoField>
           )}
-          {ticket.customers?.po_required && (
-            <InfoField label="PO Required">
-              <span className="text-red-700 dark:text-red-400 font-bold">YES — PO REQUIRED</span>
-            </InfoField>
-          )}
+          {/* Customer PO # — editable by techs and staff. The PO often arrives
+              while the tech is on-site mid-repair (feedback #38), so it can be
+              recorded here at any point. Emphasized when the customer requires a
+              PO; still available (optional) when they don't. */}
+          <div className="md:col-span-2">
+            <span className="text-gray-500 dark:text-gray-400 text-sm">
+              Customer PO #
+              {ticket.customers?.po_required && (
+                <span className="ml-2 font-bold text-red-700 dark:text-red-400">— PO REQUIRED</span>
+              )}
+            </span>
+            <div className="mt-1 flex flex-col sm:flex-row gap-2 sm:max-w-md">
+              <input
+                type="text"
+                value={poNumber}
+                onChange={(e) => { setPoNumber(e.target.value); setPoSaved(false) }}
+                placeholder="Enter customer PO if known"
+                className="flex-1 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0"
+              />
+              <button
+                type="button"
+                onClick={handleSavePoNumber}
+                disabled={poSaving || poSaved}
+                className="px-4 py-2 text-sm font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0 shrink-0"
+              >
+                {poSaving ? 'Saving…' : poSaved ? 'Saved ✓' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       </Card>
 

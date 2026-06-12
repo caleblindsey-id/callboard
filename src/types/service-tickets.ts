@@ -84,6 +84,10 @@ export type ServiceTicketRow = {
   billing_exported: boolean
   billing_exported_at: string | null
   diagnostic_charge: number | null
+  // Customer PO # for this job (migration 108), mirrors pm_tickets.po_number.
+  // Distinct from the per-line po_number in parts_requested (the vendor PO used
+  // when the office orders a part) and from synergy_po_number.
+  po_number: string | null
   // Trip charge = trip_charge_qty × the settings 'trip_charge_amount' rate
   // (mirrors labor: hours × rate). trip_charge_qty is the number of trips
   // (migration 107); NULL = ticket-type default (field=1, bench 'inside'=0).
