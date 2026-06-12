@@ -2457,6 +2457,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     showVendorItemCode={true}
                     label="Estimated Parts"
                     allowPriceOverride={isStaff}
+                    allowPriceEdit={isTech}
                     onRequestPart={machineComplete ? handleRequestEstimatePart : undefined}
                   />
                   {!machineComplete && estimateParts.length > 0 && (
@@ -3001,6 +3002,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
                   label=""
                   allowPriceOverride={isStaff}
+                  allowPriceEdit={isTech}
                 />
               </div>
             </details>
