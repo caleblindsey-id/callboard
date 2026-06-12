@@ -47,6 +47,18 @@ export async function POST(
     // (it would collide on the (customer_id, serial) unique index for unit #2).
     const serial = normalizeSerial(typeof body.serial_number === 'string' ? body.serial_number : null)
 
+    // Optional relink: when a tech hits the serial-conflict on another unit and
+    // chooses "use the existing unit", the panel re-posts this verify to the
+    // EXISTING unit's id and asks us to point the ticket at it too. Doing the
+    // relink here keeps the privileged write server-side under the same
+    // service-role client — no need to widen tech-writable fields on the ticket
+    // PATCH routes (which don't allow equipment_id for techs).
+    const relinkTicketId = str('relink_ticket_id')
+    const relinkTicketKind =
+      body.relink_ticket_kind === 'service' || body.relink_ticket_kind === 'pm'
+        ? body.relink_ticket_kind
+        : null
+
     if (!make || !model) {
       return NextResponse.json(
         { error: 'Make and model are required to verify equipment.' },
@@ -134,6 +146,75 @@ export async function POST(
     }
     if (!data) {
       return NextResponse.json({ error: 'Equipment not found.' }, { status: 404 })
+    }
+
+    // Relink the ticket to this (now-verified) unit when requested. `id` here is
+    // the existing unit the tech chose, so the ticket ends up pointed at the
+    // on-file machine instead of the duplicate that was linked before.
+    if (relinkTicketId && relinkTicketKind) {
+      if (relinkTicketKind === 'service') {
+        // Same-customer guard (defensive — existing_id was already found via a
+        // customer-scoped query, so a mismatch shouldn't be reachable via UI).
+        const { data: st } = await supabase
+          .from('service_tickets')
+          .select('customer_id')
+          .eq('id', relinkTicketId)
+          .maybeSingle()
+        if (!st) {
+          return NextResponse.json({ error: 'Ticket not found.' }, { status: 404 })
+        }
+        if (equip.customer_id != null && st.customer_id !== equip.customer_id) {
+          return NextResponse.json(
+            { error: 'That unit belongs to a different customer than this ticket.' },
+            { status: 422 }
+          )
+        }
+        const { error: relinkErr } = await supabase
+          .from('service_tickets')
+          .update({
+            equipment_id: id,
+            equipment_make: null,
+            equipment_model: null,
+            equipment_serial_number: null,
+          })
+          .eq('id', relinkTicketId)
+        if (relinkErr) {
+          console.error('equipment verify relink (service) error:', relinkErr)
+          return NextResponse.json({ error: 'Failed to switch the ticket to the existing unit.' }, { status: 500 })
+        }
+      } else {
+        // PM ticket: no inline equipment columns — just repoint equipment_id.
+        // Derive the customer for the guard via the ticket's current unit.
+        const { data: pt } = await supabase
+          .from('pm_tickets')
+          .select('equipment_id')
+          .eq('id', relinkTicketId)
+          .maybeSingle()
+        if (!pt) {
+          return NextResponse.json({ error: 'Ticket not found.' }, { status: 404 })
+        }
+        if (pt.equipment_id && equip.customer_id != null) {
+          const { data: curEq } = await supabase
+            .from('equipment')
+            .select('customer_id')
+            .eq('id', pt.equipment_id)
+            .maybeSingle()
+          if (curEq && curEq.customer_id !== equip.customer_id) {
+            return NextResponse.json(
+              { error: 'That unit belongs to a different customer than this ticket.' },
+              { status: 422 }
+            )
+          }
+        }
+        const { error: relinkErr } = await supabase
+          .from('pm_tickets')
+          .update({ equipment_id: id })
+          .eq('id', relinkTicketId)
+        if (relinkErr) {
+          console.error('equipment verify relink (pm) error:', relinkErr)
+          return NextResponse.json({ error: 'Failed to switch the ticket to the existing unit.' }, { status: 500 })
+        }
+      }
     }
 
     return NextResponse.json({ success: true, id: data.id })

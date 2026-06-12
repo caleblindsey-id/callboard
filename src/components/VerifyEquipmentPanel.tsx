@@ -11,6 +11,14 @@ interface Props {
   /** Called after the unit is successfully verified. */
   onVerified: () => void
   onCancel?: () => void
+  /**
+   * Ticket to relink when the entered serial conflicts with another existing
+   * unit and the user chooses "use the existing unit". When both relink props
+   * are set, a relink button appears on the conflict; otherwise the panel only
+   * offers a view-the-existing-unit link (its prior behavior).
+   */
+  relinkTicketId?: string
+  relinkTicketKind?: 'service' | 'pm'
 }
 
 const inputClass =
@@ -30,6 +38,8 @@ export default function VerifyEquipmentPanel({
   serial: initialSerial,
   onVerified,
   onCancel,
+  relinkTicketId,
+  relinkTicketKind,
 }: Props) {
   const [make, setMake] = useState(initialMake ?? '')
   const [model, setModel] = useState(initialModel ?? '')
@@ -90,6 +100,43 @@ export default function VerifyEquipmentPanel({
     }
   }
 
+  // The entered serial matched another existing unit. Point the ticket at that
+  // unit and verify it in one step, using the details the tech just confirmed
+  // against the physical machine. We re-post the verify to the EXISTING unit's
+  // id (conflictId) and ask the endpoint to relink the ticket too. Verifying
+  // the existing unit with the matched serial doesn't self-conflict (the
+  // endpoint excludes self from the uniqueness check).
+  async function handleUseExisting() {
+    if (!conflictId || !relinkTicketId || !relinkTicketKind) return
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/equipment/${conflictId}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          make: make.trim(),
+          model: model.trim(),
+          serial_number: noSerial ? '' : serial.trim(),
+          relink_ticket_id: relinkTicketId,
+          relink_ticket_kind: relinkTicketKind,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to switch the ticket to the existing unit.')
+        setLoading(false)
+        return
+      }
+      // Parent refreshes; the ticket now points at the verified existing unit,
+      // so this panel unmounts. Leave loading true through the refresh.
+      onVerified()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred.')
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-3">
       <div>
@@ -105,12 +152,27 @@ export default function VerifyEquipmentPanel({
         <div className="space-y-1">
           <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
           {conflictId && (
-            <Link
-              href={`/equipment/${conflictId}`}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              View the existing unit
-            </Link>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Link
+                href={`/equipment/${conflictId}`}
+                className="inline-flex items-center min-h-[44px] text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View the existing unit
+              </Link>
+              {relinkTicketId && relinkTicketKind && (
+                <>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">or</span>
+                  <button
+                    type="button"
+                    onClick={handleUseExisting}
+                    disabled={loading}
+                    className="inline-flex items-center min-h-[44px] text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                  >
+                    Use the existing unit for this ticket
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       )}

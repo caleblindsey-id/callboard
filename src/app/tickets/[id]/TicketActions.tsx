@@ -880,6 +880,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
               model={equipmentToVerify.model}
               serial={equipmentToVerify.serial_number}
               onVerified={handleEquipmentVerified}
+              relinkTicketId={ticket.id}
+              relinkTicketKind="pm"
             />
           ) : (
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
