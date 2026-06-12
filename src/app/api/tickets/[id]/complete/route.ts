@@ -241,13 +241,13 @@ export async function POST(
     // Round to cents to keep stored billing_amount consistent with
     // .toFixed(2) display values everywhere (otherwise sub-cent IEEE 754
     // drift can cause the PDF total and the export-list total to diverge).
-    // Flat trip charge: the completer's value (body) wins, else the stored
-    // per-ticket value, else the global default. PM is always field work.
     // Trip charge = trips × per-trip rate (mirrors labor). Completer's qty wins,
-    // else the stored qty, else 1 (PM is always field work).
+    // else the stored qty, else 0. PMs are flat-rate under agreement, so they
+    // default to NO trip charge (feedback #36); a manager can still add trips
+    // via the override field when one is genuinely warranted (e.g. a T&M PM).
     const tripQty = isNonNegativeNumber(tripChargeQtyIn)
       ? tripChargeQtyIn
-      : ((current.trip_charge_qty as number | null) ?? 1)
+      : ((current.trip_charge_qty as number | null) ?? 0)
     const tripCharge = tripQty * await getTripChargeRate()
     const finalBillingAmount = Math.round((flatRate + (finalAdditionalHours * laborRate) + additionalPartsTotal + tripCharge) * 100) / 100
 

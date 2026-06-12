@@ -232,11 +232,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   const [additionalHoursWorked, setAdditionalHoursWorked] = useState(
     ticket.additional_hours_worked != null ? String(ticket.additional_hours_worked) : ''
   )
-  // Trip charge = number of trips × the per-trip rate (mirrors labor). PM is
-  // always field work, so qty defaults to 1. Staff-editable; rolls into the
-  // grand total and billing_amount.
+  // Trip charge = number of trips × the per-trip rate (mirrors labor). PMs are
+  // flat-rate under agreement, so qty defaults to 0 — no trip charge unless a
+  // manager adds one via the override field below (feedback #36). Rolls into
+  // the grand total and billing_amount.
   const [tripChargeQty, setTripChargeQty] = useState(
-    String(ticket.trip_charge_qty != null ? ticket.trip_charge_qty : 1)
+    String(ticket.trip_charge_qty != null ? ticket.trip_charge_qty : 0)
   )
 
   const [machineHours, setMachineHours] = useState(
