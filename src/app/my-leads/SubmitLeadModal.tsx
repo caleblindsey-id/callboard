@@ -237,6 +237,8 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     setPhotoError(null)
     setWarning(null)
     setError(null)
+    // Defensive: never reopen with a stale in-flight flag (would disable Submit).
+    setSubmitting(false)
 
     if (lead) {
       setLeadType(lead.lead_type)
@@ -542,6 +544,10 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
         setSubmitting(false)
         return
       }
+      // Clear the in-flight flag before closing. The modal stays mounted (open is
+      // just toggled), so a stuck `submitting=true` would leave the Submit button
+      // disabled on the next open — blocking back-to-back sign-ups (feedback #35).
+      setSubmitting(false)
       onClose()
       router.refresh()
     } catch (err) {
