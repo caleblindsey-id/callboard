@@ -37,7 +37,11 @@ async function postUpdate(args: UpdateArgs): Promise<PartRequest> {
   })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to update part')
+    // Attach the HTTP status so callers can special-case a 409 optimistic-lock
+    // conflict (retry once) without string-matching the message.
+    const err = new Error(data.error || 'Failed to update part') as Error & { status?: number }
+    err.status = res.status
+    throw err
   }
   return data.part as PartRequest
 }
@@ -129,7 +133,9 @@ export async function setSynergyOrderNumber(
   })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to update Synergy order #')
+    const err = new Error(data.error || 'Failed to update Synergy order #') as Error & { status?: number }
+    err.status = res.status
+    throw err
   }
   return (data.synergy_order_number ?? null) as string | null
 }

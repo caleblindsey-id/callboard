@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, ExternalLink, FileText, PackageCheck, RefreshCw, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Check, Download, ExternalLink, FileText, PackageCheck, RefreshCw, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
 import {
   cancelPart,
@@ -220,7 +219,6 @@ export default function PartsQueueClient({
   initialTicketFilter = null,
   initialFilters,
 }: Props) {
-  const router = useRouter()
   const [rows, setRows] = useState<PartsQueueRow[]>(initialRows)
   // Filter controls live in the URL so the Back button restores them. The
   // ?ticket deep-link prefilter is part of the same managed set so clearing the
@@ -355,27 +353,46 @@ export default function PartsQueueClient({
     flash(rowKey(row))
   }, [flash])
 
-  const handleFieldsCommit = useCallback(async (row: PartsQueueRow, fields: Partial<PartRequest>) => {
+  // Returns true when the value persisted, false when it didn't. The caller
+  // (InlineText / VendorPicker) uses this to show a per-field saved/failed state
+  // and — crucially — to KEEP the user's typed value on failure instead of
+  // discarding it. A previous version called router.refresh() on error, which
+  // silently reloaded server data and wiped the in-flight PO #/SO # the
+  // coordinator had just entered (feedback #34).
+  const handleFieldsCommit = useCallback(async (row: PartsQueueRow, fields: Partial<PartRequest>): Promise<boolean> => {
     const key = rowKey(row)
     setPendingRow(key)
     setError(null)
     try {
-      const part = await updatePartFields(row.source, row.ticket_id, row.part_index, fields)
+      let part: PartRequest
+      try {
+        part = await updatePartFields(row.source, row.ticket_id, row.part_index, fields)
+      } catch (err) {
+        // A 409 optimistic-lock conflict means a sibling write on the same ticket
+        // landed between the route's read and write. The route re-reads updated_at
+        // every call, so a single retry converges. Other errors propagate.
+        if ((err as { status?: number })?.status === 409) {
+          part = await updatePartFields(row.source, row.ticket_id, row.part_index, fields)
+        } else {
+          throw err
+        }
+      }
       applyUpdate(row, part)
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
-      router.refresh()
+      return false
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
-  }, [applyUpdate, router])
+  }, [applyUpdate])
 
-  const handleFieldBlur = useCallback(async (row: PartsQueueRow, field: keyof PartRequest, value: string) => {
+  const handleFieldBlur = useCallback(async (row: PartsQueueRow, field: keyof PartRequest, value: string): Promise<boolean> => {
     const trimmed = value.trim()
     const current = (row[field as keyof PartsQueueRow] ?? '') as string
-    if (trimmed === (current ?? '')) return
+    if (trimmed === (current ?? '')) return true
     const fields: Partial<PartRequest> = { [field]: trimmed || undefined } as Partial<PartRequest>
-    await handleFieldsCommit(row, fields)
+    return handleFieldsCommit(row, fields)
   }, [handleFieldsCommit])
 
   const handleMarkOrdered = useCallback(async (row: PartsQueueRow) => {
@@ -434,15 +451,24 @@ export default function PartsQueueClient({
     }
   }, [])
 
-  const handleSynergyOrderCommit = useCallback(async (row: PartsQueueRow, value: string) => {
+  const handleSynergyOrderCommit = useCallback(async (row: PartsQueueRow, value: string): Promise<boolean> => {
     const trimmed = value.trim()
     const current = row.synergy_order_number ?? ''
-    if (trimmed === current) return
+    if (trimmed === current) return true
     const key = rowKey(row)
     setPendingRow(key)
     setError(null)
     try {
-      const next = await setSynergyOrderNumber(row.source, row.ticket_id, trimmed || null)
+      let next: string | null
+      try {
+        next = await setSynergyOrderNumber(row.source, row.ticket_id, trimmed || null)
+      } catch (err) {
+        if ((err as { status?: number })?.status === 409) {
+          next = await setSynergyOrderNumber(row.source, row.ticket_id, trimmed || null)
+        } else {
+          throw err
+        }
+      }
       // SO# lives on the parent ticket — every part row sharing this
       // (source, ticket_id) must reflect the new value.
       setRows(rs =>
@@ -453,13 +479,16 @@ export default function PartsQueueClient({
         ),
       )
       flash(key)
+      return true
     } catch (err) {
+      // Keep the typed value on screen (no router.refresh()) so a failed save
+      // doesn't blank the field the coordinator just filled in (feedback #34).
       setError(err instanceof Error ? err.message : 'Failed to save Synergy order #')
-      router.refresh()
+      return false
     } finally {
       setPendingRow(cur => (cur === key ? null : cur))
     }
-  }, [flash, router])
+  }, [flash])
 
   const handleRevalidate = useCallback(async (row: PartsQueueRow) => {
     const key = rowKey(row)
@@ -741,7 +770,7 @@ export default function PartsQueueClient({
                       <InlineText
                         value={row.po_number ?? ''}
                         placeholder="Synergy PO #"
-                        disabled={!canEditFields || isPending}
+                        disabled={!canEditFields}
                         onBlurCommit={v => handleFieldBlur(row, 'po_number', v)}
                         widthClass="w-24"
                       />
@@ -750,7 +779,7 @@ export default function PartsQueueClient({
                       <InlineText
                         value={row.synergy_order_number ?? ''}
                         placeholder="SO #"
-                        disabled={!canEditFields || isPending}
+                        disabled={!canEditFields}
                         onBlurCommit={v => handleSynergyOrderCommit(row, v)}
                         widthClass="w-24"
                       />
@@ -791,7 +820,7 @@ export default function PartsQueueClient({
                       <InlineText
                         value={row.product_number ?? ''}
                         placeholder="Synergy Item #"
-                        disabled={!canEditFields || isPending}
+                        disabled={!canEditFields}
                         onBlurCommit={v => handleFieldBlur(row, 'product_number', v)}
                         widthClass="w-28"
                       />
@@ -800,7 +829,7 @@ export default function PartsQueueClient({
                       <InlineText
                         value={row.vendor_item_code ?? ''}
                         placeholder="Vendor Item #"
-                        disabled={!canEditFields || isPending}
+                        disabled={!canEditFields}
                         onBlurCommit={v => handleFieldBlur(row, 'vendor_item_code', v)}
                         widthClass="w-28"
                       />
@@ -1389,6 +1418,12 @@ function ValidationBadge({
   )
 }
 
+// Inline editable cell that autosaves on blur. The committed value persists
+// independently of any status transition (Mark Ordered) — a coordinator can
+// record a Synergy PO #/SO # while the parts still sit in a PO waiting to be
+// placed (feedback #34). onBlurCommit resolves true when the value persisted;
+// on false (or a thrown error) the typed text is KEPT so a failed save never
+// silently blanks the field, and a red marker surfaces the failure.
 function InlineText({
   value,
   placeholder,
@@ -1399,33 +1434,75 @@ function InlineText({
   value: string
   placeholder: string
   disabled: boolean
-  onBlurCommit: (v: string) => void
+  onBlurCommit: (v: string) => Promise<boolean>
   widthClass: string
 }) {
   const [local, setLocal] = useState(value)
   const [focused, setFocused] = useState(false)
   const [lastExternal, setLastExternal] = useState(value)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   // Sync local to upstream value on prop change — but only when not focused,
-  // so we never yank text out from under a user mid-edit.
+  // so we never yank text out from under a user mid-edit. A failed save doesn't
+  // change `value`, so the user's text is preserved here automatically.
   if (value !== lastExternal) {
     setLastExternal(value)
     if (!focused) setLocal(value)
   }
 
+  // The "saved" check is a brief confirmation, not a persistent badge.
+  useEffect(() => {
+    if (status !== 'saved') return
+    const id = window.setTimeout(() => setStatus(s => (s === 'saved' ? 'idle' : s)), 1500)
+    return () => window.clearTimeout(id)
+  }, [status])
+
+  async function commit() {
+    setFocused(false)
+    // No change → nothing to persist (mirrors the handlers' early-return).
+    if (local.trim() === (value ?? '').trim()) {
+      setStatus('idle')
+      return
+    }
+    setStatus('saving')
+    try {
+      const ok = await onBlurCommit(local)
+      setStatus(ok ? 'saved' : 'error')
+    } catch {
+      setStatus('error')
+    }
+  }
+
   return (
-    <input
-      type="text"
-      value={local}
-      onChange={e => setLocal(e.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => {
-        setFocused(false)
-        onBlurCommit(local)
-      }}
-      placeholder={placeholder}
-      disabled={disabled}
-      className={`${widthClass} rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 dark:disabled:bg-gray-900/40 disabled:text-gray-500`}
-    />
+    <div className="relative inline-flex items-center">
+      <input
+        type="text"
+        value={local}
+        onChange={e => {
+          setLocal(e.target.value)
+          // Clear a stale saved/error marker the moment the user resumes typing.
+          if (status === 'error' || status === 'saved') setStatus('idle')
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={commit}
+        placeholder={placeholder}
+        disabled={disabled}
+        aria-invalid={status === 'error'}
+        className={`${widthClass} rounded-md border ${
+          status === 'error'
+            ? 'border-red-400 dark:border-red-500'
+            : 'border-gray-300 dark:border-gray-600'
+        } dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 ${
+          status === 'idle' ? 'px-2' : 'pl-2 pr-6'
+        } py-1 text-xs focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 dark:disabled:bg-gray-900/40 disabled:text-gray-500`}
+      />
+      {status !== 'idle' && (
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">
+          {status === 'saving' && <RefreshCw className="h-3 w-3 animate-spin text-gray-400" aria-label="Saving" />}
+          {status === 'saved' && <Check className="h-3 w-3 text-green-600 dark:text-green-400" aria-label="Saved" />}
+          {status === 'error' && <AlertCircle className="h-3 w-3 text-red-500" aria-label="Not saved — try again" />}
+        </span>
+      )}
+    </div>
   )
 }
