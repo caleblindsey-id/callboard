@@ -270,59 +270,69 @@ export default function PartsQueueClient({
     return { review, toPull, toOrder, ordered, received }
   }, [rows, receivedCutoffMs])
 
+  // Shared row predicate. `skipVendor` lets the vendor dropdown derive its
+  // options from rows that match every *other* active filter — otherwise the
+  // selected vendor would collapse the dropdown to a single option.
+  const matchesFilters = useCallback((r: PartsQueueRow, skipVendor = false) => {
+    if (r.cancelled) return false
+    // Tab filter
+    if (tab === 'review' && r.status !== 'pending_review') return false
+    if (tab === 'to_pull' && (r.status !== 'from_stock' || !!r.pulled_at)) return false
+    if (tab === 'to_order' && r.status !== 'requested') return false
+    if (tab === 'ordered' && r.status !== 'ordered') return false
+    if (tab === 'received') {
+      if (r.status !== 'received') return false
+      if (!r.received_at) return false
+      if (new Date(r.received_at).getTime() < receivedCutoffMs) return false
+    }
+    // Ticket prefilter (Round B deep-link from /service/<id>) — takes
+    // precedence over the source dropdown so a deep-link still shows the
+    // exact ticket's parts.
+    if (ticketFilter && r.ticket_id !== ticketFilter) return false
+    // Source filter
+    if (sourceFilter !== 'all' && r.source !== sourceFilter) return false
+    // Vendor filter
+    if (!skipVendor && vendorFilter && (r.vendor ?? '') !== vendorFilter) return false
+    // Search
+    const q = search.trim().toLowerCase()
+    if (q) {
+      const hay = [
+        r.customer_name,
+        r.description,
+        r.detail,
+        r.work_order_number?.toString(),
+        r.product_number,
+        r.vendor_item_code,
+        r.po_number,
+        r.vendor,
+        r.assigned_technician_name,
+        r.machine_make,
+        r.machine_model,
+        r.machine_serial,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  }, [tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter])
+
+  // Only offer vendors present in the rows currently visible (post every other
+  // filter), so the dropdown reflects what's on the page. Always keep the
+  // active selection present even if it now matches nothing, so the <select>
+  // doesn't point at a missing option and render blank.
   const vendorOptions = useMemo(() => {
     const set = new Set<string>()
-    for (const r of rows) if (r.vendor) set.add(r.vendor)
+    for (const r of rows) if (r.vendor && matchesFilters(r, true)) set.add(r.vendor)
+    if (vendorFilter) set.add(vendorFilter)
     return Array.from(set).sort((a, b) => a.localeCompare(b))
-  }, [rows])
+  }, [rows, matchesFilters, vendorFilter])
 
   const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const result = rows.filter(r => {
-      if (r.cancelled) return false
-      // Tab filter
-      if (tab === 'review' && r.status !== 'pending_review') return false
-      if (tab === 'to_pull' && (r.status !== 'from_stock' || !!r.pulled_at)) return false
-      if (tab === 'to_order' && r.status !== 'requested') return false
-      if (tab === 'ordered' && r.status !== 'ordered') return false
-      if (tab === 'received') {
-        if (r.status !== 'received') return false
-        if (!r.received_at) return false
-        if (new Date(r.received_at).getTime() < receivedCutoffMs) return false
-      }
-      // Ticket prefilter (Round B deep-link from /service/<id>) — takes
-      // precedence over the source dropdown so a deep-link still shows the
-      // exact ticket's parts.
-      if (ticketFilter && r.ticket_id !== ticketFilter) return false
-      // Source filter
-      if (sourceFilter !== 'all' && r.source !== sourceFilter) return false
-      // Vendor filter
-      if (vendorFilter && (r.vendor ?? '') !== vendorFilter) return false
-      // Search
-      if (q) {
-        const hay = [
-          r.customer_name,
-          r.description,
-          r.detail,
-          r.work_order_number?.toString(),
-          r.product_number,
-          r.vendor_item_code,
-          r.po_number,
-          r.vendor,
-          r.assigned_technician_name,
-          r.machine_make,
-          r.machine_model,
-          r.machine_serial,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        if (!hay.includes(q)) return false
-      }
-      return true
-    })
+    const result = rows.filter(r => matchesFilters(r))
     return sortRows(result, sortKey, sortDir)
-  }, [rows, tab, sourceFilter, vendorFilter, search, sortKey, sortDir, receivedCutoffMs, ticketFilter])
+  }, [rows, matchesFilters, sortKey, sortDir])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
