@@ -107,11 +107,13 @@ export function CreateServiceTicketForm({
   const [serviceZip, setServiceZip] = useState('')
 
   // --- Technician ---
+  const isTech = currentUser.role === 'technician'
   const [technicians, setTechnicians] = useState<UserRow[]>([])
-  // A technician creating their own ticket defaults the assignment to themselves
-  // (still editable below). Managers keep the blank default and pick.
+  // A technician may only create tickets assigned to themselves (enforced
+  // server-side and by the service_tickets_tech_insert RLS policy), so their
+  // assignment is fixed to self. Managers keep the blank default and pick.
   const [technicianId, setTechnicianId] = useState(() =>
-    currentUser.role === 'technician' ? currentUser.id : ''
+    isTech ? currentUser.id : ''
   )
 
   // --- Submission ---
@@ -1068,18 +1070,25 @@ export function CreateServiceTicketForm({
             </div>
             <div>
               <label className={labelClass}>Assigned Technician</label>
-              <select
-                value={technicianId}
-                onChange={(e) => setTechnicianId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Unassigned</option>
-                {technicians.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+              {isTech ? (
+                // Techs can only self-assign — show a fixed value, not a picker.
+                <p className="text-sm text-gray-900 dark:text-white px-3 py-2 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                  Assigned to you
+                </p>
+              ) : (
+                <select
+                  value={technicianId}
+                  onChange={(e) => setTechnicianId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Unassigned</option>
+                  {technicians.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         </div>
