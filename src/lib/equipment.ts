@@ -102,3 +102,35 @@ export function equipmentNeedsVerification(
   if (!eq) return false
   return !eq.make?.trim() || !eq.model?.trim() || eq.details_verified_at == null
 }
+
+/**
+ * Whether a ticket's machine is identified enough to request/order parts.
+ *
+ * This is the single source of truth shared by the client part-request gate
+ * (ServiceTicketDetail `machineComplete`) and the server machine gate
+ * (api/service-tickets/[id] PATCH). Keep the two in lockstep.
+ *
+ * Two cases, mirroring how equipment lives on a service ticket:
+ *  - Linked equipment row present → ready once it's tech-verified
+ *    (make + model + details_verified_at). Serial is intentionally optional:
+ *    a verified blank serial is a deliberate "no serial / not legible", so a
+ *    no-serial unit that's been verified must NOT stay blocked from parts.
+ *  - Inline-only (no linked row) → ready when the inline make/model/serial are
+ *    all present. These are office-entered at intake; there's no equipment row
+ *    or verify panel to stamp, so field presence is the only available signal.
+ */
+export function equipmentReadyForParts(args: {
+  inlineMake: string | null | undefined
+  inlineModel: string | null | undefined
+  inlineSerial: string | null | undefined
+  linked: EquipmentVerifyState | null | undefined
+}): boolean {
+  if (args.linked) {
+    return !equipmentNeedsVerification(args.linked)
+  }
+  return (
+    !!args.inlineMake?.trim() &&
+    !!args.inlineModel?.trim() &&
+    !!args.inlineSerial?.trim()
+  )
+}

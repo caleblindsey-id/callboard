@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeSerial, serialsMatch, serialsNearMatch } from './equipment'
+import { normalizeSerial, serialsMatch, serialsNearMatch, equipmentNeedsVerification, equipmentReadyForParts } from './equipment'
 
 test('normalizeSerial trims and maps blank to null', () => {
   assert.equal(normalizeSerial('  ABC '), 'ABC')
@@ -54,4 +54,38 @@ test('serialsNearMatch is false for null/blank operands', () => {
 test('serialsNearMatch does not treat unrelated short serials as near', () => {
   assert.equal(serialsNearMatch('A', 'Z'), true) // single substitution — by design
   assert.equal(serialsNearMatch('A', 'BC'), false) // 2 edits
+})
+
+test('equipmentNeedsVerification: serial is not required, make/model/verified are', () => {
+  assert.equal(equipmentNeedsVerification(null), false) // no equipment → gate off
+  assert.equal(equipmentNeedsVerification({ make: 'Windsor', model: 'iScrub', details_verified_at: '2026-06-12T00:00:00Z' }), false)
+  assert.equal(equipmentNeedsVerification({ make: '', model: 'iScrub', details_verified_at: '2026-06-12T00:00:00Z' }), true) // no make
+  assert.equal(equipmentNeedsVerification({ make: 'Windsor', model: '', details_verified_at: '2026-06-12T00:00:00Z' }), true) // no model
+  assert.equal(equipmentNeedsVerification({ make: 'Windsor', model: 'iScrub', details_verified_at: null }), true) // never verified
+})
+
+// equipmentReadyForParts is the shared client+server gate. The key fix it
+// encodes: a LINKED unit verified with a blank serial ("no serial / not
+// legible") must still be allowed to order parts — the old serial-requiring
+// gate left those units deadlocked.
+test('equipmentReadyForParts: linked unit ready once verified, serial optional', () => {
+  const verified = { make: 'Windsor', model: 'iScrub', details_verified_at: '2026-06-12T00:00:00Z' }
+  // verified + blank inline serial → ready (the deadlock this PR fixes)
+  assert.equal(equipmentReadyForParts({ inlineMake: null, inlineModel: null, inlineSerial: null, linked: verified }), true)
+})
+
+test('equipmentReadyForParts: linked unverified unit is blocked', () => {
+  const unverified = { make: 'Windsor', model: 'iScrub', details_verified_at: null }
+  // inline fields present don't help — a linked row is gated on its verified state
+  assert.equal(equipmentReadyForParts({ inlineMake: 'X', inlineModel: 'Y', inlineSerial: 'Z', linked: unverified }), false)
+})
+
+test('equipmentReadyForParts: inline-only ticket requires make/model/serial present', () => {
+  assert.equal(equipmentReadyForParts({ inlineMake: 'Windsor', inlineModel: 'iScrub', inlineSerial: '123', linked: null }), true)
+  assert.equal(equipmentReadyForParts({ inlineMake: 'Windsor', inlineModel: 'iScrub', inlineSerial: '', linked: null }), false) // missing serial
+  assert.equal(equipmentReadyForParts({ inlineMake: 'Windsor', inlineModel: '', inlineSerial: '123', linked: null }), false) // missing model
+})
+
+test('equipmentReadyForParts: no equipment at all is blocked (must identify the machine)', () => {
+  assert.equal(equipmentReadyForParts({ inlineMake: null, inlineModel: null, inlineSerial: null, linked: null }), false)
 })

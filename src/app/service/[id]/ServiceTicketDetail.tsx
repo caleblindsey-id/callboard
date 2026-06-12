@@ -20,7 +20,7 @@ import { getPublicAppUrl } from '@/lib/urls'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
-import { equipmentNeedsVerification } from '@/lib/equipment'
+import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import type {
@@ -1093,13 +1093,17 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  // Machine make/model/serial must be on the ticket before any part request so
-  // the office knows the machine. Service resolves inline equipment_* over the
-  // linked equipment row (presence is the same regardless of precedence).
-  const machineComplete =
-    !!(ticket.equipment_make || ticket.equipment?.make)?.trim() &&
-    !!(ticket.equipment_model || ticket.equipment?.model)?.trim() &&
-    !!(ticket.equipment_serial_number || ticket.equipment?.serial_number)?.trim()
+  // The machine must be identified before any part request so the office knows
+  // what it's for. Shared with the server machine gate via equipmentReadyForParts:
+  // a LINKED unit is ready once tech-verified (make+model+verified, serial
+  // optional — the verify panel below is how the tech does this); an inline-only
+  // ticket falls back to make/model/serial field presence.
+  const machineComplete = equipmentReadyForParts({
+    inlineMake: ticket.equipment_make,
+    inlineModel: ticket.equipment_model,
+    inlineSerial: ticket.equipment_serial_number,
+    linked: ticket.equipment ?? null,
+  })
 
   // A catalog part (matched to a Synergy product) resolves vendor + price
   // office-side, so it's exempt from the manual gate — mirrors the server-side
@@ -2363,6 +2367,19 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
                 {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
               </p>
+              {/* Verify-first: identify the machine before the estimate so the
+                  tech can order parts (the part-request gate needs make/model/
+                  serial on a verified unit). Same panel the completion form
+                  uses; verifying refreshes the ticket and reveals the form. */}
+              {equipmentToVerify ? (
+                <VerifyEquipmentPanel
+                  equipmentId={equipmentToVerify.id}
+                  make={equipmentToVerify.make}
+                  model={equipmentToVerify.model}
+                  serial={equipmentToVerify.serial_number}
+                  onVerified={handleEquipmentVerified}
+                />
+              ) : (
               <form onSubmit={handleSubmitEstimate} className="space-y-4">
                   {/* Labor Rate Type — staff can correct the rate the office picked at intake */}
                   {isStaff && (
@@ -2511,6 +2528,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     </button>
                   </div>
                 </form>
+              )}
             </div>
           )}
         </CardSection>
@@ -2693,12 +2711,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </>
           )}
 
-          {/* Add part request — tech or staff. Blocked until the machine
-              make/model/serial are on the ticket so the office knows what it's for. */}
+          {/* Add part request — tech or staff. Blocked until the machine is
+              identified (verified make/model on a linked unit, or make/model/
+              serial on an inline ticket) so the office knows what it's for. The
+              verify panel lives in the Diagnosis & Estimate step above. */}
           {ticket.status !== 'completed' && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
             !machineComplete ? (
               <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
-                Add the machine make, model, and serial number to this ticket before requesting parts.
+                Verify the machine make, model, and serial number before requesting parts. Use the verify step in Diagnosis &amp; Estimate above.
               </div>
             ) : (
             <>
