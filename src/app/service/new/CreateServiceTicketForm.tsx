@@ -9,7 +9,7 @@ import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
-import type { EquipmentRow, UserRow, ContactRow, ShipToLocationRow } from '@/types/database'
+import type { EquipmentRow, UserRow, UserRole, ContactRow, ShipToLocationRow } from '@/types/database'
 import type { ServiceTicketType, ServiceBillingType, ServicePriority } from '@/types/service-tickets'
 
 const DRAFT_KEY = 'draft-create-service-ticket'
@@ -50,7 +50,11 @@ interface CustomerOption {
   credit_hold: boolean
 }
 
-export function CreateServiceTicketForm() {
+export function CreateServiceTicketForm({
+  currentUser,
+}: {
+  currentUser: { id: string; role: UserRole | null }
+}) {
   const router = useRouter()
 
   // --- Customer search ---
@@ -104,7 +108,11 @@ export function CreateServiceTicketForm() {
 
   // --- Technician ---
   const [technicians, setTechnicians] = useState<UserRow[]>([])
-  const [technicianId, setTechnicianId] = useState('')
+  // A technician creating their own ticket defaults the assignment to themselves
+  // (still editable below). Managers keep the blank default and pick.
+  const [technicianId, setTechnicianId] = useState(() =>
+    currentUser.role === 'technician' ? currentUser.id : ''
+  )
 
   // --- Submission ---
   const [loading, setLoading] = useState(false)

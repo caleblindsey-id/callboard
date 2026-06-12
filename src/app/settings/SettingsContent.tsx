@@ -110,6 +110,7 @@ export default function SettingsContent({
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Email</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Role</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Hourly Rate</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Create Tickets</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
                 <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
               </tr>
@@ -209,6 +210,7 @@ function UserTableRow({ user }: { user: UserRow }) {
   const [hourlyCost, setHourlyCost] = useState(user.hourly_cost?.toString() ?? '')
   const [savingCost, setSavingCost] = useState(false)
   const [savingRole, setSavingRole] = useState(false)
+  const [savingCreate, setSavingCreate] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
 
@@ -250,6 +252,13 @@ function UserTableRow({ user }: { user: UserRow }) {
       setEditingCost(false)
       router.refresh()
     }
+  }
+
+  async function handleToggleCreateTickets() {
+    setSavingCreate(true)
+    const ok = await patchUser({ can_create_service_tickets: !user.can_create_service_tickets })
+    setSavingCreate(false)
+    if (ok) router.refresh()
   }
 
   return (
@@ -309,6 +318,24 @@ function UserTableRow({ user }: { user: UserRow }) {
               {user.hourly_cost != null ? `$${user.hourly_cost.toFixed(2)}/hr` : 'Set rate'}
             </button>
           )
+        ) : (
+          <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+        )}
+      </td>
+      <td className="px-5 py-3">
+        {user.role === 'technician' ? (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={user.can_create_service_tickets}
+              disabled={savingCreate}
+              onChange={handleToggleCreateTickets}
+              className="rounded border-gray-300 dark:border-gray-600 accent-slate-600 disabled:opacity-50"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {savingCreate ? '…' : user.can_create_service_tickets ? 'Allowed' : 'Off'}
+            </span>
+          </label>
         ) : (
           <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
         )}

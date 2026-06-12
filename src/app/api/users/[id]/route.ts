@@ -20,6 +20,7 @@ export async function PATCH(
       role?: UserRole
       active?: boolean
       hourly_cost?: number | null
+      can_create_service_tickets?: boolean
     }
 
     const update: Record<string, unknown> = {}
@@ -52,6 +53,10 @@ export async function PATCH(
         return NextResponse.json({ error: 'Hourly cost must be a non-negative number.' }, { status: 400 })
       }
       update.hourly_cost = body.hourly_cost
+    }
+
+    if (body.can_create_service_tickets !== undefined) {
+      update.can_create_service_tickets = body.can_create_service_tickets
     }
 
     if (Object.keys(update).length === 0) {
