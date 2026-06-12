@@ -91,7 +91,13 @@ export async function POST(request: NextRequest) {
       customer_id: customerIdInt,
       ship_to_location_id: shipToLocationId,
       equipment_id: equipmentId,
-      assigned_technician_id: body.assigned_technician_id || null,
+      // A permitted technician may only create tickets assigned to themselves.
+      // This matches the service_tickets_tech_insert RLS policy and guarantees
+      // the post-insert .select() can read the row back under the tech SELECT
+      // policy (which requires assigned_technician_id = auth.uid()).
+      assigned_technician_id: isTechnician(user.role)
+        ? user.id
+        : (body.assigned_technician_id || null),
       created_by_id: user.id,
       ticket_type,
       billing_type: body.billing_type || 'non_warranty',
