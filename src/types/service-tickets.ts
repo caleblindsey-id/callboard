@@ -59,6 +59,9 @@ export type ServiceTicketRow = {
   estimate_approved: boolean
   estimate_approved_at: string | null
   auto_approved: boolean
+  // Pre-authorized work: started in_progress from open without an estimate
+  // (non-warranty). The authorizer is recorded in manual_decision_note.
+  estimate_bypassed: boolean
   estimate_labor_hours: number | null
   estimate_labor_rate: number | null
   estimate_parts: ServicePartUsed[]

@@ -263,6 +263,82 @@ function RequestInfoModal({ open, initialDraft, busy, onSubmit, onCancel }: Requ
   )
 }
 
+// ── Bypass-estimate (pre-authorized work) modal ────────────────────────────
+
+interface BypassEstimateModalProps {
+  open: boolean
+  busy: boolean
+  onSubmit: (note: string) => void
+  onCancel: () => void
+}
+
+function BypassEstimateModal({ open, busy, onSubmit, onCancel }: BypassEstimateModalProps) {
+  // Parent remounts via `key={open}` so the field starts empty each time.
+  const [note, setNote] = useState('')
+
+  if (!open) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Start work without an estimate"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+            Start work — no estimate
+          </h3>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Skips the estimate and starts the repair now. Use only when work is already authorized.
+          </p>
+        </div>
+        <div className="p-5">
+          <label htmlFor="bypass-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Who authorized starting work? <span className="text-red-600">*</span>
+          </label>
+          <textarea
+            id="bypass-note"
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+            maxLength={2000}
+            placeholder="e.g. Approved by Jane Doe on site 6/12 — repair pre-authorized on PO 4471"
+            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            {note.length} / 2000
+          </p>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onSubmit(note.trim())}
+            disabled={busy || note.trim().length < 2}
+            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+          >
+            {busy ? 'Starting...' : 'Start Work'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Quick Complete bottom sheet (mobile) ───────────────────────────────────
 
 interface QuickCompleteSheetProps {
@@ -562,6 +638,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
   // Request More Info modal (manager-side, on Awaiting Approval state)
   const [requestInfoOpen, setRequestInfoOpen] = useState(false)
+  // Bypass-estimate (pre-authorized work) modal — non-warranty open tickets
+  const [bypassOpen, setBypassOpen] = useState(false)
 
   // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
   const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
@@ -980,6 +1058,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         setHoursWorked(updated.hours_worked != null ? String(updated.hours_worked) : '')
         setCompletionNotes(updated.completion_notes ?? '')
       }
+    })
+  }
+
+  // Pre-authorized work: start the repair straight from 'open' with no
+  // estimate, recording who authorized it. The server requires the note,
+  // flags estimate_bypassed, and marks the estimate approved.
+  async function handleBypassEstimate(note: string) {
+    await apiAction(async () => {
+      await patchTicket({ status: 'in_progress', manual_decision_note: note })
+      setBypassOpen(false)
     })
   }
 
@@ -1688,6 +1776,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         </div>
       )}
 
+      {/* Pre-authorized work marker — surfaced for the life of the ticket once
+          a non-warranty repair was started without an estimate. The authorizer
+          is the manual_decision_note captured at bypass time. */}
+      {ticket.estimate_bypassed && (
+        <div className="rounded-lg border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20 px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 uppercase tracking-wide">
+            Started without estimate — pre-authorized
+          </p>
+          {ticket.manual_decision_note && (
+            <p className="text-sm text-orange-900 dark:text-orange-100 whitespace-pre-wrap">
+              {ticket.manual_decision_note}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Error / Success messages */}
       {error && (
         <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3">
@@ -1799,14 +1903,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </button>
           )}
 
-          {/* Open + non-warranty → build / revise the estimate (opens builder below) */}
+          {/* Open + non-warranty → build / revise the estimate (opens builder below),
+              or skip the estimate entirely when the work is already authorized. */}
           {ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen && !showEstimateForm && (
-            <button
-              onClick={() => setShowEstimateForm(true)}
-              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
-            >
-              {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
-            </button>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+              <button
+                onClick={() => setShowEstimateForm(true)}
+                className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[44px]"
+              >
+                {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+              </button>
+              <button
+                onClick={() => setBypassOpen(true)}
+                disabled={loading}
+                className="w-full sm:w-auto px-5 py-3 text-sm font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                Start work — no estimate
+              </button>
+            </div>
           )}
 
           {/* Estimated → approve / decline / request more info. Staff get all
@@ -3420,6 +3534,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         onCancel={() => setRequestInfoOpen(false)}
       />
 
+      <BypassEstimateModal
+        key={`bypass-${bypassOpen}`}
+        open={bypassOpen}
+        busy={loading}
+        onSubmit={handleBypassEstimate}
+        onCancel={() => setBypassOpen(false)}
+      />
+
       {/* Mobile sticky action bar — the primary action stays reachable at the
           bottom of the screen on phones (≤640px) per the mobile-first-for-techs
           rule. in_progress opens the QuickCompleteSheet for the assigned tech,
@@ -3437,13 +3559,23 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </button>
           )}
           {ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen && (
-            <button
-              type="button"
-              onClick={() => setShowEstimateForm(true)}
-              className="w-full px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[48px]"
-            >
-              {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowEstimateForm(true)}
+                className="w-full px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[48px]"
+              >
+                {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBypassOpen(true)}
+                disabled={loading}
+                className="w-full px-5 py-3 text-sm font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors min-h-[48px]"
+              >
+                Start work — no estimate
+              </button>
+            </div>
           )}
           {ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking && (
             <button
