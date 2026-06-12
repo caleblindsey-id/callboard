@@ -11,6 +11,14 @@ export function isTechnician(role: UserRole | null): boolean {
   return role === 'technician'
 }
 
+// Managers/coordinators/super-admins always may; a technician may only if the
+// per-tech `can_create_service_tickets` flag is turned on in Settings.
+export function canCreateServiceTickets(user: UserRow | null): boolean {
+  if (!user?.role) return false
+  if (MANAGER_ROLES.includes(user.role)) return true
+  return user.role === 'technician' && !!user.can_create_service_tickets
+}
+
 // React cache() dedupes within a single request render — layout, page, and any
 // nested server components calling getCurrentUser() share one fetch (one
 // supabase.auth.getUser() + one users-table lookup) instead of N round-trips.

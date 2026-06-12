@@ -1,7 +1,10 @@
-import { requireRole, MANAGER_ROLES } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { getCurrentUser, canCreateServiceTickets } from '@/lib/auth'
 import { CreateServiceTicketForm } from './CreateServiceTicketForm'
 
 export default async function NewServiceTicketPage() {
-  await requireRole(...MANAGER_ROLES)
-  return <CreateServiceTicketForm />
+  const user = await getCurrentUser()
+  if (!user?.role) redirect('/login')
+  if (!canCreateServiceTickets(user)) redirect('/')
+  return <CreateServiceTicketForm currentUser={{ id: user.id, role: user.role }} />
 }

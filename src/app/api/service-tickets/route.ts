@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser, isTechnician, MANAGER_ROLES } from '@/lib/auth'
+import { getCurrentUser, isTechnician, canCreateServiceTickets } from '@/lib/auth'
 import { getServiceTickets } from '@/lib/db/service-tickets'
 import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
 import type { ServiceTicketStatus, ServicePriority, ServiceTicketType, ServiceBillingType } from '@/types/service-tickets'
@@ -8,7 +8,7 @@ import type { ServiceTicketStatus, ServicePriority, ServiceTicketType, ServiceBi
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser()
-    if (!user?.role || !MANAGER_ROLES.includes(user.role)) {
+    if (!user || !canCreateServiceTickets(user)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

@@ -163,6 +163,8 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
 
   // Bulk assign (managers + office staff). Technicians never see these controls.
   const canManage = !isTech
+  // Techs can create a service ticket only when granted the per-tech permission.
+  const canCreateTickets = !isTech || currentUser.can_create_service_tickets
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [assignTo, setAssignTo] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -413,7 +415,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
             </label>
           </div>
 
-          {!isTech && (
+          {canCreateTickets && (
             <div className="w-full lg:w-auto lg:ml-auto">
               <button
                 onClick={() => router.push('/service/new')}
