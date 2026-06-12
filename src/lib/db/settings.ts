@@ -52,11 +52,14 @@ export async function getTripChargeRate(): Promise<number> {
   return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
-// Number of trips billed on a ticket (mirrors labor hours). One rule, used in
-// every billing path so the on-screen total and the stored billing_amount agree:
+// Number of trips billed on a SERVICE ticket (mirrors labor hours). One rule,
+// used in every service billing path so the on-screen total and the stored
+// billing_amount agree:
 //   - An explicit per-ticket qty (including 0) always wins.
 //   - Service tickets dropped off at the shop ('inside') default to 0 trips.
-//   - Field service ('outside') and all PM tickets default to 1 trip.
+//   - Field service ('outside') defaults to 1 trip.
+// PM tickets do NOT flow through this helper: they're flat-rate under agreement
+// and default to 0 trips in the PM complete route (feedback #36).
 export function effectiveTripChargeQty(
   ticketQty: number | null | undefined,
   ticketType: string | null | undefined,
