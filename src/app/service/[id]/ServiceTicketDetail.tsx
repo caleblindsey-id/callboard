@@ -1809,10 +1809,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </button>
           )}
 
-          {/* Estimated + staff → approve / decline / request more info.
-              Both commit paths require a note (who told us / why), shown via
-              an inline-expand textarea before committing. */}
-          {ticket.status === SERVICE_STATUS.ESTIMATED && isStaff && (
+          {/* Estimated → approve / decline / request more info. Staff get all
+              three; technicians get Approve only (decline stays staff-only,
+              request-more-info is manager-only below). Both commit paths require
+              a note (who told us / why), shown via an inline-expand textarea
+              before committing. */}
+          {ticket.status === SERVICE_STATUS.ESTIMATED && (isStaff || isTech) && (
             manualDecisionMode === null ? (
               <div className="flex flex-wrap gap-2">
                 <button
@@ -1825,16 +1827,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 >
                   Approve Estimate
                 </button>
-                <button
-                  onClick={() => {
-                    setManualDecisionMode('decline')
-                    setManualDecisionNote('')
-                  }}
-                  disabled={loading}
-                  className="px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
-                >
-                  Decline
-                </button>
+                {isStaff && (
+                  <button
+                    onClick={() => {
+                      setManualDecisionMode('decline')
+                      setManualDecisionNote('')
+                    }}
+                    disabled={loading}
+                    className="px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px]"
+                  >
+                    Decline
+                  </button>
+                )}
                 {isManager && (
                   <button
                     onClick={() => setRequestInfoOpen(true)}
