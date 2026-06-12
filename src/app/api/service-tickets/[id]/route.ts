@@ -54,6 +54,7 @@ const STAFF_ALLOWED_FIELDS = [
   'diagnostic_charge',
   'trip_charge_qty',
   'diagnostic_invoice_number',
+  'po_number',
   'awaiting_pickup',
   'picked_up_at',
   'picked_up_by_name',
@@ -77,6 +78,9 @@ const TECH_ALLOWED_FIELDS = [
   'photos',
   'customer_signature',
   'customer_signature_name',
+  // The customer PO often arrives while the tech is on-site mid-repair, so techs
+  // need write access to record it (feedback #38).
+  'po_number',
   // Allowed so a tech resubmitting an estimate after a Request-More-Info
   // round-trip can clear the previous note in the same PATCH.
   'request_info_note',
