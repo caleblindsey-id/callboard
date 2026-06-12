@@ -92,6 +92,12 @@ const TECH_ALLOWED_FIELDS = [
   // Allowed so a tech resubmitting an estimate after a Request-More-Info
   // round-trip can clear the previous note in the same PATCH.
   'request_info_note',
+  // Techs can manually approve their own estimate (approve-only; the decline
+  // path is blocked below). The note is required by the manual-decision
+  // validator further down, same as staff approve.
+  'estimate_approved',
+  'estimate_approved_at',
+  'manual_decision_note',
 ] as const
 
 export async function GET(
@@ -326,6 +332,14 @@ export async function PATCH(
         if (!RESET_ROLES.includes(user.role!)) {
           return NextResponse.json({ error: 'Only managers can reopen tickets' }, { status: 403 })
         }
+      }
+
+      // Techs may approve an estimate but not decline it (approve-only). The
+      // three approve fields are tech-allowed above, but declining is a harder-
+      // to-reverse, customer-facing outcome that stays with staff. ('canceled'
+      // is already manager-only via SERVICE_MANAGER_ONLY_TARGETS.)
+      if (isTechnician(user.role) && currentStatus === 'estimated' && nextStatus === 'declined') {
+        return NextResponse.json({ error: 'Only staff can decline an estimate' }, { status: 403 })
       }
 
       // Validate transition
