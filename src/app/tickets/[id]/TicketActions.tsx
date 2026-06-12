@@ -288,6 +288,19 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   const hasInitialized = useRef(false)
   const flushRef = useRef<() => void>(() => {})
 
+  // Dirty-field tracking for the draft save. The save (auto or manual) must send
+  // ONLY the fields this form instance actually changed — not a full snapshot.
+  // Otherwise a second writer holding a stale snapshot (a duplicate tab, the PWA
+  // + a browser tab, or a back-nav that left an old mount alive) auto-saves its
+  // own empty/old state and silently clobbers a field it never touched. That's
+  // exactly how feedback #43 lost completion notes and #42 lost the PO: a save
+  // triggered by editing one field carried a stale-empty value for another and
+  // nulled the persisted data. `savedFieldsRef` is the last server-known value
+  // we diff against; the seed guard is stamped once per instance.
+  const savedFieldsRef = useRef<Record<string, unknown> | null>(null)
+  const seedStampRef = useRef<string | null>(null)
+  const seedSentRef = useRef(false)
+
   // Load preview URLs for existing photos
   useEffect(() => {
     if (!photos.length || photos[0]?.previewUrl) return
@@ -457,7 +470,68 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     }
   }
 
+  // The full set of draft fields a save could persist, normalized exactly as
+  // they go to the API. saveProgress diffs this against savedFieldsRef and only
+  // sends what changed. (completion_seeded_at is handled separately below — it's
+  // a write-once guard, not a user-edited field.)
+  const currentSaveFields = (): Record<string, unknown> => ({
+    completed_date: completedDate || null,
+    hours_worked: parseFloat(hoursWorked) || null,
+    completion_notes: completionNotes || null,
+    parts_used: pmParts.length > 0 ? toPartUsed(pmParts) : null,
+    additional_parts_used: additionalParts.length > 0 ? toPartUsed(additionalParts) : [],
+    additional_hours_worked: parseFloat(additionalHoursWorked) || null,
+    trip_charge_qty: tripChargeQtyNum,
+    photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
+    po_number: poNumber || null,
+    billing_contact_name: billingContactName || null,
+    billing_contact_email: billingContactEmail || null,
+    billing_contact_phone: billingContactPhone || null,
+    machine_hours: parseFloat(machineHours) || null,
+    date_code: dateCode.trim() || null,
+  })
+
+  // Snapshot the server-known baseline once, on mount, before the tech edits
+  // anything — this is the reference point for dirty-diffing. Capturing it lazily
+  // (e.g. on first save) would be too late: by then the edits are already in
+  // state and would read as "unchanged", so they'd never be sent.
+  useEffect(() => {
+    if (savedFieldsRef.current === null) {
+      savedFieldsRef.current = currentSaveFields()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function saveProgress(opts?: { keepalive?: boolean }) {
+    // Send only fields that changed in THIS instance vs. the last server-known
+    // baseline, so a concurrent stale writer can't overwrite untouched fields.
+    const fields = currentSaveFields()
+    const baseline = savedFieldsRef.current ?? {}
+    const dirty: Record<string, unknown> = {}
+    for (const key of Object.keys(fields)) {
+      if (JSON.stringify(fields[key]) !== JSON.stringify(baseline[key])) {
+        dirty[key] = fields[key]
+      }
+    }
+
+    if (Object.keys(dirty).length === 0) {
+      // Nothing changed here — this instance has no edits to persist, so leave
+      // the row untouched (writing it would clobber another writer's fields).
+      if (!opts?.keepalive) {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+      }
+      return
+    }
+
+    // Stamp the seed guard once, on this instance's first real save, only if the
+    // ticket wasn't already seeded when we loaded it — so the draft becomes
+    // authoritative and requested parts never re-seed over the tech's edits.
+    if (ticket.completion_seeded_at == null && !seedSentRef.current) {
+      if (!seedStampRef.current) seedStampRef.current = new Date().toISOString()
+      dirty.completion_seeded_at = seedStampRef.current
+    }
+
     setSaving(true)
     setError(null)
     setSaveSuccess(false)
@@ -466,31 +540,17 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         keepalive: opts?.keepalive ?? false,
-        body: JSON.stringify({
-          completed_date: completedDate || null,
-          hours_worked: parseFloat(hoursWorked) || null,
-          completion_notes: completionNotes || null,
-          parts_used: pmParts.length > 0 ? toPartUsed(pmParts) : null,
-          additional_parts_used: additionalParts.length > 0 ? toPartUsed(additionalParts) : [],
-          additional_hours_worked: parseFloat(additionalHoursWorked) || null,
-          trip_charge_qty: tripChargeQtyNum,
-          photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-          po_number: poNumber || null,
-          billing_contact_name: billingContactName || null,
-          billing_contact_email: billingContactEmail || null,
-          billing_contact_phone: billingContactPhone || null,
-          machine_hours: parseFloat(machineHours) || null,
-          date_code: dateCode.trim() || null,
-          // Stamp the seed guard on the first save so the draft becomes
-          // authoritative and requested parts never re-seed over the tech's
-          // edits. Preserve an existing stamp rather than bumping it.
-          completion_seeded_at: ticket.completion_seeded_at ?? new Date().toISOString(),
-        }),
+        body: JSON.stringify(dirty),
       })
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || 'Failed to save progress')
       }
+      // Persist succeeded — advance the baseline to what we just sent so later
+      // edits diff against it, and remember the seed stamp went through. (On
+      // failure we leave the baseline alone so the same fields retry next save.)
+      savedFieldsRef.current = fields
+      if (dirty.completion_seeded_at !== undefined) seedSentRef.current = true
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
