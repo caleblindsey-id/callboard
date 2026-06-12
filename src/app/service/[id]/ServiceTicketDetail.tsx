@@ -2378,6 +2378,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   model={equipmentToVerify.model}
                   serial={equipmentToVerify.serial_number}
                   onVerified={handleEquipmentVerified}
+                  relinkTicketId={ticket.id}
+                  relinkTicketKind="service"
                 />
               ) : (
               <form onSubmit={handleSubmitEstimate} className="space-y-4">
@@ -2873,6 +2875,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               model={equipmentToVerify.model}
               serial={equipmentToVerify.serial_number}
               onVerified={handleEquipmentVerified}
+              relinkTicketId={ticket.id}
+              relinkTicketKind="service"
             />
           ) : (
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
