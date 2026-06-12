@@ -139,6 +139,12 @@ interface PartsEntryListProps {
   // fetch loaded cost so a per-line 15% margin floor can be shown. Never pass
   // true in a tech-facing context — it would expose cost-derived data.
   allowPriceOverride?: boolean
+  // Unlock the catalog price field WITHOUT exposing cost or the margin floor —
+  // for technicians, who may set the customer price but must never see loaded
+  // cost or the min-price hint (the server still enforces the 15% floor and
+  // rejects below-floor lines with a generic, cost-free message). Distinct from
+  // allowPriceOverride, which is the staff mode (unlock + cost fetch + floor).
+  allowPriceEdit?: boolean
   // Surface an optional vendor / manufacturer part # input on each row.
   showVendorItemCode?: boolean
   // Surface a vendor-name input on each row. When set alongside onRequestPart,
@@ -150,7 +156,7 @@ interface PartsEntryListProps {
   onRequestPart?: (index: number) => Promise<void>
 }
 
-export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, showCoverage = false, label = 'Parts', allowPriceOverride = false, showVendorItemCode = false, showVendor = false, onRequestPart }: PartsEntryListProps) {
+export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, showCoverage = false, label = 'Parts', allowPriceOverride = false, allowPriceEdit = false, showVendorItemCode = false, showVendor = false, onRequestPart }: PartsEntryListProps) {
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
   // Tracks which dropdown result is keyboard-highlighted per row (-1 = none)
@@ -414,8 +420,9 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                   />
                 </div>
                 {showPricing && (() => {
-                  // Catalog prices are locked unless the viewer can override.
-                  const locked = part.isFromDb && !allowPriceOverride
+                  // Catalog prices are locked unless the viewer can override
+                  // (staff) or has plain edit rights (technicians — no cost/floor).
+                  const locked = part.isFromDb && !allowPriceOverride && !allowPriceEdit
                   // Per-line floor: price must keep >= 15% margin over loaded
                   // cost. Only shown to staff; null cost = floor not enforced.
                   const floor = allowPriceOverride ? minPrice(part.unitCost) : null
