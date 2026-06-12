@@ -19,6 +19,7 @@ import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
+import TechEquipmentDetailsPanel from './TechEquipmentDetailsPanel'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
@@ -2717,9 +2718,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               verify panel lives in the Diagnosis & Estimate step above. */}
           {ticket.status !== 'completed' && ticket.status !== 'billed' && ticket.status !== 'canceled' && (
             !machineComplete ? (
-              <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
-                Verify the machine make, model, and serial number before requesting parts. Use the verify step in Diagnosis &amp; Estimate above.
-              </div>
+              ticket.equipment ? (
+                // Linked equipment row — the tech verifies it via the
+                // VerifyEquipmentPanel that lives in the estimate/completion form.
+                <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                  Verify the machine make, model, and serial number before requesting parts. Use the verify step in Diagnosis &amp; Estimate above.
+                </div>
+              ) : (
+                // Inline-only ticket (no equipment row) — there's no verify panel,
+                // so let the on-site tech fill the details right here (feedback #41).
+                <div className="mt-2">
+                  <TechEquipmentDetailsPanel
+                    ticketId={ticket.id}
+                    make={ticket.equipment_make}
+                    model={ticket.equipment_model}
+                    serial={ticket.equipment_serial_number}
+                    onSaved={handleEquipmentVerified}
+                  />
+                </div>
+              )
             ) : (
             <>
               {!showAddPart ? (

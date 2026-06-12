@@ -73,6 +73,13 @@ const TECH_ALLOWED_FIELDS = [
   'estimate_labor_hours',
   'estimate_parts',
   'parts_requested',
+  // Inline-only tickets (no linked equipment row) have no VerifyEquipmentPanel,
+  // so an on-site tech needs to be able to fill in the machine's make/model/
+  // serial to clear the part-request gate (feedback #41). The tech ownership
+  // check below scopes writes to their own ticket.
+  'equipment_make',
+  'equipment_model',
+  'equipment_serial_number',
   'hours_worked',
   'parts_used',
   'completion_notes',
