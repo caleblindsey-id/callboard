@@ -249,6 +249,8 @@ export interface PartRequest {
 
 // ============================================================
 // Parts Queue view row — one row per part request across PM + service.
+// (po_due_date is view-only — see PartsQueueRow below — and not stored on the
+// JSONB part request itself, so it's intentionally absent from PartRequest.)
 // Backed by the parts_order_queue view (migration 036). Read-only.
 // ============================================================
 
@@ -330,6 +332,25 @@ export type PartsQueueRow = {
   received_at: string | null
   ordered_by: string | null
   received_by: string | null
+  // Estimated arrival date for an ordered part (migration 115). The expected
+  // receipt date (Synergy poline.DueDate) of the OPEN PO line matching this
+  // part's (po_number, product_number), joined from synergy_po_lines. null when
+  // the part isn't on an open PO (no PO# yet, or already received/closed).
+  po_due_date: string | null
+}
+
+// Open SynergyERP purchase-order lines (migration 115), synced by
+// scripts/sync/synergy-sync.py. Backs the est-arrival lookup keyed by
+// (po_number, product_number). due_date is the expected receipt date.
+export type SynergyPoLineRow = {
+  po_number: string
+  product_number: string
+  due_date: string | null
+  qty_ordered: number | null
+  qty_received: number | null
+  order_date: string | null
+  whse: number | null
+  synced_at: string | null
 }
 
 // ============================================================
@@ -902,6 +923,12 @@ export interface Database {
         Row: ProductRow
         Insert: ProductInsert
         Update: ProductUpdate
+        Relationships: []
+      }
+      synergy_po_lines: {
+        Row: SynergyPoLineRow
+        Insert: SynergyPoLineRow
+        Update: Partial<SynergyPoLineRow>
         Relationships: []
       }
       users: {

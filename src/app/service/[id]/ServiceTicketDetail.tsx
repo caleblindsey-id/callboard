@@ -9,6 +9,7 @@ import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
+import { formatDate } from '@/lib/format'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import VendorPicker from '@/components/VendorPicker'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
@@ -41,6 +42,10 @@ interface ServiceTicketDetailProps {
   laborRate: number
   laborRates: Record<string, number>
   tripChargeRate: number
+  // Estimated arrival dates for ordered parts, keyed `${po_number}|${product_number}`.
+  // Looked up server-side from Synergy's open PO lines (getPoDueDates). Absent
+  // key = part isn't on an open PO, so nothing is shown.
+  poDueDates?: Record<string, string>
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -492,7 +497,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, poDueDates = {} }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -2819,6 +2824,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                           <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
                           {part.po_number && isTech && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
+                          )}
+                          {!part.cancelled && poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`] && (
+                            <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                              Est. arrival {formatDate(poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`])}
+                            </div>
                           )}
                           {part.cancelled && part.cancel_reason && (
                             <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">Cancelled — {part.cancel_reason}</div>

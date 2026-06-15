@@ -539,6 +539,86 @@ def sync_products(conn) -> int:
 
 
 # ============================================================
+# Sync: Open PO lines (estimated arrival dates for ordered parts)
+# ============================================================
+
+def sync_po_lines(conn) -> int:
+    """Sync open SynergyERP purchase-order lines into `synergy_po_lines` so the
+    parts queue and tech ticket views can show an estimated arrival date for a
+    part the office has ordered.
+
+    Keyed by (po_number, product_number) — matched against the PO # the office
+    enters on a part request. `poline.DueDate` is the expected receipt date;
+    Status=1 = an open (not yet fully received / closed) line. A product can sit
+    on more than one line of the same PO, so we aggregate to the EARLIEST DueDate
+    per (PO, product). PO# is stored as text (the office enters it as text) so the
+    parts_order_queue view join is a clean text=text match.
+
+    Open lines are a tiny set (~900 rows all-warehouse), so we full-refresh: every
+    row gets this run's `synced_at`, then rows older than that are deleted — lines
+    that were received/closed since the last run thus drop out automatically.
+    Writes go through PostgREST (no direct PG connection), same as every other
+    sync here.
+    """
+    log.info("--- Syncing open PO lines ---")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT pl.PONum, pl.ProdCode, MIN(pl.DueDate) AS DueDate,
+                   SUM(pl.QtyOrd) AS QtyOrd, SUM(pl.QtyRcvdToDate) AS QtyRcvd,
+                   ph.OrderDate, MIN(pl.Whse) AS Whse
+            FROM poline pl
+            LEFT JOIN pohead ph ON ph.PurchaseOrder = pl.PONum
+            WHERE pl.Status = 1
+            GROUP BY pl.PONum, pl.ProdCode, ph.OrderDate
+        """)
+    except Exception as e:
+        log.warning(f"  Could not query 'poline' table: {e}. Skipping PO-lines sync.")
+        return 0
+
+    rows = cursor.fetchall()
+    log.info(f"  Fetched {len(rows)} open PO line(s) from Synergy.")
+
+    run_ts = utcnow_iso()
+    po_lines = []
+    for row in rows:
+        prod_code = safe_str(row.ProdCode)
+        po_num = safe_str(row.PONum)
+        if not prod_code or not po_num:
+            continue
+        po_lines.append({
+            "po_number": po_num,
+            "product_number": prod_code,
+            "due_date": row.DueDate.isoformat() if row.DueDate is not None else None,
+            "qty_ordered": int(row.QtyOrd) if row.QtyOrd is not None else None,
+            "qty_received": int(row.QtyRcvd) if row.QtyRcvd is not None else None,
+            "order_date": row.OrderDate.isoformat() if row.OrderDate is not None else None,
+            "whse": int(row.Whse) if row.Whse is not None else None,
+            "synced_at": run_ts,
+        })
+
+    count = upsert_in_batches(po_lines, "synergy_po_lines",
+                              on_conflict="po_number,product_number")
+    log.info(f"  PO lines synced: {count}")
+
+    # Drop lines that closed/received since the last run — anything we did NOT
+    # touch this run (older synced_at) is no longer open. Single PostgREST DELETE,
+    # works cleanly with the composite key.
+    if po_lines:
+        try:
+            del_url = f"{SUPABASE_URL}/rest/v1/synergy_po_lines?synced_at=lt.{run_ts}"
+            del_headers = supabase_headers()
+            del_headers["Prefer"] = "return=minimal"
+            resp = requests.delete(del_url, headers=del_headers, timeout=30)
+            if not resp.ok:
+                log.warning(f"  Could not prune stale PO lines [{resp.status_code}]: {resp.text[:300]}")
+        except Exception as e:
+            log.warning(f"  Could not prune stale PO lines: {e}")
+
+    return count
+
+
+# ============================================================
 # Sync: Contacts
 # ============================================================
 
@@ -848,6 +928,13 @@ def main_products_only() -> None:
         log.info("Connecting to SynergyERP via ODBC DSN 'ERPlinked'...")
         erp_conn = pyodbc.connect("DSN=ERPlinked", autocommit=True)
         total_synced = sync_products(erp_conn)
+        # Open PO lines ride the hourly refresh so the est. arrival date stays as
+        # fresh as the stock numbers. Non-fatal: a failure here shouldn't fail the
+        # product refresh.
+        try:
+            sync_po_lines(erp_conn)
+        except Exception as e:
+            log.error(f"PO-lines sync failed (non-fatal): {e}", exc_info=True)
     except Exception as e:
         log.error(f"Product/inventory refresh failed: {e}", exc_info=True)
         error_message = str(e)
@@ -937,6 +1024,13 @@ def main() -> None:
         except Exception as e:
             log.error(f"Product sync failed: {e}", exc_info=True)
             failures.append(f"products: {e}")
+
+        # --- Open PO lines (est. arrival dates for ordered parts) ---
+        try:
+            sync_po_lines(erp_conn)
+        except Exception as e:
+            log.error(f"PO-lines sync failed: {e}", exc_info=True)
+            failures.append(f"po_lines: {e}")
 
     except pyodbc.Error as e:
         log.error(f"Could not connect to SynergyERP: {e}", exc_info=True)

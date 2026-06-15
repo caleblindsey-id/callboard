@@ -19,7 +19,7 @@ import { partLabel } from '@/lib/parts'
 import CancelPartDialog from './CancelPartDialog'
 import TriageOrderDialog from './TriageOrderDialog'
 import VendorPicker from '@/components/VendorPicker'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
@@ -39,6 +39,7 @@ type SortKey =
   | 'po_number'
   | 'assigned_technician_name'
   | 'ordered_at'
+  | 'po_due_date'
   | 'received_at'
 
 const RECEIVED_WINDOW_DAYS = 14
@@ -720,6 +721,9 @@ export default function PartsQueueClient({
               {tab === 'ordered' && (
                 <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               )}
+              {tab === 'ordered' && (
+                <SortHeader label="Est. Arrival" colKey="po_due_date" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              )}
               {tab === 'received' && (
                 <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               )}
@@ -730,7 +734,7 @@ export default function PartsQueueClient({
             {filteredRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={17 + (tab === 'ordered' || tab === 'received' ? 1 : 0)}
+                  colSpan={17 + (tab === 'ordered' ? 2 : tab === 'received' ? 1 : 0)}
                   className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
@@ -840,6 +844,11 @@ export default function PartsQueueClient({
                     {tab === 'ordered' && (
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
                         {formatDateTime(row.ordered_at)}
+                      </td>
+                    )}
+                    {tab === 'ordered' && (
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                        {formatDate(row.po_due_date)}
                       </td>
                     )}
                     {tab === 'received' && (
