@@ -7,6 +7,7 @@ import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
+import { formatDate } from '@/lib/format'
 
 interface PmPartsSectionProps {
   ticketId: string
@@ -18,6 +19,10 @@ interface PmPartsSectionProps {
   // True when the linked equipment has make, model, AND serial. A part request
   // is blocked until then so the office knows which machine it's for.
   machineComplete: boolean
+  // Estimated arrival dates for ordered parts, keyed `${po_number}|${product_number}`.
+  // Looked up server-side from Synergy's open PO lines (getPoDueDates); refreshed
+  // on router.refresh() after a PO edit. Absent key = part isn't on an open PO.
+  poDueDates?: Record<string, string>
 }
 
 const ENTRY_ALLOWED_STATUSES: TicketStatus[] = ['assigned', 'in_progress']
@@ -47,6 +52,7 @@ export default function PmPartsSection({
   canReset,
   status,
   machineComplete,
+  poDueDates = {},
 }: PmPartsSectionProps) {
   const router = useRouter()
   const [parts, setParts] = useState<PartRequest[]>(initialPartsRequested)
@@ -286,6 +292,11 @@ export default function PmPartsSection({
                     )}
                     {part.po_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
+                    )}
+                    {!part.cancelled && poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`] && (
+                      <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                        Est. arrival {formatDate(poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`])}
+                      </div>
                     )}
                     {part.cancelled && part.cancel_reason && (
                       <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">Cancelled — {part.cancel_reason}</div>

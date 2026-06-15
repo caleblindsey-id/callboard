@@ -1,4 +1,5 @@
 import { getServiceTicket } from '@/lib/db/service-tickets'
+import { getPoDueDates } from '@/lib/db/parts-queue'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
@@ -59,6 +60,13 @@ export default async function ServiceTicketPage({
   // estimate builder preview any of the three rates live before it's snapshotted.
   const laborRate = laborRates[ticket.labor_rate_type ?? 'standard'] ?? standardRate
   const aceEntry = await getEntryByTicket('service', ticket.id)
+
+  // Estimated arrival dates for ordered parts, looked up live from Synergy's
+  // open PO lines (see getPoDueDates). The detail renders parts from the JSONB,
+  // so the date can't come through the parts_order_queue view here.
+  const poDueDates = await getPoDueDates(
+    Array.isArray(ticket.parts_requested) ? ticket.parts_requested : []
+  )
 
   const equipmentLabel = ticket.equipment
     ? [ticket.equipment.make, ticket.equipment.model].filter(Boolean).join(' ')
@@ -145,6 +153,7 @@ export default async function ServiceTicketPage({
         laborRate={laborRate}
         laborRates={laborRates}
         tripChargeRate={tripChargeRate}
+        poDueDates={poDueDates}
       />
 
       <AceLaborCard entry={aceEntry} userRole={user.role} userId={user.id} />

@@ -1,4 +1,5 @@
 import { getTicket } from '@/lib/db/tickets'
+import { getPoDueDates } from '@/lib/db/parts-queue'
 import { getEquipmentServiceHistory } from '@/lib/db/equipment'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -68,6 +69,8 @@ export default async function TicketDetailPage({
   const laborRate = await getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard')
   const tripChargeRate = await getTripChargeRate()
   const aceEntry = await getEntryByTicket('pm', ticket.id)
+  // Est. arrival dates for ordered parts (looked up live from Synergy open POs).
+  const poDueDates = await getPoDueDates(ticket.parts_requested ?? [])
 
   const showBilling = !isTechnician(user?.role ?? null)
   const isManager = !isTechnician(user?.role ?? null)
@@ -365,6 +368,7 @@ export default async function TicketDetailPage({
               !!ticket.equipment?.model?.trim() &&
               !!ticket.equipment?.serial_number?.trim()
             }
+            poDueDates={poDueDates}
           />
 
           <TicketActions
