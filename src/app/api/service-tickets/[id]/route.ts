@@ -562,6 +562,10 @@ export async function PATCH(
       // the manager's note so the tech doesn't see a stale prompt next time.
       if (nextStatus === 'estimated' && currentStatus === 'open') {
         filtered.request_info_note = null
+        // Stamp the follow-up aging clock (drives the estimate follow-up queue +
+        // re-notify cadence). open → estimated is the only entry into 'estimated',
+        // so a resubmit after Request-More-Info correctly restarts the clock.
+        filtered.estimated_at = new Date().toISOString()
       }
 
       // Staff inline approval (status -> 'approved') should also retire the
