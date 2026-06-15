@@ -61,6 +61,9 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [marking, setMarking] = useState(false)
   const [unexportingId, setUnexportingId] = useState<string | null>(null)
+  // Inline confirm naming the WO# so a single un-export can't be misread as a
+  // bulk action — mirrors ServiceAwaitingInvoice (feedback #40).
+  const [confirmingUnexportId, setConfirmingUnexportId] = useState<string | null>(null)
 
   // Inline Synergy invoice # editing — mirrors the PO editor on the PM
   // Ready-to-Export list.
@@ -164,10 +167,17 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     }
   }
 
+  function woLabel(ticketId: string): string {
+    const t = tickets.find((x) => x.id === ticketId)
+    return t?.work_order_number != null ? `WO#${t.work_order_number}` : 'This ticket'
+  }
+
   async function handleUnexport(ticketId: string) {
     if (unexportingId) return
     setUnexportingId(ticketId)
+    setConfirmingUnexportId(null)
     setToast(null)
+    const label = woLabel(ticketId)
     try {
       const res = await fetch('/api/billing/unexport', {
         method: 'POST',
@@ -180,7 +190,10 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
 
-      setToast({ message: 'Ticket sent back to Ready to Export.', type: 'success' })
+      setToast({
+        message: `${label} sent back to Ready to Export — only this ticket was moved.`,
+        type: 'success',
+      })
       setSelected((prev) => {
         const next = new Set(prev)
         next.delete(ticketId)
@@ -257,14 +270,37 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   }
 
   function renderUnexportButton(t: TicketWithJoins) {
+    if (unexportingId === t.id) {
+      return <span className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Sending back…</span>
+    }
+    if (confirmingUnexportId === t.id) {
+      const label = t.work_order_number != null ? `WO#${t.work_order_number}` : 'this ticket'
+      return (
+        <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Send {label} back?</span>
+          <button
+            onClick={() => handleUnexport(t.id)}
+            className="text-xs font-medium px-2 py-1 rounded-md text-white bg-slate-700 hover:bg-slate-600 transition-colors"
+            title="Send only this one ticket back to Ready to Export (clears its invoice #)"
+          >
+            Just this one
+          </button>
+          <button
+            onClick={() => setConfirmingUnexportId(null)}
+            className="text-xs px-1.5 py-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </span>
+      )
+    }
     return (
       <button
-        onClick={(e) => { e.stopPropagation(); handleUnexport(t.id) }}
-        disabled={unexportingId === t.id}
-        className="text-xs font-medium px-2 py-1 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+        onClick={(e) => { e.stopPropagation(); setConfirmingUnexportId(t.id) }}
+        className="text-xs font-medium px-2 py-1 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors"
         title="Send back to Ready to Export (clears the invoice #)"
       >
-        {unexportingId === t.id ? '...' : 'Un-export'}
+        Un-export
       </button>
     )
   }
