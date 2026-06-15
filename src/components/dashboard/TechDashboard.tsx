@@ -8,31 +8,50 @@ import {
   CheckCircle,
   PackageCheck,
   Truck,
+  FileText,
+  Clock,
+  ThumbsUp,
+  PenLine,
+  Wrench,
 } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
+import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import ZoneHeader from './ZoneHeader'
 import type { TicketWithJoins } from '@/lib/db/tickets'
+import type { ServiceTicketWithJoins } from '@/types/service-tickets'
 
 type Props = {
   monthName: string
   month: number
   year: number
-  // Open work tally
+  // Open work tally (PM + service)
   openWorkTotal: number
-  // Money
+  // Money (MTD, PM + service)
   mtdRevenue: number
+  mtdPmRevenue: number
+  mtdServiceRevenue: number
   // Alerts
   overdueCount: number
   skipRequestedCount: number
-  // My ticket counts (PM only — service for techs is handled inline)
+  // My PM ticket counts (this month)
   assignedCount: number
   inProgressCount: number
   completedCount: number
   // Parts
   partsOnOrder: number
   partsReady: number
-  // Today's schedule (PM tickets assigned/in_progress)
+  // PM schedule (assigned/in_progress)
   upcoming: TicketWithJoins[]
+  // My service ticket counts (active states)
+  serviceOpenCount: number
+  serviceEstimatedCount: number
+  serviceApprovedCount: number
+  serviceInProgressCount: number
+  // Service worklist (open/estimated/approved/in_progress)
+  serviceWork: ServiceTicketWithJoins[]
+  // "Needs my action" service signals
+  revisionRequestedCount: number
+  equipmentToVerifyCount: number
 }
 
 function fmtMoney(n: number): string {
@@ -49,19 +68,19 @@ export default function TechDashboard(p: Props) {
         </p>
       </div>
 
-      {/* === KPI Strip — 2 numbers === */}
+      {/* === KPI Strip — 2 numbers (PM + service combined) === */}
       <div className="grid grid-cols-2 gap-3">
-        <Link
-          href="/tickets"
-          className="block rounded-lg border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 p-4 hover:shadow transition-shadow"
-        >
+        <div className="block rounded-lg border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 p-4">
           <div className="text-xs uppercase tracking-wide font-medium text-blue-700 dark:text-blue-300">
             My Open Work
           </div>
           <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
             {p.openWorkTotal}
           </div>
-        </Link>
+          <div className="text-xs text-blue-700/70 dark:text-blue-300/70 mt-1">
+            PM + service
+          </div>
+        </div>
         <div className="block rounded-lg border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-4">
           <div className="text-xs uppercase tracking-wide font-medium text-emerald-700 dark:text-emerald-300">
             My MTD Revenue
@@ -69,11 +88,20 @@ export default function TechDashboard(p: Props) {
           <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
             {fmtMoney(p.mtdRevenue)}
           </div>
+          {p.mtdServiceRevenue > 0 && (
+            <div className="text-xs text-emerald-700/70 dark:text-emerald-300/70 mt-1 tabular-nums">
+              PM {fmtMoney(p.mtdPmRevenue)} · Svc {fmtMoney(p.mtdServiceRevenue)}
+            </div>
+          )}
         </div>
       </div>
 
       {/* === Needs Attention — only if any === */}
-      {(p.overdueCount > 0 || p.skipRequestedCount > 0 || p.partsReady > 0) && (
+      {(p.overdueCount > 0 ||
+        p.skipRequestedCount > 0 ||
+        p.partsReady > 0 ||
+        p.revisionRequestedCount > 0 ||
+        p.equipmentToVerifyCount > 0) && (
         <section>
           <ZoneHeader label="Needs Attention" />
           <div className="grid grid-cols-2 gap-3">
@@ -122,6 +150,38 @@ export default function TechDashboard(p: Props) {
                 </div>
                 <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
                   {p.skipRequestedCount}
+                </div>
+              </Link>
+            )}
+            {p.revisionRequestedCount > 0 && (
+              <Link
+                href="/service"
+                className="block rounded-lg border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 p-4 hover:shadow transition-shadow"
+              >
+                <div className="flex items-center gap-2">
+                  <PenLine className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                    Estimate Revision Requested
+                  </span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+                  {p.revisionRequestedCount}
+                </div>
+              </Link>
+            )}
+            {p.equipmentToVerifyCount > 0 && (
+              <Link
+                href="/service?status=approved"
+                className="block rounded-lg border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 p-4 hover:shadow transition-shadow"
+              >
+                <div className="flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                    Equipment to Verify
+                  </span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+                  {p.equipmentToVerifyCount}
                 </div>
               </Link>
             )}
@@ -225,6 +285,118 @@ export default function TechDashboard(p: Props) {
                   )}
                 </Link>
               ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* === My Service — status breakdown === */}
+      <section>
+        <ZoneHeader label="My Service" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Link
+            href="/service?status=open"
+            className="block bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow transition-shadow"
+          >
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-green-600" />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Open</span>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+              {p.serviceOpenCount}
+            </div>
+          </Link>
+          <Link
+            href="/service?status=estimated"
+            className="block bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow transition-shadow"
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-yellow-600" />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Awaiting Approval</span>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+              {p.serviceEstimatedCount}
+            </div>
+          </Link>
+          <Link
+            href="/service?status=approved"
+            className="block bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow transition-shadow"
+          >
+            <div className="flex items-center gap-2">
+              <ThumbsUp className="h-4 w-4 text-purple-600" />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Approved</span>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+              {p.serviceApprovedCount}
+            </div>
+          </Link>
+          <Link
+            href="/service?status=in_progress"
+            className="block bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow transition-shadow"
+          >
+            <div className="flex items-center gap-2">
+              <Play className="h-4 w-4 text-blue-500" />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">In Progress</span>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+              {p.serviceInProgressCount}
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      {/* === My Service Work — worklist === */}
+      <section>
+        <ZoneHeader label="My Service Work" />
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          {p.serviceWork.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+              No open service tickets.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {p.serviceWork.map((t) => {
+                const make = t.equipment?.make ?? t.equipment_make
+                const model = t.equipment?.model ?? t.equipment_model
+                const serial = t.equipment?.serial_number ?? t.equipment_serial_number
+                const machine = [make, model].filter(Boolean).join(' ')
+                return (
+                  <Link
+                    key={t.id}
+                    href={`/service/${t.id}`}
+                    className="block px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          WO-{t.work_order_number}
+                        </span>
+                        <ServiceStatusBadge status={t.status} />
+                        {t.priority === 'emergency' && (
+                          <span className="inline-flex items-center rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 px-2 py-0.5 text-xs font-medium">
+                            Emergency
+                          </span>
+                        )}
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {t.customers?.name ?? '—'}
+                    </p>
+                    {machine && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        {machine}
+                        {serial && ` · SN: ${serial}`}
+                      </p>
+                    )}
+                    {t.problem_description && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
+                        {t.problem_description}
+                      </p>
+                    )}
+                  </Link>
+                )
+              })}
             </div>
           )}
         </div>

@@ -7,8 +7,10 @@ import {
 import {
   getPartsOnOrderCount,
   getPartsReadyForPickupCount,
+  getServiceTicketCounts,
+  getServiceTickets,
 } from '@/lib/db/service-tickets'
-import { getOpenWorkCounts } from '@/lib/db/dashboard-metrics'
+import { getOpenWorkCounts, getMtdRevenue } from '@/lib/db/dashboard-metrics'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import SyncStatusBanner from '@/components/SyncStatusBanner'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
@@ -51,6 +53,9 @@ export default async function DashboardPage() {
       partsOnOrder,
       partsReadyForPickup,
       openWork,
+      mtd,
+      serviceCounts,
+      serviceTickets,
     ] = await Promise.all([
       getTickets({ month, year, technicianId: user.id }),
       getOverdueTicketCount({ technicianId: user.id }),
@@ -58,22 +63,41 @@ export default async function DashboardPage() {
       getPartsOnOrderCount(user.id),
       getPartsReadyForPickupCount(user.id),
       getOpenWorkCounts(user.id),
+      getMtdRevenue(user.id),
+      getServiceTicketCounts(user.id),
+      getServiceTickets({ technicianId: user.id }),
     ])
 
+    // PM "My Work" breakdown (this month).
     const myCounts = { assigned: 0, in_progress: 0, completed: 0 }
-    let mtdRevenue = 0
     for (const t of tickets) {
       if (t.status === 'assigned') myCounts.assigned++
       if (t.status === 'in_progress') myCounts.in_progress++
       if (t.status === 'completed') myCounts.completed++
-      if (t.status === 'completed' || t.status === 'billed') {
-        mtdRevenue += t.billing_amount ?? 0
-      }
     }
 
     const upcoming = tickets.filter(
       (t) => t.status === 'assigned' || t.status === 'in_progress'
     )
+
+    // Service worklist — the actively-worked states a tech still owns.
+    const SERVICE_ACTIVE = ['open', 'estimated', 'approved', 'in_progress']
+    const serviceWork = serviceTickets.filter((t) =>
+      SERVICE_ACTIVE.includes(t.status)
+    )
+
+    // "Needs my action" service signals that aren't obvious from status alone.
+    const TERMINAL = ['completed', 'billed', 'declined', 'canceled']
+    const revisionRequestedCount = serviceTickets.filter(
+      (t) => t.request_info_note?.trim() && !TERMINAL.includes(t.status)
+    ).length
+    // Linked unit not yet verified, blocking parts/estimate on cleared-to-work tickets.
+    const equipmentToVerifyCount = serviceTickets.filter(
+      (t) =>
+        (t.status === 'approved' || t.status === 'in_progress') &&
+        t.equipment != null &&
+        !t.equipment.details_verified_at
+    ).length
 
     return (
       <TechDashboard
@@ -81,7 +105,9 @@ export default async function DashboardPage() {
         month={month}
         year={year}
         openWorkTotal={openWork.total}
-        mtdRevenue={mtdRevenue}
+        mtdRevenue={mtd.total}
+        mtdPmRevenue={mtd.pm}
+        mtdServiceRevenue={mtd.service}
         overdueCount={overdueCount}
         skipRequestedCount={skipRequestedCount}
         assignedCount={myCounts.assigned}
@@ -90,6 +116,13 @@ export default async function DashboardPage() {
         partsOnOrder={partsOnOrder}
         partsReady={partsReadyForPickup}
         upcoming={upcoming}
+        serviceOpenCount={serviceCounts.open ?? 0}
+        serviceEstimatedCount={serviceCounts.estimated ?? 0}
+        serviceApprovedCount={serviceCounts.approved ?? 0}
+        serviceInProgressCount={serviceCounts.in_progress ?? 0}
+        serviceWork={serviceWork}
+        revisionRequestedCount={revisionRequestedCount}
+        equipmentToVerifyCount={equipmentToVerifyCount}
       />
     )
   }

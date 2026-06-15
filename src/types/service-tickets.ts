@@ -172,6 +172,7 @@ export type ServiceTicketWithJoins = ServiceTicketRow & {
     model: string | null
     serial_number: string | null
     description: string | null
+    details_verified_at: string | null
     ship_to_locations: {
       name: string | null
       address: string | null
