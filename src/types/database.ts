@@ -805,6 +805,34 @@ export type PushSubscriptionInsert = {
   last_used_at?: string | null
 }
 
+// In-app notifications (migration 116). One row per recipient per event; the
+// notification bell reads these. read_at NULL = unread.
+export type NotificationRow = {
+  id: string
+  user_id: string
+  type: string
+  title: string
+  body: string | null
+  url: string | null
+  entity_type: string | null
+  entity_id: string | null
+  read_at: string | null
+  created_at: string
+}
+
+export type NotificationInsert = {
+  id?: string
+  user_id: string
+  type: string
+  title: string
+  body?: string | null
+  url?: string | null
+  entity_type?: string | null
+  entity_id?: string | null
+  read_at?: string | null
+  created_at?: string
+}
+
 export type SyncLogInsert = Omit<SyncLogRow, 'id'>
 
 // Tech lead insert — caller supplies submitter + content; everything else is
@@ -1014,6 +1042,20 @@ export interface Database {
         Relationships: [
           {
             foreignKeyName: 'push_subscriptions_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      notifications: {
+        Row: NotificationRow
+        Insert: NotificationInsert
+        Update: Partial<NotificationInsert>
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_user_id_fkey'
             columns: ['user_id']
             isOneToOne: false
             referencedRelation: 'users'

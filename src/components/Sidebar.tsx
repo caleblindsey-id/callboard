@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
+import NotificationBell from '@/components/notifications/NotificationBell'
 
 const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
@@ -102,11 +103,14 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         } lg:translate-x-0`}
       >
         <div className="px-5 py-5 border-b border-gray-800">
-          <div className="flex items-center gap-2.5">
-            <Wrench className="h-5 w-5 text-gray-300" />
-            <span className="text-base font-semibold text-white tracking-tight">
-              {APP_NAME}
-            </span>
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <Wrench className="h-5 w-5 text-gray-300" />
+              <span className="text-base font-semibold text-white tracking-tight">
+                {APP_NAME}
+              </span>
+            </div>
+            <NotificationBell />
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">

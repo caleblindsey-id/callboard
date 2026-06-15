@@ -9,8 +9,12 @@
 // but never undoes the create/assign write. Self-assignment is suppressed by the
 // caller (we never notify a tech about a ticket they assigned to themselves).
 //
-// Two channels (Round 2): email (Mandrill) + Web Push. Push is best-effort and
-// wrapped separately so a push failure never affects the email result.
+// Three channels: email (Mandrill) + Web Push + in-app notification (the bell).
+// Push and the in-app row are "instant channels" — they fire as soon as the
+// recipient is known, BEFORE the email path, so a tech with no deliverable email
+// (bench / "inside" techs often don't monitor one) is never silently missed.
+// Each is best-effort and wrapped separately so one channel's failure never
+// affects another or flips the email result.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
@@ -20,6 +24,7 @@ import {
   renderServiceTicketsAssignedDigestEmail,
 } from '@/lib/email-templates/service-ticket-assigned'
 import { sendPushToUser } from '@/lib/push/send-push'
+import { createNotification } from '@/lib/notifications/create-notification'
 import type { ServicePriority } from '@/types/service-tickets'
 
 export type AssignNotifyResult =
@@ -104,6 +109,37 @@ export async function notifyTechOfAssignment(
   const techId = ticket.assigned_technician_id
   if (!techId) return { sent: false, reason: 'no_tech' }
 
+  // Instant channels — Web Push + the in-app notification bell. These fire here,
+  // before the email path, so they reach the tech even when there is no
+  // deliverable email (the whole reason the bell exists for bench / "inside"
+  // techs). Title/body are derived from ticket data, not the email render, so
+  // they don't depend on email-only settings. Both best-effort.
+  const woLabel = ticket.work_order_number ? `WO-${ticket.work_order_number}` : null
+  const alertTitle = `${ticket.priority === 'emergency' ? 'EMERGENCY service ticket' : 'New service ticket'} assigned — ${woLabel ?? 'new ticket'}`
+  const alertBody =
+    [ticket.customers?.name ?? null, ticket.problem_description?.trim() || null].filter(Boolean).join(' — ') ||
+    'A service ticket was assigned to you.'
+  const alertUrl = ticketUrl(ticketId) ?? '/service'
+
+  try {
+    await sendPushToUser(techId, { title: alertTitle, body: alertBody, url: alertUrl, tag: `assign-${ticketId}` })
+  } catch (err) {
+    console.error('notifyTechOfAssignment: push send failed', err)
+  }
+
+  try {
+    await createNotification(techId, {
+      type: 'service_ticket_assigned',
+      title: alertTitle,
+      body: alertBody,
+      url: alertUrl,
+      entityType: 'service_ticket',
+      entityId: ticketId,
+    })
+  } catch (err) {
+    console.error('notifyTechOfAssignment: in-app notification failed', err)
+  }
+
   const tech = await loadTech(supabase, techId)
   if (!tech) return { sent: false, reason: 'no_tech_email' }
 
@@ -157,21 +193,6 @@ export async function notifyTechOfAssignment(
     console.error('notifyTechOfAssignment: audit write failed', err)
   }
 
-  // Web Push (best-effort, independent of the email result — a push failure must
-  // not flip the email-sent return value).
-  try {
-    const customer = ticket.customers?.name ?? null
-    const problem = ticket.problem_description?.trim() || null
-    await sendPushToUser(techId, {
-      title: email.subject,
-      body: [customer, problem].filter(Boolean).join(' — ') || 'A service ticket was assigned to you.',
-      url: ticketUrl(ticketId) ?? '/service',
-      tag: `assign-${ticketId}`,
-    })
-  } catch (err) {
-    console.error('notifyTechOfAssignment: push send failed', err)
-  }
-
   return { sent: true, messageId: sendResult.messageId }
 }
 
@@ -184,11 +205,6 @@ export async function notifyTechOfBulkAssignment(
   if (ticketIds.length === 0) return { sent: false, reason: 'no_tickets' }
   const supabase = db ?? (await createClient())
 
-  const tech = await loadTech(supabase, technicianId)
-  if (!tech) return { sent: false, reason: 'no_tech_email' }
-
-  const { company, phone } = await loadSettings(supabase)
-
   const { data: rows } = await supabase
     .from('service_tickets')
     .select('id, work_order_number, customers(name)')
@@ -196,6 +212,38 @@ export async function notifyTechOfBulkAssignment(
   type RowShape = { id: string; work_order_number: number | null; customers: { name: string } | null }
   const tickets = ((rows as unknown as RowShape[] | null) ?? [])
   if (tickets.length === 0) return { sent: false, reason: 'no_tickets' }
+
+  // Instant channels — Web Push + the in-app bell, fired before the email path so
+  // they reach a tech with no deliverable email. One summary per batch.
+  const boardUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/service`
+    : '/service'
+  const bulkTitle = `${tickets.length} new service ticket${tickets.length === 1 ? '' : 's'} assigned`
+  const bulkBody = `${tickets.length} service ticket${tickets.length === 1 ? '' : 's'} assigned to you.`
+
+  try {
+    await sendPushToUser(technicianId, { title: bulkTitle, body: bulkBody, url: boardUrl })
+  } catch (err) {
+    console.error('notifyTechOfBulkAssignment: push send failed', err)
+  }
+
+  try {
+    await createNotification(technicianId, {
+      type: 'service_ticket_assigned',
+      title: bulkTitle,
+      body: bulkBody,
+      url: boardUrl,
+      entityType: 'service_ticket',
+      entityId: null,
+    })
+  } catch (err) {
+    console.error('notifyTechOfBulkAssignment: in-app notification failed', err)
+  }
+
+  const tech = await loadTech(supabase, technicianId)
+  if (!tech) return { sent: false, reason: 'no_tech_email' }
+
+  const { company, phone } = await loadSettings(supabase)
 
   const email = renderServiceTicketsAssignedDigestEmail({
     tech_first_name: tech.name?.split(' ')[0] ?? null,
@@ -231,19 +279,6 @@ export async function notifyTechOfBulkAssignment(
       .in('id', tickets.map((t) => t.id))
   } catch (err) {
     console.error('notifyTechOfBulkAssignment: audit write failed', err)
-  }
-
-  // Web Push (best-effort): one push summarizing the batch.
-  try {
-    await sendPushToUser(technicianId, {
-      title: email.subject,
-      body: `${tickets.length} service ticket${tickets.length === 1 ? '' : 's'} assigned to you.`,
-      url: process.env.NEXT_PUBLIC_APP_URL
-        ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/service`
-        : '/service',
-    })
-  } catch (err) {
-    console.error('notifyTechOfBulkAssignment: push send failed', err)
   }
 
   return { sent: true, messageId: sendResult.messageId }
