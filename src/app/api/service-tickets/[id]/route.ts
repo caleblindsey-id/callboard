@@ -18,6 +18,8 @@ import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
+import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
+import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -393,6 +395,15 @@ export async function PATCH(
           )
         }
         filtered.manual_decision_note = note
+      }
+
+      // Stamp the declined follow-up aging clock and clear any prior "handled"
+      // flag so a re-declined estimate re-enters the managers' worklist
+      // (mirrors the estimated_at clock for the pending estimate queue).
+      if (nextStatus === 'declined' && currentStatus !== 'declined') {
+        filtered.declined_at = new Date().toISOString()
+        filtered.decline_resolved_at = null
+        filtered.decline_resolved_by_id = null
       }
 
       // --- Hard block: completed → billed requires synergy_invoice_number ---
@@ -791,6 +802,24 @@ export async function PATCH(
     }
 
     const updated = await updateServiceTicket(id, filtered)
+
+    // Staff declined an estimate → write a permanent snapshot onto the equipment
+    // so a returning unit shows what was quoted and why. Fire only on the real
+    // estimated → declined transition. Non-fatal: the decline already committed.
+    const declinedNow = filtered.status === 'declined' && current.status !== 'declined'
+    if (declinedNow) {
+      try {
+        await recordEquipmentEstimate(id, { outcome: 'declined' })
+      } catch (snapshotErr) {
+        console.error('service-tickets: equipment estimate snapshot failed', snapshotErr)
+      }
+      // Notify the assigned tech the estimate was declined. Non-fatal.
+      try {
+        await notifyDecline(id)
+      } catch (notifyErr) {
+        console.error('service-tickets: decline notification failed', notifyErr)
+      }
+    }
 
     // Notify a tech when a ticket is reassigned onto their board. Fire only on a
     // real change to a new, non-null tech, and never when staff reassign a ticket

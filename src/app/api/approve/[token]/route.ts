@@ -1,4 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
+import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 import { NextResponse } from 'next/server'
 
 const MAX_SIGNATURE_BYTES = 200_000 // ~200 KB base64 PNG ~= 150 KB image
@@ -133,6 +135,11 @@ export async function POST(
     update.estimate_signature_name = signature_name.trim()
   } else {
     update.status = 'declined'
+    // Stamp the declined follow-up aging clock and clear any prior "handled"
+    // flag so a re-declined estimate re-enters the managers' worklist.
+    update.declined_at = new Date().toISOString()
+    update.decline_resolved_at = null
+    update.decline_resolved_by_id = null
     if (decline_reason?.trim()) {
       update.decline_reason = decline_reason.trim()
     }
@@ -146,6 +153,22 @@ export async function POST(
   if (updateError) {
     console.error('Approval update failed:', updateError)
     return NextResponse.json({ error: 'Failed to process response' }, { status: 500 })
+  }
+
+  // Permanent estimate snapshot onto the equipment so a returning unit shows what
+  // was quoted and why it was declined. Non-fatal: the decline already committed.
+  if (action === 'decline') {
+    try {
+      await recordEquipmentEstimate(ticket.id, { outcome: 'declined' })
+    } catch (snapshotErr) {
+      console.error('approve: equipment estimate snapshot failed', snapshotErr)
+    }
+    // Notify the assigned tech the customer rejected the quote. Non-fatal.
+    try {
+      await notifyDecline(ticket.id)
+    } catch (notifyErr) {
+      console.error('approve: decline notification failed', notifyErr)
+    }
   }
 
   return NextResponse.json({ success: true, action })

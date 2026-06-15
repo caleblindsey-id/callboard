@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { EquipmentRow, EquipmentInsert, EquipmentProspectRow, PmScheduleRow, PmTicketRow } from '@/types/database'
+import { EquipmentRow, EquipmentInsert, EquipmentProspectRow, PmScheduleRow, PmTicketRow, EquipmentEstimateLogRow } from '@/types/database'
 import { normalizeSerial, serialsMatch } from '@/lib/equipment'
 
 export type DuplicateEquipmentMatch = {
@@ -138,6 +138,24 @@ export async function getEquipmentServiceHistory(
   const { data, error } = await query
   if (error) throw error
   return data as PmTicketRow[]
+}
+
+// Permanent estimate snapshots for a unit (migration 117) — the "Past Estimates"
+// card on the equipment detail page. Survives the source ticket being reopened
+// or re-quoted, unlike the live service history (which only shows completed work).
+export async function getEquipmentEstimateLog(
+  equipmentId: string,
+): Promise<EquipmentEstimateLogRow[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('equipment_estimate_log')
+    .select('*')
+    .eq('equipment_id', equipmentId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data as EquipmentEstimateLogRow[]
 }
 
 export async function findDuplicateEquipment(params: {

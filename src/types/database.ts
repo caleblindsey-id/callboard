@@ -854,6 +854,37 @@ export type NotificationInsert = {
   created_at?: string
 }
 
+// Permanent per-equipment estimate snapshot, written when a service estimate is
+// declined (migration 117). Durable copy that survives the ticket being reopened
+// or re-quoted, so a returning unit always shows what was previously estimated.
+export type EquipmentEstimateLogRow = {
+  id: string
+  equipment_id: string
+  service_ticket_id: string | null
+  work_order_number: number | null
+  estimate_amount: number | null
+  problem_description: string | null
+  diagnosis_notes: string | null
+  outcome: string
+  decline_reason: string | null
+  technician_id: string | null
+  created_at: string
+}
+
+export type EquipmentEstimateLogInsert = {
+  id?: string
+  equipment_id: string
+  service_ticket_id?: string | null
+  work_order_number?: number | null
+  estimate_amount?: number | null
+  problem_description?: string | null
+  diagnosis_notes?: string | null
+  outcome?: string
+  decline_reason?: string | null
+  technician_id?: string | null
+  created_at?: string
+}
+
 export type SyncLogInsert = Omit<SyncLogRow, 'id'>
 
 // Tech lead insert — caller supplies submitter + content; everything else is
@@ -1086,6 +1117,20 @@ export interface Database {
             columns: ['user_id']
             isOneToOne: false
             referencedRelation: 'users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      equipment_estimate_log: {
+        Row: EquipmentEstimateLogRow
+        Insert: EquipmentEstimateLogInsert
+        Update: Partial<EquipmentEstimateLogInsert>
+        Relationships: [
+          {
+            foreignKeyName: 'equipment_estimate_log_equipment_id_fkey'
+            columns: ['equipment_id']
+            isOneToOne: false
+            referencedRelation: 'equipment'
             referencedColumns: ['id']
           }
         ]
