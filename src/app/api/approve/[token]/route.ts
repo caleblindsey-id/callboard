@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 import { NextResponse } from 'next/server'
 
 const MAX_SIGNATURE_BYTES = 200_000 // ~200 KB base64 PNG ~= 150 KB image
@@ -146,6 +147,16 @@ export async function POST(
   if (updateError) {
     console.error('Approval update failed:', updateError)
     return NextResponse.json({ error: 'Failed to process response' }, { status: 500 })
+  }
+
+  // Permanent estimate snapshot onto the equipment so a returning unit shows what
+  // was quoted and why it was declined. Non-fatal: the decline already committed.
+  if (action === 'decline') {
+    try {
+      await recordEquipmentEstimate(ticket.id, { outcome: 'declined' })
+    } catch (snapshotErr) {
+      console.error('approve: equipment estimate snapshot failed', snapshotErr)
+    }
   }
 
   return NextResponse.json({ success: true, action })

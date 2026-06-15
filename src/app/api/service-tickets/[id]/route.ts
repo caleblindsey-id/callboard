@@ -18,6 +18,7 @@ import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
+import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -791,6 +792,18 @@ export async function PATCH(
     }
 
     const updated = await updateServiceTicket(id, filtered)
+
+    // Staff declined an estimate → write a permanent snapshot onto the equipment
+    // so a returning unit shows what was quoted and why. Fire only on the real
+    // estimated → declined transition. Non-fatal: the decline already committed.
+    const declinedNow = filtered.status === 'declined' && current.status !== 'declined'
+    if (declinedNow) {
+      try {
+        await recordEquipmentEstimate(id, { outcome: 'declined' })
+      } catch (snapshotErr) {
+        console.error('service-tickets: equipment estimate snapshot failed', snapshotErr)
+      }
+    }
 
     // Notify a tech when a ticket is reassigned onto their board. Fire only on a
     // real change to a new, non-null tech, and never when staff reassign a ticket
