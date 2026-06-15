@@ -17,6 +17,7 @@ import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipm
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
+import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -786,6 +787,22 @@ export async function PATCH(
     }
 
     const updated = await updateServiceTicket(id, filtered)
+
+    // Notify a tech when a ticket is reassigned onto their board. Fire only on a
+    // real change to a new, non-null tech, and never when staff reassign a ticket
+    // to themselves. Non-fatal: the reassignment already committed.
+    const newTechId = filtered.assigned_technician_id as string | null | undefined
+    if (
+      newTechId != null &&
+      newTechId !== current.assigned_technician_id &&
+      newTechId !== user.id
+    ) {
+      try {
+        await notifyTechOfAssignment(id)
+      } catch (notifyErr) {
+        console.error('service-tickets: reassignment notification failed', notifyErr)
+      }
+    }
 
     // Instant pickup-ready email. Fire only after the staging write commits, so a
     // send failure can never undo the staging — the unit stays visible in the

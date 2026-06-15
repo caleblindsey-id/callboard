@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { bulkAssignServiceTechnician } from '@/lib/db/service-tickets'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { notifyTechOfBulkAssignment } from '@/lib/service-tickets/notify-assignment'
 
 interface BulkAssignBody {
   ticketIds: string[]
@@ -51,6 +52,18 @@ export async function POST(request: NextRequest) {
     }
 
     const updated = await bulkAssignServiceTechnician(ticketIds, technicianId)
+
+    // One digest email to the tech summarizing every ticket just assigned.
+    // Suppress when a manager bulk-assigns to themselves. Non-fatal: the
+    // reassignment already committed. Use the ids actually updated (soft-deleted
+    // tickets are skipped by bulkAssignServiceTechnician).
+    if (technicianId !== user.id && updated.length > 0) {
+      try {
+        await notifyTechOfBulkAssignment(technicianId, updated.map((t) => t.id))
+      } catch (notifyErr) {
+        console.error('service-tickets/bulk-assign: notification failed', notifyErr)
+      }
+    }
 
     return NextResponse.json(updated)
   } catch (err) {
