@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   HelpCircle,
   PackageCheck,
+  FileClock,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
@@ -31,6 +32,7 @@ const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
   { label: 'Preventive Maintenance', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
+  { label: 'Estimate Follow-Up', icon: FileClock, route: '/estimate-queue' },
   { label: 'Credit Review', icon: ShieldAlert, route: '/credit-review' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
   { label: 'Ready for Pickup', icon: PackageCheck, route: '/pickup-queue' },
