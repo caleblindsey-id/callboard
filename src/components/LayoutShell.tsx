@@ -6,6 +6,7 @@ import { Menu, Wrench } from 'lucide-react'
 import Sidebar from './Sidebar'
 import FeedbackFAB from './FeedbackFAB'
 import WhatsNewBanner from './WhatsNewBanner'
+import NotificationBell from './notifications/NotificationBell'
 import { APP_NAME } from '@/lib/branding'
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,9 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
           <span className="text-sm font-semibold text-white tracking-tight">
             {APP_NAME}
           </span>
+        </div>
+        <div className="ml-auto">
+          <NotificationBell />
         </div>
       </header>
 
