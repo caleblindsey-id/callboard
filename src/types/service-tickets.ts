@@ -123,6 +123,14 @@ export type ServiceTicketRow = {
   approval_token_expires_at: string | null
   estimate_emailed_at: string | null
   estimate_email_message_id: string | null
+  // Estimate follow-up tracking (migration 113): aging clock + send cadence +
+  // a logged phone-contact attempt, driving the estimate follow-up queue.
+  estimated_at: string | null
+  estimate_last_emailed_at: string | null
+  estimate_notify_count: number
+  estimate_called_at: string | null
+  estimate_called_by_id: string | null
+  estimate_contact_notes: string | null
   estimate_signature: string | null
   estimate_signature_name: string | null
   decline_reason: string | null
