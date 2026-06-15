@@ -4,7 +4,7 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 60
 summary: Export completed PMs and service tickets for billing — and what it takes to mark them billed.
-last_verified: 2026-06-08
+last_verified: 2026-06-15
 ---
 
 The **Billing** page lists completed work that hasn't been invoiced yet. Billing is a two-step flow: **export** the work to a PDF, then **mark it billed** once you've created the invoice in Synergy. Exporting no longer marks anything billed on its own — a ticket only counts as billed after its Synergy invoice number is entered.
@@ -30,7 +30,7 @@ The PDF downloads and those tickets move down into **Awaiting Invoice #**. They 
 2. Back on the **PM Tickets** tab, find each ticket in **Awaiting Invoice #**. Tap **Invoice # Needed**, type the **Synergy invoice number**, and **Save** — one invoice per work order.
 3. Tick the tickets that now have an invoice number and tap **Mark Billed**. They flip to billed and drop off the list.
 
-Exported a ticket by mistake? Tap **Un-export** on its row to send it back to **Ready to Export** (this clears any invoice number you entered).
+Exported a ticket by mistake? Tap **Un-export** on its row, then confirm **Just this one** — only that single work order goes back to **Ready to Export** (this clears any invoice number you entered). Un-export only ever affects the one row you tapped.
 
 ## Bill service tickets
 
