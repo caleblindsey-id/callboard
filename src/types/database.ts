@@ -781,6 +781,30 @@ export type SettingsRow = {
   updated_at: string
 }
 
+// Web Push subscriptions (migration 114). One row per browser/device a user has
+// opted into push on; endpoint is the unique key.
+export type PushSubscriptionRow = {
+  id: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  user_agent: string | null
+  created_at: string
+  last_used_at: string | null
+}
+
+export type PushSubscriptionInsert = {
+  id?: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  user_agent?: string | null
+  created_at?: string
+  last_used_at?: string | null
+}
+
 export type SyncLogInsert = Omit<SyncLogRow, 'id'>
 
 // Tech lead insert — caller supplies submitter + content; everything else is
@@ -982,6 +1006,20 @@ export interface Database {
         Insert: SettingsRow
         Update: Partial<SettingsRow>
         Relationships: []
+      }
+      push_subscriptions: {
+        Row: PushSubscriptionRow
+        Insert: PushSubscriptionInsert
+        Update: Partial<PushSubscriptionInsert>
+        Relationships: [
+          {
+            foreignKeyName: 'push_subscriptions_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          }
+        ]
       }
       credit_reviews: {
         Row: CreditReviewRow

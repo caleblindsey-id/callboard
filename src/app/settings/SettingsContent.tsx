@@ -17,6 +17,7 @@ const KIND_BADGE: Record<SalesRepKind, string> = {
 }
 import { useUser } from '@/components/UserProvider'
 import { X } from 'lucide-react'
+import EnablePushButton from '@/components/push/EnablePushButton'
 
 interface SettingsContentProps {
   users: UserRow[]
@@ -78,6 +79,24 @@ export default function SettingsContent({
         initialAddress={pickupAddress}
         initialHours={pickupHours}
       />
+
+      {/* Push notifications — per-device opt-in. The assignment push targets the
+          assigned tech; techs enable it from their service board, this is the
+          same control for anyone who reaches Settings (and for testing). */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+            Notifications
+          </h2>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Turn on push notifications on this device to be alerted when a service ticket is
+            assigned to you.
+          </p>
+          <EnablePushButton />
+        </div>
+      </div>
 
       {/* Credit Review — AR notification + release passcode */}
       <CreditReviewSetting

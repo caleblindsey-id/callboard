@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import LayoutShell from '@/components/LayoutShell'
@@ -19,6 +19,25 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: APP_NAME,
   description: 'Service operations for distributors — PMs, service tickets, estimates, leads, and tech KPIs',
+  manifest: '/manifest.webmanifest',
+  // Enables iOS "Add to Home Screen" as a standalone PWA — the only way Safari
+  // delivers Web Push (iOS 16.4+).
+  appleWebApp: {
+    capable: true,
+    title: APP_NAME,
+    statusBarStyle: 'default',
+  },
+  icons: {
+    icon: [
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#0f172a',
 }
 
 export default async function RootLayout({

@@ -25,6 +25,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/help\/search$/,                                   // GET /api/help/search (help center search — all roles)
   /^\/api\/ace-labor\/[0-9a-f-]{36}$/i,                      // PATCH /api/ace-labor/[uuid] (tech edits pending/rejected entry from ticket detail)
   /^\/api\/vendors\/search(\/|$)/,                           // GET /api/vendors/search (Synergy vendor picker on the Request Part form — all roles)
+  /^\/api\/push\//,                                          // POST/DELETE /api/push/subscribe (tech opts into assignment push)
 ]
 
 function isTechAllowed(pathname: string): boolean {
@@ -47,7 +48,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth check for public routes
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/auth/') || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/')) {
+  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/auth/') || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
     return supabaseResponse
   }
 

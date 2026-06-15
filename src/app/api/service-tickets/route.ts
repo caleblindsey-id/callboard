@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician, canCreateServiceTickets } from '@/lib/auth'
 import { getServiceTickets } from '@/lib/db/service-tickets'
 import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
+import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import type { ServiceTicketStatus, ServicePriority, ServiceTicketType, ServiceBillingType } from '@/types/service-tickets'
 
 export async function POST(request: NextRequest) {
@@ -152,6 +153,17 @@ export async function POST(request: NextRequest) {
       }
     } catch (creditErr) {
       console.error('service-tickets: credit review enqueue failed', creditErr)
+    }
+
+    // Notify the assigned tech the ticket landed on their board. Suppress when
+    // the creator assigned it to themselves (tech self-create auto-assigns to
+    // self above). Non-fatal: a send failure must not undo the created ticket.
+    if (data.assigned_technician_id && data.assigned_technician_id !== user.id) {
+      try {
+        await notifyTechOfAssignment(data.id)
+      } catch (notifyErr) {
+        console.error('service-tickets: assignment notification failed', notifyErr)
+      }
     }
 
     return NextResponse.json(data, { status: 201 })

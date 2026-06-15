@@ -116,6 +116,11 @@ export type ServiceTicketRow = {
   // Stamped when the whole order's parts are staged and the tech was notified
   // (migration 104). Reset to NULL if the order later falls out of fully-staged.
   parts_ready_notified_at: string | null
+  // Stamped when the assigned tech was notified the ticket landed on their board
+  // (migration 112), on create-with-assignment and reassignment. Reflects the
+  // latest assignment notification.
+  assigned_notified_at: string | null
+  assigned_notify_message_id: string | null
   work_order_number: number | null
   synergy_validated_at: string | null
   synergy_validation_status: 'valid' | 'invalid' | 'pending' | null
