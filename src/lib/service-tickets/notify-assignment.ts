@@ -8,6 +8,9 @@
 // Non-fatal by contract: callers await inside a try/catch so a send failure logs
 // but never undoes the create/assign write. Self-assignment is suppressed by the
 // caller (we never notify a tech about a ticket they assigned to themselves).
+//
+// Two channels (Round 2): email (Mandrill) + Web Push. Push is best-effort and
+// wrapped separately so a push failure never affects the email result.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
@@ -16,6 +19,7 @@ import {
   renderServiceTicketAssignedEmail,
   renderServiceTicketsAssignedDigestEmail,
 } from '@/lib/email-templates/service-ticket-assigned'
+import { sendPushToUser } from '@/lib/push/send-push'
 import type { ServicePriority } from '@/types/service-tickets'
 
 export type AssignNotifyResult =
@@ -153,6 +157,21 @@ export async function notifyTechOfAssignment(
     console.error('notifyTechOfAssignment: audit write failed', err)
   }
 
+  // Web Push (best-effort, independent of the email result — a push failure must
+  // not flip the email-sent return value).
+  try {
+    const customer = ticket.customers?.name ?? null
+    const problem = ticket.problem_description?.trim() || null
+    await sendPushToUser(techId, {
+      title: email.subject,
+      body: [customer, problem].filter(Boolean).join(' — ') || 'A service ticket was assigned to you.',
+      url: ticketUrl(ticketId) ?? '/service',
+      tag: `assign-${ticketId}`,
+    })
+  } catch (err) {
+    console.error('notifyTechOfAssignment: push send failed', err)
+  }
+
   return { sent: true, messageId: sendResult.messageId }
 }
 
@@ -212,6 +231,19 @@ export async function notifyTechOfBulkAssignment(
       .in('id', tickets.map((t) => t.id))
   } catch (err) {
     console.error('notifyTechOfBulkAssignment: audit write failed', err)
+  }
+
+  // Web Push (best-effort): one push summarizing the batch.
+  try {
+    await sendPushToUser(technicianId, {
+      title: email.subject,
+      body: `${tickets.length} service ticket${tickets.length === 1 ? '' : 's'} assigned to you.`,
+      url: process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/service`
+        : '/service',
+    })
+  } catch (err) {
+    console.error('notifyTechOfBulkAssignment: push send failed', err)
   }
 
   return { sent: true, messageId: sendResult.messageId }
