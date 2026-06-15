@@ -19,6 +19,7 @@ import { checkPartLines, minPrice } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
+import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -802,6 +803,12 @@ export async function PATCH(
         await recordEquipmentEstimate(id, { outcome: 'declined' })
       } catch (snapshotErr) {
         console.error('service-tickets: equipment estimate snapshot failed', snapshotErr)
+      }
+      // Notify the assigned tech the estimate was declined. Non-fatal.
+      try {
+        await notifyDecline(id)
+      } catch (notifyErr) {
+        console.error('service-tickets: decline notification failed', notifyErr)
       }
     }
 

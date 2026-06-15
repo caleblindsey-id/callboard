@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
+import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 import { NextResponse } from 'next/server'
 
 const MAX_SIGNATURE_BYTES = 200_000 // ~200 KB base64 PNG ~= 150 KB image
@@ -156,6 +157,12 @@ export async function POST(
       await recordEquipmentEstimate(ticket.id, { outcome: 'declined' })
     } catch (snapshotErr) {
       console.error('approve: equipment estimate snapshot failed', snapshotErr)
+    }
+    // Notify the assigned tech the customer rejected the quote. Non-fatal.
+    try {
+      await notifyDecline(ticket.id)
+    } catch (notifyErr) {
+      console.error('approve: decline notification failed', notifyErr)
     }
   }
 
