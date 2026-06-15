@@ -139,6 +139,11 @@ export type ServiceTicketRow = {
   estimate_signature: string | null
   estimate_signature_name: string | null
   decline_reason: string | null
+  // Declined-estimate follow-up tracking (migration 118): aging clock + soft
+  // "handled" dismissal, driving the managers' declined worklist.
+  declined_at: string | null
+  decline_resolved_at: string | null
+  decline_resolved_by_id: string | null
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string

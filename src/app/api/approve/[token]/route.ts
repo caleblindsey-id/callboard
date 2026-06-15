@@ -135,6 +135,11 @@ export async function POST(
     update.estimate_signature_name = signature_name.trim()
   } else {
     update.status = 'declined'
+    // Stamp the declined follow-up aging clock and clear any prior "handled"
+    // flag so a re-declined estimate re-enters the managers' worklist.
+    update.declined_at = new Date().toISOString()
+    update.decline_resolved_at = null
+    update.decline_resolved_by_id = null
     if (decline_reason?.trim()) {
       update.decline_reason = decline_reason.trim()
     }

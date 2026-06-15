@@ -25,6 +25,7 @@ import ScheduleSection from '@/components/dashboard/sections/ScheduleSection'
 import ReadyToBillSection from '@/components/dashboard/sections/ReadyToBillSection'
 import ReadyForPickupSection from '@/components/dashboard/sections/ReadyForPickupSection'
 import EstimateFollowUpSection from '@/components/dashboard/sections/EstimateFollowUpSection'
+import DeclinedEstimatesSection from '@/components/dashboard/sections/DeclinedEstimatesSection'
 import {
   KpiSkeleton,
   AlertsSkeleton,
@@ -159,6 +160,10 @@ export default async function DashboardPage() {
 
       <Suspense fallback={<ReadyToBillSkeleton />}>
         <EstimateFollowUpSection />
+      </Suspense>
+
+      <Suspense fallback={<ReadyToBillSkeleton />}>
+        <DeclinedEstimatesSection />
       </Suspense>
 
       <Suspense fallback={<ReadyToBillSkeleton />}>

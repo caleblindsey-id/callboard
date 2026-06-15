@@ -397,6 +397,15 @@ export async function PATCH(
         filtered.manual_decision_note = note
       }
 
+      // Stamp the declined follow-up aging clock and clear any prior "handled"
+      // flag so a re-declined estimate re-enters the managers' worklist
+      // (mirrors the estimated_at clock for the pending estimate queue).
+      if (nextStatus === 'declined' && currentStatus !== 'declined') {
+        filtered.declined_at = new Date().toISOString()
+        filtered.decline_resolved_at = null
+        filtered.decline_resolved_by_id = null
+      }
+
       // --- Hard block: completed → billed requires synergy_invoice_number ---
       // The invoice # is the proof the completed work was billed in SynergyERP.
       // (synergy_order_number is the separate parts-ordering order #, not a
