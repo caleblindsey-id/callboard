@@ -2680,30 +2680,30 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     </div>
                   </div>
 
-                  {/* Trip Charge — flat fee for the trip out, billed alongside labor */}
-                  {isStaff && (
-                    <div className="max-w-lg">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Trip Charge
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="number"
-                          step="1"
-                          min="0"
-                          value={tripChargeQty}
-                          onChange={(e) => setTripChargeQty(e.target.value)}
-                          className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                          placeholder="0"
-                        />
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {tripChargeRate > 0
-                            ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
-                            : 'trips — set the rate in Settings'}
-                        </span>
-                      </div>
+                  {/* Trip Charge — flat fee for the trip out, billed alongside labor.
+                      Visible to techs too: they set the trip count on their own
+                      ticket; the per-trip rate stays office-controlled in Settings. */}
+                  <div className="max-w-lg">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Trip Charge
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={tripChargeQty}
+                        onChange={(e) => setTripChargeQty(e.target.value)}
+                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                        placeholder="0"
+                      />
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {tripChargeRate > 0
+                          ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
+                          : 'trips — set the rate in Settings'}
+                      </span>
                     </div>
-                  )}
+                  </div>
 
                   {/* Estimated Parts */}
                   <PartsEntryList
@@ -3214,30 +3214,30 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               />
             </div>
 
-            {/* Trip Charge — flat fee for the trip out, billed alongside labor */}
-            {isStaff && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Trip Charge
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={tripChargeQty}
-                    onChange={(e) => setTripChargeQty(e.target.value)}
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                    placeholder="0"
-                  />
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {tripChargeRate > 0
-                      ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
-                      : 'trips — set the rate in Settings'}
-                  </span>
-                </div>
+            {/* Trip Charge — flat fee for the trip out, billed alongside labor.
+                Visible to techs too: they set the trip count on their own ticket;
+                the per-trip rate stays office-controlled in Settings. */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Trip Charge
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={tripChargeQty}
+                  onChange={(e) => setTripChargeQty(e.target.value)}
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  placeholder="0"
+                />
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {tripChargeRate > 0
+                    ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
+                    : 'trips — set the rate in Settings'}
+                </span>
               </div>
-            )}
+            </div>
 
             {/* Machine Hours + Date Code — optional equipment service-life data
                 (parity with PM completion; optional since not every service unit

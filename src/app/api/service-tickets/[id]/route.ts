@@ -108,6 +108,10 @@ const TECH_ALLOWED_FIELDS = [
   // including the "confirm at completion" flow. billing_type only drives the
   // $0-to-customer math; the vendor-credit side stays staff-owned.
   'billing_type',
+  // Techs set the trip count on their OWN ticket (the ownership check below
+  // scopes this). Only the quantity — the per-trip RATE stays office-controlled
+  // in Settings. Mirrors tech part-price edit / approve-estimate access.
+  'trip_charge_qty',
 ] as const
 
 export async function GET(
