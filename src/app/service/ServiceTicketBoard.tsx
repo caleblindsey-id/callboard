@@ -14,6 +14,7 @@ import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
+import PushPrompt from '@/components/push/PushPrompt'
 
 type ServiceSortKey =
   | 'work_order_number'
@@ -335,6 +336,8 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
 
   return (
     <div className="space-y-6">
+      {/* Techs are the assignment-notification targets — nudge them to enable push. */}
+      {isTech && <PushPrompt />}
       {/* Status tabs — primary way to scan/follow up by stage. Horizontal-scrolls on mobile. */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
         <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter tickets by status">

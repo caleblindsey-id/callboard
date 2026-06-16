@@ -249,6 +249,8 @@ export interface PartRequest {
 
 // ============================================================
 // Parts Queue view row — one row per part request across PM + service.
+// (po_due_date is view-only — see PartsQueueRow below — and not stored on the
+// JSONB part request itself, so it's intentionally absent from PartRequest.)
 // Backed by the parts_order_queue view (migration 036). Read-only.
 // ============================================================
 
@@ -330,6 +332,25 @@ export type PartsQueueRow = {
   received_at: string | null
   ordered_by: string | null
   received_by: string | null
+  // Estimated arrival date for an ordered part (migration 115). The expected
+  // receipt date (Synergy poline.DueDate) of the OPEN PO line matching this
+  // part's (po_number, product_number), joined from synergy_po_lines. null when
+  // the part isn't on an open PO (no PO# yet, or already received/closed).
+  po_due_date: string | null
+}
+
+// Open SynergyERP purchase-order lines (migration 115), synced by
+// scripts/sync/synergy-sync.py. Backs the est-arrival lookup keyed by
+// (po_number, product_number). due_date is the expected receipt date.
+export type SynergyPoLineRow = {
+  po_number: string
+  product_number: string
+  due_date: string | null
+  qty_ordered: number | null
+  qty_received: number | null
+  order_date: string | null
+  whse: number | null
+  synced_at: string | null
 }
 
 // ============================================================
@@ -781,6 +802,89 @@ export type SettingsRow = {
   updated_at: string
 }
 
+// Web Push subscriptions (migration 114). One row per browser/device a user has
+// opted into push on; endpoint is the unique key.
+export type PushSubscriptionRow = {
+  id: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  user_agent: string | null
+  created_at: string
+  last_used_at: string | null
+}
+
+export type PushSubscriptionInsert = {
+  id?: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  user_agent?: string | null
+  created_at?: string
+  last_used_at?: string | null
+}
+
+// In-app notifications (migration 116). One row per recipient per event; the
+// notification bell reads these. read_at NULL = unread.
+export type NotificationRow = {
+  id: string
+  user_id: string
+  type: string
+  title: string
+  body: string | null
+  url: string | null
+  entity_type: string | null
+  entity_id: string | null
+  read_at: string | null
+  created_at: string
+}
+
+export type NotificationInsert = {
+  id?: string
+  user_id: string
+  type: string
+  title: string
+  body?: string | null
+  url?: string | null
+  entity_type?: string | null
+  entity_id?: string | null
+  read_at?: string | null
+  created_at?: string
+}
+
+// Permanent per-equipment estimate snapshot, written when a service estimate is
+// declined (migration 117). Durable copy that survives the ticket being reopened
+// or re-quoted, so a returning unit always shows what was previously estimated.
+export type EquipmentEstimateLogRow = {
+  id: string
+  equipment_id: string
+  service_ticket_id: string | null
+  work_order_number: number | null
+  estimate_amount: number | null
+  problem_description: string | null
+  diagnosis_notes: string | null
+  outcome: string
+  decline_reason: string | null
+  technician_id: string | null
+  created_at: string
+}
+
+export type EquipmentEstimateLogInsert = {
+  id?: string
+  equipment_id: string
+  service_ticket_id?: string | null
+  work_order_number?: number | null
+  estimate_amount?: number | null
+  problem_description?: string | null
+  diagnosis_notes?: string | null
+  outcome?: string
+  decline_reason?: string | null
+  technician_id?: string | null
+  created_at?: string
+}
+
 export type SyncLogInsert = Omit<SyncLogRow, 'id'>
 
 // Tech lead insert — caller supplies submitter + content; everything else is
@@ -878,6 +982,12 @@ export interface Database {
         Row: ProductRow
         Insert: ProductInsert
         Update: ProductUpdate
+        Relationships: []
+      }
+      synergy_po_lines: {
+        Row: SynergyPoLineRow
+        Insert: SynergyPoLineRow
+        Update: Partial<SynergyPoLineRow>
         Relationships: []
       }
       users: {
@@ -982,6 +1092,48 @@ export interface Database {
         Insert: SettingsRow
         Update: Partial<SettingsRow>
         Relationships: []
+      }
+      push_subscriptions: {
+        Row: PushSubscriptionRow
+        Insert: PushSubscriptionInsert
+        Update: Partial<PushSubscriptionInsert>
+        Relationships: [
+          {
+            foreignKeyName: 'push_subscriptions_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      notifications: {
+        Row: NotificationRow
+        Insert: NotificationInsert
+        Update: Partial<NotificationInsert>
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      equipment_estimate_log: {
+        Row: EquipmentEstimateLogRow
+        Insert: EquipmentEstimateLogInsert
+        Update: Partial<EquipmentEstimateLogInsert>
+        Relationships: [
+          {
+            foreignKeyName: 'equipment_estimate_log_equipment_id_fkey'
+            columns: ['equipment_id']
+            isOneToOne: false
+            referencedRelation: 'equipment'
+            referencedColumns: ['id']
+          }
+        ]
       }
       credit_reviews: {
         Row: CreditReviewRow

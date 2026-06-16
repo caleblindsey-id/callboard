@@ -116,6 +116,11 @@ export type ServiceTicketRow = {
   // Stamped when the whole order's parts are staged and the tech was notified
   // (migration 104). Reset to NULL if the order later falls out of fully-staged.
   parts_ready_notified_at: string | null
+  // Stamped when the assigned tech was notified the ticket landed on their board
+  // (migration 112), on create-with-assignment and reassignment. Reflects the
+  // latest assignment notification.
+  assigned_notified_at: string | null
+  assigned_notify_message_id: string | null
   work_order_number: number | null
   synergy_validated_at: string | null
   synergy_validation_status: 'valid' | 'invalid' | 'pending' | null
@@ -123,9 +128,22 @@ export type ServiceTicketRow = {
   approval_token_expires_at: string | null
   estimate_emailed_at: string | null
   estimate_email_message_id: string | null
+  // Estimate follow-up tracking (migration 113): aging clock + send cadence +
+  // a logged phone-contact attempt, driving the estimate follow-up queue.
+  estimated_at: string | null
+  estimate_last_emailed_at: string | null
+  estimate_notify_count: number
+  estimate_called_at: string | null
+  estimate_called_by_id: string | null
+  estimate_contact_notes: string | null
   estimate_signature: string | null
   estimate_signature_name: string | null
   decline_reason: string | null
+  // Declined-estimate follow-up tracking (migration 118): aging clock + soft
+  // "handled" dismissal, driving the managers' declined worklist.
+  declined_at: string | null
+  decline_resolved_at: string | null
+  decline_resolved_by_id: string | null
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string
@@ -159,6 +177,7 @@ export type ServiceTicketWithJoins = ServiceTicketRow & {
     model: string | null
     serial_number: string | null
     description: string | null
+    details_verified_at: string | null
     ship_to_locations: {
       name: string | null
       address: string | null

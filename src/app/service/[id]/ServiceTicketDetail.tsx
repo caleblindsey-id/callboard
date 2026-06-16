@@ -9,6 +9,7 @@ import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
+import { formatDate } from '@/lib/format'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import VendorPicker from '@/components/VendorPicker'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
@@ -41,6 +42,10 @@ interface ServiceTicketDetailProps {
   laborRate: number
   laborRates: Record<string, number>
   tripChargeRate: number
+  // Estimated arrival dates for ordered parts, keyed `${po_number}|${product_number}`.
+  // Looked up server-side from Synergy's open PO lines (getPoDueDates). Absent
+  // key = part isn't on an open PO, so nothing is shown.
+  poDueDates?: Record<string, string>
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -492,7 +497,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, poDueDates = {} }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -640,6 +645,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [requestInfoOpen, setRequestInfoOpen] = useState(false)
   // Bypass-estimate (pre-authorized work) modal — non-warranty open tickets
   const [bypassOpen, setBypassOpen] = useState(false)
+  // Log-call inline form on the estimate card (estimated-state customer follow-up)
+  const [estimateCallOpen, setEstimateCallOpen] = useState(false)
+  const [estimateCallNotes, setEstimateCallNotes] = useState('')
 
   // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
   const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
@@ -869,6 +877,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         throw new Error(data.error || 'Failed to reopen estimate')
       }
       setSuccessMsg('Estimate reopened for editing.')
+    })
+  }
+
+  // Logs an office phone-contact attempt on the estimate (counts as first
+  // contact alongside emailing it). Mirrors the estimate follow-up queue action.
+  async function handleLogEstimateCall() {
+    await apiAction(async () => {
+      const res = await fetch(`/api/service-tickets/${ticket.id}/mark-estimate-contacted`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: estimateCallNotes.trim() || undefined }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to log the call')
+      }
+      setEstimateCallOpen(false)
+      setEstimateCallNotes('')
+      setSuccessMsg('Call logged.')
     })
   }
 
@@ -2460,6 +2487,69 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   )}
                 </div>
               )}
+
+              {/* Customer follow-up status + log-call (estimated state, staff).
+                  Mirrors the estimate follow-up queue so the office can record a
+                  call without leaving the ticket. First contact = emailed OR
+                  called; an estimate with neither is flagged. */}
+              {ticket.status === SERVICE_STATUS.ESTIMATED && isStaff && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Customer Follow-Up</label>
+                  {ticket.estimate_emailed_at ? (
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      Emailed {new Date(ticket.estimate_last_emailed_at ?? ticket.estimate_emailed_at).toLocaleDateString()}
+                      {ticket.estimate_notify_count > 1 ? ` (${ticket.estimate_notify_count}×)` : ''}
+                      {ticket.estimate_called_at ? ` · Called ${new Date(ticket.estimate_called_at).toLocaleDateString()}` : ''}
+                    </p>
+                  ) : ticket.estimate_called_at ? (
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      Called {new Date(ticket.estimate_called_at).toLocaleDateString()}
+                      {ticket.estimate_contact_notes ? ` — ${ticket.estimate_contact_notes}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                      No first contact yet — email the estimate above or log a call.
+                    </p>
+                  )}
+                  {estimateCallOpen ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <input
+                        autoFocus
+                        value={estimateCallNotes}
+                        onChange={(e) => setEstimateCallNotes(e.target.value)}
+                        placeholder="Call notes (optional)"
+                        className="w-full sm:w-64 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleLogEstimateCall}
+                          disabled={loading}
+                          className="px-3 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          {loading ? 'Saving…' : 'Log call'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEstimateCallOpen(false); setEstimateCallNotes('') }}
+                          disabled={loading}
+                          className="px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setEstimateCallOpen(true)}
+                      className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {ticket.estimate_called_at ? 'Log follow-up call' : 'Log call'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2734,6 +2824,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                           <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
                           {part.po_number && isTech && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
+                          )}
+                          {!part.cancelled && poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`] && (
+                            <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                              Est. arrival {formatDate(poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`])}
+                            </div>
                           )}
                           {part.cancelled && part.cancel_reason && (
                             <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">Cancelled — {part.cancel_reason}</div>

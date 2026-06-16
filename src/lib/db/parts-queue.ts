@@ -19,8 +19,43 @@ const QUEUE_COLUMNS = `
   covered_by_agreement,
   qty_on_hand, qty_on_po,
   triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage,
-  pulled_at, pulled_by, bin_location
+  pulled_at, pulled_by, bin_location, po_due_date
 `
+
+// Estimated arrival dates for a ticket's ordered parts, keyed
+// `${po_number}|${product_number}`. Backs the "Est. arrival" line on the tech
+// ticket views, which render parts straight from the ticket's parts_requested
+// JSONB (not the parts_order_queue view) and so can't get the date via a join.
+// Looks the dates up live from synergy_po_lines so they stay as fresh as the
+// hourly sync — nothing is written back onto the JSONB. Only parts that carry
+// both a PO # and a product number can match; a part not on an open PO is simply
+// absent from the map (the caller renders nothing).
+export async function getPoDueDates(
+  parts: { po_number?: string | null; product_number?: string | null }[]
+): Promise<Record<string, string>> {
+  const poNumbers = [
+    ...new Set(
+      parts
+        .filter(p => p.po_number?.trim() && p.product_number?.trim())
+        .map(p => p.po_number!.trim())
+    ),
+  ]
+  if (poNumbers.length === 0) return {}
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('synergy_po_lines')
+    .select('po_number, product_number, due_date')
+    .in('po_number', poNumbers)
+
+  if (error || !data) return {}
+
+  const map: Record<string, string> = {}
+  for (const r of data as { po_number: string; product_number: string; due_date: string | null }[]) {
+    if (r.due_date) map[`${r.po_number}|${r.product_number}`] = r.due_date
+  }
+  return map
+}
 
 export async function getPartsQueue(): Promise<PartsQueueRow[]> {
   const supabase = await createClient()

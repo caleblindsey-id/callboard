@@ -23,14 +23,19 @@ import {
   ShieldAlert,
   HelpCircle,
   PackageCheck,
+  FileClock,
+  FileX,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
+import NotificationBell from '@/components/notifications/NotificationBell'
 
 const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
   { label: 'Preventive Maintenance', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
+  { label: 'Estimate Follow-Up', icon: FileClock, route: '/estimate-queue' },
+  { label: 'Declined Estimates', icon: FileX, route: '/declined-queue' },
   { label: 'Credit Review', icon: ShieldAlert, route: '/credit-review' },
   { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
   { label: 'Ready for Pickup', icon: PackageCheck, route: '/pickup-queue' },
@@ -100,14 +105,17 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         } lg:translate-x-0`}
       >
         <div className="px-5 py-5 border-b border-gray-800">
-          <div className="flex items-center gap-2.5">
-            <Wrench className="h-5 w-5 text-gray-300" />
-            <span className="text-base font-semibold text-white tracking-tight">
-              {APP_NAME}
-            </span>
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <Wrench className="h-5 w-5 text-gray-300" />
+              <span className="text-base font-semibold text-white tracking-tight">
+                {APP_NAME}
+              </span>
+            </div>
+            <NotificationBell />
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-1">
           {navItems.map((item) => {
             const isActive =
               item.route === '/'
