@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { UserRow } from '@/types/database'
@@ -14,6 +14,7 @@ import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+import { matchesSearch } from '@/lib/search'
 import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
 import PushPrompt from '@/components/push/PushPrompt'
 
@@ -74,6 +75,7 @@ export type ServiceBoardInitialFilters = {
   tech: string
   waitingOnParts: string
   deleted: string
+  search: string
 }
 
 // Status tabs for the board — workflow order (actionable stages first, terminal
@@ -199,6 +201,28 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
     ServiceTicketWithJoins,
     ServiceSortKey
   >(tickets, SERVICE_SORT_ACCESSORS)
+  // Client-side search over the rows already loaded for the current view. URL-
+  // backed (debounced) so Back restores it; deliberately NOT a fetch dependency.
+  const search = filters.search ?? ''
+  const visible = useMemo(
+    () =>
+      sorted.filter((t) =>
+        matchesSearch(
+          [
+            t.work_order_number,
+            t.customers?.name,
+            t.equipment?.make ?? t.equipment_make,
+            t.equipment?.model ?? t.equipment_model,
+            t.equipment?.serial_number ?? t.equipment_serial_number,
+            t.service_address,
+            t.service_city,
+            t.assigned_technician?.name,
+          ],
+          search
+        )
+      ),
+    [sorted, search]
+  )
   const [users, setUsers] = useState<UserRow[]>([])
   const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -286,7 +310,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
 
   function toggleAll() {
     setSelected((prev) =>
-      prev.size === tickets.length ? new Set() : new Set(tickets.map((t) => t.id))
+      prev.size === visible.length ? new Set() : new Set(visible.map((t) => t.id))
     )
   }
 
@@ -406,6 +430,29 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
+          <div className="w-full lg:w-64">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Search</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => set('search', e.target.value, { debounce: true })}
+                placeholder="WO#, customer, equipment, address, tech"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 pr-8 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => set('search', '')}
+                  aria-label="Clear search"
+                  className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="w-full lg:w-auto">
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
             <select
@@ -526,11 +573,15 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             No service tickets found for the selected filters.
           </div>
+        ) : visible.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            No tickets match your search.
+          </div>
         ) : (
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {sorted.map((ticket) => (
+              {visible.map((ticket) => (
                 <div
                   key={ticket.id}
                   className={`px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700 ${
@@ -618,7 +669,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                       <th className="px-4 py-3 text-left w-px">
                         <input
                           type="checkbox"
-                          checked={selected.size === tickets.length && tickets.length > 0}
+                          checked={selected.size === visible.length && visible.length > 0}
                           onChange={toggleAll}
                           className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
                           aria-label="Select all tickets"
@@ -637,7 +688,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {sorted.map((ticket) => (
+                  {visible.map((ticket) => (
                     <tr
                       key={ticket.id}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
