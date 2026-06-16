@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
 import PushPrompt from '@/components/push/PushPrompt'
 
 type ServiceSortKey =
@@ -20,10 +21,23 @@ type ServiceSortKey =
   | 'status'
   | 'priority'
   | 'customer'
+  | 'location'
   | 'equipment'
   | 'type'
   | 'technician'
   | 'created'
+
+// Free-text service address captured on the ticket — fallback for the location
+// column when no synced ship-to is linked (mirrors the PM board's billing-city
+// fallback, but service tickets carry their own address instead).
+function serviceAddressLine(ticket: ServiceTicketWithJoins): string | null {
+  return (
+    [ticket.service_address, ticket.service_city, ticket.service_state]
+      .map((s) => s?.trim())
+      .filter((s): s is string => !!s)
+      .join(', ') || null
+  )
+}
 
 // Sort priority by severity (emergency first), not alphabetically.
 const PRIORITY_RANK: Record<ServicePriority, number> = {
@@ -37,6 +51,10 @@ const SERVICE_SORT_ACCESSORS: SortAccessors<ServiceTicketWithJoins, ServiceSortK
   status: t => t.status,
   priority: t => PRIORITY_RANK[t.priority] ?? 99,
   customer: t => t.customers?.name,
+  location: t => {
+    const { name } = formatShipToLines(resolveTicketShipTo(t))
+    return name ?? t.service_city ?? serviceAddressLine(t)
+  },
   equipment: t =>
     [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') ||
     [t.equipment_make, t.equipment_model].filter(Boolean).join(' ') ||
@@ -84,6 +102,29 @@ const TYPE_OPTIONS: { value: '' | ServiceTicketType; label: string }[] = [
   { value: 'inside', label: 'Inside' },
   { value: 'outside', label: 'Outside' },
 ]
+
+// Location/ship-to cell, mirroring the PM board's LocationBlock: ship-to name on
+// the first line, street/city beneath. Falls back to the free-text service
+// address on the ticket when no synced ship-to is linked.
+function ServiceLocationBlock({ ticket }: { ticket: ServiceTicketWithJoins }) {
+  const { name, street } = formatShipToLines(resolveTicketShipTo(ticket))
+  const displayStreet = street ?? serviceAddressLine(ticket)
+  if (!name && !displayStreet) {
+    return <span className="text-sm text-gray-500 dark:text-gray-400">—</span>
+  }
+  return (
+    <div className="min-w-0">
+      {name && (
+        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{name}</div>
+      )}
+      {displayStreet && (
+        <div className={`text-xs text-gray-500 dark:text-gray-400 truncate ${name ? 'mt-0.5' : ''}`}>
+          {displayStreet}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function PriorityBadge({ priority }: { priority: ServicePriority }) {
   const config: Record<ServicePriority, { label: string; classes: string }> = {
@@ -535,6 +576,9 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                       Acct #{ticket.customers.account_number}
                     </p>
                   )}
+                  <div className="mt-1">
+                    <ServiceLocationBlock ticket={ticket} />
+                  </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     {[ticket.equipment?.make, ticket.equipment?.model].filter(Boolean).join(' ') ||
                       [ticket.equipment_make, ticket.equipment_model].filter(Boolean).join(' ') ||
@@ -584,6 +628,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                     <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Priority" colKey="priority" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -637,6 +682,9 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                             Acct #{ticket.customers.account_number}
                           </div>
                         )}
+                      </td>
+                      <td className="px-4 py-3 max-w-[16rem]">
+                        <ServiceLocationBlock ticket={ticket} />
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         <div>
