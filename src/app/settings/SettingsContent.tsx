@@ -230,6 +230,7 @@ function UserTableRow({ user }: { user: UserRow }) {
   const [savingCost, setSavingCost] = useState(false)
   const [savingRole, setSavingRole] = useState(false)
   const [savingCreate, setSavingCreate] = useState(false)
+  const [resetState, setResetState] = useState<'idle' | 'confirm' | 'busy' | 'done'>('idle')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -278,6 +279,21 @@ function UserTableRow({ user }: { user: UserRow }) {
     const ok = await patchUser({ can_create_service_tickets: !user.can_create_service_tickets })
     setSavingCreate(false)
     if (ok) router.refresh()
+  }
+
+  // Wipe all of this user's quick-PINs (lost phone). They fall back to password on
+  // every device until they re-enroll. Mildly destructive → inline confirm.
+  async function handleResetPins() {
+    setResetState('busy')
+    setError(null)
+    const res = await fetch(`/api/users/${user.id}/reset-pins`, { method: 'POST' })
+    if (res.ok) {
+      setResetState('done')
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error || 'Failed to reset PIN access.')
+      setResetState('idle')
+    }
   }
 
   return (
@@ -379,6 +395,32 @@ function UserTableRow({ user }: { user: UserRow }) {
           >
             {loading ? '...' : user.active ? 'Deactivate' : 'Activate'}
           </button>
+          {resetState === 'done' ? (
+            <span className="text-xs text-gray-500 dark:text-gray-400">PIN access reset</span>
+          ) : resetState === 'confirm' ? (
+            <span className="flex items-center gap-2 text-xs">
+              <button
+                onClick={handleResetPins}
+                className="font-medium text-red-600 dark:text-red-400 hover:underline"
+              >
+                Reset PIN?
+              </button>
+              <button
+                onClick={() => setResetState('idle')}
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setResetState('confirm')}
+              disabled={resetState === 'busy'}
+              className="text-sm font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50 text-left"
+            >
+              {resetState === 'busy' ? 'Resetting…' : 'Reset PIN'}
+            </button>
+          )}
           {error && (
             <span className="text-xs text-red-600 dark:text-red-400" role="alert">
               {error}

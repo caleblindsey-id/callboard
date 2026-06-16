@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Pages technicians are allowed to access
-const TECH_ALLOWED_PAGES = ['/', '/tickets', '/service', '/service/new', '/login', '/change-password', '/notifications', '/my-leads', '/my-equipment', '/my-parts', '/products', '/help']
+const TECH_ALLOWED_PAGES = ['/', '/tickets', '/service', '/service/new', '/login', '/change-password', '/account', '/notifications', '/my-leads', '/my-equipment', '/my-parts', '/products', '/help']
 const TECH_ALLOWED_PAGE_PATTERNS = [
   /^\/tickets\/[^/]+$/,    // /tickets/[id]
   /^\/equipment\/[^/]+$/,  // /equipment/[id] — read-only for techs

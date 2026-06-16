@@ -161,6 +161,14 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             Notifications
           </Link>
           <Link
+            href="/account"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            Account Security
+          </Link>
+          <Link
             href="/change-password"
             onClick={onClose}
             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
