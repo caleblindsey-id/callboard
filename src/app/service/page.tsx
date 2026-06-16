@@ -12,6 +12,7 @@ export default async function ServicePage({
     tech?: string
     waitingOnParts?: string
     deleted?: string
+    search?: string
   }>
 }) {
   const user = await getCurrentUser()
@@ -26,6 +27,7 @@ export default async function ServicePage({
     tech: params.tech ?? '',
     waitingOnParts: params.waitingOnParts ?? '',
     deleted: params.deleted ?? '',
+    search: params.search ?? '',
   }
   // Both office staff AND techs can access (techs see their own tickets only)
   return (

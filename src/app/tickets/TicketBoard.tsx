@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
@@ -18,6 +18,7 @@ import SkipDialog from './SkipDialog'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { matchesSearch } from '@/lib/search'
 
 type TicketSortKey =
   | 'work_order_number'
@@ -377,6 +378,28 @@ export default function TicketBoard({
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  // Instant, in-current-view search over the loaded month/overdue lists. Local
+  // (not URL-backed) to match this board's existing local-filter model.
+  const [search, setSearch] = useState('')
+  const ticketHaystack = (t: TicketWithJoins) => [
+    t.work_order_number,
+    t.customers?.name,
+    t.equipment?.make,
+    t.equipment?.model,
+    t.equipment?.serial_number,
+    t.pm_ship_to?.name,
+    t.pm_ship_to?.city,
+    t.customers?.billing_city,
+    t.users?.name,
+  ]
+  const visibleTickets = useMemo(
+    () => tickets.filter((t) => matchesSearch(ticketHaystack(t), search)),
+    [tickets, search]
+  )
+  const visibleOverdue = useMemo(
+    () => overdueTickets.filter((t) => matchesSearch(ticketHaystack(t), search)),
+    [overdueTickets, search]
+  )
 
   async function handleRestore(id: string) {
     setRestoringId(id)
@@ -414,10 +437,10 @@ export default function TicketBoard({
   }
 
   function toggleAll() {
-    if (selected.size === tickets.length) {
+    if (selected.size === visibleTickets.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(tickets.map((t) => t.id)))
+      setSelected(new Set(visibleTickets.map((t) => t.id)))
     }
   }
 
@@ -429,10 +452,10 @@ export default function TicketBoard({
   }
 
   function toggleOverdueAll() {
-    if (overdueSelected.size === overdueTickets.length) {
+    if (overdueSelected.size === visibleOverdue.length) {
       setOverdueSelected(new Set())
     } else {
-      setOverdueSelected(new Set(overdueTickets.map((t) => t.id)))
+      setOverdueSelected(new Set(visibleOverdue.map((t) => t.id)))
     }
   }
 
@@ -575,6 +598,28 @@ export default function TicketBoard({
       {!overdueMode && !skipRequestedMode && !needsReviewMode && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
+            <div className="w-full lg:w-64">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Search</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="WO#, customer, equipment, address, tech"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 pr-8 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    aria-label="Clear search"
+                    className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="w-full lg:w-auto">
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Month</label>
               <select
@@ -733,7 +778,7 @@ export default function TicketBoard({
           </button>
           {overdueExpanded && (
             <TicketList
-              tickets={overdueTickets}
+              tickets={visibleOverdue}
               isManager={isManager}
               selected={overdueSelected}
               onToggleSelect={(id) => {
@@ -745,7 +790,7 @@ export default function TicketBoard({
                 toggleOverdueAll()
               }}
               showOverdueBadges
-              emptyMessage="No overdue tickets."
+              emptyMessage={search ? 'No overdue tickets match your search.' : 'No overdue tickets.'}
             />
           )}
         </div>
@@ -755,7 +800,7 @@ export default function TicketBoard({
       {!overdueMode && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <TicketList
-            tickets={tickets}
+            tickets={visibleTickets}
             isManager={isManager}
             selected={selected}
             onToggleSelect={(id) => {
@@ -766,7 +811,7 @@ export default function TicketBoard({
               setSkipSource('month')
               toggleAll()
             }}
-            emptyMessage={deletedMode ? 'No deleted tickets for the selected filters.' : 'No tickets found for the selected filters.'}
+            emptyMessage={search ? 'No tickets match your search.' : deletedMode ? 'No deleted tickets for the selected filters.' : 'No tickets found for the selected filters.'}
             deletedMode={deletedMode}
             onRestore={handleRestore}
             restoringId={restoringId}
