@@ -102,6 +102,12 @@ const TECH_ALLOWED_FIELDS = [
   'estimate_approved',
   'estimate_approved_at',
   'manual_decision_note',
+  // A repair often turns out to be a warranty claim once the tech is on the
+  // machine, but it was keyed non-warranty. Let the tech correct/confirm the
+  // billing type on their OWN ticket (the ownership check below scopes this),
+  // including the "confirm at completion" flow. billing_type only drives the
+  // $0-to-customer math; the vendor-credit side stays staff-owned.
+  'billing_type',
 ] as const
 
 export async function GET(
@@ -156,6 +162,11 @@ export async function PATCH(
     if (filtered.labor_rate_type !== undefined &&
         !['standard', 'industrial', 'vacuum'].includes(filtered.labor_rate_type as string)) {
       return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
+    }
+
+    if (filtered.billing_type !== undefined &&
+        !['non_warranty', 'warranty', 'partial_warranty'].includes(filtered.billing_type as string)) {
+      return NextResponse.json({ error: 'Invalid billing_type' }, { status: 400 })
     }
 
     if (Object.keys(filtered).length === 0) {
@@ -426,6 +437,30 @@ export async function PATCH(
               { error: 'Synergy invoice number is required to mark a ticket as billed' },
               { status: 400 }
             )
+          }
+        }
+
+        // --- Hard block: warranty work isn't billed until the vendor credit
+        // lands. A warranty/partial-warranty repair files a claim with the
+        // vendor and waits for the credit that offsets covered parts; billing
+        // before that closes the claim prematurely. Cleared by logging the
+        // credit on the warranty-claims worklist (warranty_credit_received_at).
+        const billingType =
+          (filtered.billing_type as string | undefined) ?? current.billing_type ?? 'non_warranty'
+        if (billingType === 'warranty' || billingType === 'partial_warranty') {
+          const creditReceived = filtered.warranty_credit_received_at ?? null
+          if (!creditReceived) {
+            const { data: full } = await supabase
+              .from('service_tickets')
+              .select('warranty_credit_received_at')
+              .eq('id', id)
+              .single()
+            if (!full?.warranty_credit_received_at) {
+              return NextResponse.json(
+                { error: 'Vendor credit not yet received — log the warranty credit before billing this ticket.' },
+                { status: 400 }
+              )
+            }
           }
         }
       }

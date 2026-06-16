@@ -144,6 +144,18 @@ export type ServiceTicketRow = {
   declined_at: string | null
   decline_resolved_at: string | null
   decline_resolved_by_id: string | null
+  // Warranty claim credit tracking (migration 119): a warranty/partial-warranty
+  // ticket isn't billed until the vendor credit that offsets covered parts is
+  // received. These drive the warranty-claims worklist + the completed->billed
+  // credit gate.
+  warranty_vendor: string | null
+  warranty_claim_number: string | null
+  warranty_claim_submitted_at: string | null
+  warranty_claim_submitted_by_id: string | null
+  warranty_credit_expected: number | null
+  warranty_credit_received_at: string | null
+  warranty_credit_received_by_id: string | null
+  warranty_credit_amount: number | null
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string

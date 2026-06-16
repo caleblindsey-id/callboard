@@ -28,6 +28,7 @@ import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
+  ServiceBillingType,
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
@@ -514,6 +515,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // mirroring the create form (CreateServiceTicketForm).
   const [technicians, setTechnicians] = useState<UserRow[]>([])
   const [assignedTechId, setAssignedTechId] = useState(ticket.assigned_technician_id ?? '')
+  // Staff-editable billing type (warranty / non-warranty). The badge above shows
+  // it at a glance; staff can correct a mis-keyed ticket here (API already allows
+  // billing_type in STAFF_ALLOWED_FIELDS). Techs use the completion-form confirm.
+  const [billingType, setBillingType] = useState<ServiceBillingType>(ticket.billing_type)
   useEffect(() => {
     if (!isStaff) return
     createClient()
@@ -911,6 +916,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     signatureName: string
   }) {
     await apiAction(async () => {
+      // Persist a warranty correction before completing — the /complete route
+      // recomputes billing from the STORED billing_type, so it must be saved
+      // first for the $0 math to apply.
+      if (billingType !== ticket.billing_type) {
+        await patchTicket({ billing_type: billingType })
+      }
       const res = await fetch(`/api/service-tickets/${ticket.id}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1451,6 +1462,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     }
 
     await apiAction(async () => {
+      // Persist a warranty correction before completing — the /complete route
+      // recomputes billing from the STORED billing_type, so it must be saved
+      // first for the $0 math to apply.
+      if (billingType !== ticket.billing_type) {
+        await patchTicket({ billing_type: billingType })
+      }
       const res = await fetch(`/api/service-tickets/${ticket.id}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1781,6 +1798,39 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 })
               }
               disabled={loading || assignedTechId === (ticket.assigned_technician_id ?? '')}
+              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              {loading ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+
+          {/* Billing type — correct a mis-keyed warranty/non-warranty ticket.
+              Warranty bills the customer $0 and routes the ticket through the
+              vendor-credit worklist before it can be billed. */}
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <div className="flex-1">
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Billing Type
+              </label>
+              <select
+                value={billingType}
+                onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
+                disabled={loading}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+              >
+                <option value="non_warranty">Non-Warranty</option>
+                <option value="warranty">Warranty</option>
+                <option value="partial_warranty">Partial Warranty</option>
+              </select>
+            </div>
+            <button
+              onClick={() =>
+                apiAction(async () => {
+                  await patchTicket({ billing_type: billingType })
+                  setSuccessMsg('Billing type updated')
+                })
+              }
+              disabled={loading || billingType === ticket.billing_type}
               className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               {loading ? 'Saving...' : 'Save'}
@@ -3122,6 +3172,31 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               </div>
             )}
 
+            {/* Warranty confirmation — a repair often turns out to be a warranty
+                claim once the tech is on the machine, but the ticket was keyed
+                non-warranty. Confirm/correct it here at completion. Warranty
+                bills the customer $0 and routes the ticket to the vendor-credit
+                worklist. Saved just before the job is marked complete. */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Billing Type
+              </label>
+              <select
+                value={billingType}
+                onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
+                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+              >
+                <option value="non_warranty">Non-Warranty</option>
+                <option value="warranty">Warranty (no charge to customer)</option>
+                <option value="partial_warranty">Partial Warranty</option>
+              </select>
+              {billingType !== ticket.billing_type && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                  Changed to {billingTypeLabels[billingType] ?? billingType} — saved when you complete the job.
+                </p>
+              )}
+            </div>
+
             {/* Hours Worked */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -3212,7 +3287,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   parts={completionParts}
                   setParts={setCompletionParts}
                   showPricing={true}
-                  showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
+                  showWarranty={billingType === 'warranty' || billingType === 'partial_warranty'}
                   label=""
                   allowPriceOverride={isStaff}
                   allowPriceEdit={isTech}
