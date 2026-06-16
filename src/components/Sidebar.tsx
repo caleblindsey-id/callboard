@@ -26,6 +26,7 @@ import {
   FileClock,
   FileX,
   ShieldCheck,
+  Bell,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
@@ -150,6 +151,14 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           >
             <HelpCircle className="h-4 w-4 shrink-0" />
             Help &amp; Guides
+          </Link>
+          <Link
+            href="/notifications"
+            onClick={onClose}
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+          >
+            <Bell className="h-4 w-4 shrink-0" />
+            Notifications
           </Link>
           <Link
             href="/change-password"
