@@ -4,7 +4,7 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 60
 summary: Export completed PMs and service tickets for billing — and what it takes to mark them billed.
-last_verified: 2026-06-15
+last_verified: 2026-06-16
 ---
 
 The **Billing** page lists completed work that hasn't been invoiced yet. Billing is a two-step flow: **export** the work to a PDF, then **mark it billed** once you've created the invoice in Synergy. Exporting no longer marks anything billed on its own — a ticket only counts as billed after its Synergy invoice number is entered.
@@ -30,11 +30,13 @@ The PDF downloads and those tickets move down into **Awaiting Invoice #**. They 
 2. Back on the **PM Tickets** tab, find each ticket in **Awaiting Invoice #**. Tap **Invoice # Needed**, type the **Synergy invoice number**, and **Save** — one invoice per work order.
 3. Tick the tickets that now have an invoice number and tap **Mark Billed**. They flip to billed and drop off the list.
 
+Each row also has an optional **Synergy #** field next to the invoice number. Tap **+ Synergy #** to jot down the Synergy order number you're billing against so it stays on screen while you track down the matching invoice — then key that invoice number in. It's only a reference and never blocks **Mark Billed**.
+
 Exported a ticket by mistake? Tap **Un-export** on its row, then confirm **Just this one** — only that single work order goes back to **Ready to Export** (this clears any invoice number you entered). Un-export only ever affects the one row you tapped.
 
 ## Bill service tickets
 
-Service tickets follow the same idea: each must have its **Synergy Invoice #** entered before it can be marked billed — that's the number proving the work was invoiced in Synergy. (Service tickets don't produce a PDF; you re-key them into Synergy directly.)
+Service tickets follow the same idea: each must have its **Synergy Invoice #** entered before it can be marked billed — that's the number proving the work was invoiced in Synergy. (Service tickets don't produce a PDF; you re-key them into Synergy directly.) Service rows carry the same optional **Synergy #** reference field next to the invoice number.
 
 ## What's on the PDF
 
@@ -47,3 +49,4 @@ Per ticket: customer and account, equipment, technician, completion date, machin
 - **A required PO blocks export** until it's entered (it's checked again at export). Fill it inline from this page.
 - **A missing Synergy Invoice # blocks a service ticket** from being marked billed.
 - **Un-export** is the undo for an accidental export — it returns the ticket to Ready to Export and clears the invoice number.
+- **Synergy #** is an optional reference that helps you find the invoice in Synergy — it never blocks billing. Only the **Synergy Invoice #** does.

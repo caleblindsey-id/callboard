@@ -25,6 +25,7 @@ function needsInvoice(t: TicketWithJoins): boolean {
 type PmInvoiceSortKey =
   | 'customer'
   | 'invoice'
+  | 'synergy'
   | 'equipment'
   | 'technician'
   | 'billing'
@@ -34,6 +35,7 @@ const PM_INVOICE_SORT_ACCESSORS: SortAccessors<TicketWithJoins, PmInvoiceSortKey
   customer: t => t.customers?.name,
   // Invoice-needed rows first (they block mark-billed).
   invoice: t => (needsInvoice(t) ? 0 : 1),
+  synergy: t => t.synergy_order_number,
   equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
   technician: t => t.users?.name,
   billing: t => t.billing_amount,
@@ -71,6 +73,15 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [savingValue, setSavingValue] = useState(false)
+
+  // Inline Synergy order # editing — the reference coordinators key while billing
+  // so they can find the matching invoice in Synergy, then enter it above
+  // (feedback #37). Optional: unlike the invoice #, a missing Synergy # never
+  // blocks Mark Billed. Writes the same synergy_order_number column the
+  // parts-ordering flow uses.
+  const [synergyEditingId, setSynergyEditingId] = useState<string | null>(null)
+  const [synergyEditingValue, setSynergyEditingValue] = useState('')
+  const [synergySaving, setSynergySaving] = useState(false)
 
   const missingCount = tickets.filter(needsInvoice).length
 
@@ -133,6 +144,45 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
       setToast({ message, type: 'error' })
     } finally {
       setSavingValue(false)
+    }
+  }
+
+  function startSynergyEdit(ticketId: string, current: string | null) {
+    setSynergyEditingId(ticketId)
+    setSynergyEditingValue(current ?? '')
+  }
+
+  function cancelSynergyEdit() {
+    setSynergyEditingId(null)
+    setSynergyEditingValue('')
+  }
+
+  async function handleSaveSynergy() {
+    if (!synergyEditingId || synergySaving) return
+    const trimmed = synergyEditingValue.trim()
+    if (!trimmed) return
+
+    setSynergySaving(true)
+    try {
+      const res = await fetch(`/api/tickets/${synergyEditingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ synergy_order_number: trimmed }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errData.error ?? `Server error ${res.status}`)
+      }
+
+      setSynergyEditingId(null)
+      setSynergyEditingValue('')
+      router.refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Synergy #.'
+      setToast({ message, type: 'error' })
+    } finally {
+      setSynergySaving(false)
     }
   }
 
@@ -270,6 +320,61 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     )
   }
 
+  function renderSynergyCell(t: TicketWithJoins) {
+    if (synergyEditingId === t.id) {
+      return (
+        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={synergyEditingValue}
+            onChange={(e) => setSynergyEditingValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveSynergy()
+              if (e.key === 'Escape') cancelSynergyEdit()
+            }}
+            placeholder="Synergy #"
+            autoFocus
+            disabled={synergySaving}
+            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+          <button
+            onClick={handleSaveSynergy}
+            disabled={synergySaving || !synergyEditingValue.trim()}
+            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
+          >
+            {synergySaving ? '...' : 'Save'}
+          </button>
+          <button
+            onClick={cancelSynergyEdit}
+            disabled={synergySaving}
+            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      )
+    }
+    if (t.synergy_order_number) {
+      return (
+        <button
+          onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, t.synergy_order_number) }}
+          title={`${t.synergy_order_number} — click to edit`}
+          className="text-gray-700 dark:text-gray-300 truncate max-w-[140px] inline-block align-bottom hover:underline"
+        >
+          {t.synergy_order_number}
+        </button>
+      )
+    }
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, null) }}
+        className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:underline"
+      >
+        + Synergy #
+      </button>
+    )
+  }
+
   function renderUnexportButton(t: TicketWithJoins) {
     if (unexportingId === t.id) {
       return <span className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Sending back…</span>
@@ -371,7 +476,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                 return (
                   <div
                     key={t.id}
-                    className={`px-4 py-3 ${blocked && editingId !== t.id ? 'opacity-60' : ''}`}
+                    className={`px-4 py-3 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}
                     onClick={() => toggleSelect(t.id)}
                   >
                     <div className="flex items-start gap-3">
@@ -411,6 +516,10 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                             ? new Date(t.completed_date).toLocaleDateString()
                             : '—'}
                         </p>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <span>Synergy #:</span>
+                          {renderSynergyCell(t)}
+                        </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
                           {renderInvoiceStatus(t)}
                           {renderUnexportButton(t)}
@@ -438,6 +547,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Synergy #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
@@ -449,7 +559,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                   {sorted.map((t) => {
                     const blocked = needsInvoice(t)
                     return (
-                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id ? 'opacity-60' : ''}`}>
+                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
@@ -469,6 +579,9 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                         </td>
                         <td className="px-4 py-3">
                           {renderInvoiceStatus(t)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {renderSynergyCell(t)}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {[t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || '—'}
