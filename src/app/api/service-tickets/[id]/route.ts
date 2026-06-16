@@ -20,6 +20,7 @@ import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 import { notifyDecline } from '@/lib/service-tickets/notify-decline'
+import { notifyApprove } from '@/lib/service-tickets/notify-approve'
 
 // Status transitions that count as "performing work" — blocked while a credit
 // review is pending/blocked.
@@ -818,6 +819,24 @@ export async function PATCH(
         await notifyDecline(id)
       } catch (notifyErr) {
         console.error('service-tickets: decline notification failed', notifyErr)
+      }
+    }
+
+    // Estimate approved → tell the assigned tech they're clear to proceed. Covers
+    // both manual approve (estimated → approved) and auto-approve (open → approved,
+    // the only open → approved path; the threshold block rewrites status). Gating
+    // on prior status ∈ {estimated, open} excludes the manager reopen-from-worked
+    // case; bypass never reaches status 'approved'. Suppressed when the assigned
+    // tech is the actor (own click / own auto-approved submission). Non-fatal.
+    const approvedNow =
+      filtered.status === 'approved' &&
+      (current.status === 'estimated' || current.status === 'open')
+    const selfApproved = current.assigned_technician_id === user.id
+    if (approvedNow && !selfApproved) {
+      try {
+        await notifyApprove(id)
+      } catch (notifyErr) {
+        console.error('service-tickets: approval notification failed', notifyErr)
       }
     }
 

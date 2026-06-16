@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 import { notifyDecline } from '@/lib/service-tickets/notify-decline'
+import { notifyApprove } from '@/lib/service-tickets/notify-approve'
 import { NextResponse } from 'next/server'
 
 const MAX_SIGNATURE_BYTES = 200_000 // ~200 KB base64 PNG ~= 150 KB image
@@ -168,6 +169,14 @@ export async function POST(
       await notifyDecline(ticket.id)
     } catch (notifyErr) {
       console.error('approve: decline notification failed', notifyErr)
+    }
+  } else {
+    // action === 'approve' — tell the assigned tech they're clear to proceed.
+    // No self-check here: the customer is the actor, never the tech. Non-fatal.
+    try {
+      await notifyApprove(ticket.id)
+    } catch (notifyErr) {
+      console.error('approve: approval notification failed', notifyErr)
     }
   }
 
