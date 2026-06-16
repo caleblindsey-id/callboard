@@ -37,7 +37,11 @@ import {
   ReadyToBillSkeleton,
 } from '@/components/dashboard/sections/skeletons'
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
   const now = new Date()
   const month = now.getMonth() + 1
   const year = now.getFullYear()
@@ -48,6 +52,7 @@ export default async function DashboardPage() {
 
   // ---- Tech view: lighter data load, dedicated layout ----
   if (isTech && user) {
+    const params = await searchParams
     const [
       tickets,
       overdueCount,
@@ -125,6 +130,7 @@ export default async function DashboardPage() {
         serviceWork={serviceWork}
         revisionRequestedCount={revisionRequestedCount}
         equipmentToVerifyCount={equipmentToVerifyCount}
+        initialTab={params.tab ?? ''}
       />
     )
   }
