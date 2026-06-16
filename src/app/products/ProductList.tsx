@@ -4,6 +4,7 @@ import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProdu
 import { sanitizeOrValue } from '@/lib/db/safe-or'
 import { formatDate } from '@/lib/format'
 import SortHeader from '@/components/SortHeader'
+import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type ProductSortKey = 'number' | 'description' | 'unit_price' | 'synced_at'
@@ -74,7 +75,7 @@ export default function ProductList() {
             </div>
 
             {/* Desktop table — hidden on mobile */}
-            <div className="hidden lg:block overflow-x-auto">
+            <ScrollableTable className="hidden lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -95,7 +96,7 @@ export default function ProductList() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </>
         )}
       </div>

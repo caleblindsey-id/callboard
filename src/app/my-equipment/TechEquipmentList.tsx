@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import type { TechEquipmentItem } from './page'
 import { formatDate } from '@/lib/format'
+import ScrollableTable from '@/components/ScrollableTable'
 
 interface TechEquipmentListProps {
   equipment: TechEquipmentItem[]
@@ -158,7 +159,7 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
             </div>
 
             {/* Desktop table */}
-            <div className="hidden lg:block overflow-x-auto">
+            <ScrollableTable className="hidden lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -205,7 +206,7 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </>
         )}
       </div>

@@ -13,6 +13,7 @@ import CreateEquipmentFromLeadModal from '../tech-leads/CreateEquipmentFromLeadM
 import PayoutReport from '../tech-leads/PayoutReport'
 import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
 import { formatMoney, formatDate } from '@/lib/format'
+import ScrollableTable from '@/components/ScrollableTable'
 
 type TabKey = 'pending' | 'pending_ace' | 'approved' | 'match' | 'earned' | 'paid' | 'closed' | 'payout'
 type TypeFilter = 'all' | TechLeadType
@@ -286,7 +287,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
           onRefresh={() => router.refresh()}
         />
       ) : tab === 'pending_ace' ? (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+        <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800/60 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               <tr>
@@ -378,7 +379,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       ) : filtered.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">No leads in this tab.</p>

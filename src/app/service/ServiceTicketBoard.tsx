@@ -11,6 +11,7 @@ import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { createClient } from '@/lib/supabase/client'
 import SortHeader from '@/components/SortHeader'
+import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
@@ -609,7 +610,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
             </div>
 
             {/* Desktop table */}
-            <div className="hidden lg:block overflow-x-auto">
+            <ScrollableTable className="hidden lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -718,7 +719,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </>
         )}
       </div>
