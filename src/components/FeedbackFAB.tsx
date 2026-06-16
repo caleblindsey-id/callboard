@@ -19,6 +19,12 @@ export default function FeedbackFAB() {
     try {
       const { default: html2canvas } = await import('html2canvas-pro')
       const fab = fabRef.current
+      // Live viewport size. html2canvas clones the page into a sandboxed iframe
+      // and re-renders it; without pinning the window size the clone resolved
+      // Tailwind's lg: breakpoint as false, capturing the mobile layout (stacked
+      // filters, blank desktop table) instead of what was on screen (feedback #45).
+      const vw = document.documentElement.clientWidth
+      const vh = window.innerHeight
       const canvas = await html2canvas(document.documentElement, {
         ignoreElements: (el) => el === fab,
         useCORS: true,
@@ -27,6 +33,17 @@ export default function FeedbackFAB() {
         // hurts mobile memory. 0.75 on standard, 1.0 on retina is a sweet spot.
         scale: typeof window !== 'undefined' && window.devicePixelRatio > 1 ? 1 : 0.75,
         backgroundColor: null,
+        // Render the clone at the real viewport so breakpoints match the screen.
+        windowWidth: vw,
+        windowHeight: vh,
+        // Capture only the visible viewport (what the user is looking at), at the
+        // current scroll offset, rather than the full scrollable document.
+        scrollX: 0,
+        scrollY: 0,
+        x: window.scrollX,
+        y: window.scrollY,
+        width: vw,
+        height: vh,
       })
       blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, 'image/jpeg', 0.8)
