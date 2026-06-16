@@ -46,6 +46,7 @@ export async function POST(
         labor_rate_type,
         parts_used,
         diagnostic_charge,
+        diagnostic_invoice_number,
         billing_amount,
         customer_signature,
         customer_signature_name,
@@ -154,14 +155,19 @@ export async function POST(
     // Trip charge is baked into billing_amount (server-computed). Derive the
     // line as total − labor − parts − diagnostic so the printed breakdown
     // always reconciles with the authoritative Total. 0 on warranty tickets.
+    // The diagnostic is SIGNED to match how billing_amount was computed: a
+    // separately-invoiced diagnostic (has an invoice number) is a credit, so it
+    // was subtracted; otherwise it was added.
     const partsTotalPdf = partsUsed
       .filter((p) => !p.warranty_covered)
       .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
     const laborTotalPdf = ((raw.hours_worked as number | null) ?? 0) * laborRate
     const diagnosticPdf = (raw.diagnostic_charge as number | null) ?? 0
+    const hasDiagInvoice = !!String(raw.diagnostic_invoice_number ?? '').trim()
+    const signedDiagnosticPdf = hasDiagInvoice ? -diagnosticPdf : diagnosticPdf
     const tripChargePdf = Math.max(
       0,
-      ((raw.billing_amount as number | null) ?? 0) - laborTotalPdf - partsTotalPdf - diagnosticPdf,
+      ((raw.billing_amount as number | null) ?? 0) - laborTotalPdf - partsTotalPdf - signedDiagnosticPdf,
     )
 
     const workOrder = {
@@ -197,6 +203,7 @@ export async function POST(
       })),
       tripCharge: tripChargePdf,
       diagnosticCharge: (raw.diagnostic_charge as number | null) ?? 0,
+      diagnosticInvoiceNumber: (raw.diagnostic_invoice_number as string | null) ?? null,
       billingTotal: (raw.billing_amount as number | null) ?? 0,
       customerSignature: raw.customer_signature as string | null,
       customerSignatureName: raw.customer_signature_name as string | null,

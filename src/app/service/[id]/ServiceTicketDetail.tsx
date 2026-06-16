@@ -1585,7 +1585,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // Billed trip charge = trips × per-trip rate (0 on full-warranty tickets).
   const tripChargeQtyNum = parseFloat(tripChargeQty) || 0
   const tripChargeNum = ticket.billing_type === 'warranty' ? 0 : tripChargeQtyNum * tripChargeRate
-  const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum
+  // Diagnostic fee mirrors the server: a separately-invoiced diagnostic (has an
+  // invoice number) is a credit (subtracted) so the customer isn't double-billed;
+  // otherwise it's a normal added charge.
+  const diagnosticChargeNum = Number(ticket.diagnostic_charge ?? 0) || 0
+  const signedDiagnosticNum = String(ticket.diagnostic_invoice_number ?? '').trim()
+    ? -diagnosticChargeNum
+    : diagnosticChargeNum
+  const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum
 
   // Estimate computed totals. The rate type can be re-picked in the builder, so the
   // preview uses the resolved rate for the selected type (server re-snapshots on submit).

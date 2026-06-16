@@ -103,7 +103,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, trip_charge_qty, labor_rate_type, equipment_id, customer_id')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, labor_rate_type, equipment_id, customer_id')
       .eq('id', id)
       .single()
 
@@ -198,6 +198,11 @@ export async function POST(
     const billingType = current.billing_type as string
     const finalParts: ServicePartUsed[] = parts_used ?? []
     const diagnosticCharge = Number(current.diagnostic_charge ?? 0) || 0
+    // A diagnostic invoice number means the diagnostic visit was already billed
+    // separately in Synergy, so on this work order it's a CREDIT (subtracted) so
+    // the customer isn't double-charged. No invoice number = normal positive charge.
+    const hasDiagInvoice = !!String(current.diagnostic_invoice_number ?? '').trim()
+    const signedDiagnostic = hasDiagInvoice ? -diagnosticCharge : diagnosticCharge
 
     let finalBillingAmount: number
     if (billingType === 'warranty') {
@@ -222,7 +227,7 @@ export async function POST(
         : effectiveTripChargeQty(current.trip_charge_qty as number | null, current.ticket_type as string)
       const tripCharge = tripQty * await getTripChargeRate()
 
-      finalBillingAmount = laborTotal + billablePartsTotal + diagnosticCharge + tripCharge
+      finalBillingAmount = laborTotal + billablePartsTotal + signedDiagnostic + tripCharge
     }
     // Round to cents to avoid stored vs. displayed drift.
     finalBillingAmount = Math.round(finalBillingAmount * 100) / 100

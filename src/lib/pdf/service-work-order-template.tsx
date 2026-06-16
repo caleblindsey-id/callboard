@@ -41,6 +41,9 @@ interface ServiceWorkOrderData {
   parts: ServiceWorkOrderPart[]
   tripCharge: number
   diagnosticCharge: number
+  // When present, the diagnostic was already billed separately (Synergy invoice),
+  // so it renders as a negative credit on this work order rather than a charge.
+  diagnosticInvoiceNumber: string | null
   billingTotal: number
   customerSignature: string | null
   customerSignatureName: string | null
@@ -318,10 +321,18 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
 
           {workOrder.diagnosticCharge > 0 && (
             <View style={styles.tableRow}>
-              <Text style={styles.colDescription}>Diagnostic Fee</Text>
+              <Text style={styles.colDescription}>
+                {workOrder.diagnosticInvoiceNumber
+                  ? `Diagnostic Fee Credit (Inv #${workOrder.diagnosticInvoiceNumber})`
+                  : 'Diagnostic Fee'}
+              </Text>
               <Text style={styles.colQty}>—</Text>
               <Text style={styles.colPrice}>—</Text>
-              <Text style={styles.colTotal}>{money(workOrder.diagnosticCharge)}</Text>
+              <Text style={styles.colTotal}>
+                {workOrder.diagnosticInvoiceNumber
+                  ? `-${money(workOrder.diagnosticCharge)}`
+                  : money(workOrder.diagnosticCharge)}
+              </Text>
             </View>
           )}
         </View>
@@ -346,8 +357,14 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
           )}
           {workOrder.diagnosticCharge > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Diagnostic Fee:</Text>
-              <Text style={styles.summaryValue}>{money(workOrder.diagnosticCharge)}</Text>
+              <Text style={styles.summaryLabel}>
+                {workOrder.diagnosticInvoiceNumber ? 'Diagnostic Fee Credit:' : 'Diagnostic Fee:'}
+              </Text>
+              <Text style={styles.summaryValue}>
+                {workOrder.diagnosticInvoiceNumber
+                  ? `-${money(workOrder.diagnosticCharge)}`
+                  : money(workOrder.diagnosticCharge)}
+              </Text>
             </View>
           )}
           <View style={styles.totalRow}>
