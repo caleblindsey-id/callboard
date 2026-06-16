@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { InactiveEquipmentProspect } from '@/lib/db/equipment'
 import { Star, Trash2, Eye, EyeOff, ChevronRight, X } from 'lucide-react'
 import SortHeader from '@/components/SortHeader'
+import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type ProspectSortKey =
@@ -201,7 +202,7 @@ export default function ProspectList({ prospects }: ProspectListProps) {
               </div>
 
               {/* Desktop table */}
-              <div className="hidden lg:block overflow-x-auto">
+              <ScrollableTable className="hidden lg:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -308,7 +309,7 @@ export default function ProspectList({ prospects }: ProspectListProps) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollableTable>
             </div>
           )}
         </>
@@ -340,7 +341,7 @@ export default function ProspectList({ prospects }: ProspectListProps) {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden lg:block overflow-x-auto">
+          <ScrollableTable className="hidden lg:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -367,7 +368,7 @@ export default function ProspectList({ prospects }: ProspectListProps) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         </div>
       )}
     </div>

@@ -19,6 +19,7 @@ import { partLabel } from '@/lib/parts'
 import CancelPartDialog from './CancelPartDialog'
 import TriageOrderDialog from './TriageOrderDialog'
 import VendorPicker from '@/components/VendorPicker'
+import ScrollableTable from '@/components/ScrollableTable'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
@@ -691,7 +692,7 @@ export default function PartsQueueClient({
           pdfPending={pdfPending}
         />
       ) : (
-      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
@@ -919,7 +920,7 @@ export default function PartsQueueClient({
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
       )}
 
       <CancelPartDialog
@@ -976,7 +977,7 @@ function ReviewTable({
   onCancel: (row: PartsQueueRow) => void
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
           <tr>
@@ -1067,7 +1068,7 @@ function ReviewTable({
           )}
         </tbody>
       </table>
-    </div>
+    </ScrollableTable>
   )
 }
 
@@ -1125,7 +1126,7 @@ function ToPullTable({
           </button>
         </div>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
@@ -1199,7 +1200,7 @@ function ToPullTable({
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
     </div>
   )
 }

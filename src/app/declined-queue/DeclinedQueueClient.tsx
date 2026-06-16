@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { FileX } from 'lucide-react'
 import type { DeclinedQueueRow } from '@/lib/db/declined-queue'
+import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
@@ -99,7 +100,7 @@ export default function DeclinedQueueClient({ rows }: { rows: DeclinedQueueRow[]
           No declined estimates to follow up.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+        <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -168,7 +169,7 @@ export default function DeclinedQueueClient({ rows }: { rows: DeclinedQueueRow[]
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
     </div>
   )

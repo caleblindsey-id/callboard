@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Phone, Mail, FileText } from 'lucide-react'
 import type { EstimateQueueRow } from '@/lib/db/estimate-queue'
+import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
@@ -182,7 +183,7 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
           {tab === 'needs_contact' ? 'Every estimate has had first contact.' : 'No estimates awaiting a decision.'}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+        <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -305,7 +306,7 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
     </div>
   )

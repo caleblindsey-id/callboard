@@ -16,6 +16,7 @@ import CreateTicketModal from './CreateTicketModal'
 import GeneratePmModal from './GeneratePmModal'
 import SkipDialog from './SkipDialog'
 import SortHeader from '@/components/SortHeader'
+import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type TicketSortKey =
@@ -217,7 +218,7 @@ function TicketList({
         })}
       </div>
 
-      <div className="hidden lg:block overflow-x-auto">
+      <ScrollableTable className="hidden lg:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -333,7 +334,7 @@ function TicketList({
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
     </>
   )
 }

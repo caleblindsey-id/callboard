@@ -12,6 +12,7 @@ import {
   changeSummary,
   formatOccurredAt,
 } from '@/lib/audit/format'
+import ScrollableTable from '@/components/ScrollableTable'
 
 const PAGE_SIZE = 50
 
@@ -224,7 +225,7 @@ export default async function AuditLogPage({
       </form>
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-900">
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
               <tr>
@@ -271,7 +272,7 @@ export default async function AuditLogPage({
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-800 text-sm text-gray-600 dark:text-gray-300">

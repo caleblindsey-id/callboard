@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, PackageCheck } from 'lucide-react'
 import PartsStatusBadge from '@/components/PartsStatusBadge'
+import ScrollableTable from '@/components/ScrollableTable'
 import { ticketDeepLink } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
@@ -192,7 +193,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
             </div>
 
             {/* Desktop: table */}
-            <div className="hidden lg:block overflow-x-auto">
+            <ScrollableTable className="hidden lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
@@ -247,7 +248,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </>
         )}
       </div>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
 import BillingNotesDrawer from './BillingNotesDrawer'
+import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
@@ -306,7 +307,7 @@ export default function ServiceBillingExport({
             </div>
 
             {/* Desktop table */}
-            <div className="hidden lg:block overflow-x-auto">
+            <ScrollableTable className="hidden lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -364,7 +365,7 @@ export default function ServiceBillingExport({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           </>
         )}
       </div>
