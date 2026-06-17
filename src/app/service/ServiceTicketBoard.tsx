@@ -6,6 +6,7 @@ import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { UserRow } from '@/types/database'
 import { ServiceTicketWithJoins, ServiceTicketStatus, ServicePriority, ServiceTicketType } from '@/types/service-tickets'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
+import TicketTypeBadge from '@/components/TicketTypeBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
@@ -145,26 +146,6 @@ function PriorityBadge({ priority }: { priority: ServicePriority }) {
     },
   }
   const c = config[priority]
-  if (!c) return null
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${c.classes}`}>
-      {c.label}
-    </span>
-  )
-}
-
-function TypeBadge({ type }: { type: ServiceTicketType }) {
-  const config: Record<ServiceTicketType, { label: string; classes: string }> = {
-    inside: {
-      label: 'Inside',
-      classes: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300',
-    },
-    outside: {
-      label: 'Outside',
-      classes: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300',
-    },
-  }
-  const c = config[type]
   if (!c) return null
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${c.classes}`}>
@@ -642,7 +623,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                     </p>
                   )}
                   <div className="flex items-center gap-2 mt-1">
-                    <TypeBadge type={ticket.ticket_type} />
+                    <TicketTypeBadge type={ticket.ticket_type} />
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       Tech: {ticket.assigned_technician?.name ?? '—'}
                     </span>
@@ -751,7 +732,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <TypeBadge type={ticket.ticket_type} />
+                        <TicketTypeBadge type={ticket.ticket_type} />
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {ticket.assigned_technician?.name ?? '—'}

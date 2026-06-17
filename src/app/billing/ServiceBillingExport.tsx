@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
 import BillingNotesDrawer from './BillingNotesDrawer'
+import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
@@ -43,6 +44,7 @@ type ServiceBillingSortKey =
   | 'equipment'
   | 'technician'
   | 'billing'
+  | 'ticketType'
   | 'type'
   | 'completed'
 
@@ -54,6 +56,7 @@ const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, Servic
       .join(' ') || null,
   technician: t => t.assigned_technician?.name,
   billing: t => t.billing_amount,
+  ticketType: t => t.ticket_type,
   type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
   completed: t => t.completed_at,
 }
@@ -287,10 +290,13 @@ export default function ServiceBillingExport({
                       Tech: {t.assigned_technician?.name ?? '—'} · Hrs: {t.hours_worked ?? '—'} ·{' '}
                       {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
-                      {t.work_order_number != null ? ` · WO#${t.work_order_number}` : ''}
-                    </p>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <TicketTypeBadge type={t.ticket_type} />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                        {t.work_order_number != null ? ` · WO#${t.work_order_number}` : ''}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Completed:{' '}
                       {t.completed_at
@@ -315,6 +321,7 @@ export default function ServiceBillingExport({
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                    <SortHeader label="Service Type" colKey="ticketType" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
@@ -346,6 +353,9 @@ export default function ServiceBillingExport({
                         {t.billing_amount != null
                           ? `$${t.billing_amount.toFixed(2)}`
                           : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <TicketTypeBadge type={t.ticket_type} />
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
