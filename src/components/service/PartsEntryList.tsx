@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import { shouldSearchProducts } from '@/lib/products-search'
 import { minPrice } from '@/lib/margin'
 import VendorPicker from '@/components/VendorPicker'
 
@@ -195,7 +196,7 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
     const existing = debounceRefs.current.get(index)
     if (existing) clearTimeout(existing)
 
-    if (!value.trim()) {
+    if (!shouldSearchProducts(value)) {
       setParts((prev) => {
         const updated = [...prev]
         if (updated[index]) {

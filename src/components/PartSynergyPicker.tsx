@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import { shouldSearchProducts } from '@/lib/products-search'
 import { Check, Pencil } from 'lucide-react'
 
 interface ProductSearchResult {
@@ -43,8 +44,8 @@ export default function PartSynergyPicker({
     if (!editing) return
     // Sanitize before splicing into .or() — see lib/db/safe-or. Previously
     // this call site missed sanitization entirely.
+    if (!shouldSearchProducts(search)) return
     const q = sanitizeOrValue(search.trim())
-    if (!q) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
