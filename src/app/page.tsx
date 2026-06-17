@@ -11,6 +11,7 @@ import {
   getServiceTickets,
 } from '@/lib/db/service-tickets'
 import { getOpenWorkCounts, getMtdRevenue } from '@/lib/db/dashboard-metrics'
+import { redirect } from 'next/navigation'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import SyncStatusBanner from '@/components/SyncStatusBanner'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
@@ -48,7 +49,11 @@ export default async function DashboardPage({
   const monthName = now.toLocaleString('default', { month: 'long' })
 
   const user = await getCurrentUser()
-  const isTech = isTechnician(user?.role ?? null)
+  // Defense in depth: an authenticated session with no profile row should never
+  // reach the dashboard (the proxy already denies it). If it somehow does, send
+  // it to login rather than silently rendering the full manager view.
+  if (!user) redirect('/login')
+  const isTech = isTechnician(user.role)
 
   // ---- Tech view: lighter data load, dedicated layout ----
   if (isTech && user) {

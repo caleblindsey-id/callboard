@@ -20,7 +20,16 @@ type View = 'init' | 'password' | 'pin-pick' | 'pin-entry' | 'enroll'
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const linkExpired = searchParams.get('error') === 'link_expired'
+  const errorParam = searchParams.get('error')
+  // Server-side denials (proxy.ts) and expired magic links arrive as ?error=…
+  const initialError =
+    errorParam === 'link_expired'
+      ? 'That link has expired or already been used. Please sign in again.'
+      : errorParam === 'not_provisioned'
+        ? 'This account is not set up in CallBoard yet. Please contact your manager.'
+        : errorParam === 'deactivated'
+          ? 'This account has been deactivated. Please contact your manager.'
+          : null
 
   // Quick-PIN device state (resolved after mount — localStorage is client-only).
   const [view, setView] = useState<View>('init')
@@ -31,9 +40,7 @@ function LoginForm() {
   // Password form
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(
-    linkExpired ? 'That link has expired or already been used. Please sign in again.' : null
-  )
+  const [error, setError] = useState<string | null>(initialError)
   const [loading, setLoading] = useState(false)
 
   // PIN entry / enrollment
@@ -48,7 +55,7 @@ function LoginForm() {
     const list = getProfiles()
     setDeviceId(id)
     setProfiles(list)
-    if (linkExpired || list.length === 0) {
+    if (initialError || list.length === 0) {
       setView('password')
     } else if (list.length === 1) {
       setSelected(list[0])
@@ -56,7 +63,7 @@ function LoginForm() {
     } else {
       setView('pin-pick')
     }
-  }, [linkExpired])
+  }, [initialError])
 
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault()
