@@ -5,8 +5,12 @@
 // monitor email still see a ticket the moment they're in the app.
 //
 // No realtime exists in this app, so the bell polls GET /api/notifications on a
-// 60s interval and refetches whenever the tab regains focus. Managers/coordinators
-// have no assignment notifications, so the bell renders nothing for them.
+// 5-minute interval and refetches whenever the tab regains focus. Polling only
+// runs while the tab is visible — a backgrounded tab (e.g. a shared shop device
+// left logged in all day) stops polling so it doesn't burn serverless CPU for
+// nothing, and catches up with an immediate fetch the moment it's foregrounded.
+// Managers/coordinators have no assignment notifications, so the bell renders
+// nothing for them.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -25,7 +29,7 @@ type Notification = {
   created_at: string
 }
 
-const POLL_MS = 60_000
+const POLL_MS = 300_000
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -62,22 +66,44 @@ export default function NotificationBell() {
     }
   }, [])
 
-  // Poll on mount + every 60s; refetch when the tab regains focus. The initial
-  // load fires from a setTimeout callback (not synchronously) so its setState
-  // doesn't trip the react-hooks/set-state-in-effect rule — same idiom as the
-  // debounced search in VendorPicker.
+  // Poll every POLL_MS, but ONLY while the tab is visible — a backgrounded tab
+  // stops its interval entirely (no idle serverless CPU) and catches up with an
+  // immediate fetch when it regains focus. The initial load fires from a
+  // setTimeout callback (not synchronously) so its setState doesn't trip the
+  // react-hooks/set-state-in-effect rule — same idiom as the debounced search in
+  // VendorPicker.
   useEffect(() => {
     if (!isTech) return
-    const initial = setTimeout(load, 0)
-    const interval = setInterval(load, POLL_MS)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') load()
+    let interval: ReturnType<typeof setInterval> | null = null
+    const startPolling = () => {
+      if (interval === null) interval = setInterval(load, POLL_MS)
     }
+    const stopPolling = () => {
+      if (interval !== null) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        load()
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+    // Only begin polling if the tab is actually visible on mount.
+    const initial = setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        load()
+        startPolling()
+      }
+    }, 0)
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
     return () => {
       clearTimeout(initial)
-      clearInterval(interval)
+      stopPolling()
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
