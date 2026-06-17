@@ -255,7 +255,6 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
 
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
-  const [poNumber, setPoNumber] = useState(ticket.po_number ?? '')
   const [billingContactName, setBillingContactName] = useState(ticket.billing_contact_name ?? '')
   const [billingContactEmail, setBillingContactEmail] = useState(ticket.billing_contact_email ?? '')
   const [billingContactPhone, setBillingContactPhone] = useState(ticket.billing_contact_phone ?? '')
@@ -446,7 +445,6 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           customerSignature: signatureImage,
           customerSignatureName: signatureName.trim(),
           photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-          poNumber: poNumber || undefined,
           billingContactName: billingContactName || undefined,
           billingContactEmail: billingContactEmail || undefined,
           billingContactPhone: billingContactPhone || undefined,
@@ -483,7 +481,6 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     additional_hours_worked: parseFloat(additionalHoursWorked) || null,
     trip_charge_qty: tripChargeQtyNum,
     photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-    po_number: poNumber || null,
     billing_contact_name: billingContactName || null,
     billing_contact_email: billingContactEmail || null,
     billing_contact_phone: billingContactPhone || null,
@@ -580,7 +577,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedDate, hoursWorked, machineHours, dateCode, completionNotes, pmParts, additionalParts, additionalHoursWorked, poNumber, billingContactName, billingContactEmail, billingContactPhone, photos])
+  }, [completedDate, hoursWorked, machineHours, dateCode, completionNotes, pmParts, additionalParts, additionalHoursWorked, billingContactName, billingContactEmail, billingContactPhone, photos])
 
   // Keep the unmount-flush closure pointing at the latest state. Refreshed
   // every render so the captured saveProgress sees current field values.
@@ -945,33 +942,22 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
             />
           ) : (
           <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
-            {/* Date + PO */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="completedDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Completion Date
-                </label>
-                <input
-                  id="completedDate"
-                  type="date"
-                  required
-                  value={completedDate}
-                  onChange={(e) => setCompletedDate(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  PO Number
-                </label>
-                <input
-                  type="text"
-                  value={poNumber}
-                  onChange={(e) => setPoNumber(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="Enter PO number if required..."
-                />
-              </div>
+            {/* Completion date. The customer PO is entered/edited in the
+                dedicated "Customer PO #" section above (single source of truth);
+                a second PO input here desynced from it and could blank a saved PO
+                on completion. */}
+            <div>
+              <label htmlFor="completedDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Completion Date
+              </label>
+              <input
+                id="completedDate"
+                type="date"
+                required
+                value={completedDate}
+                onChange={(e) => setCompletedDate(e.target.value)}
+                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
             </div>
 
             <div>
