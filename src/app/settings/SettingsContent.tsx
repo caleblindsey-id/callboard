@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserRow, UserRole, SyncLogRow, SalesRep, SalesRepKind } from '@/types/database'
+import { UserRow, UserRole, SyncLogRow, SalesRep, SalesRepKind, SupplyCatalogRow } from '@/types/database'
 
 const KIND_LABEL: Record<SalesRepKind, string> = {
   branch_manager: 'Branch Manager',
@@ -34,6 +34,7 @@ interface SettingsContentProps {
   pickupHours: string
   passcodeConfigured: boolean
   salesReps: SalesRep[]
+  supplyCatalog: SupplyCatalogRow[]
 }
 
 export default function SettingsContent({
@@ -51,6 +52,7 @@ export default function SettingsContent({
   pickupHours,
   passcodeConfigured,
   salesReps,
+  supplyCatalog,
 }: SettingsContentProps) {
   const router = useRouter()
   const [modalOpen, setModalOpen] = useState(false)
@@ -106,6 +108,9 @@ export default function SettingsContent({
 
       {/* Sales Reps — destination list for forwarded equipment leads */}
       <SalesRepsSection salesReps={salesReps} />
+
+      {/* Shop Supplies — quick-pick list techs choose from on /my-supplies */}
+      <SupplyCatalogSection items={supplyCatalog} />
 
       {/* Users section */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -1409,6 +1414,292 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
               className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 disabled:opacity-50"
             >
               {busy ? '...' : rep.active ? 'Deactivate' : 'Activate'}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={busy}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          </div>
+          {error && <span className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</span>}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function SupplyCatalogSection({ items }: { items: SupplyCatalogRow[] }) {
+  const router = useRouter()
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [unit, setUnit] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSubmitting(true)
+    setError(null)
+    // New items sort after the current max so they land at the end of the list.
+    const maxSort = items.reduce((m, i) => Math.max(m, i.sort_order), 0)
+    const res = await fetch('/api/supply-catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), unit: unit.trim() || null, sort_order: maxSort + 10 }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setSubmitting(false)
+    if (!res.ok) {
+      setError(data.error ?? 'Failed to add supply')
+      return
+    }
+    setName('')
+    setUnit('')
+    setAdding(false)
+    router.refresh()
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+            Shop Supplies
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Quick-pick consumables technicians choose from when requesting supplies. Inactive items are hidden from the request form.
+          </p>
+        </div>
+        {!adding && (
+          <button
+            onClick={() => { setAdding(true); setError(null) }}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
+          >
+            Add Supply
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <form onSubmit={handleAdd} className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. WD-40"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+          </div>
+          <div className="min-w-[140px]">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Unit <span className="text-gray-400">(optional)</span></label>
+            <input
+              type="text"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              placeholder="e.g. can, box, roll"
+              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-3 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50"
+            >
+              {submitting ? 'Adding...' : 'Add'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAdding(false); setName(''); setUnit(''); setError(null) }}
+              className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="basis-full text-sm text-red-600 dark:text-red-400">{error}</p>}
+        </form>
+      )}
+
+      {items.length === 0 ? (
+        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          No supplies yet. Add one above so techs have something to pick from.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Name</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Unit</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Order</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {items.map((item) => (
+                <SupplyItemRow key={item.id} item={item} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SupplyItemRow({ item }: { item: SupplyCatalogRow }) {
+  const router = useRouter()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(item.name)
+  const [unit, setUnit] = useState(item.unit ?? '')
+  const [sortOrder, setSortOrder] = useState(String(item.sort_order))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function patch(body: Record<string, unknown>): Promise<boolean> {
+    setError(null)
+    setBusy(true)
+    const res = await fetch(`/api/supply-catalog/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'Failed to update supply')
+      return false
+    }
+    return true
+  }
+
+  async function handleSaveEdit() {
+    if (!name.trim()) {
+      setError('Name is required')
+      return
+    }
+    const ok = await patch({
+      name: name.trim(),
+      unit: unit.trim() || null,
+      sort_order: Number(sortOrder) || 0,
+    })
+    if (ok) {
+      setEditing(false)
+      router.refresh()
+    }
+  }
+
+  async function handleToggleActive() {
+    const ok = await patch({ active: !item.active })
+    if (ok) router.refresh()
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete supply "${item.name}"? This cannot be undone.`)) return
+    setError(null)
+    setBusy(true)
+    const res = await fetch(`/api/supply-catalog/${item.id}`, { method: 'DELETE' })
+    setBusy(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'Failed to delete supply')
+      return
+    }
+    router.refresh()
+  }
+
+  if (editing) {
+    return (
+      <tr>
+        <td className="px-5 py-3">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+        </td>
+        <td className="px-5 py-3">
+          <input
+            type="text"
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            placeholder="(optional)"
+            className="w-full rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+        </td>
+        <td className="px-5 py-3">
+          <input
+            type="number"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            className="w-20 rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+        </td>
+        <td className="px-5 py-3 text-gray-500 dark:text-gray-400 text-sm">—</td>
+        <td className="px-5 py-3">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveEdit}
+                disabled={busy}
+                className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 disabled:opacity-50"
+              >
+                {busy ? '...' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setEditing(false); setName(item.name); setUnit(item.unit ?? ''); setSortOrder(String(item.sort_order)); setError(null) }}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+            {error && <span className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</span>}
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr className={item.active ? '' : 'opacity-60'}>
+      <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">{item.name}</td>
+      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{item.unit ?? '—'}</td>
+      <td className="px-5 py-3 text-gray-600 dark:text-gray-400 tabular-nums">{item.sort_order}</td>
+      <td className="px-5 py-3">
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            item.active
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+          }`}
+        >
+          {item.active ? 'Active' : 'Inactive'}
+        </span>
+      </td>
+      <td className="px-5 py-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setEditing(true)}
+              disabled={busy}
+              className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 disabled:opacity-50"
+            >
+              Edit
+            </button>
+            <button
+              onClick={handleToggleActive}
+              disabled={busy}
+              className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 disabled:opacity-50"
+            >
+              {busy ? '...' : item.active ? 'Deactivate' : 'Activate'}
             </button>
             <button
               onClick={handleDelete}

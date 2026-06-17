@@ -930,6 +930,67 @@ export type SyncLogUpdate = Partial<Omit<SyncLogRow, 'id'>>
 export type TechLeadUpdate = Partial<Omit<TechLeadRow, 'id' | 'created_at' | 'updated_at'>>
 
 // ============================================================
+// Shop-supply requests (migration 123)
+// ============================================================
+
+// Manager-editable quick-pick list of common shop consumables.
+export type SupplyCatalogRow = {
+  id: string
+  name: string
+  unit: string | null
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type SupplyCatalogInsert = MakeOptional<
+  Omit<SupplyCatalogRow, 'id' | 'created_at' | 'updated_at'>,
+  'unit' | 'sort_order' | 'active'
+>
+
+export type SupplyCatalogUpdate = Partial<Omit<SupplyCatalogRow, 'id' | 'created_at' | 'updated_at'>>
+
+export type SupplyRequestStatus = 'pending' | 'ready' | 'picked_up' | 'denied'
+
+// One line on a request. catalog_id links a quick-pick item; free-text "other"
+// items leave it null. unit is copied from the catalog for display.
+export type SupplyRequestItem = {
+  name: string
+  quantity: number
+  catalog_id?: string | null
+  unit?: string | null
+}
+
+export type SupplyRequestRow = {
+  id: string
+  requested_by: string
+  items: SupplyRequestItem[]
+  note: string | null
+  status: SupplyRequestStatus
+  denied_reason: string | null
+  ready_at: string | null
+  ready_by: string | null
+  ready_notified_at: string | null
+  picked_up_at: string | null
+  picked_up_by: string | null
+  denied_at: string | null
+  denied_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+// A tech inserts requested_by + items (+ optional note); the rest defaults.
+export type SupplyRequestInsert = MakeOptional<
+  Omit<SupplyRequestRow, 'id' | 'created_at' | 'updated_at'>,
+  | 'note' | 'status' | 'denied_reason'
+  | 'ready_at' | 'ready_by' | 'ready_notified_at'
+  | 'picked_up_at' | 'picked_up_by' | 'denied_at' | 'denied_by'
+>
+
+export type SupplyRequestUpdate = Partial<Omit<SupplyRequestRow, 'id' | 'created_at' | 'updated_at'>>
+
+// ============================================================
 // Supabase Database type
 // ============================================================
 
@@ -1387,6 +1448,26 @@ export interface Database {
         Insert: RevalidationQueueInsert
         Update: RevalidationQueueUpdate
         Relationships: []
+      }
+      supply_catalog: {
+        Row: SupplyCatalogRow
+        Insert: SupplyCatalogInsert
+        Update: SupplyCatalogUpdate
+        Relationships: []
+      }
+      supply_requests: {
+        Row: SupplyRequestRow
+        Insert: SupplyRequestInsert
+        Update: SupplyRequestUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'supply_requests_requested_by_fkey'
+            columns: ['requested_by']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
       }
     }
     Views: {
