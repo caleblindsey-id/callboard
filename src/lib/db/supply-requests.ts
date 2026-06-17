@@ -22,6 +22,19 @@ export async function getSupplyCatalog(): Promise<SupplyCatalogRow[]> {
   return (data ?? []) as SupplyCatalogRow[]
 }
 
+// Full catalog incl. inactive items, for the Settings management UI.
+export async function getAllSupplyCatalog(): Promise<SupplyCatalogRow[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('supply_catalog')
+    .select('id, name, unit, sort_order, active, created_at, updated_at')
+    .order('active', { ascending: false })
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as SupplyCatalogRow[]
+}
+
 // A single tech's own requests, newest first (for /my-supplies).
 export async function getMySupplyRequests(userId: string): Promise<SupplyRequestRow[]> {
   const supabase = await createClient()

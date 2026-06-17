@@ -3,12 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { getSetting } from '@/lib/db/settings'
 import { getAllSalesReps } from '@/lib/db/sales-reps'
+import { getAllSupplyCatalog } from '@/lib/db/supply-requests'
 import { SyncLogRow } from '@/types/database'
 import SettingsContent from './SettingsContent'
 
 export default async function SettingsPage() {
   await requireRole('super_admin')
-  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, pickupAddress, pickupHours, passcodeHash, salesReps] = await Promise.all([
+  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, pickupAddress, pickupHours, passcodeHash, salesReps, supplyCatalog] = await Promise.all([
     getUsers(),
     getSyncLog(),
     getSetting('labor_rate_per_hour'),
@@ -23,6 +24,7 @@ export default async function SettingsPage() {
     getSetting('pickup_hours'),
     getSetting('credit_hold_release_passcode_hash'),
     getAllSalesReps(),
+    getAllSupplyCatalog(),
   ])
 
   return (
@@ -48,6 +50,7 @@ export default async function SettingsPage() {
         pickupHours={pickupHours ?? ''}
         passcodeConfigured={Boolean(passcodeHash && passcodeHash.length > 0)}
         salesReps={salesReps}
+        supplyCatalog={supplyCatalog}
       />
     </div>
   )
