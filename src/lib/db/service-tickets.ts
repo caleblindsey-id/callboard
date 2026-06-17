@@ -253,6 +253,7 @@ export type ServiceBillingTicket = {
   id: string
   work_order_number: number | null
   status: ServiceTicketStatus
+  ticket_type: ServiceTicketType
   billing_type: ServiceBillingType
   billing_amount: number | null
   hours_worked: number | null
@@ -299,7 +300,7 @@ async function getServiceBillingByExported(
   let query = supabase
     .from('service_tickets')
     .select(`
-      id, work_order_number, status, billing_type, billing_amount, hours_worked,
+      id, work_order_number, status, ticket_type, billing_type, billing_amount, hours_worked,
       billing_exported, synergy_order_number, synergy_invoice_number, completed_at,
       customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
