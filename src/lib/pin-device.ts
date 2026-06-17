@@ -51,3 +51,34 @@ export function forgetProfile(userId: string): void {
   const next = getProfiles().filter((p) => p.userId !== userId)
   localStorage.setItem(PROFILES_KEY, JSON.stringify(next))
 }
+
+const ENROLL_DISMISS_KEY = 'cb-pin-enroll-dismissed'
+
+/** Has this user tapped "Not now" on the PIN-enrollment prompt on this device? */
+export function isEnrollDismissed(userId: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const raw = localStorage.getItem(ENROLL_DISMISS_KEY)
+    if (!raw) return false
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.includes(userId)
+  } catch {
+    return false
+  }
+}
+
+/** Remember that this user declined PIN enrollment on this device. */
+export function dismissEnroll(userId: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = localStorage.getItem(ENROLL_DISMISS_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    const ids: string[] = Array.isArray(parsed)
+      ? parsed.filter((x) => typeof x === 'string')
+      : []
+    if (!ids.includes(userId)) ids.push(userId)
+    localStorage.setItem(ENROLL_DISMISS_KEY, JSON.stringify(ids))
+  } catch {
+    /* private mode — fine, it just won't persist */
+  }
+}

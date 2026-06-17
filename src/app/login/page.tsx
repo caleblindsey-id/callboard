@@ -10,6 +10,8 @@ import {
   getDeviceId,
   getProfiles,
   rememberProfile,
+  dismissEnroll,
+  isEnrollDismissed,
   type PinProfile,
 } from '@/lib/pin-device'
 import PinPad from './PinPad'
@@ -109,6 +111,13 @@ function LoginForm() {
         return
       }
 
+      // Tech previously tapped "Not now" on this device → respect it, just go.
+      if (isEnrollDismissed(user.id)) {
+        router.push('/')
+        router.refresh()
+        return
+      }
+
       setPendingEnroll({ userId: user.id, name })
       setEnrollError(null)
       setView('enroll')
@@ -169,6 +178,7 @@ function LoginForm() {
   }
 
   function skipEnroll() {
+    if (pendingEnroll) dismissEnroll(pendingEnroll.userId)
     router.push('/')
     router.refresh()
   }
