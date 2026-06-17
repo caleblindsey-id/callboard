@@ -2,8 +2,50 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PackageCheck } from 'lucide-react'
+import { PackageCheck, Download } from 'lucide-react'
 import type { SupplyRequestQueueRow } from '@/lib/db/supply-requests'
+
+// CSV cell escaper — quote when the value contains a comma, quote, or newline.
+function csvCell(value: unknown): string {
+  const s = value == null ? '' : String(value)
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Pull list for the warehouse — one row per item across all pending requests,
+// grouped by tech, so it can all be pulled in one pass. Client-side, no route.
+function exportPullList(rows: SupplyRequestQueueRow[]) {
+  const header = ['Tech', 'Item', 'Qty', 'Unit', 'Requested', 'Note']
+  const lines = [header.map(csvCell).join(',')]
+  for (const r of rows) {
+    const requested = new Date(r.created_at).toLocaleDateString()
+    for (const it of r.items) {
+      lines.push(
+        [
+          csvCell(r.requester_name),
+          csvCell(it.name),
+          csvCell(it.quantity),
+          csvCell(it.unit ?? ''),
+          csvCell(requested),
+          csvCell(r.note ?? ''),
+        ].join(','),
+      )
+    }
+  }
+  // BOM so Excel opens the UTF-8 file with the right encoding.
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  triggerDownload(blob, `supply-pull-list-${new Date().toISOString().slice(0, 10)}.csv`)
+}
 
 type Tab = 'pending' | 'ready' | 'done'
 
@@ -72,22 +114,35 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
 
   return (
     <div className="space-y-4">
-      {/* Tabs */}
-      <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-        {tabs.map((t) => (
+      {/* Tabs + pull-list export */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
+          {tabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                tab === t
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              {TAB_LABEL[t]}
+              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">{buckets[t].length}</span>
+            </button>
+          ))}
+        </div>
+        {buckets.pending.length > 0 && (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              tab === t
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
+            type="button"
+            onClick={() => exportPullList(buckets.pending)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 w-fit"
+            title="Download a CSV pull list of everything waiting to be pulled"
           >
-            {TAB_LABEL[t]}
-            <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">{buckets[t].length}</span>
+            <Download className="h-4 w-4" />
+            Pull list (CSV)
           </button>
-        ))}
+        )}
       </div>
 
       {error && (
