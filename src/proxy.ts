@@ -94,19 +94,49 @@ export async function proxy(request: NextRequest) {
   let role = request.cookies.get('pm-role')?.value
   let mustChangePwFromCookie = request.cookies.get('pm-must-change-pw')?.value
 
+  // Set when the authenticated session has no usable profile row — an orphaned /
+  // unprovisioned auth account, or a deactivated user. Such a session must be
+  // denied, NOT allowed to fall through (it would otherwise render the full
+  // manager dashboard, since role stays undefined and the tech gate is skipped).
+  let deniedReason: 'not_provisioned' | 'deactivated' | null = null
+
   if (!role || mustChangePwFromCookie === undefined) {
-    const { data: userData } = await supabase
+    const { data: userData, error: lookupError } = await supabase
       .from('users')
-      .select('role, must_change_password')
+      .select('role, must_change_password, active')
       .eq('id', user.id)
       .single()
 
-    if (userData) {
+    if (userData && userData.active !== false) {
       role = userData.role
       mustChangePwFromCookie = userData.must_change_password ? 'true' : 'false'
       supabaseResponse.cookies.set('pm-role', role!, PM_COOKIE_OPTS)
       supabaseResponse.cookies.set('pm-must-change-pw', mustChangePwFromCookie!, PM_COOKIE_OPTS)
+    } else if (userData && userData.active === false) {
+      deniedReason = 'deactivated'
+    } else if ((lookupError as { code?: string } | null)?.code === 'PGRST116') {
+      // PostgREST "no rows" from .single() — confirmed missing profile row.
+      // (A transient DB error is intentionally NOT treated as denied, to avoid
+      // logging out legitimate users during a blip.)
+      deniedReason = 'not_provisioned'
     }
+  }
+
+  if (deniedReason) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Account not provisioned.' }, { status: 403 })
+    }
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('error', deniedReason)
+    const denied = NextResponse.redirect(url)
+    // Clear the dead session so it doesn't linger and re-trigger this on every hit.
+    for (const cookie of request.cookies.getAll()) {
+      if (cookie.name.startsWith('sb-')) denied.cookies.delete(cookie.name)
+    }
+    denied.cookies.delete('pm-role')
+    denied.cookies.delete('pm-must-change-pw')
+    return denied
   }
 
   if (role === 'technician') {
