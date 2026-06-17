@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { requireRole } from '@/lib/auth'
+import { requireRole, AUDIT_ROLES } from '@/lib/auth'
 import { listAuditEvents, listAuditActors, findTicketsByWorkOrder } from '@/lib/db/auditEvents'
 import {
   ENTITY_LABELS,
@@ -47,7 +47,7 @@ export default async function AuditLogPage({
 }: {
   searchParams: Promise<SearchParams>
 }) {
-  await requireRole('super_admin')
+  await requireRole(...AUDIT_ROLES)
   const params = await searchParams
   const page = parsePage(params.page)
   const offset = (page - 1) * PAGE_SIZE

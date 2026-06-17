@@ -1,4 +1,4 @@
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, AUDIT_ROLES } from '@/lib/auth'
 import { listAuditEventsForEntity } from '@/lib/db/auditEvents'
 import {
   actorDisplayName,
@@ -15,16 +15,16 @@ type Props = {
   limit?: number
 }
 
-// Visibility: super_admin only. Rendered server-side, so non-admin users get
-// nothing at all in the HTML — no client check to leak. Matches the global
-// page's gating.
+// Visibility: super_admin + manager (AUDIT_ROLES). Rendered server-side, so
+// non-authorized users get nothing at all in the HTML — no client check to
+// leak. Matches the global audit-log page's gating.
 export default async function AuditHistorySection({
   entityType,
   entityId,
   limit = 50,
 }: Props) {
   const user = await getCurrentUser()
-  if (!user || user.role !== 'super_admin') {
+  if (!user?.role || !AUDIT_ROLES.includes(user.role)) {
     return null
   }
 

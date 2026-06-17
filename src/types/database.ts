@@ -8,6 +8,10 @@ export type UserRole = 'super_admin' | 'manager' | 'coordinator' | 'technician'
 export const MANAGER_ROLES: UserRole[] = ['super_admin', 'manager', 'coordinator']
 export const RESET_ROLES: UserRole[] = ['super_admin', 'manager']
 export const ADMIN_ROLES: UserRole[] = ['super_admin']
+// Who may read the audit log (change history). Managers + super_admin; NOT
+// coordinators. Distinct from RESET_ROLES despite the same membership today —
+// the two are gated by different intent and may diverge.
+export const AUDIT_ROLES: UserRole[] = ['super_admin', 'manager']
 
 export type TicketStatus = 'unassigned' | 'assigned' | 'in_progress' | 'completed' | 'billed' | 'skipped' | 'skip_requested'
 
