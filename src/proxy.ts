@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Pages technicians are allowed to access
-const TECH_ALLOWED_PAGES = ['/', '/tickets', '/service', '/service/new', '/login', '/change-password', '/account', '/notifications', '/my-leads', '/my-equipment', '/my-parts', '/products', '/help']
+const TECH_ALLOWED_PAGES = ['/', '/tickets', '/service', '/service/new', '/login', '/change-password', '/account', '/notifications', '/my-leads', '/my-equipment', '/my-parts', '/my-supplies', '/products', '/help']
 const TECH_ALLOWED_PAGE_PATTERNS = [
   /^\/tickets\/[^/]+$/,    // /tickets/[id]
   /^\/equipment\/[^/]+$/,  // /equipment/[id] — read-only for techs
@@ -27,6 +27,8 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/vendors\/search(\/|$)/,                           // GET /api/vendors/search (Synergy vendor picker on the Request Part form — all roles)
   /^\/api\/push\//,                                          // POST/DELETE /api/push/subscribe (tech opts into assignment push)
   /^\/api\/notifications(\/|$)/,                             // GET /api/notifications + POST /api/notifications/mark-read (the bell)
+  /^\/api\/supply-requests(\/|$)/,                           // POST /api/supply-requests (tech requests supplies) + DELETE /api/supply-requests/[id] (cancel own); manager-only PATCH actions are role-gated in the route
+  /^\/api\/supply-catalog(\/|$)/,                            // GET /api/supply-catalog (quick-pick list — all roles)
 ]
 
 function isTechAllowed(pathname: string): boolean {
