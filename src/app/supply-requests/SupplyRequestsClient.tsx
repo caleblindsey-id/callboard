@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { PackageCheck, Download, BarChart3 } from 'lucide-react'
+import { PackageCheck, Download, FileText, BarChart3 } from 'lucide-react'
 import type { SupplyRequestQueueRow } from '@/lib/db/supply-requests'
 
 // CSV cell escaper — quote when the value contains a comma, quote, or newline.
@@ -48,6 +48,30 @@ function exportPullList(rows: SupplyRequestQueueRow[]) {
   triggerDownload(blob, `supply-pull-list-${new Date().toISOString().slice(0, 10)}.csv`)
 }
 
+// Same pull list, rendered server-side as a printable PDF (@react-pdf) — one
+// flattened line per item, matching the CSV. Mirrors parts-queue's PDF export.
+async function exportPullListPdf(rows: SupplyRequestQueueRow[]) {
+  const payload = rows.flatMap((r) =>
+    r.items.map((it) => ({
+      tech: r.requester_name,
+      item: it.name,
+      quantity: it.quantity,
+      unit: it.unit ?? null,
+    })),
+  )
+  const res = await fetch('/api/supply-requests/pull-list-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows: payload }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Failed to generate PDF')
+  }
+  const blob = await res.blob()
+  triggerDownload(blob, `supply-pull-list-${new Date().toISOString().slice(0, 10)}.pdf`)
+}
+
 type Tab = 'pending' | 'ready' | 'done'
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -75,6 +99,7 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
   const [error, setError] = useState<string | null>(null)
   const [denyingId, setDenyingId] = useState<string | null>(null)
   const [denyReason, setDenyReason] = useState('')
+  const [pdfBusy, setPdfBusy] = useState(false)
 
   const buckets = useMemo(() => {
     const b: Record<Tab, SupplyRequestQueueRow[]> = { pending: [], ready: [], done: [] }
@@ -143,15 +168,37 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
             Reports
           </Link>
           {buckets.pending.length > 0 && (
-            <button
-              type="button"
-              onClick={() => exportPullList(buckets.pending)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 w-fit"
-              title="Download a CSV pull list of everything waiting to be pulled"
-            >
-              <Download className="h-4 w-4" />
-              Pull list (CSV)
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => exportPullList(buckets.pending)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 w-fit"
+                title="Download a CSV pull list of everything waiting to be pulled"
+              >
+                <Download className="h-4 w-4" />
+                Pull list (CSV)
+              </button>
+              <button
+                type="button"
+                disabled={pdfBusy}
+                onClick={async () => {
+                  setPdfBusy(true)
+                  setError(null)
+                  try {
+                    await exportPullListPdf(buckets.pending)
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'Failed to generate PDF')
+                  } finally {
+                    setPdfBusy(false)
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 w-fit"
+                title="Download a printable PDF pull list of everything waiting to be pulled"
+              >
+                <FileText className="h-4 w-4" />
+                {pdfBusy ? 'Generating…' : 'Pull list (PDF)'}
+              </button>
+            </>
           )}
         </div>
       </div>
