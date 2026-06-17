@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { sendSupplyReadyNotice } from '@/lib/supply-requests/send-supply-ready-notice'
+import { sendPushToUser } from '@/lib/push/send-push'
+import { createNotification } from '@/lib/notifications/create-notification'
 import type { SupplyRequestUpdate, SupplyRequestStatus } from '@/types/database'
 
 // PATCH /api/supply-requests/[id] — office staff move a request through its
@@ -43,7 +46,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: readErr } = await supabase
       .from('supply_requests')
-      .select('status')
+      .select('status, requested_by')
       .eq('id', id)
       .single()
     if (readErr || !current) {
@@ -89,6 +92,39 @@ export async function PATCH(
     if (updErr) {
       console.error('supply-requests PATCH update error:', updErr)
       return NextResponse.json({ error: 'Failed to update request.' }, { status: 500 })
+    }
+
+    // Notify the requesting tech — best-effort, never fails the action.
+    const techId = current.requested_by as string | null
+    if (action === 'mark_ready') {
+      try {
+        await sendSupplyReadyNotice(id, supabase)
+      } catch (err) {
+        console.error('supply-ready notice failed:', err)
+      }
+    } else if (action === 'deny' && techId) {
+      try {
+        await sendPushToUser(techId, {
+          title: 'Supply request denied',
+          body: (update.denied_reason as string) ?? '',
+          url: '/my-supplies',
+          tag: `supply-denied-${id}`,
+        })
+      } catch (err) {
+        console.error('supply-denied push failed:', err)
+      }
+      try {
+        await createNotification(techId, {
+          type: 'supply_request_denied',
+          title: 'Supply request denied',
+          body: (update.denied_reason as string) ?? null,
+          url: '/my-supplies',
+          entityType: 'supply_request',
+          entityId: id,
+        })
+      } catch (err) {
+        console.error('supply-denied in-app notification failed:', err)
+      }
     }
 
     return NextResponse.json({ success: true })

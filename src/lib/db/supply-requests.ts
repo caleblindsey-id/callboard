@@ -34,6 +34,18 @@ export async function getMySupplyRequests(userId: string): Promise<SupplyRequest
   return (data ?? []) as SupplyRequestRow[]
 }
 
+// Count of requests still waiting to be pulled — the office "Needs Attention"
+// dashboard signal (the in-app bell is tech-only, so managers see it here).
+export async function getPendingSupplyRequestCount(): Promise<number> {
+  const supabase = await createClient()
+  const { count, error } = await supabase
+    .from('supply_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+  if (error) throw error
+  return count ?? 0
+}
+
 // Domain row for the office worklist — flattened with the requester name and a
 // couple of computed display fields, like PickupQueueRow.
 export type SupplyRequestQueueRow = {
