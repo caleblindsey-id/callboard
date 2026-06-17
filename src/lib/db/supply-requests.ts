@@ -115,3 +115,154 @@ export async function getSupplyRequestQueue(recentDays = 14): Promise<SupplyRequ
     }
   })
 }
+
+// ---- Management report: what techs request and how often -------------------
+
+export type SupplyReportItemRow = { name: string; unit: string | null; timesRequested: number; totalQty: number }
+export type SupplyReportTechRow = { techName: string; requests: number; items: number; lastRequestedAt: string }
+export type SupplyReportPeriodPoint = { label: string; count: number }
+
+export type SupplyReport = {
+  rangeLabel: string
+  granularity: 'week' | 'month'
+  kpis: { totalRequests: number; totalItems: number; activeTechs: number; deniedCount: number; fulfilledCount: number }
+  byItem: SupplyReportItemRow[]
+  byTech: SupplyReportTechRow[]
+  byPeriod: SupplyReportPeriodPoint[]
+}
+
+type RawReportRow = {
+  requested_by: string
+  items: SupplyRequestItem[] | null
+  status: SupplyRequestStatus
+  created_at: string
+  requester: { name: string | null } | null
+}
+
+// UTC week start (Monday) at midnight.
+function weekStartUTC(d: Date): Date {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  const dow = (x.getUTCDay() + 6) % 7 // Mon=0 … Sun=6
+  x.setUTCDate(x.getUTCDate() - dow)
+  return x
+}
+function monthStartUTC(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
+}
+function weekLabel(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+function monthLabel(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+// sinceDays = null means all-time.
+export async function getSupplyRequestReport(sinceDays: number | null): Promise<SupplyReport> {
+  const supabase = await createClient()
+  const nowMs = Date.now()
+  const cutoffMs = sinceDays != null ? nowMs - sinceDays * 86_400_000 : null
+
+  let query = supabase
+    .from('supply_requests')
+    .select('requested_by, items, status, created_at, requester:users!supply_requests_requested_by_fkey(name)')
+    .order('created_at', { ascending: true })
+  if (cutoffMs != null) query = query.gte('created_at', new Date(cutoffMs).toISOString())
+
+  const { data, error } = await query
+  if (error) throw error
+  const rows = (data ?? []) as unknown as RawReportRow[]
+
+  const rangeLabel =
+    sinceDays == null ? 'All time' : sinceDays === 365 ? 'Last 12 months' : `Last ${sinceDays} days`
+  const granularity: 'week' | 'month' = sinceDays != null && sinceDays <= 90 ? 'week' : 'month'
+
+  // KPIs
+  const techIds = new Set<string>()
+  let totalItems = 0
+  let deniedCount = 0
+  let fulfilledCount = 0
+
+  // Aggregators
+  const itemMap = new Map<string, SupplyReportItemRow>()
+  const techMap = new Map<string, SupplyReportTechRow>()
+  const periodCounts = new Map<number, number>() // bucket-start ms → count
+
+  for (const r of rows) {
+    techIds.add(r.requested_by)
+    if (r.status === 'denied') deniedCount++
+    if (r.status === 'picked_up') fulfilledCount++
+
+    const items = r.items ?? []
+    const seenInThisRequest = new Set<string>()
+    for (const it of items) {
+      const qty = Number(it.quantity) || 0
+      totalItems += qty
+      const key = it.name.trim().toLowerCase()
+      if (!key) continue
+      let row = itemMap.get(key)
+      if (!row) {
+        row = { name: it.name.trim(), unit: it.unit ?? null, timesRequested: 0, totalQty: 0 }
+        itemMap.set(key, row)
+      }
+      row.totalQty += qty
+      if (!seenInThisRequest.has(key)) {
+        row.timesRequested++
+        seenInThisRequest.add(key)
+      }
+    }
+
+    // Per-tech
+    const techName = r.requester?.name ?? 'Unknown tech'
+    let t = techMap.get(r.requested_by)
+    if (!t) {
+      t = { techName, requests: 0, items: 0, lastRequestedAt: r.created_at }
+      techMap.set(r.requested_by, t)
+    }
+    t.requests++
+    t.items += items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
+    if (r.created_at > t.lastRequestedAt) t.lastRequestedAt = r.created_at
+
+    // Period bucket
+    const created = new Date(r.created_at)
+    const bucket = granularity === 'week' ? weekStartUTC(created) : monthStartUTC(created)
+    const k = bucket.getTime()
+    periodCounts.set(k, (periodCounts.get(k) ?? 0) + 1)
+  }
+
+  // Build a contiguous period series from the effective start to now, so the
+  // trend chart shows empty weeks/months instead of silently collapsing them.
+  const byPeriod: SupplyReportPeriodPoint[] = []
+  if (rows.length > 0) {
+    const firstMs = cutoffMs ?? new Date(rows[0].created_at).getTime()
+    let cursor = granularity === 'week' ? weekStartUTC(new Date(firstMs)) : monthStartUTC(new Date(firstMs))
+    const end = granularity === 'week' ? weekStartUTC(new Date(nowMs)) : monthStartUTC(new Date(nowMs))
+    let guard = 0
+    while (cursor.getTime() <= end.getTime() && guard < 400) {
+      byPeriod.push({
+        label: granularity === 'week' ? weekLabel(cursor) : monthLabel(cursor),
+        count: periodCounts.get(cursor.getTime()) ?? 0,
+      })
+      if (granularity === 'week') cursor = new Date(cursor.getTime() + 7 * 86_400_000)
+      else cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
+      guard++
+    }
+  }
+
+  const byItem = [...itemMap.values()].sort((a, b) => b.totalQty - a.totalQty || b.timesRequested - a.timesRequested)
+  const byTech = [...techMap.values()].sort((a, b) => b.requests - a.requests || b.items - a.items)
+
+  return {
+    rangeLabel,
+    granularity,
+    kpis: {
+      totalRequests: rows.length,
+      totalItems,
+      activeTechs: techIds.size,
+      deniedCount,
+      fulfilledCount,
+    },
+    byItem,
+    byTech,
+    byPeriod,
+  }
+}
