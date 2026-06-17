@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import { shouldSearchProducts } from '@/lib/products-search'
 
 /**
  * Shape returned by the products combobox search.
@@ -65,7 +66,7 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!query.trim()) {
+    if (!shouldSearchProducts(query)) {
       setResults([])
       setComboOpen(false)
       return

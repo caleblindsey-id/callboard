@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import { shouldSearchProducts } from '@/lib/products-search'
 import type { PartEntry, ProductResult } from './TicketActions'
 
 // ──────────────────────────────────────────────
@@ -40,7 +41,7 @@ function handlePartSearch(
   const existing = debounceMap.current.get(index)
   if (existing) clearTimeout(existing)
 
-  if (!value.trim()) {
+  if (!shouldSearchProducts(value)) {
     setter((prev) => {
       const updated = [...prev]
       if (updated[index]) {
