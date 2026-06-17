@@ -2,9 +2,9 @@ import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
-import { UserRow, UserRole, MANAGER_ROLES, RESET_ROLES, ADMIN_ROLES } from '@/types/database'
+import { UserRow, UserRole, MANAGER_ROLES, RESET_ROLES, ADMIN_ROLES, AUDIT_ROLES } from '@/types/database'
 
-export { MANAGER_ROLES, RESET_ROLES, ADMIN_ROLES }
+export { MANAGER_ROLES, RESET_ROLES, ADMIN_ROLES, AUDIT_ROLES }
 
 export function isTechnician(role: UserRole | null): boolean {
   if (!role) return false

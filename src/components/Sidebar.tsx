@@ -86,14 +86,23 @@ const officeGroups: NavGroup[] = [
   },
 ]
 
+const auditLogItem: NavItem = { label: 'Audit Log', icon: ScrollText, route: '/admin/audit-log' }
+
 // Super-admin-only group, appended after the office groups.
 const adminGroup: NavGroup = {
   key: 'admin',
   label: 'Admin',
   items: [
     { label: 'Settings', icon: Settings, route: '/settings' },
-    { label: 'Audit Log', icon: ScrollText, route: '/admin/audit-log' },
+    auditLogItem,
   ],
+}
+
+// Managers get the Audit Log (read-only change history) but NOT Settings.
+const managerAdminGroup: NavGroup = {
+  key: 'admin',
+  label: 'Admin',
+  items: [auditLogItem],
 }
 
 // Technicians keep a flat menu — it's already short.
@@ -247,11 +256,14 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const isTech = user?.role === 'technician'
 
-  // Office groups; super_admin also gets the Admin group. Memoized so the array
-  // (and the super_admin spread) isn't rebuilt on every UserProvider re-render.
+  // Office groups; super_admin gets the full Admin group (Settings + Audit Log),
+  // managers get an Admin group with just the Audit Log. Memoized so the array
+  // isn't rebuilt on every UserProvider re-render.
   const groups = useMemo(() => {
     if (isTech) return []
-    return user?.role === 'super_admin' ? [...officeGroups, adminGroup] : officeGroups
+    if (user?.role === 'super_admin') return [...officeGroups, adminGroup]
+    if (user?.role === 'manager') return [...officeGroups, managerAdminGroup]
+    return officeGroups
   }, [isTech, user?.role])
 
   // Persisted open/closed prefs, layered over the first-load defaults. Server
