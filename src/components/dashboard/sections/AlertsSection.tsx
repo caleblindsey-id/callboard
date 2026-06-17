@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertOctagon, AlertTriangle, ChevronRight, Flag, Clock, Award, ShieldAlert } from 'lucide-react'
+import { AlertOctagon, AlertTriangle, ChevronRight, Flag, Clock, Award, ShieldAlert, ShoppingCart } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
 import {
   getOverdueTicketCount,
@@ -11,6 +11,7 @@ import {
   getPendingPayoutApprovalsCount,
 } from '@/lib/db/dashboard-metrics'
 import { getCreditReviewCounts } from '@/lib/db/credit-reviews'
+import { getPendingSupplyRequestCount } from '@/lib/db/supply-requests'
 
 export default async function AlertsSection() {
   const [
@@ -20,6 +21,7 @@ export default async function AlertsSection() {
     staleEstimatesCount,
     pendingPayoutApprovalsCount,
     creditReviewCounts,
+    supplyRequestCount,
   ] = await Promise.all([
     getOverdueTicketCount(),
     getSkipRequestedCount(),
@@ -27,6 +29,7 @@ export default async function AlertsSection() {
     getStaleEstimatesCount(14),
     getPendingPayoutApprovalsCount(),
     getCreditReviewCounts(),
+    getPendingSupplyRequestCount(),
   ])
 
   const creditReviewOpen = creditReviewCounts.pending + creditReviewCounts.blocked
@@ -37,7 +40,8 @@ export default async function AlertsSection() {
     skipRequestedCount > 0 ||
     staleEstimatesCount > 0 ||
     pendingPayoutApprovalsCount > 0 ||
-    creditReviewOpen > 0
+    creditReviewOpen > 0 ||
+    supplyRequestCount > 0
 
   if (!hasAlerts) return null
 
@@ -204,6 +208,33 @@ export default async function AlertsSection() {
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
                   {staleEstimatesCount}
+                </span>
+                <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {supplyRequestCount > 0 && (
+          <Link
+            href="/supply-requests"
+            className="block bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 p-4 hover:border-amber-300 dark:hover:border-amber-700 hover:shadow transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                    Supply Requests
+                  </span>
+                </div>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+                  Shop supplies techs are waiting on. Pull and mark them ready.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
+                  {supplyRequestCount}
                 </span>
                 <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
               </div>
