@@ -10,6 +10,7 @@ import CreditHoldBadge from '@/components/CreditHoldBadge'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import type { EquipmentRow, UserRow, UserRole, ContactRow, ShipToLocationRow } from '@/types/database'
+import { MANAGER_ROLES } from '@/types/database'
 import type { ServiceTicketType, ServiceBillingType, ServicePriority } from '@/types/service-tickets'
 
 const DRAFT_KEY = 'draft-create-service-ticket'
@@ -48,6 +49,7 @@ interface CustomerOption {
   name: string
   account_number: string | null
   credit_hold: boolean
+  provisional?: boolean
 }
 
 export function CreateServiceTicketForm({
@@ -63,14 +65,34 @@ export function CreateServiceTicketForm({
   const [customerId, setCustomerId] = useState<number | null>(null)
   const [selectedCustomerName, setSelectedCustomerName] = useState('')
   const [selectedCustomerCreditHold, setSelectedCustomerCreditHold] = useState(false)
+  const [selectedCustomerProvisional, setSelectedCustomerProvisional] = useState(false)
   const [comboOpen, setComboOpen] = useState(false)
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const comboRef = useRef<HTMLDivElement>(null)
 
+  // Office staff (not technicians) may enter a same-day provisional customer/ship-to
+  // keyed on the real Synergy code, so work can start before the nightly sync copies it.
+  const isOfficeStaff = !!currentUser.role && MANAGER_ROLES.includes(currentUser.role)
+
+  // --- Provisional customer entry (same-day, before nightly Synergy sync) ---
+  const [provCustOpen, setProvCustOpen] = useState(false)
+  const [provCustCode, setProvCustCode] = useState('')
+  const [provCustName, setProvCustName] = useState('')
+  const [provCustSaving, setProvCustSaving] = useState(false)
+  const [provCustError, setProvCustError] = useState('')
+
   // --- Ship-to ---
   const [shipTos, setShipTos] = useState<ShipToLocationRow[]>([])
   const [shipToId, setShipToId] = useState('')
+
+  // --- Provisional ship-to entry (same-day, before nightly Synergy sync) ---
+  const [provShipOpen, setProvShipOpen] = useState(false)
+  const [provShipCode, setProvShipCode] = useState('')
+  const [provShipName, setProvShipName] = useState('')
+  const [provShipAddress, setProvShipAddress] = useState('')
+  const [provShipSaving, setProvShipSaving] = useState(false)
+  const [provShipError, setProvShipError] = useState('')
 
   // --- Equipment ---
   const [equipment, setEquipment] = useState<EquipmentRow[]>([])
@@ -213,6 +235,7 @@ export function CreateServiceTicketForm({
     setCustomerId(null)
     setSelectedCustomerName('')
     setSelectedCustomerCreditHold(false)
+    setSelectedCustomerProvisional(false)
     setCustomerSearch('')
     setShipToId('')
     setShipTos([])
@@ -278,7 +301,7 @@ export function CreateServiceTicketForm({
       const q = sanitizeOrValue(customerSearch.trim())
       const { data } = await supabase
         .from('customers')
-        .select('id, name, account_number, credit_hold')
+        .select('id, name, account_number, credit_hold, provisional')
         .or(safeOrRaw([
           { column: 'name', op: 'ilike', raw: `%${q}%` },
           { column: 'account_number', op: 'ilike', raw: `%${q}%` },
@@ -420,8 +443,101 @@ export function CreateServiceTicketForm({
     setCustomerId(c.id)
     setSelectedCustomerName(c.name)
     setSelectedCustomerCreditHold(c.credit_hold)
+    setSelectedCustomerProvisional(!!c.provisional)
     setCustomerSearch(c.account_number ? `${c.name} (${c.account_number})` : c.name)
     setComboOpen(false)
+  }
+
+  // Create a same-day provisional customer keyed on the real Synergy code, then
+  // select it as if picked from the list. The nightly sync confirms it overnight.
+  async function createProvisionalCustomer() {
+    const code = provCustCode.trim()
+    const name = provCustName.trim()
+    if (!/^\d+$/.test(code)) {
+      setProvCustError('Enter the numeric Synergy customer code.')
+      return
+    }
+    if (!name) {
+      setProvCustError('Enter the customer name.')
+      return
+    }
+    setProvCustSaving(true)
+    setProvCustError('')
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ synergy_code: code, name }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setProvCustError(json.error || 'Could not add the customer.')
+        return
+      }
+      const c = json.customer
+      selectCustomer({
+        id: c.id,
+        name: c.name,
+        account_number: c.account_number,
+        credit_hold: !!c.credit_hold,
+        provisional: !!c.provisional,
+      })
+      setProvCustOpen(false)
+      setProvCustCode('')
+      setProvCustName('')
+    } catch {
+      setProvCustError('Could not add the customer. Try again.')
+    } finally {
+      setProvCustSaving(false)
+    }
+  }
+
+  // Create a same-day provisional ship-to keyed on the real Synergy ShiplistCode,
+  // append it to the dropdown, and select it. The nightly sync confirms it overnight.
+  async function createProvisionalShipTo() {
+    if (!customerId) return
+    const code = provShipCode.trim()
+    const name = provShipName.trim()
+    if (!/^\d+$/.test(code)) {
+      setProvShipError('Enter the numeric Synergy ship-to (shiplist) code.')
+      return
+    }
+    if (!name) {
+      setProvShipError('Enter the location name.')
+      return
+    }
+    setProvShipSaving(true)
+    setProvShipError('')
+    try {
+      const res = await fetch('/api/ship-to-locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customerId,
+          synergy_shiplist_code: code,
+          name,
+          address: provShipAddress.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setProvShipError(json.error || 'Could not add the location.')
+        return
+      }
+      const loc = json.ship_to as ShipToLocationRow
+      setShipTos((prev) =>
+        prev.some((s) => s.id === loc.id) ? prev : [...prev, loc]
+      )
+      setShipToId(String(loc.id))
+      setProvShipOpen(false)
+      setProvShipCode('')
+      setProvShipName('')
+      setProvShipAddress('')
+    } catch {
+      setProvShipError('Could not add the location. Try again.')
+    } finally {
+      setProvShipSaving(false)
+    }
   }
 
   function handleEquipmentChange(value: string) {
@@ -619,6 +735,7 @@ export function CreateServiceTicketForm({
                   setCustomerId(null)
                   setSelectedCustomerName('')
                   setSelectedCustomerCreditHold(false)
+                  setSelectedCustomerProvisional(false)
                 }}
                 onFocus={() => {
                   if (customerResults.length > 0) setComboOpen(true)
@@ -641,6 +758,14 @@ export function CreateServiceTicketForm({
                       <span className="text-gray-900 dark:text-white flex items-center gap-2 min-w-0">
                         <span className="truncate">{c.name}</span>
                         {c.credit_hold && <CreditHoldBadge />}
+                        {c.provisional && (
+                          <span
+                            className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium px-1.5 py-0.5 shrink-0"
+                            title="Entered today — confirms automatically on tonight's Synergy sync"
+                          >
+                            Pending sync
+                          </span>
+                        )}
                       </span>
                       {c.account_number && (
                         <span className="text-gray-400 dark:text-gray-500 text-xs ml-2 shrink-0">
@@ -654,9 +779,81 @@ export function CreateServiceTicketForm({
               {comboOpen && !searching && customerSearch.trim() && customerResults.length === 0 && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">No customers found.</p>
               )}
+
+              {/* Same-day customer not yet synced from Synergy — office staff can add it
+                  with the real Synergy code so work starts today; the nightly sync confirms it. */}
+              {isOfficeStaff && !customerSelected && !provCustOpen && customerSearch.trim() && !searching && customerResults.length === 0 && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setProvCustOpen(true)
+                    setProvCustName(customerSearch.trim())
+                    setProvCustError('')
+                  }}
+                  className="text-xs text-slate-600 dark:text-slate-300 underline mt-1"
+                >
+                  Customer not here yet? Add it with its Synergy code
+                </button>
+              )}
+              {isOfficeStaff && provCustOpen && !customerSelected && (
+                <div className="mt-2 rounded-md border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800/50 p-3 space-y-2">
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    Add a customer created in Synergy today. Enter the Synergy customer code so
+                    tonight&apos;s sync matches and confirms it automatically.
+                  </p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={provCustCode}
+                    onChange={(e) => setProvCustCode(e.target.value)}
+                    placeholder="Synergy customer code (e.g. 123456)"
+                    className={inputClass}
+                  />
+                  <input
+                    type="text"
+                    value={provCustName}
+                    onChange={(e) => setProvCustName(e.target.value)}
+                    placeholder="Customer name"
+                    className={inputClass}
+                  />
+                  {provCustError && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{provCustError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={createProvisionalCustomer}
+                      disabled={provCustSaving}
+                      className="text-sm rounded-md bg-slate-700 text-white px-3 py-1.5 disabled:opacity-50"
+                    >
+                      {provCustSaving ? 'Adding...' : 'Add customer'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProvCustOpen(false)
+                        setProvCustError('')
+                      }}
+                      className="text-sm rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {customerSelected && !selectedCustomerCreditHold && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                  Selected: {selectedCustomerName}
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-2">
+                  <span>Selected: {selectedCustomerName}</span>
+                  {selectedCustomerProvisional && (
+                    <span
+                      className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium px-1.5 py-0.5"
+                      title="Entered today — confirms automatically on tonight's Synergy sync"
+                    >
+                      Pending sync
+                    </span>
+                  )}
                 </p>
               )}
               {customerSelected && selectedCustomerCreditHold && (
@@ -671,41 +868,128 @@ export function CreateServiceTicketForm({
             </div>
 
             {/* Ship-to selector — optional */}
-            {customerSelected && shipTos.length > 0 && (
+            {customerSelected && (
               <div>
-                <label className={labelClass}>Ship-To Location</label>
-                <select
-                  value={shipToId}
-                  onChange={(e) => setShipToId(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">— No ship-to (enter address manually) —</option>
-                  {shipTos.map((s) => (
-                    <option key={s.id} value={String(s.id)}>
-                      {[s.name, s.address || [s.city, s.state, s.zip].filter(Boolean).join(' ')]
-                        .filter(Boolean)
-                        .join(' — ')}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  Selecting a ship-to filters equipment and pre-fills the service address.
-                </p>
-                {selectedShipTo && (
-                  <div className="mt-3 rounded-md bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm">
-                    <p className="font-medium text-gray-900 dark:text-white">{selectedShipTo.name}</p>
-                    <p className="text-gray-600 dark:text-gray-300">
-                      {selectedShipTo.address ||
-                        [selectedShipTo.city, selectedShipTo.state, selectedShipTo.zip]
-                          .filter(Boolean)
-                          .join(' ') ||
-                        'No address on file'}
+                {shipTos.length > 0 ? (
+                  <>
+                    <label className={labelClass}>Ship-To Location</label>
+                    <select
+                      value={shipToId}
+                      onChange={(e) => setShipToId(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">— No ship-to (enter address manually) —</option>
+                      {shipTos.map((s) => (
+                        <option key={s.id} value={String(s.id)}>
+                          {[s.name, s.address || [s.city, s.state, s.zip].filter(Boolean).join(' ')]
+                            .filter(Boolean)
+                            .join(' — ')}
+                          {s.provisional ? ' (pending sync)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      Selecting a ship-to filters equipment and pre-fills the service address.
                     </p>
-                    {(selectedShipTo.contact || selectedShipTo.email) && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                        {[selectedShipTo.contact, selectedShipTo.email].filter(Boolean).join(' · ')}
-                      </p>
+                    {selectedShipTo && (
+                      <div className="mt-3 rounded-md bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm">
+                        <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                          <span>{selectedShipTo.name}</span>
+                          {selectedShipTo.provisional && (
+                            <span
+                              className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium px-1.5 py-0.5"
+                              title="Entered today — confirms automatically on tonight's Synergy sync"
+                            >
+                              Pending sync
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-gray-600 dark:text-gray-300">
+                          {selectedShipTo.address ||
+                            [selectedShipTo.city, selectedShipTo.state, selectedShipTo.zip]
+                              .filter(Boolean)
+                              .join(' ') ||
+                            'No address on file'}
+                        </p>
+                        {(selectedShipTo.contact || selectedShipTo.email) && (
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                            {[selectedShipTo.contact, selectedShipTo.email].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                      </div>
                     )}
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    No ship-to locations on file for this customer.
+                  </p>
+                )}
+
+                {/* Same-day ship-to created in Synergy today — office staff can add it with
+                    the real ShiplistCode so it's selectable now; the nightly sync confirms it. */}
+                {isOfficeStaff && !provShipOpen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProvShipOpen(true)
+                      setProvShipError('')
+                    }}
+                    className="text-xs text-slate-600 dark:text-slate-300 underline mt-2"
+                  >
+                    Location not here yet? Add it with its Synergy code
+                  </button>
+                )}
+                {isOfficeStaff && provShipOpen && (
+                  <div className="mt-2 rounded-md border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800/50 p-3 space-y-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      Add a ship-to created in Synergy today. Enter the Synergy ship-to (shiplist)
+                      code so tonight&apos;s sync matches and confirms it automatically.
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={provShipCode}
+                      onChange={(e) => setProvShipCode(e.target.value)}
+                      placeholder="Synergy ship-to code (e.g. 12)"
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={provShipName}
+                      onChange={(e) => setProvShipName(e.target.value)}
+                      placeholder="Location name"
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={provShipAddress}
+                      onChange={(e) => setProvShipAddress(e.target.value)}
+                      placeholder="Address (optional)"
+                      className={inputClass}
+                    />
+                    {provShipError && (
+                      <p className="text-xs text-red-600 dark:text-red-400">{provShipError}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={createProvisionalShipTo}
+                        disabled={provShipSaving}
+                        className="text-sm rounded-md bg-slate-700 text-white px-3 py-1.5 disabled:opacity-50"
+                      >
+                        {provShipSaving ? 'Adding...' : 'Add location'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProvShipOpen(false)
+                          setProvShipError('')
+                        }}
+                        className="text-sm rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
