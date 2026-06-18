@@ -49,6 +49,8 @@ export function renderEstimateApprovalEmail(
     'Approve or decline online:',
     approvalUrl,
     '',
+    'When you approve, you can include your PO number if you have one.',
+    '',
     'This link is valid for 7 days. This estimate is subject to change. All prices are subject to applicable taxes.',
     '',
     supportLine,
@@ -103,6 +105,9 @@ export function renderEstimateApprovalEmail(
               <p style="margin:0 0 16px;color:#52525b;font-size:13px;">
                 Button not working?
                 <a href="${escapeAttr(approvalUrl)}" style="color:#0f172a;text-decoration:underline;">Open the estimate</a>.
+              </p>
+              <p style="margin:0 0 16px;color:#52525b;font-size:13px;">
+                When you approve, you can include your PO number if you have one.
               </p>
               <p style="margin:0 0 16px;color:#52525b;font-size:13px;">
                 This link is valid for 7 days. The estimate is subject to change and all prices are subject to applicable taxes.
