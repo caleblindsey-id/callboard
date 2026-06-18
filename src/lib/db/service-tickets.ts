@@ -212,6 +212,11 @@ export async function completeServiceTicket(
     warranty_labor_covered?: boolean
     machine_hours?: number | null
     date_code?: string | null
+    // Optional manager below-floor approval stamp (migration 126). Only present
+    // when a manager approved a below-floor price during this completion.
+    margin_override_by?: string
+    margin_override_at?: string
+    margin_override_note?: string
   }
 ): Promise<ServiceTicketRow> {
   const supabase = await createClient()
@@ -231,6 +236,13 @@ export async function completeServiceTicket(
       warranty_labor_covered: data.warranty_labor_covered ?? false,
       machine_hours: data.machine_hours ?? null,
       date_code: data.date_code ?? null,
+      ...(data.margin_override_by
+        ? {
+            margin_override_by: data.margin_override_by,
+            margin_override_at: data.margin_override_at,
+            margin_override_note: data.margin_override_note,
+          }
+        : {}),
     })
     .eq('id', id)
     .select()

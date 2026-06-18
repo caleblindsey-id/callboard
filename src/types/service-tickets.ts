@@ -159,6 +159,13 @@ export type ServiceTicketRow = {
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string
+  // Manager approval of a below-floor parts price (migration 126). A part can
+  // be priced below the 15% margin floor (down to loaded cost, never below)
+  // only with a manager's justification; these record who/when/why. Stamped
+  // server-side only when an override is exercised.
+  margin_override_by: string | null
+  margin_override_at: string | null
+  margin_override_note: string | null
   deleted_at: string | null
   deleted_by_id: string | null
   created_at: string

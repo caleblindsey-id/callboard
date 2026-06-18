@@ -17,6 +17,11 @@
 
 export const MARGIN_FLOOR = 0.15
 
+// A manager may approve a price below the 15% floor, but NEVER below loaded
+// cost. Re-running the same checks with this floor (0% margin) makes the
+// minimum price equal to cost — the absolute, un-overridable limit.
+export const COST_FLOOR = 0
+
 // Currency comparisons round to cents; this absolute tolerance keeps a price
 // that is exactly at the floor (after rounding) from being rejected.
 const EPSILON = 0.005
@@ -36,12 +41,17 @@ function toCost(unitCost: number | null | undefined): number | null {
 
 /**
  * Minimum allowed unit price for a given loaded cost, rounded to cents.
- * Returns null when cost is unknown (floor not enforceable).
+ * Returns null when cost is unknown (floor not enforceable). The `floor`
+ * defaults to the 15% margin floor; pass COST_FLOOR (0) for the loaded-cost
+ * limit used by an approved manager override.
  */
-export function minPrice(unitCost: number | null | undefined): number | null {
+export function minPrice(
+  unitCost: number | null | undefined,
+  floor: number = MARGIN_FLOOR,
+): number | null {
   const cost = toCost(unitCost)
   if (cost === null) return null
-  return round2(cost / (1 - MARGIN_FLOOR))
+  return round2(cost / (1 - floor))
 }
 
 export interface LineMarginResult {
@@ -59,12 +69,13 @@ export interface LineMarginResult {
 export function lineMarginOk(
   unitPrice: number,
   unitCost: number | null | undefined,
+  floor: number = MARGIN_FLOOR,
 ): LineMarginResult {
-  const floor = minPrice(unitCost)
-  if (floor === null) return { ok: true, unknown: true, minPrice: null }
+  const min = minPrice(unitCost, floor)
+  if (min === null) return { ok: true, unknown: true, minPrice: null }
   const price = Number(unitPrice)
-  const ok = Number.isFinite(price) && price + EPSILON >= floor
-  return { ok, unknown: false, minPrice: floor }
+  const ok = Number.isFinite(price) && price + EPSILON >= min
+  return { ok, unknown: false, minPrice: min }
 }
 
 export interface PartLineInput {
@@ -99,6 +110,7 @@ export interface PartLinesCheck {
 export function checkPartLines(
   lines: PartLineInput[],
   costLookup: (synergyProductId: number) => number | null | undefined,
+  floor: number = MARGIN_FLOOR,
 ): PartLinesCheck {
   const violations: LineViolation[] = []
   let unknownCount = 0
@@ -106,7 +118,7 @@ export function checkPartLines(
   lines.forEach((line, index) => {
     const cost =
       line.synergy_product_id != null ? costLookup(line.synergy_product_id) : null
-    const res = lineMarginOk(line.unit_price, cost)
+    const res = lineMarginOk(line.unit_price, cost, floor)
     if (res.unknown) {
       unknownCount += 1
       return

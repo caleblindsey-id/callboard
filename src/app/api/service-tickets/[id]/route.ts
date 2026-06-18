@@ -15,7 +15,7 @@ import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import { buildProductCostMap } from '@/lib/db/products'
-import { checkPartLines, minPrice } from '@/lib/margin'
+import { checkPartLines, minPrice, MARGIN_FLOOR, COST_FLOOR } from '@/lib/margin'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
@@ -257,6 +257,17 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // Manager-only below-floor override. Read from the raw body (it's not a
+    // writable column and isn't in the field allowlist). A manager who supplies
+    // `margin_override` + a justification may approve a price below the 15%
+    // floor — but only down to loaded cost (never below). The flag must
+    // accompany each save that still carries below-floor lines.
+    const canOverrideMargin = RESET_ROLES.includes(user.role!)
+    const marginOverride = raw.margin_override === true
+    const marginOverrideNote =
+      typeof raw.margin_override_note === 'string' ? raw.margin_override_note.trim() : ''
+    let didOverride = false
+
     // --- Margin floor (parts only, per-line) ---
     // A billable part line's price can't drop below 15% gross margin over loaded
     // cost (min price = cost / 0.85). Cost is sourced from the products catalog
@@ -289,6 +300,27 @@ export async function PATCH(
           const billable = billableOnly(filtered[key] as ServicePartUsed[])
           const check = checkPartLines(billable, lookup)
           if (!check.ok) {
+            // Manager override: a manager who supplied an explicit override flag
+            // + justification may approve a below-floor price, but only down to
+            // loaded cost. Re-check at the cost floor (0% margin); if every line
+            // clears cost, allow and stamp the approval. If any line is still
+            // below cost, reject even the manager — the un-overridable limit.
+            if (canOverrideMargin && marginOverride && marginOverrideNote.length >= 2) {
+              const costCheck = checkPartLines(billable, lookup, COST_FLOOR)
+              if (costCheck.ok) {
+                didOverride = true
+                continue
+              }
+              const cv = costCheck.violations[0]
+              return NextResponse.json(
+                {
+                  error: `"${cv.description}" cannot be priced below loaded cost — minimum price is $${cv.minPrice.toFixed(2)}.`,
+                  violations: costCheck.violations,
+                  belowCost: true,
+                },
+                { status: 400 },
+              )
+            }
             const v = check.violations[0]
             return NextResponse.json(
               hideFloor
@@ -306,27 +338,39 @@ export async function PATCH(
       // Backstop: a direct billing_amount override can't dip below the parts
       // revenue floor (sum of qty x line min-price for billable, known-cost
       // lines). Keeps the per-line floor from being bypassed via the total.
+      // Once a manager has approved a below-floor override on THIS PATCH, the
+      // floor relaxes to the loaded-cost sum (still never below cost).
       if (typeof filtered.billing_amount === 'number' && billingType !== 'warranty') {
         const effParts = Array.isArray(filtered.parts_used)
           ? (filtered.parts_used as ServicePartUsed[])
           : ((current.parts_used as ServicePartUsed[] | null) ?? [])
         const billable = billableOnly(effParts)
         const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
+        const floorPct = didOverride ? COST_FLOOR : MARGIN_FLOOR
         let floorSum = 0
         for (const line of billable) {
           if (line.synergy_product_id == null) continue
-          const mp = minPrice(costMap.get(line.synergy_product_id))
+          const mp = minPrice(costMap.get(line.synergy_product_id), floorPct)
           if (mp != null) floorSum += mp * (Number(line.quantity) || 0)
         }
         if (filtered.billing_amount + 0.005 < floorSum) {
           return NextResponse.json(
             {
-              error: `Billing amount $${filtered.billing_amount.toFixed(2)} is below the parts margin floor of $${floorSum.toFixed(2)} (15% over loaded cost).`,
+              error: `Billing amount $${filtered.billing_amount.toFixed(2)} is below the parts ${didOverride ? 'cost' : 'margin'} floor of $${floorSum.toFixed(2)}.`,
             },
             { status: 400 },
           )
         }
       }
+    }
+
+    // A manager approved a below-floor price on this PATCH — stamp who/when/why
+    // so it persists and is captured by the audit trigger. Set only when an
+    // override was actually exercised, never on a normal in-floor save.
+    if (didOverride) {
+      filtered.margin_override_by = user.id
+      filtered.margin_override_at = new Date().toISOString()
+      filtered.margin_override_note = marginOverrideNote
     }
 
     // --- Status transition logic ---
