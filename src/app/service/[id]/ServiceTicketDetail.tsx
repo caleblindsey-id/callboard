@@ -723,13 +723,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // Equipment registration (for tickets with denormalized equipment fields)
   const [registeringEquipment, setRegisteringEquipment] = useState(false)
 
-  // Auto-save (in-progress completion fields) — mirrors the PM pattern in
-  // src/app/tickets/[id]/TicketActions.tsx (saveProgress + 3s debounce).
+  // Auto-save — mirrors the PM pattern in src/app/tickets/[id]/TicketActions.tsx
+  // (saveProgress + 3s debounce). Runs in two phases: the estimate-building
+  // phase (estimate form open) and the in-progress completion phase.
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const hasInitialized = useRef(false)
   const flushRef = useRef<() => void>(() => {})
+  // Last server-known snapshot, so each save sends ONLY the fields THIS instance
+  // changed — a concurrent stale writer can't clobber fields it never touched
+  // (PM feedback #42/#43). Null until a baseline is captured for the active phase.
+  const savedFieldsRef = useRef<Record<string, unknown> | null>(null)
+  // Which phase the current baseline belongs to, so entering or switching phases
+  // recaptures the baseline (and skips an auto-save on entry).
+  const baselinePhaseRef = useRef<SavePhase | null>(null)
 
   // Customer PO # — techs and staff can record the customer's purchase order
   // number on the ticket. The PO often arrives while the tech is on-site
@@ -1244,11 +1251,78 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  // ── Auto-save (in-progress completion fields) ──
+  // ── Auto-save ──
   // Mirrors src/app/tickets/[id]/TicketActions.tsx saveProgress / debounce
-  // pattern. PATCHes the same fields techs can update mid-job so a refresh
-  // or in-app nav doesn't drop their work.
+  // pattern, extended to two phases: the estimate-building phase (form open,
+  // pre-approval) and the in-progress completion phase. PATCHes only the
+  // fields THIS instance changed so a refresh, in-app nav, or a second tab
+  // can't drop or clobber work.
+  type SavePhase = 'estimate' | 'completion'
+
+  // Which phase is currently auto-saveable. Estimate building only happens in
+  // the pre-work statuses while the form is open; completion only in_progress.
+  // The two are mutually exclusive, so a single timer/baseline serves both.
+  const estimatePhaseActive =
+    showEstimateForm &&
+    (ticket.status === SERVICE_STATUS.OPEN ||
+      ticket.status === SERVICE_STATUS.ESTIMATED ||
+      ticket.status === SERVICE_STATUS.DECLINED)
+  const completionPhaseActive = ticket.status === SERVICE_STATUS.IN_PROGRESS
+  const autoSavePhase: SavePhase | null = estimatePhaseActive
+    ? 'estimate'
+    : completionPhaseActive
+      ? 'completion'
+      : null
+
+  // Normalized snapshot of the saveable fields for a phase. Diffed against the
+  // last server-known baseline to find what changed. Estimate auto-save sends a
+  // DRAFT only — never `status` — so the explicit "Submit Estimate" button keeps
+  // ownership of the status transition (and any under-$100 auto-approval).
+  const currentSaveFields = (phase: SavePhase): Record<string, unknown> => {
+    if (phase === 'estimate') {
+      return {
+        diagnosis_notes: diagnosisNotes || null,
+        estimate_labor_hours: parseFloat(estimateLaborHours) || null,
+        estimate_parts: estimateParts.length > 0 ? toServicePartUsed(estimateParts) : [],
+        // Staff-only fields — server filters them out for techs.
+        ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
+        ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
+      }
+    }
+    return {
+      hours_worked: parseFloat(hoursWorked) || null,
+      completion_notes: completionNotes || null,
+      parts_used: completionParts.length > 0 ? toServicePartUsed(completionParts) : [],
+      photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
+      // Trip charge qty lives inline under Hours Worked; persist staff edits so
+      // a refresh doesn't drop them (server filters it out for techs).
+      ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
+    }
+  }
+
   async function saveProgress(opts?: { keepalive?: boolean }) {
+    if (!autoSavePhase) return
+    // Diff the current snapshot against the last server-known baseline and send
+    // ONLY changed keys, so a concurrent stale writer can't overwrite untouched
+    // fields (PM feedback #42/#43).
+    const fields = currentSaveFields(autoSavePhase)
+    const baseline = savedFieldsRef.current ?? {}
+    const dirty: Record<string, unknown> = {}
+    for (const key of Object.keys(fields)) {
+      if (JSON.stringify(fields[key]) !== JSON.stringify(baseline[key])) {
+        dirty[key] = fields[key]
+      }
+    }
+    if (Object.keys(dirty).length === 0) {
+      // Nothing changed here — leave the row untouched (writing it would clobber
+      // another writer's fields).
+      if (!opts?.keepalive) {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+      }
+      return
+    }
+
     setSaving(true)
     setError(null)
     setSaveSuccess(false)
@@ -1257,15 +1331,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         keepalive: opts?.keepalive ?? false,
-        body: JSON.stringify({
-          hours_worked: parseFloat(hoursWorked) || null,
-          completion_notes: completionNotes || null,
-          parts_used: completionParts.length > 0 ? toServicePartUsed(completionParts) : [],
-          photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-          // Trip charge qty lives inline under Hours Worked; persist staff edits so
-          // a refresh doesn't drop them (server filters it out for techs).
-          ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
-        }),
+        body: JSON.stringify(dirty),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -1275,6 +1341,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         if (Array.isArray(data?.violations)) return
         throw new Error(data.error || 'Failed to save progress')
       }
+      // Persist succeeded — advance the baseline to what we just sent so later
+      // edits diff against it. (On failure we leave it alone so the same fields
+      // retry next save.)
+      savedFieldsRef.current = fields
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
@@ -1284,12 +1354,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     }
   }
 
-  // Auto-save: debounce 3 seconds after any completion-form field change
-  // while the ticket is in_progress.
+  // Auto-save: debounce 3 seconds after any saveable field change while a phase
+  // is active (estimate building or in-progress completion). On first entry to a
+  // phase (or when switching phases), capture the baseline and skip the save so
+  // edits diff against the loaded state, not the component's first render.
   useEffect(() => {
-    if (ticket.status !== 'in_progress') return
-    if (!hasInitialized.current) {
-      hasInitialized.current = true
+    if (!autoSavePhase) return
+    if (baselinePhaseRef.current !== autoSavePhase) {
+      baselinePhaseRef.current = autoSavePhase
+      savedFieldsRef.current = currentSaveFields(autoSavePhase)
       return
     }
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
@@ -1300,7 +1373,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoursWorked, completionNotes, completionParts, photos])
+  }, [
+    // Completion-phase fields
+    hoursWorked, completionNotes, completionParts, photos,
+    // Estimate-phase fields
+    diagnosisNotes, estimateLaborHours, estimateParts, estimateRateType,
+    // Shared
+    tripChargeQty, autoSavePhase,
+  ])
 
   // Keep the unmount-flush closure pointing at the latest state.
   useEffect(() => {
@@ -2952,13 +3032,24 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     />
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="submit"
-                      disabled={loading}
+                      disabled={loading || saving}
                       className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 disabled:opacity-50 transition-colors min-h-[44px]"
                     >
                       {loading ? 'Submitting...' : 'Submit Estimate'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+                        void saveProgress()
+                      }}
+                      disabled={loading || saving}
+                      className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px]"
+                    >
+                      {saving ? 'Saving...' : 'Save Draft'}
                     </button>
                     <button
                       type="button"
@@ -2967,6 +3058,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     >
                       Cancel
                     </button>
+                    {saveSuccess && !saving && (
+                      <span className="text-sm text-green-600">Saved</span>
+                    )}
                   </div>
                 </form>
               )}
