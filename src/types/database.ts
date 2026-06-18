@@ -384,6 +384,12 @@ export type CustomerRow = {
   special_labor_rate_standard: number | null
   special_labor_rate_industrial: number | null
   special_labor_rate_vacuum: number | null
+  // Same-day in-app entry awaiting nightly-sync confirmation (migration 127).
+  // true = entered in CallBoard before the Synergy sync copied it; the next sync
+  // upserts on synergy_id and flips this to false.
+  provisional: boolean
+  provisional_created_by: string | null
+  provisional_created_at: string | null
   synced_at: string | null
 }
 
@@ -409,6 +415,10 @@ export type ShipToLocationRow = {
   zip: string | null
   contact: string | null
   email: string | null
+  // Same-day in-app entry awaiting nightly-sync confirmation (migration 127).
+  provisional: boolean
+  provisional_created_by: string | null
+  provisional_created_at: string | null
   synced_at: string | null
 }
 
@@ -767,7 +777,7 @@ type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 
 export type CustomerInsert = MakeOptional<
   Omit<CustomerRow, 'id'>,
-  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum'
+  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum' | 'provisional' | 'provisional_created_by' | 'provisional_created_at'
 >
 
 export type ContactInsert = MakeOptional<
@@ -1031,7 +1041,7 @@ export interface Database {
       }
       ship_to_locations: {
         Row: ShipToLocationRow
-        Insert: Omit<ShipToLocationRow, 'id'>
+        Insert: MakeOptional<Omit<ShipToLocationRow, 'id'>, 'provisional' | 'provisional_created_by' | 'provisional_created_at'>
         Update: Partial<Omit<ShipToLocationRow, 'id'>>
         Relationships: [
           {

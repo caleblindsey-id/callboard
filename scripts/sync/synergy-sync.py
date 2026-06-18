@@ -375,6 +375,9 @@ def sync_customers(conn) -> int:
             "billing_zip": safe_str(row.Zip4),
             "po_required": bool(row.PORequiredFlag) if row.PORequiredFlag is not None else False,
             "active": True,  # explicit — anything falling out of the result set will be deactivated below
+            # A customer present in Synergy is confirmed: clear any provisional flag set
+            # by a same-day in-app entry. Real synced rows always carry provisional=false.
+            "provisional": False,
             "synced_at": utcnow_iso(),
         })
 
@@ -398,7 +401,9 @@ def sync_customers(conn) -> int:
         # Simpler approach: pull current active synergy_ids, diff in Python,
         # then PATCH active=false for the diff.
         active_set = set(active_ids)
-        cursor_url = f"{SUPABASE_URL}/rest/v1/customers?select=synergy_id&active=eq.true"
+        # Exclude provisional rows: a same-day in-app customer awaiting its first sync
+        # confirmation legitimately is not in this batch yet, and must NOT be deactivated.
+        cursor_url = f"{SUPABASE_URL}/rest/v1/customers?select=synergy_id&active=eq.true&provisional=eq.false"
         try:
             existing_resp = requests.get(cursor_url, headers=supabase_headers(), timeout=30)
             existing_resp.raise_for_status()
@@ -765,6 +770,8 @@ def sync_ship_to_locations(conn) -> int:
             "zip": safe_str(row.ZipCode),
             "contact": safe_str(row.Contact),
             "email": safe_str(row.Email),
+            # Present in Synergy = confirmed; clears any same-day in-app provisional flag.
+            "provisional": False,
             "synced_at": utcnow_iso(),
         })
 
