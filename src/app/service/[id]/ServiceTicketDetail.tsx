@@ -49,6 +49,10 @@ interface ServiceTicketDetailProps {
   // Looked up server-side from Synergy's open PO lines (getPoDueDates). Absent
   // key = part isn't on an open PO, so nothing is shown.
   poDueDates?: Record<string, string>
+  // True for managers/coordinators always, and for a technician only when the
+  // per-tech create-service-tickets flag is on. Gates the Email Estimate button;
+  // the server (send-estimate route) remains the source of truth.
+  canEmailEstimate?: boolean
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -587,7 +591,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, poDueDates = {} }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -2638,13 +2642,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 >
                   Download Estimate PDF
                 </button>
-                <button
-                  onClick={handleEmailEstimate}
-                  disabled={loading}
-                  className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px]"
-                >
-                  Email Estimate
-                </button>
+                {canEmailEstimate && (
+                  <button
+                    onClick={handleEmailEstimate}
+                    disabled={loading}
+                    className="px-4 py-3 sm:py-2 text-sm font-medium text-slate-800 dark:text-gray-300 bg-white dark:bg-gray-700 border border-slate-300 dark:border-gray-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px]"
+                  >
+                    Email Estimate
+                  </button>
+                )}
                 {/* Reopen Estimate — managers/super admins only. Pulls the
                     estimate back to an editable draft (numbers preserved) from
                     awaiting-approval, approved, or declined so it can be revised
