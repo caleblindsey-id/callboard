@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { getCurrentUser, canCreateServiceTickets } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeSerial, serialsMatch } from '@/lib/equipment'
 
@@ -13,7 +13,11 @@ export async function POST(request: NextRequest) {
     if (!user?.role) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!MANAGER_ROLES.includes(user.role)) {
+    // Managers always; a technician may register equipment only as part of the
+    // service-ticket-create flow they're permitted to use (same per-tech
+    // `can_create_service_tickets` flag). canCreateServiceTickets() already
+    // returns true for all MANAGER_ROLES, so this is a superset of the old gate.
+    if (!canCreateServiceTickets(user)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
