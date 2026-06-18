@@ -30,6 +30,7 @@ import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
   ServiceBillingType,
+  ServiceTicketType,
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
@@ -607,6 +608,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // it at a glance; staff can correct a mis-keyed ticket here (API already allows
   // billing_type in STAFF_ALLOWED_FIELDS). Techs use the completion-form confirm.
   const [billingType, setBillingType] = useState<ServiceBillingType>(ticket.billing_type)
+  // Staff-editable ticket type (inside/bench vs outside/field). Badge above shows
+  // it at a glance; staff can correct a mis-keyed ticket here (API already allows
+  // ticket_type in STAFF_ALLOWED_FIELDS). Switching to "outside" turns on the
+  // service-address fields and the customer-signature requirement; switching to
+  // "inside" makes the ticket eligible for the pickup queue.
+  const [ticketType, setTicketType] = useState<ServiceTicketType>(ticket.ticket_type)
   useEffect(() => {
     if (!isStaff) return
     createClient()
@@ -1962,6 +1969,42 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 })
               }
               disabled={loading || billingType === ticket.billing_type}
+              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              {loading ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+
+          {/* Ticket type — correct a mis-keyed inside/outside ticket. Switching
+              to Outside turns on the service-address fields and the customer
+              signature requirement; switching to Inside makes it eligible for
+              the pickup queue. */}
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <div className="flex-1">
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Ticket Type
+              </label>
+              <select
+                value={ticketType}
+                onChange={(e) => setTicketType(e.target.value as ServiceTicketType)}
+                disabled={loading}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+              >
+                <option value="inside">Inside (Shop)</option>
+                <option value="outside">Outside (Field)</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Inside = bench/shop repair. Outside = field service (adds address + signature).
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                apiAction(async () => {
+                  await patchTicket({ ticket_type: ticketType })
+                  setSuccessMsg('Ticket type updated')
+                })
+              }
+              disabled={loading || ticketType === ticket.ticket_type}
               className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               {loading ? 'Saving...' : 'Save'}
