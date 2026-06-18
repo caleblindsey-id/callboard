@@ -14,6 +14,7 @@ export default function ApprovalForm({ token }: ApprovalFormProps) {
 
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
+  const [poNumber, setPoNumber] = useState('')
 
   const [showDecline, setShowDecline] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
@@ -34,6 +35,7 @@ export default function ApprovalForm({ token }: ApprovalFormProps) {
           action: 'approve',
           signature: signatureImage,
           signature_name: signatureName.trim(),
+          po_number: poNumber.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -118,6 +120,19 @@ export default function ApprovalForm({ token }: ApprovalFormProps) {
             setSignatureImage(image)
             setSignatureName(name)
           }}
+        />
+
+        <label htmlFor="po-number" className="block text-xs text-gray-500 dark:text-gray-400 mt-4 mb-1">
+          PO number (optional)
+        </label>
+        <input
+          id="po-number"
+          type="text"
+          value={poNumber}
+          onChange={(e) => setPoNumber(e.target.value)}
+          maxLength={100}
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+          placeholder="Enter your PO number if you have one"
         />
 
         <button

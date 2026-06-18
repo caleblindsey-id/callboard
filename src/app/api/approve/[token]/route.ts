@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 
 const MAX_SIGNATURE_BYTES = 200_000 // ~200 KB base64 PNG ~= 150 KB image
 const MAX_DECLINE_REASON_LEN = 2000
+const MAX_PO_LEN = 100
 
 // In-memory rate limiter scoped per (token + IP). Keys auto-evict after the
 // window. This is per-Vercel-function-instance — good enough to slow brute-force
@@ -63,7 +64,7 @@ export async function POST(
     return NextResponse.json({ error: 'Missing action' }, { status: 400 })
   }
 
-  const { action, signature, signature_name, decline_reason } = body
+  const { action, signature, signature_name, decline_reason, po_number } = body
 
   if (action !== 'approve' && action !== 'decline') {
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
@@ -84,6 +85,12 @@ export async function POST(
     }
     if (typeof signature_name !== 'string' || signature_name.length > 200) {
       return NextResponse.json({ error: 'Name is too long.' }, { status: 400 })
+    }
+    // Optional customer PO captured at approval time. Blank/absent is fine.
+    if (po_number !== undefined && po_number !== null) {
+      if (typeof po_number !== 'string' || po_number.trim().length > MAX_PO_LEN) {
+        return NextResponse.json({ error: 'PO number is too long.' }, { status: 400 })
+      }
     }
   }
 
@@ -134,6 +141,11 @@ export async function POST(
     update.estimate_approved_at = new Date().toISOString()
     update.estimate_signature = signature
     update.estimate_signature_name = signature_name.trim()
+    // Only set when the customer actually entered one, so a blank field never
+    // clobbers a PO already recorded on the ticket by a tech or the office.
+    if (typeof po_number === 'string' && po_number.trim()) {
+      update.po_number = po_number.trim()
+    }
   } else {
     update.status = 'declined'
     // Stamp the declined follow-up aging clock and clear any prior "handled"
