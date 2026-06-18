@@ -53,7 +53,12 @@ export async function POST(request: NextRequest) {
     const normalizedSerial = normalizeSerial(serialRaw)
     const shipToIdNum = intOrNull('ship_to_location_id')
 
-    const supabase = await createAdminClient('ADMIN_ONLY')
+    // SERVER_ONLY (not ADMIN_ONLY): this route authorizes the caller itself via
+    // canCreateServiceTickets() above, which intentionally admits permitted
+    // technicians (not just managers) so they can register equipment during the
+    // /service/new flow. ADMIN_ONLY re-checks MANAGER_ROLES and would throw for
+    // those techs, surfacing as a 500 "Failed to create equipment." (feedback #49).
+    const supabase = await createAdminClient('SERVER_ONLY')
 
     // Validate ship_to_location belongs to the same customer (prevents cross-customer location tagging)
     if (shipToIdNum !== null) {
