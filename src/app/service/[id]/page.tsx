@@ -1,6 +1,6 @@
 import { getServiceTicket } from '@/lib/db/service-tickets'
 import { getPoDueDates } from '@/lib/db/parts-queue'
-import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
+import { getCurrentUser, isTechnician, canCreateServiceTickets, RESET_ROLES } from '@/lib/auth'
 import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
 import { notFound, redirect } from 'next/navigation'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
@@ -48,6 +48,10 @@ export default async function ServiceTicketPage({
 
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user.role) && RESET_ROLES.includes(user.role ?? ('' as never))
+  // Managers/coordinators always; a tech only with the per-tech create-tickets
+  // flag. Tech ownership is already enforced by the redirect above, so a tech
+  // reaching this page always owns the ticket — no extra ownership check needed.
+  const canEmailEstimate = canCreateServiceTickets(user)
 
   const [standardRate, industrialRate, vacuumRate, tripChargeRate] = await Promise.all([
     getCustomerLaborRate(ticket.customer_id, 'standard'),
@@ -154,6 +158,7 @@ export default async function ServiceTicketPage({
         laborRates={laborRates}
         tripChargeRate={tripChargeRate}
         poDueDates={poDueDates}
+        canEmailEstimate={canEmailEstimate}
       />
 
       <AceLaborCard entry={aceEntry} userRole={user.role} userId={user.id} />
