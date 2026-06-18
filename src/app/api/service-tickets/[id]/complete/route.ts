@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
-import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
-import { checkPartLines } from '@/lib/margin'
+import { checkPartLines, COST_FLOOR } from '@/lib/margin'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
@@ -23,6 +23,11 @@ interface CompleteServiceTicketBody {
   machine_hours?: number | null
   date_code?: string | null
   ace_labor?: { hours: number; reason: string } | null
+  // Manager-only below-floor override (see PATCH route). A manager completing a
+  // ticket may approve a below-floor part price down to loaded cost by sending
+  // this flag + a justification.
+  margin_override?: boolean
+  margin_override_note?: string
 }
 
 function isNonNegativeNumber(v: unknown): v is number {
@@ -162,6 +167,15 @@ export async function POST(
       }
     }
 
+    // Manager-only below-floor override (mirrors the PATCH route). A manager who
+    // sends `margin_override` + a justification may approve a below-floor part
+    // price at completion, but only down to loaded cost (never below).
+    const canOverrideMargin = RESET_ROLES.includes(user.role!)
+    const marginOverride = body.margin_override === true
+    const marginOverrideNote =
+      typeof body.margin_override_note === 'string' ? body.margin_override_note.trim() : ''
+    let didOverride = false
+
     // Margin floor (parts only, per-line): every billable part must keep >= 15%
     // gross margin over loaded cost. Cost is sourced from the products catalog
     // (server-authoritative); the line unit_cost snapshot is overwritten from
@@ -177,17 +191,37 @@ export async function POST(
         const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
         const check = checkPartLines(billable, (pid) => costMap.get(pid))
         if (!check.ok) {
-          const v = check.violations[0]
-          // Techs must never see the min price (it back-derives loaded cost).
-          return NextResponse.json(
-            isTechnician(user.role)
-              ? { error: `"${v.description}" is priced too low — please check with the office.` }
-              : {
-                  error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
-                  violations: check.violations,
+          // Manager override: re-check at the cost floor (0% margin). If every
+          // line clears cost, allow and stamp the approval below; if any line is
+          // still below cost, reject even the manager (un-overridable limit).
+          if (canOverrideMargin && marginOverride && marginOverrideNote.length >= 2) {
+            const costCheck = checkPartLines(billable, (pid) => costMap.get(pid), COST_FLOOR)
+            if (costCheck.ok) {
+              didOverride = true
+            } else {
+              const cv = costCheck.violations[0]
+              return NextResponse.json(
+                {
+                  error: `"${cv.description}" cannot be priced below loaded cost — minimum price is $${cv.minPrice.toFixed(2)}.`,
+                  violations: costCheck.violations,
+                  belowCost: true,
                 },
-            { status: 400 },
-          )
+                { status: 400 },
+              )
+            }
+          } else {
+            const v = check.violations[0]
+            // Techs must never see the min price (it back-derives loaded cost).
+            return NextResponse.json(
+              isTechnician(user.role)
+                ? { error: `"${v.description}" is priced too low — please check with the office.` }
+                : {
+                    error: `"${v.description}" is priced below the 15% margin floor — minimum price is $${v.minPrice.toFixed(2)}.`,
+                    violations: check.violations,
+                  },
+              { status: 400 },
+            )
+          }
         }
       }
     }
@@ -314,6 +348,15 @@ export async function POST(
       warranty_labor_covered: body.warranty_labor_covered,
       machine_hours: machineHours,
       date_code: dateCode,
+      // Stamp the manager's below-floor approval when one was exercised on this
+      // completion (who/when/why); undefined leaves the columns untouched.
+      ...(didOverride
+        ? {
+            margin_override_by: user.id,
+            margin_override_at: new Date().toISOString(),
+            margin_override_note: marginOverrideNote,
+          }
+        : {}),
     })
 
     return NextResponse.json(updated)
