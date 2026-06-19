@@ -1,4 +1,4 @@
-import { getEquipmentDetail, getEquipmentServiceHistory, getEquipmentEstimateLog } from '@/lib/db/equipment'
+import { getEquipmentDetail, getEquipmentServiceHistory, getEquipmentEstimateHistory } from '@/lib/db/equipment'
 import { getServiceTicketsForEquipment } from '@/lib/db/service-tickets'
 import { getUsers } from '@/lib/db/users'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
@@ -41,10 +41,10 @@ export default async function EquipmentDetailPage({
 
   if (!equipment) notFound()
 
-  const [pmHistory, svcHistory, estimateLog] = await Promise.all([
+  const [pmHistory, svcHistory, estimateHistory] = await Promise.all([
     getEquipmentServiceHistory(id),
     getServiceTicketsForEquipment(id),
-    getEquipmentEstimateLog(id),
+    getEquipmentEstimateHistory(id),
   ])
 
   // Merge PM + service tickets into unified timeline
@@ -108,7 +108,7 @@ export default async function EquipmentDetailPage({
 
       <ServiceHistory items={allHistory} showBilling={showBilling} />
 
-      <EstimateHistory items={estimateLog} />
+      <EstimateHistory items={estimateHistory} />
 
       <EquipmentNotes equipmentId={equipment.id} />
 
