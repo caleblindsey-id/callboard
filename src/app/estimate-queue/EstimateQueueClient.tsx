@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Phone, Mail, FileText } from 'lucide-react'
 import type { EstimateQueueRow } from '@/lib/db/estimate-queue'
+import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type Tab = 'all' | 'needs_contact'
 
-type EstimateSortKey = 'customer' | 'equipment' | 'amount' | 'age' | 'contact'
+type EstimateSortKey = 'customer' | 'type' | 'equipment' | 'amount' | 'age' | 'contact'
 
 // Sort Contact by how much follow-up is still owed: needs-contact first, then
 // called, then emailed.
@@ -23,6 +24,7 @@ const CONTACT_RANK: Record<string, number> = {
 
 const ESTIMATE_SORT_ACCESSORS: SortAccessors<EstimateQueueRow, EstimateSortKey> = {
   customer: r => r.customer_name,
+  type: r => r.ticket_type,
   equipment: r => r.equipment_label,
   amount: r => r.estimate_amount,
   age: r => r.days_since_estimate,
@@ -188,6 +190,7 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
             <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
+                <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
                 <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
                 <SortHeader label="Estimate" colKey="amount" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
                 <SortHeader label="Age" colKey="age" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-4 py-3" />
@@ -209,6 +212,9 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
                       {r.work_order_number != null && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <TicketTypeBadge type={r.ticket_type} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-gray-900 dark:text-gray-100">{r.equipment_label}</div>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { ServiceTicketType } from '@/types/service-tickets'
 
 // A service estimate awaiting a customer decision — a ticket in the 'estimated'
 // state that hasn't yet been approved/declined. The office works this queue to
@@ -11,6 +12,7 @@ export type EstimateContactStatus = 'emailed' | 'called' | 'needs_first_contact'
 export type EstimateQueueRow = {
   id: string
   work_order_number: number | null
+  ticket_type: ServiceTicketType
   customer_name: string
   equipment_label: string
   serial_number: string | null
@@ -31,6 +33,7 @@ export type EstimateQueueRow = {
 type RawRow = {
   id: string
   work_order_number: number | null
+  ticket_type: ServiceTicketType
   customer_id: number
   status: string
   estimated_at: string | null
@@ -70,7 +73,7 @@ export async function getEstimateQueue(): Promise<EstimateQueueRow[]> {
   const { data, error } = await supabase
     .from('service_tickets')
     .select(
-      `id, work_order_number, customer_id, status, estimated_at, estimate_amount,
+      `id, work_order_number, ticket_type, customer_id, status, estimated_at, estimate_amount,
        contact_email, contact_phone,
        estimate_emailed_at, estimate_last_emailed_at, estimate_notify_count,
        estimate_called_at, estimate_called_by_id, estimate_contact_notes,
@@ -138,6 +141,7 @@ export async function getEstimateQueue(): Promise<EstimateQueueRow[]> {
     return {
       id: r.id,
       work_order_number: r.work_order_number,
+      ticket_type: r.ticket_type,
       customer_name: r.customers?.name ?? 'Unknown customer',
       equipment_label,
       serial_number: firstNonEmpty(r.equipment?.serial_number, r.equipment_serial_number),
