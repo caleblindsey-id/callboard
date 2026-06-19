@@ -1842,6 +1842,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       : null
   const needsEquipmentVerify = equipmentToVerify !== null
 
+  // The verify panel lives in the estimate builder (OPEN) and the completion
+  // form (IN_PROGRESS). The estimated/approved/declined window had no panel, so
+  // the parts-gate banner pointed "above" to a verify step that wasn't rendered
+  // there. Surface the same panel in the Diagnosis & Estimate card for those
+  // middle statuses (OPEN/IN_PROGRESS excluded — they already render it, so no
+  // double-panel).
+  const showEstimateCardVerify =
+    needsEquipmentVerify &&
+    (ticket.status === SERVICE_STATUS.ESTIMATED ||
+      ticket.status === SERVICE_STATUS.APPROVED ||
+      ticket.status === SERVICE_STATUS.DECLINED)
+
   // (Render helpers moved outside component — see Badge, Card, InfoField above)
 
   // Workflow card props — derived from current state + parts queue.
@@ -2614,6 +2626,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </span>
           ) : undefined}
         >
+          {/* Verify-first gap fill: a linked unit that still needs verification
+              has no panel in the estimated/approved/declined window, yet the
+              part-request gate banner points here. Render the same panel the
+              estimate builder / completion form use; verifying refreshes the
+              ticket and clears the gate. */}
+          {showEstimateCardVerify && (
+            <div className="mb-4">
+              <VerifyEquipmentPanel
+                equipmentId={equipmentToVerify!.id}
+                make={equipmentToVerify!.make}
+                model={equipmentToVerify!.model}
+                serial={equipmentToVerify!.serial_number}
+                onVerified={handleEquipmentVerified}
+                relinkTicketId={ticket.id}
+                relinkTicketKind="service"
+              />
+            </div>
+          )}
+
           {/* Show existing estimate breakdown */}
           {ticket.estimate_amount != null && (
             <div className="space-y-3">
