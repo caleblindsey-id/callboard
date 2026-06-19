@@ -12,6 +12,10 @@ interface Props {
   salesReps?: SalesRep[]
   onClose: () => void
   onDone: () => void
+  // PM leads chain straight from approve into Create Equipment. When provided,
+  // approving a PM lead calls this (with the just-approved lead) instead of the
+  // generic onDone, so the parent can open the create-equipment modal.
+  onApprovedPm?: (lead: TechLeadWithJoins) => void
 }
 
 const NOTE_MAX = 500
@@ -24,7 +28,7 @@ const KIND_GROUP_LABEL: Record<SalesRepKind, string> = {
   rep: 'Sales Reps',
 }
 
-export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone }: Props) {
+export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone, onApprovedPm }: Props) {
   const [mode, setMode] = useState<'choose' | 'reject' | 'email_rep'>('choose')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -126,6 +130,29 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
   }
 
   async function handleApprove() {
+    if (!lead) return
+    // PM leads chain into Create Equipment; defer to onApprovedPm so the parent
+    // can open that modal with the freshly-approved lead. Everything else (and
+    // the PM path when no handler is wired) falls back to the generic onDone.
+    if (lead.lead_type === 'pm' && onApprovedPm) {
+      const approvedLead = lead
+      setSubmitting(true)
+      setError(null)
+      try {
+        const res = await fetch(`/api/tech-leads/${approvedLead.id}/update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'approve' }),
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body?.error || 'Failed to update lead.')
+        onApprovedPm(approvedLead)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to update lead.')
+        setSubmitting(false)
+      }
+      return
+    }
     await post({ action: 'approve' })
   }
 
