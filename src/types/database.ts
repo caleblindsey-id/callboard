@@ -673,6 +673,9 @@ export type TechLeadRow = {
   location_on_site: string | null
   proposed_start_month: number | null
   proposed_start_year: number | null
+  // Free-text amount the tech quoted the customer for the PM (migration 129).
+  // PM-only; prefills the manager's Flat Rate when it parses as a clean number.
+  quoted_amount: string | null
   // V2 equipment-sale fields (migration 039). NULL for PM leads.
   proposed_equipment_tier: EquipmentSaleTier | null
   sale_equipment_tier: EquipmentSaleTier | null
@@ -910,7 +913,7 @@ export type TechLeadInsert = Pick<TechLeadRow, 'submitted_by' | 'equipment_descr
     'notes' | 'status' |
     'contact_name' | 'contact_email' | 'contact_phone' | 'photos' |
     'make' | 'model' | 'serial_number' | 'location_on_site' |
-    'proposed_start_month' | 'proposed_start_year'
+    'proposed_start_month' | 'proposed_start_year' | 'quoted_amount'
   >>
 
 export type EquipmentSaleLeadCandidateInsert = Pick<EquipmentSaleLeadCandidateRow,

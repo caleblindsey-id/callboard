@@ -30,6 +30,7 @@ interface SubmitLeadDraft {
   startMonth: number
   startYear: number
   frequency: TechLeadFrequency | ''
+  quotedAmount: string
   equipmentTier: EquipmentSaleTier | ''
   contactName: string
   contactEmail: string
@@ -101,6 +102,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
   const [startMonth, setStartMonth] = useState<number>(now.getMonth() + 1)
   const [startYear, setStartYear] = useState<number>(now.getFullYear())
   const [frequency, setFrequency] = useState<TechLeadFrequency | ''>('')
+  const [quotedAmount, setQuotedAmount] = useState('')
 
   // Equipment-sale lead fields
   const [equipmentTier, setEquipmentTier] = useState<EquipmentSaleTier | ''>('')
@@ -141,6 +143,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     startMonth,
     startYear,
     frequency,
+    quotedAmount,
     equipmentTier,
     contactName,
     contactEmail,
@@ -149,7 +152,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
   }), [
     leadType, customerSearch, customerId, newCustomerMode, newCustomerName,
     make, model, serialNumber, locationOnSite, startMonth, startYear, frequency,
-    equipmentTier, contactName, contactEmail, contactPhone, notes,
+    quotedAmount, equipmentTier, contactName, contactEmail, contactPhone, notes,
   ])
 
   const { restoredAt, dismissRestoredToast, clearDraft, discardDraft } = useFormDraft<SubmitLeadDraft>({
@@ -169,6 +172,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
         s.serialNumber.trim() ||
         s.locationOnSite.trim() ||
         s.frequency ||
+        s.quotedAmount.trim() ||
         s.equipmentTier ||
         s.contactName.trim() ||
         s.contactEmail.trim() ||
@@ -188,6 +192,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
       if (typeof d.startMonth === 'number') setStartMonth(d.startMonth)
       if (typeof d.startYear === 'number') setStartYear(d.startYear)
       setFrequency(d.frequency || '')
+      setQuotedAmount(d.quotedAmount || '')
       setEquipmentTier(d.equipmentTier || '')
       setContactName(d.contactName || '')
       setContactEmail(d.contactEmail || '')
@@ -213,6 +218,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     setStartMonth(fresh.getMonth() + 1)
     setStartYear(fresh.getFullYear())
     setFrequency('')
+    setQuotedAmount('')
     setEquipmentTier('')
     setContactName('')
     setContactEmail('')
@@ -264,6 +270,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
       setStartMonth(lead.proposed_start_month ?? fresh.getMonth() + 1)
       setStartYear(lead.proposed_start_year ?? fresh.getFullYear())
       setFrequency(lead.proposed_pm_frequency ?? '')
+      setQuotedAmount(lead.quoted_amount ?? '')
       setEquipmentTier(lead.proposed_equipment_tier ?? '')
       setContactName(lead.contact_name ?? '')
       setContactEmail(lead.contact_email ?? '')
@@ -285,6 +292,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     setStartMonth(fresh.getMonth() + 1)
     setStartYear(fresh.getFullYear())
     setFrequency('')
+    setQuotedAmount('')
     setEquipmentTier('')
     setContactName('')
     setContactEmail('')
@@ -445,6 +453,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
         proposed_start_month: startMonth,
         proposed_start_year: startYear,
         proposed_pm_frequency: frequency || null,
+        quoted_amount: quotedAmount.trim() || null,
         notes: notes.trim() || null,
         contact_name: contactName.trim(),
         contact_email: contactEmail.trim() || null,
@@ -884,6 +893,25 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
                     Annual PMs are not eligible for a lead bonus.
                   </p>
                 )}
+              </div>
+
+              {/* Quoted amount (free text) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Quoted amount
+                </label>
+                <input
+                  type="text"
+                  value={quotedAmount}
+                  onChange={e => setQuotedAmount(e.target.value)}
+                  placeholder="e.g. $150 / visit"
+                  autoComplete="off"
+                  maxLength={100}
+                  className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  What you quoted the customer. The office uses this to set the flat rate.
+                </p>
               </div>
             </>
           ) : (

@@ -316,6 +316,9 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone 
               {lead.proposed_pm_frequency && (
                 <Field label="Proposed frequency">{lead.proposed_pm_frequency}</Field>
               )}
+              {lead.quoted_amount && (
+                <Field label="Tech quoted">{lead.quoted_amount}</Field>
+              )}
             </>
           )}
           {lead.notes && (

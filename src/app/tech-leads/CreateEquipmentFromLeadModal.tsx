@@ -42,6 +42,23 @@ const BILLING_TYPES: { value: BillingType; label: string }[] = [
   { value: 'contract',            label: 'Contract' },
 ]
 
+// Pull a clean flat-rate prefill out of the tech's free-text quote. Accepts
+// things like "$150", "150.00", "$1,200 / visit" → "150" / "1200". Returns ''
+// when the quote isn't a single clean dollar figure (e.g. "TBD", "ask Steven"),
+// so the manager just types it. Currency symbol, commas, and a trailing unit
+// suffix (/visit, ea, per month) are stripped; anything else disqualifies it.
+function flatRateFromQuote(quote: string | null | undefined): string {
+  if (!quote) return ''
+  const cleaned = quote
+    .replace(/\$/g, '')
+    .replace(/,/g, '')
+    .replace(/\s*(\/|per\b|each\b|ea\b).*$/i, '')
+    .trim()
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return ''
+  const n = parseFloat(cleaned)
+  return Number.isFinite(n) && n > 0 ? String(n) : ''
+}
+
 // Map tech's proposed frequency → default interval_months. Lets the manager
 // flow start with a reasonable default without re-entering.
 function proposedToInterval(freq: TechLeadFrequency | null): number {
@@ -114,7 +131,9 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setAnchorMonth(lead.proposed_start_month ?? today.getMonth() + 1)
     setStartingYear(lead.proposed_start_year ?? today.getFullYear())
     setBillingType('flat_rate')
-    setFlatRate('')
+    // Prefill the flat rate from the tech's quote when it's a clean number; the
+    // manager can still edit. Non-numeric quotes ("TBD") leave the field blank.
+    setFlatRate(flatRateFromQuote(lead.quoted_amount))
     setError(null)
     setNearDuplicate(null)
     setSubmitting(false)
@@ -488,6 +507,11 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
                   placeholder="$0.00"
                   className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
                 />
+                {lead.quoted_amount && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Tech quoted: <span className="font-medium text-gray-700 dark:text-gray-300">{lead.quoted_amount}</span>
+                  </p>
+                )}
               </div>
             </div>
 

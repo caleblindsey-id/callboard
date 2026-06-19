@@ -32,6 +32,7 @@ const CONTACT_PHONE_MAX = 40
 const EQUIPMENT_FIELD_MAX = 200
 const PROPOSED_START_YEAR_MIN = 2000
 const PROPOSED_START_YEAR_MAX = 2100
+const QUOTED_AMOUNT_MAX = 100
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -47,6 +48,7 @@ export type LeadFieldsInput = {
   proposed_start_year?: number | null
   proposed_pm_frequency?: TechLeadFrequency | string | null
   proposed_equipment_tier?: EquipmentSaleTier | string | null
+  quoted_amount?: string | null
   notes?: string | null
   contact_name?: string | null
   contact_email?: string | null
@@ -72,6 +74,7 @@ export type ValidatedLeadFields = {
   proposed_start_month: number | null
   proposed_start_year: number | null
   proposed_pm_frequency: TechLeadFrequency | null
+  quoted_amount: string | null
   // equipment_sale-only — null on PM leads.
   proposed_equipment_tier: EquipmentSaleTier | null
 }
@@ -149,6 +152,7 @@ export function validateLeadFields(body: LeadFieldsInput): ValidateResult {
     proposed_start_month: null,
     proposed_start_year: null,
     proposed_pm_frequency: null,
+    quoted_amount: null,
     proposed_equipment_tier: null,
   }
 
@@ -189,6 +193,7 @@ export function validateLeadFields(body: LeadFieldsInput): ValidateResult {
     fields.proposed_start_month = startMonth!
     fields.proposed_start_year = startYear!
     fields.proposed_pm_frequency = (body.proposed_pm_frequency as TechLeadFrequency) ?? null
+    fields.quoted_amount = body.quoted_amount?.trim().slice(0, QUOTED_AMOUNT_MAX) || null
     fields.equipment_description = composeEquipmentDescription({
       make: fields.make,
       model: fields.model,
