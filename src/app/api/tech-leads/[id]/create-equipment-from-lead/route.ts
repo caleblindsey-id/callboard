@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, RESET_ROLES } from '@/lib/auth'
 import { normalizeSerial, serialsMatch, serialsNearMatch } from '@/lib/equipment'
-import type { BillingType } from '@/types/database'
+import { computePmBilling } from '@/lib/pm-billing'
+import type { BillingType, FirstPmCompletion, PartUsed } from '@/types/database'
 
 type Body = {
   customer_id?: number
@@ -99,7 +100,7 @@ export async function POST(
     // Pull the lead and verify state
     const { data: lead, error: leadErr } = await supabase
       .from('tech_leads')
-      .select('id, status, customer_id, customer_name_text, equipment_id, lead_type')
+      .select('id, status, customer_id, customer_name_text, equipment_id, lead_type, submitted_by, first_pm_performed, first_pm_completion')
       .eq('id', id)
       .single()
     if (leadErr || !lead) {
@@ -277,7 +278,7 @@ export async function POST(
 
     // Step 3: insert pm_schedule. On failure, roll back a NEWLY-created
     // equipment row (never an existing unit the office chose to reuse).
-    const { error: schedErr } = await supabase
+    const { data: scheduleRow, error: schedErr } = await supabase
       .from('pm_schedules')
       .insert({
         equipment_id: equipmentId,
@@ -288,7 +289,9 @@ export async function POST(
         flat_rate: body.billing_type === 'flat_rate' ? body.flat_rate ?? null : null,
         active: true,
       })
-    if (schedErr) {
+      .select('id')
+      .single()
+    if (schedErr || !scheduleRow) {
       console.error('schedule insert error:', schedErr)
       if (createdNewEquipment) {
         await supabase.from('equipment').delete().eq('id', equipmentId).then(() => {}, (e) =>
@@ -315,7 +318,93 @@ export async function POST(
       )
     }
 
-    return NextResponse.json({ success: true, equipment_id: equipmentId })
+    // First PM performed on site (migration 130): record the first PM ticket as
+    // completed + billable. Done as insert-then-update because the migration 038
+    // bonus-earn trigger only fires on a status UPDATE to 'completed' (not a
+    // direct completed insert). Best-effort: a failure here must not undo the
+    // schedule that already landed — the office can complete the first PM by hand.
+    let firstPmWarning: string | undefined
+    if (lead.first_pm_performed && lead.first_pm_completion) {
+      const fpc = lead.first_pm_completion as FirstPmCompletion
+      try {
+        // Mark the unit verified — the manager just confirmed make/model/serial,
+        // and the completion path otherwise gates on verification.
+        await supabase
+          .from('equipment')
+          .update({ details_verified_at: new Date().toISOString(), details_verified_by: user.id })
+          .eq('id', equipmentId)
+          .is('details_verified_at', null)
+
+        // Snapshot the customer's PM-pricing-visibility flag onto the ticket.
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('show_pricing_on_pm_pdf')
+          .eq('id', resolvedCustomerId!)
+          .maybeSingle()
+        const showPricing = (cust as { show_pricing_on_pm_pdf?: boolean } | null)?.show_pricing_on_pm_pdf ?? false
+
+        // Billing: flat rate covers the first PM's labor; PM parts are inventory
+        // only (unit_price zeroed). T&M/contract first PMs bill 0 here — the
+        // bonus only pays on flat-rate anyway.
+        const flatRate = body.billing_type === 'flat_rate' ? (body.flat_rate ?? 0) : 0
+        const { billingAmount } = await computePmBilling(supabase, {
+          customerId: resolvedCustomerId!,
+          laborRateType: 'standard',
+          flatRate,
+          additionalHours: 0,
+          additionalParts: [],
+          tripQty: 0,
+        })
+        const partsUsed: PartUsed[] = (fpc.parts_used ?? []).map((p) => ({ ...p, unit_price: 0 }))
+        // The first PM occupies the schedule's first slot (anchor month / starting
+        // year). The unique (pm_schedule_id, month, year) index keeps the normal
+        // generator from double-creating it. If the manager anchored a future
+        // month, the slot is still that month; completed_date reflects the actual
+        // on-site date. The earn trigger matches by equipment_id, so it still earns.
+        const year = body.starting_year ?? new Date().getUTCFullYear()
+
+        const { data: ticket, error: tErr } = await supabase
+          .from('pm_tickets')
+          .insert({
+            pm_schedule_id: scheduleRow.id,
+            equipment_id: equipmentId,
+            customer_id: resolvedCustomerId!,
+            assigned_technician_id: lead.submitted_by,
+            created_by_id: user.id,
+            month: body.anchor_month,
+            year,
+            status: 'in_progress',
+          })
+          .select('id')
+          .single()
+        if (tErr || !ticket) throw tErr ?? new Error('first-PM ticket insert returned no row')
+
+        const { error: uErr } = await supabase
+          .from('pm_tickets')
+          .update({
+            status: 'completed',
+            completed_date: fpc.completed_date,
+            hours_worked: fpc.hours_worked,
+            machine_hours: fpc.machine_hours,
+            date_code: fpc.date_code,
+            completion_notes: fpc.completion_notes ?? '',
+            parts_used: partsUsed,
+            customer_signature: fpc.customer_signature,
+            customer_signature_name: fpc.customer_signature_name,
+            billing_amount: billingAmount,
+            show_pricing: showPricing,
+            completion_seeded_at: new Date().toISOString(),
+          })
+          .eq('id', ticket.id)
+        if (uErr) throw uErr
+      } catch (e) {
+        console.error('first-PM auto-completion failed (schedule still created):', e)
+        firstPmWarning =
+          'Schedule created, but the first PM could not be auto-completed. Complete it manually from the tech\'s board.'
+      }
+    }
+
+    return NextResponse.json({ success: true, equipment_id: equipmentId, first_pm_warning: firstPmWarning })
   } catch (err) {
     console.error('create-equipment-from-lead POST error:', err)
     return NextResponse.json({ error: 'Failed to create equipment from lead.' }, { status: 500 })

@@ -162,6 +162,20 @@ export interface PartUsed {
   requires_detail?: boolean
 }
 
+// First-PM-on-site completion captured by the tech at lead submission
+// (migration 130). Mirrors the essentials of the PM completion form; the
+// manager's Create Equipment flow replays it into a completed pm_ticket.
+export interface FirstPmCompletion {
+  completed_date: string
+  hours_worked: number
+  machine_hours: number
+  date_code: string
+  completion_notes: string
+  parts_used: PartUsed[]
+  customer_signature: string
+  customer_signature_name: string
+}
+
 export interface DefaultProduct {
   synergy_product_id: number
   quantity: number
@@ -676,6 +690,11 @@ export type TechLeadRow = {
   // Free-text amount the tech quoted the customer for the PM (migration 129).
   // PM-only; prefills the manager's Flat Rate when it parses as a clean number.
   quoted_amount: string | null
+  // First PM performed on site at signup (migration 130). When true, the manager's
+  // Create Equipment flow records the first PM ticket as completed + billable from
+  // first_pm_completion. PM-only.
+  first_pm_performed: boolean
+  first_pm_completion: FirstPmCompletion | null
   // V2 equipment-sale fields (migration 039). NULL for PM leads.
   proposed_equipment_tier: EquipmentSaleTier | null
   sale_equipment_tier: EquipmentSaleTier | null
@@ -913,7 +932,8 @@ export type TechLeadInsert = Pick<TechLeadRow, 'submitted_by' | 'equipment_descr
     'notes' | 'status' |
     'contact_name' | 'contact_email' | 'contact_phone' | 'photos' |
     'make' | 'model' | 'serial_number' | 'location_on_site' |
-    'proposed_start_month' | 'proposed_start_year' | 'quoted_amount'
+    'proposed_start_month' | 'proposed_start_year' | 'quoted_amount' |
+    'first_pm_performed' | 'first_pm_completion'
   >>
 
 export type EquipmentSaleLeadCandidateInsert = Pick<EquipmentSaleLeadCandidateRow,

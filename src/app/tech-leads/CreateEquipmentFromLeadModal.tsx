@@ -296,6 +296,13 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
         }
         throw new Error(data?.error || 'Failed to create equipment from lead.')
       }
+      // Schedule landed but the first PM couldn't auto-complete: keep the modal
+      // open showing the warning so the office knows to complete it by hand.
+      if (data?.first_pm_warning) {
+        setError(data.first_pm_warning as string)
+        setSubmitting(false)
+        return
+      }
       onDone()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create equipment from lead.')
@@ -335,6 +342,14 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
 
         <div className="px-5 py-4 space-y-4">
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+          {lead.first_pm_performed && (
+            <div className="text-sm text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-md px-3 py-2">
+              <strong>{lead.submitter?.name ?? 'The tech'} performed the first PM on site.</strong> Creating this
+              schedule will record a completed first PM billed at the Flat Rate below
+              {' '}(set the rate so it bills and the tech earns the lead bonus).
+            </div>
+          )}
 
           {nearDuplicate && (
             <div className="text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2 space-y-2">
