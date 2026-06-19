@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
 import { partsOnOrder } from '@/lib/parts'
-import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
+import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 
@@ -201,55 +201,25 @@ export async function POST(
     const finalParts: PartUsed[] = (partsUsed ?? []).map(p => ({ ...p, unit_price: 0 }))
     const finalAdditionalHours = additionalHoursWorked ?? 0
 
-    // Server-authoritative billing math: recompute for ALL roles. Look up canonical
-    // unit prices for additional parts that have a synergy_product_id; clamp others.
+    // Server-authoritative billing math: recompute for ALL roles via the shared
+    // helper (also used by the first-PM-on-site auto-completion so they can't
+    // drift). Trip charge = trips × per-trip rate (mirrors labor). Completer's
+    // qty wins, else the stored qty, else 0. PMs are flat-rate under agreement,
+    // so they default to NO trip charge (feedback #36); a manager can still add
+    // trips via the override field when one is genuinely warranted (e.g. a T&M PM).
     const schedule = current.pm_schedules as { flat_rate: number | null; billing_type: string | null } | null
     const flatRate = (schedule?.billing_type === 'flat_rate' && schedule.flat_rate != null) ? schedule.flat_rate : 0
-
-    const laborRate = await getCustomerLaborRate(current.customer_id, current.labor_rate_type ?? 'standard')
-
-    // Resolve canonical product prices in one query
-    const additionalIn: PartUsed[] = additionalPartsUsed ?? []
-    const productIds = additionalIn
-      .map(p => p.synergy_product_id)
-      .filter((v): v is number => typeof v === 'number')
-    const priceMap = new Map<number, number>()
-    if (productIds.length > 0) {
-      const { data: products } = await supabase
-        .from('products')
-        .select('synergy_id, unit_price')
-        .in('synergy_id', productIds.map(String))
-      if (products) {
-        for (const row of products) {
-          if (row.synergy_id != null && row.unit_price != null) {
-            priceMap.set(Number(row.synergy_id), Number(row.unit_price))
-          }
-        }
-      }
-    }
-
-    const finalAdditionalParts: PartUsed[] = additionalIn.map(p => {
-      const canonical = p.synergy_product_id != null ? priceMap.get(p.synergy_product_id) : undefined
-      const safePrice = canonical ?? Math.max(0, Number(p.unit_price) || 0)
-      return { ...p, unit_price: safePrice }
-    })
-
-    const additionalPartsTotal = finalAdditionalParts.reduce(
-      (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0),
-      0
-    )
-    // Round to cents to keep stored billing_amount consistent with
-    // .toFixed(2) display values everywhere (otherwise sub-cent IEEE 754
-    // drift can cause the PDF total and the export-list total to diverge).
-    // Trip charge = trips × per-trip rate (mirrors labor). Completer's qty wins,
-    // else the stored qty, else 0. PMs are flat-rate under agreement, so they
-    // default to NO trip charge (feedback #36); a manager can still add trips
-    // via the override field when one is genuinely warranted (e.g. a T&M PM).
     const tripQty = isNonNegativeNumber(tripChargeQtyIn)
       ? tripChargeQtyIn
       : ((current.trip_charge_qty as number | null) ?? 0)
-    const tripCharge = tripQty * await getTripChargeRate()
-    const finalBillingAmount = Math.round((flatRate + (finalAdditionalHours * laborRate) + additionalPartsTotal + tripCharge) * 100) / 100
+    const { billingAmount: finalBillingAmount, finalAdditionalParts } = await computePmBilling(supabase, {
+      customerId: current.customer_id,
+      laborRateType: current.labor_rate_type ?? 'standard',
+      flatRate,
+      additionalHours: finalAdditionalHours,
+      additionalParts: additionalPartsUsed ?? [],
+      tripQty,
+    })
 
     // Snapshot the customer's pricing-visibility flag onto the ticket so future
     // PDF regenerations are stable even if the customer flag is later toggled.

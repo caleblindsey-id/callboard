@@ -557,6 +557,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
         salesReps={salesReps}
         onClose={() => setReviewLead(null)}
         onDone={() => { setReviewLead(null); router.refresh() }}
+        onApprovedPm={(lead) => { setReviewLead(null); setEquipLead(lead); router.refresh() }}
       />
       <CreateEquipmentFromLeadModal
         lead={equipLead}

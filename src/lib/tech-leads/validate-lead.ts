@@ -2,6 +2,8 @@ import type {
   TechLeadFrequency,
   TechLeadType,
   EquipmentSaleTier,
+  FirstPmCompletion,
+  PartUsed,
 } from '@/types/database'
 import { EQUIPMENT_SALE_TIERS, tierLabel } from './bonus-tiers'
 
@@ -32,6 +34,7 @@ const CONTACT_PHONE_MAX = 40
 const EQUIPMENT_FIELD_MAX = 200
 const PROPOSED_START_YEAR_MIN = 2000
 const PROPOSED_START_YEAR_MAX = 2100
+const QUOTED_AMOUNT_MAX = 100
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -47,6 +50,9 @@ export type LeadFieldsInput = {
   proposed_start_year?: number | null
   proposed_pm_frequency?: TechLeadFrequency | string | null
   proposed_equipment_tier?: EquipmentSaleTier | string | null
+  quoted_amount?: string | null
+  first_pm_performed?: boolean | null
+  first_pm_completion?: Partial<FirstPmCompletion> | null
   notes?: string | null
   contact_name?: string | null
   contact_email?: string | null
@@ -72,6 +78,9 @@ export type ValidatedLeadFields = {
   proposed_start_month: number | null
   proposed_start_year: number | null
   proposed_pm_frequency: TechLeadFrequency | null
+  quoted_amount: string | null
+  first_pm_performed: boolean
+  first_pm_completion: FirstPmCompletion | null
   // equipment_sale-only — null on PM leads.
   proposed_equipment_tier: EquipmentSaleTier | null
 }
@@ -149,6 +158,9 @@ export function validateLeadFields(body: LeadFieldsInput): ValidateResult {
     proposed_start_month: null,
     proposed_start_year: null,
     proposed_pm_frequency: null,
+    quoted_amount: null,
+    first_pm_performed: false,
+    first_pm_completion: null,
     proposed_equipment_tier: null,
   }
 
@@ -189,6 +201,48 @@ export function validateLeadFields(body: LeadFieldsInput): ValidateResult {
     fields.proposed_start_month = startMonth!
     fields.proposed_start_year = startYear!
     fields.proposed_pm_frequency = (body.proposed_pm_frequency as TechLeadFrequency) ?? null
+    fields.quoted_amount = body.quoted_amount?.trim().slice(0, QUOTED_AMOUNT_MAX) || null
+
+    // First PM performed on site at signup (migration 130). When flagged, the
+    // tech captures the completion essentials so the manager's Create Equipment
+    // flow can record a completed, billable first PM.
+    if (body.first_pm_performed) {
+      const c = body.first_pm_completion ?? {}
+      const completedDate = typeof c.completed_date === 'string' ? c.completed_date.trim() : ''
+      if (!completedDate || Number.isNaN(new Date(completedDate + 'T12:00:00Z').getTime())) {
+        return fail('First PM: enter a valid completion date.')
+      }
+      const hours = c.hours_worked
+      if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0) {
+        return fail('First PM: hours worked must be a non-negative number.')
+      }
+      const machineHours = c.machine_hours
+      if (typeof machineHours !== 'number' || !Number.isFinite(machineHours) || machineHours < 0) {
+        return fail('First PM: machine hours must be a non-negative number.')
+      }
+      const dateCode = typeof c.date_code === 'string' ? c.date_code.trim() : ''
+      if (!dateCode) return fail('First PM: date code is required.')
+      const signature = typeof c.customer_signature === 'string' ? c.customer_signature : ''
+      const signatureName = typeof c.customer_signature_name === 'string' ? c.customer_signature_name.trim() : ''
+      if (!signature || !signatureName) {
+        return fail('First PM: customer signature and printed name are required.')
+      }
+      const parts: PartUsed[] = Array.isArray(c.parts_used)
+        ? (c.parts_used as PartUsed[]).filter(p => p && typeof p.description === 'string' && p.description.trim())
+        : []
+      fields.first_pm_performed = true
+      fields.first_pm_completion = {
+        completed_date: completedDate,
+        hours_worked: hours,
+        machine_hours: machineHours,
+        date_code: dateCode.slice(0, 100),
+        completion_notes: typeof c.completion_notes === 'string' ? c.completion_notes.trim().slice(0, NOTES_MAX) : '',
+        parts_used: parts,
+        customer_signature: signature,
+        customer_signature_name: signatureName.slice(0, CONTACT_NAME_MAX),
+      }
+    }
+
     fields.equipment_description = composeEquipmentDescription({
       make: fields.make,
       model: fields.model,

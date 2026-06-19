@@ -12,6 +12,8 @@ import { bonusRateForInterval, bonusSuffixForInterval } from '@/lib/tech-leads/p
 import { compressImage } from '@/lib/image-utils'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
+import SignaturePad from '@/components/SignaturePad'
+import PartsEntryList, { emptyPart, partsFromSaved, toServicePartUsed, type PartEntry } from '@/components/service/PartsEntryList'
 
 const DRAFT_KEY = 'draft-submit-lead'
 
@@ -30,6 +32,7 @@ interface SubmitLeadDraft {
   startMonth: number
   startYear: number
   frequency: TechLeadFrequency | ''
+  quotedAmount: string
   equipmentTier: EquipmentSaleTier | ''
   contactName: string
   contactEmail: string
@@ -101,6 +104,33 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
   const [startMonth, setStartMonth] = useState<number>(now.getMonth() + 1)
   const [startYear, setStartYear] = useState<number>(now.getFullYear())
   const [frequency, setFrequency] = useState<TechLeadFrequency | ''>('')
+  const [quotedAmount, setQuotedAmount] = useState('')
+
+  // First PM performed on site at signup (migration 130). Captured completion is
+  // replayed into a completed pm_ticket when the manager creates the schedule.
+  // Intentionally NOT persisted in the draft (like photos/signatures).
+  const todayStr = now.toISOString().slice(0, 10)
+  const [firstPmPerformed, setFirstPmPerformed] = useState(false)
+  const [fpCompletedDate, setFpCompletedDate] = useState(todayStr)
+  const [fpHours, setFpHours] = useState('')
+  const [fpMachineHours, setFpMachineHours] = useState('')
+  const [fpDateCode, setFpDateCode] = useState('')
+  const [fpNotes, setFpNotes] = useState('')
+  const [fpParts, setFpParts] = useState<PartEntry[]>([])
+  const [fpSignatureImage, setFpSignatureImage] = useState<string | null>(null)
+  const [fpSignatureName, setFpSignatureName] = useState('')
+
+  function resetFirstPm() {
+    setFirstPmPerformed(false)
+    setFpCompletedDate(new Date().toISOString().slice(0, 10))
+    setFpHours('')
+    setFpMachineHours('')
+    setFpDateCode('')
+    setFpNotes('')
+    setFpParts([])
+    setFpSignatureImage(null)
+    setFpSignatureName('')
+  }
 
   // Equipment-sale lead fields
   const [equipmentTier, setEquipmentTier] = useState<EquipmentSaleTier | ''>('')
@@ -141,6 +171,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     startMonth,
     startYear,
     frequency,
+    quotedAmount,
     equipmentTier,
     contactName,
     contactEmail,
@@ -149,7 +180,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
   }), [
     leadType, customerSearch, customerId, newCustomerMode, newCustomerName,
     make, model, serialNumber, locationOnSite, startMonth, startYear, frequency,
-    equipmentTier, contactName, contactEmail, contactPhone, notes,
+    quotedAmount, equipmentTier, contactName, contactEmail, contactPhone, notes,
   ])
 
   const { restoredAt, dismissRestoredToast, clearDraft, discardDraft } = useFormDraft<SubmitLeadDraft>({
@@ -169,6 +200,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
         s.serialNumber.trim() ||
         s.locationOnSite.trim() ||
         s.frequency ||
+        s.quotedAmount.trim() ||
         s.equipmentTier ||
         s.contactName.trim() ||
         s.contactEmail.trim() ||
@@ -188,6 +220,7 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
       if (typeof d.startMonth === 'number') setStartMonth(d.startMonth)
       if (typeof d.startYear === 'number') setStartYear(d.startYear)
       setFrequency(d.frequency || '')
+      setQuotedAmount(d.quotedAmount || '')
       setEquipmentTier(d.equipmentTier || '')
       setContactName(d.contactName || '')
       setContactEmail(d.contactEmail || '')
@@ -213,11 +246,13 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     setStartMonth(fresh.getMonth() + 1)
     setStartYear(fresh.getFullYear())
     setFrequency('')
+    setQuotedAmount('')
     setEquipmentTier('')
     setContactName('')
     setContactEmail('')
     setContactPhone('')
     setNotes('')
+    resetFirstPm()
     setError(null)
     setWarning(null)
   }
@@ -264,11 +299,26 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
       setStartMonth(lead.proposed_start_month ?? fresh.getMonth() + 1)
       setStartYear(lead.proposed_start_year ?? fresh.getFullYear())
       setFrequency(lead.proposed_pm_frequency ?? '')
+      setQuotedAmount(lead.quoted_amount ?? '')
       setEquipmentTier(lead.proposed_equipment_tier ?? '')
       setContactName(lead.contact_name ?? '')
       setContactEmail(lead.contact_email ?? '')
       setContactPhone(lead.contact_phone ?? '')
       setNotes(lead.notes ?? '')
+      if (lead.first_pm_performed && lead.first_pm_completion) {
+        const c = lead.first_pm_completion
+        setFirstPmPerformed(true)
+        setFpCompletedDate(c.completed_date || new Date().toISOString().slice(0, 10))
+        setFpHours(c.hours_worked != null ? String(c.hours_worked) : '')
+        setFpMachineHours(c.machine_hours != null ? String(c.machine_hours) : '')
+        setFpDateCode(c.date_code ?? '')
+        setFpNotes(c.completion_notes ?? '')
+        setFpParts(partsFromSaved(c.parts_used ?? []))
+        setFpSignatureImage(c.customer_signature || null)
+        setFpSignatureName(c.customer_signature_name ?? '')
+      } else {
+        resetFirstPm()
+      }
       return
     }
 
@@ -285,11 +335,13 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     setStartMonth(fresh.getMonth() + 1)
     setStartYear(fresh.getFullYear())
     setFrequency('')
+    setQuotedAmount('')
     setEquipmentTier('')
     setContactName('')
     setContactEmail('')
     setContactPhone('')
     setNotes('')
+    resetFirstPm()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, lead?.id])
 
@@ -434,6 +486,44 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
         setError('Enter a valid proposed start year.')
         return
       }
+
+      // First PM performed on site — validate the captured completion.
+      let firstPmCompletion: Record<string, unknown> | null = null
+      if (firstPmPerformed) {
+        if (!fpCompletedDate) {
+          setError('First PM: enter the completion date.')
+          return
+        }
+        const hoursNum = parseFloat(fpHours)
+        if (!Number.isFinite(hoursNum) || hoursNum < 0) {
+          setError('First PM: enter hours worked.')
+          return
+        }
+        const machineNum = parseFloat(fpMachineHours)
+        if (!Number.isFinite(machineNum) || machineNum < 0) {
+          setError('First PM: enter the machine hours.')
+          return
+        }
+        if (!fpDateCode.trim()) {
+          setError('First PM: enter the date code.')
+          return
+        }
+        if (!fpSignatureImage || !fpSignatureName.trim()) {
+          setError('First PM: capture the customer signature and printed name.')
+          return
+        }
+        firstPmCompletion = {
+          completed_date: fpCompletedDate,
+          hours_worked: hoursNum,
+          machine_hours: machineNum,
+          date_code: fpDateCode.trim(),
+          completion_notes: fpNotes.trim(),
+          parts_used: toServicePartUsed(fpParts),
+          customer_signature: fpSignatureImage,
+          customer_signature_name: fpSignatureName.trim(),
+        }
+      }
+
       body = {
         lead_type: 'pm',
         customer_id: newCustomerMode ? null : customerId,
@@ -445,6 +535,9 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
         proposed_start_month: startMonth,
         proposed_start_year: startYear,
         proposed_pm_frequency: frequency || null,
+        quoted_amount: quotedAmount.trim() || null,
+        first_pm_performed: firstPmPerformed,
+        first_pm_completion: firstPmCompletion,
         notes: notes.trim() || null,
         contact_name: contactName.trim(),
         contact_email: contactEmail.trim() || null,
@@ -883,6 +976,138 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
                   <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
                     Annual PMs are not eligible for a lead bonus.
                   </p>
+                )}
+              </div>
+
+              {/* Quoted amount (free text) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Quoted amount
+                </label>
+                <input
+                  type="text"
+                  value={quotedAmount}
+                  onChange={e => setQuotedAmount(e.target.value)}
+                  placeholder="e.g. $150 / visit"
+                  autoComplete="off"
+                  maxLength={100}
+                  className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  What you quoted the customer. The office uses this to set the flat rate.
+                </p>
+              </div>
+
+              {/* First PM performed on site */}
+              <div className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={firstPmPerformed}
+                    onChange={e => setFirstPmPerformed(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-500 text-slate-600 focus:ring-slate-500"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-900 dark:text-white">
+                      We performed the first PM on site today
+                    </span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">
+                      Capture the completion now and the office records the first PM as done when they set up the schedule.
+                    </span>
+                  </span>
+                </label>
+
+                {firstPmPerformed && (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Completion date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={fpCompletedDate}
+                          onChange={e => setFpCompletedDate(e.target.value)}
+                          className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Hours worked <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.25"
+                          value={fpHours}
+                          onChange={e => setFpHours(e.target.value)}
+                          placeholder="0"
+                          className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Machine hours <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.1"
+                          value={fpMachineHours}
+                          onChange={e => setFpMachineHours(e.target.value)}
+                          placeholder="0"
+                          className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Date code <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={fpDateCode}
+                          onChange={e => setFpDateCode(e.target.value)}
+                          placeholder="From the data plate"
+                          autoComplete="off"
+                          maxLength={100}
+                          className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                        />
+                      </div>
+                    </div>
+
+                    <PartsEntryList
+                      parts={fpParts}
+                      setParts={setFpParts}
+                      showPricing={false}
+                      showWarranty={false}
+                      label="Parts used"
+                    />
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Completion notes
+                      </label>
+                      <textarea
+                        value={fpNotes}
+                        onChange={e => setFpNotes(e.target.value)}
+                        rows={2}
+                        placeholder="What you did, anything the customer should know..."
+                        className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      />
+                    </div>
+
+                    <SignaturePad
+                      initialName={fpSignatureName}
+                      onSignatureChange={({ image, name }) => {
+                        setFpSignatureImage(image)
+                        setFpSignatureName(name)
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             </>

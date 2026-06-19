@@ -42,6 +42,23 @@ const BILLING_TYPES: { value: BillingType; label: string }[] = [
   { value: 'contract',            label: 'Contract' },
 ]
 
+// Pull a clean flat-rate prefill out of the tech's free-text quote. Accepts
+// things like "$150", "150.00", "$1,200 / visit" → "150" / "1200". Returns ''
+// when the quote isn't a single clean dollar figure (e.g. "TBD", "ask Steven"),
+// so the manager just types it. Currency symbol, commas, and a trailing unit
+// suffix (/visit, ea, per month) are stripped; anything else disqualifies it.
+function flatRateFromQuote(quote: string | null | undefined): string {
+  if (!quote) return ''
+  const cleaned = quote
+    .replace(/\$/g, '')
+    .replace(/,/g, '')
+    .replace(/\s*(\/|per\b|each\b|ea\b).*$/i, '')
+    .trim()
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return ''
+  const n = parseFloat(cleaned)
+  return Number.isFinite(n) && n > 0 ? String(n) : ''
+}
+
 // Map tech's proposed frequency → default interval_months. Lets the manager
 // flow start with a reasonable default without re-entering.
 function proposedToInterval(freq: TechLeadFrequency | null): number {
@@ -92,6 +109,17 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     model: string | null
     serial: string | null
   } | null>(null)
+  // Exact-serial match returned by the API (HTTP 409 + exact_duplicate). Instead
+  // of a dead-end error, we let the office set up the PM schedule on the existing
+  // unit — unless it already has an active schedule (hasActiveSchedule), in which
+  // case we block + link to it.
+  const [existingEquipment, setExistingEquipment] = useState<{
+    id: string
+    make: string | null
+    model: string | null
+    serial: string | null
+    hasActiveSchedule: boolean
+  } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -114,9 +142,12 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setAnchorMonth(lead.proposed_start_month ?? today.getMonth() + 1)
     setStartingYear(lead.proposed_start_year ?? today.getFullYear())
     setBillingType('flat_rate')
-    setFlatRate('')
+    // Prefill the flat rate from the tech's quote when it's a clean number; the
+    // manager can still edit. Non-numeric quotes ("TBD") leave the field blank.
+    setFlatRate(flatRateFromQuote(lead.quoted_amount))
     setError(null)
     setNearDuplicate(null)
+    setExistingEquipment(null)
     setSubmitting(false)
     // Focus dialog so onKeyDown captures Escape.
     dialogRef.current?.focus()
@@ -175,16 +206,22 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
 
   // `confirmNearDuplicate` re-submits past the near-miss serial warning once the
   // office has eyeballed the existing unit and confirmed it's genuinely distinct.
-  async function handleSubmit(confirmNearDuplicate = false) {
+  // `useExistingEquipmentId` re-submits against an exact-match unit to set up the
+  // schedule on it (no new equipment row).
+  async function handleSubmit(
+    opts: { confirmNearDuplicate?: boolean; useExistingEquipmentId?: string } = {}
+  ) {
     if (!lead) return
+    const { confirmNearDuplicate = false, useExistingEquipmentId } = opts
     setError(null)
     if (!confirmNearDuplicate) setNearDuplicate(null)
+    if (!useExistingEquipmentId) setExistingEquipment(null)
 
     if (!customerId) {
       setError('Pick the customer this equipment belongs to.')
       return
     }
-    if (!make.trim() && !model.trim()) {
+    if (!useExistingEquipmentId && !make.trim() && !model.trim()) {
       setError('Enter at least a make or model.')
       return
     }
@@ -196,9 +233,9 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setSubmitting(true)
 
     try {
-      // Single server-side call wraps link_customer + equipment insert +
-      // pm_schedule insert + link_equipment with rollback on failure (see
-      // /api/tech-leads/[id]/create-equipment-from-lead).
+      // Single server-side call wraps link_customer + equipment insert (or reuse
+      // of an existing unit) + pm_schedule insert + link_equipment with rollback
+      // on failure (see /api/tech-leads/[id]/create-equipment-from-lead).
       const flatRateNum = billingType === 'flat_rate' ? parseFloat(flatRate) : null
       const res = await fetch(`/api/tech-leads/${lead.id}/create-equipment-from-lead`, {
         method: 'POST',
@@ -216,10 +253,36 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           billing_type: billingType,
           flat_rate: flatRateNum,
           confirm_near_duplicate: confirmNearDuplicate,
+          use_existing_equipment_id: useExistingEquipmentId,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        // Exact-serial match: offer to set up the schedule on the existing unit
+        // instead of a dead-end error (or block if it already has a schedule).
+        if (data?.exact_duplicate && data?.existing_id) {
+          setExistingEquipment({
+            id: data.existing_id as string,
+            make: (data.existing_make as string | null) ?? null,
+            model: (data.existing_model as string | null) ?? null,
+            serial: (data.existing_serial as string | null) ?? null,
+            hasActiveSchedule: !!data.has_active_schedule,
+          })
+          setSubmitting(false)
+          return
+        }
+        // Reuse attempt lost the race — the unit gained a schedule meanwhile.
+        if (data?.schedule_exists && data?.existing_id) {
+          setExistingEquipment({
+            id: data.existing_id as string,
+            make: null,
+            model: null,
+            serial: null,
+            hasActiveSchedule: true,
+          })
+          setSubmitting(false)
+          return
+        }
         // Near-miss serial: surface a confirmable warning instead of a dead-end error.
         if (data?.near_duplicate && data?.existing_id) {
           setNearDuplicate({
@@ -232,6 +295,13 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           return
         }
         throw new Error(data?.error || 'Failed to create equipment from lead.')
+      }
+      // Schedule landed but the first PM couldn't auto-complete: keep the modal
+      // open showing the warning so the office knows to complete it by hand.
+      if (data?.first_pm_warning) {
+        setError(data.first_pm_warning as string)
+        setSubmitting(false)
+        return
       }
       onDone()
     } catch (e) {
@@ -273,6 +343,14 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
         <div className="px-5 py-4 space-y-4">
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
+          {lead.first_pm_performed && (
+            <div className="text-sm text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-md px-3 py-2">
+              <strong>{lead.submitter?.name ?? 'The tech'} performed the first PM on site.</strong> Creating this
+              schedule will record a completed first PM billed at the Flat Rate below
+              {' '}(set the rate so it bills and the tech earns the lead bonus).
+            </div>
+          )}
+
           {nearDuplicate && (
             <div className="text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2 space-y-2">
               <p>
@@ -294,13 +372,64 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
                 </a>
                 <button
                   type="button"
-                  onClick={() => handleSubmit(true)}
+                  onClick={() => handleSubmit({ confirmNearDuplicate: true })}
                   disabled={submitting}
                   className="text-amber-900 dark:text-amber-200 underline hover:text-amber-700 disabled:opacity-50"
                 >
                   It&apos;s a different unit — create anyway
                 </button>
               </div>
+            </div>
+          )}
+
+          {existingEquipment && (
+            <div className="text-sm text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2 space-y-2">
+              {existingEquipment.hasActiveSchedule ? (
+                <>
+                  <p>
+                    <strong>Already on a PM schedule.</strong> This customer&apos;s unit
+                    {existingEquipment.make || existingEquipment.model
+                      ? ` — ${[existingEquipment.make, existingEquipment.model].filter(Boolean).join(' ')}`
+                      : ''}
+                    {existingEquipment.serial ? ` (serial ${existingEquipment.serial})` : ''} already has an
+                    active PM schedule. No second schedule was created.
+                  </p>
+                  <a
+                    href={`/equipment/${existingEquipment.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-blue-900 dark:text-blue-200 hover:text-blue-700"
+                  >
+                    View existing unit &amp; schedule
+                  </a>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <strong>This unit already exists.</strong> {[existingEquipment.make, existingEquipment.model].filter(Boolean).join(' ')}
+                    {existingEquipment.serial ? ` (serial ${existingEquipment.serial})` : ''} is already on file for
+                    this customer. Set up the PM schedule below on the existing record instead of creating a duplicate.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={`/equipment/${existingEquipment.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline text-blue-900 dark:text-blue-200 hover:text-blue-700"
+                    >
+                      View existing unit
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit({ useExistingEquipmentId: existingEquipment.id })}
+                      disabled={submitting}
+                      className="font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 disabled:opacity-50"
+                    >
+                      {submitting ? 'Setting up…' : 'Use existing unit & create schedule'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -488,6 +617,11 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
                   placeholder="$0.00"
                   className="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
                 />
+                {lead.quoted_amount && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Tech quoted: <span className="font-medium text-gray-700 dark:text-gray-300">{lead.quoted_amount}</span>
+                  </p>
+                )}
               </div>
             </div>
 

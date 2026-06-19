@@ -49,6 +49,9 @@ export async function POST(request: NextRequest) {
       proposed_start_month: f.proposed_start_month,
       proposed_start_year: f.proposed_start_year,
       proposed_pm_frequency: f.proposed_pm_frequency,
+      quoted_amount: f.quoted_amount,
+      first_pm_performed: f.first_pm_performed,
+      first_pm_completion: f.first_pm_completion,
       proposed_equipment_tier: f.proposed_equipment_tier,
     }
 
