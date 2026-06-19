@@ -23,6 +23,13 @@ interface Props {
   relocateUrl: string
   // Which column a "request a new ship-to" links to. Defaults to PM.
   requestTicketField?: 'pm_ticket_id' | 'service_ticket_id'
+  // How a pick is applied:
+  //   'relocate-equipment' (default) — POST relocateUrl; moves the equipment's home location.
+  //   'set-ticket-shipto' — PATCH the ticket's ship_to_location_id directly. Used for tickets
+  //     with no linked equipment (e.g. Synergy imports), where relocate has nothing to move.
+  applyMode?: 'relocate-equipment' | 'set-ticket-shipto'
+  // PATCH target when applyMode === 'set-ticket-shipto'.
+  patchUrl?: string
 }
 
 type View = 'closed' | 'pick' | 'confirm' | 'request'
@@ -34,7 +41,10 @@ export default function ChangeLocationSection({
   currentShipToId,
   relocateUrl,
   requestTicketField = 'pm_ticket_id',
+  applyMode = 'relocate-equipment',
+  patchUrl,
 }: Props) {
+  const setTicketMode = applyMode === 'set-ticket-shipto'
   const router = useRouter()
   const [view, setView] = useState<View>('closed')
   const [shipTos, setShipTos] = useState<ShipTo[] | null>(null)
@@ -103,18 +113,25 @@ export default function ChangeLocationSection({
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch(relocateUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ship_to_location_id: selected.id }),
-      })
+      // Equipment-less tickets: PATCH the ticket's ship-to directly (no equipment to move).
+      const res = setTicketMode
+        ? await fetch(patchUrl ?? relocateUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ship_to_location_id: selected.id }),
+          })
+        : await fetch(relocateUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ship_to_location_id: selected.id }),
+          })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to relocate')
+      if (!res.ok) throw new Error(data.error || (setTicketMode ? 'Failed to set ship-to' : 'Failed to relocate'))
       setView('closed')
-      setSuccessMsg('Equipment moved.')
+      setSuccessMsg(setTicketMode ? 'Ship-to set.' : 'Equipment moved.')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to relocate')
+      setError(err instanceof Error ? err.message : 'Failed to update location')
     } finally {
       setSubmitting(false)
     }
@@ -158,7 +175,7 @@ export default function ChangeLocationSection({
         className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 min-h-[44px] sm:min-h-0 px-2 -mx-2"
       >
         <MapPin className="h-4 w-4" />
-        Change location
+        {setTicketMode && currentShipToId === null ? 'Set location' : 'Change location'}
       </button>
 
       {successMsg && (
@@ -190,6 +207,13 @@ export default function ChangeLocationSection({
       {view === 'confirm' && selected && (
         <ConfirmSheet
           target={selected}
+          description={
+            setTicketMode
+              ? 'This sets the ship-to location for this ticket.'
+              : "This updates the equipment's home location. Future PMs for this equipment will default to the new ship-to."
+          }
+          confirmLabel={setTicketMode ? 'Set Location' : 'Confirm Move'}
+          submittingLabel={setTicketMode ? 'Saving...' : 'Moving...'}
           onConfirm={submitRelocate}
           onBack={() => setView('pick')}
           submitting={submitting}
@@ -346,12 +370,18 @@ function PickSheet({
 
 function ConfirmSheet({
   target,
+  description,
+  confirmLabel,
+  submittingLabel,
   onConfirm,
   onBack,
   submitting,
   error,
 }: {
   target: ShipTo
+  description: string
+  confirmLabel: string
+  submittingLabel: string
   onConfirm: () => void
   onBack: () => void
   submitting: boolean
@@ -359,12 +389,9 @@ function ConfirmSheet({
 }) {
   const addr = [target.address, target.city, target.state, target.zip].filter(Boolean).join(', ')
   return (
-    <SheetShell title="Confirm Move" onClose={onBack} onBack={onBack}>
+    <SheetShell title="Confirm Location" onClose={onBack} onBack={onBack}>
       <div className="p-4 space-y-4">
-        <p className="text-sm text-gray-700 dark:text-gray-300">
-          This updates the equipment&apos;s home location. Future PMs for this equipment will
-          default to the new ship-to.
-        </p>
+        <p className="text-sm text-gray-700 dark:text-gray-300">{description}</p>
         <div className="bg-gray-50 dark:bg-gray-900 rounded-md p-4 border border-gray-200 dark:border-gray-700">
           {target.name && (
             <p className="text-sm font-medium text-gray-900 dark:text-white">{target.name}</p>
@@ -392,7 +419,7 @@ function ConfirmSheet({
           disabled={submitting}
           className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-slate-800 dark:bg-slate-700 rounded-md hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-50 min-h-[44px]"
         >
-          {submitting ? 'Moving...' : 'Confirm Move'}
+          {submitting ? submittingLabel : confirmLabel}
         </button>
       </div>
     </SheetShell>

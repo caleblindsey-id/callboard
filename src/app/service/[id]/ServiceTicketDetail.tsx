@@ -2480,6 +2480,36 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 </div>
               )}
           </InfoField>
+          {/* Ship-to set directly on the ticket (no linked equipment — e.g. Synergy imports).
+              Equipment-linked tickets manage their location via the relocate control above. */}
+          {!ticket.equipment_id && (
+            <InfoField label="Location">
+              {ticket.ship_to_location
+                ? [
+                    ticket.ship_to_location.name,
+                    ticket.ship_to_location.address,
+                    ticket.ship_to_location.city,
+                    ticket.ship_to_location.state,
+                    ticket.ship_to_location.zip,
+                  ].filter(Boolean).join(', ')
+                : '—'}
+              {isStaff &&
+                !['completed', 'billed', 'declined', 'canceled'].includes(ticket.status) && (
+                  <div className="mt-2">
+                    <ChangeLocationSection
+                      ticketId={ticket.id}
+                      customerId={ticket.customer_id}
+                      equipmentId={null}
+                      currentShipToId={ticket.ship_to_location_id ?? null}
+                      relocateUrl={`/api/service-tickets/${ticket.id}/relocate`}
+                      patchUrl={`/api/service-tickets/${ticket.id}`}
+                      applyMode="set-ticket-shipto"
+                      requestTicketField="service_ticket_id"
+                    />
+                  </div>
+                )}
+            </InfoField>
+          )}
           <InfoField label="Serial Number">
             {equipSerial ?? '—'}
           </InfoField>

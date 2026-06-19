@@ -159,6 +159,7 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
       equipment ( id, make, model, serial_number, description, details_verified_at,
         ship_to_locations ( name, address, city, state, zip )
       ),
+      ship_to_location:ship_to_locations!service_tickets_ship_to_location_id_fkey ( name, address, city, state, zip ),
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
       created_by:users!service_tickets_created_by_id_fkey ( name ),
       deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
