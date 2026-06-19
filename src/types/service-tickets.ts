@@ -233,6 +233,15 @@ export type ServiceTicketDetail = ServiceTicketRow & {
       zip: string | null
     } | null
   } | null
+  // Ship-to linked directly to the ticket (via ship_to_location_id) — distinct from the
+  // equipment's home location above. Set for equipment-less tickets (e.g. Synergy imports).
+  ship_to_location: {
+    name: string | null
+    address: string | null
+    city: string | null
+    state: string | null
+    zip: string | null
+  } | null
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
   deleted_by: { name: string } | null
