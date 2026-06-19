@@ -39,7 +39,7 @@ export type EquipmentEstimateHistoryRow = {
   date: string | null
 }
 
-const cents = (x: number | null): number => Math.round((x ?? 0) * 100)
+const cents = (x: number | null): number | null => (x === null ? null : Math.round(x * 100))
 
 export function mergeEstimateHistory(
   tickets: EstimateTicketInput[],

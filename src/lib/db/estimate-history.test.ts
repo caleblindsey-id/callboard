@@ -96,3 +96,17 @@ test('amount float noise does not break dedupe (300.00 vs 300)', () => {
   )
   assert.equal(rows.length, 1)
 })
+
+test('null amount distinct from 0 in dedupe (declined ticket with null, log with 0)', () => {
+  const rows = mergeEstimateHistory(
+    [ticket({ status: 'declined', estimate_amount: null })],
+    [log({ estimate_amount: 0 })],
+  )
+  assert.equal(rows.length, 2)
+  const ticket0 = rows.find((r) => r.source === 'ticket')
+  const log0 = rows.find((r) => r.source === 'log')
+  assert.ok(ticket0)
+  assert.ok(log0)
+  assert.equal(ticket0.estimate_amount, null)
+  assert.equal(log0.estimate_amount, 0)
+})
