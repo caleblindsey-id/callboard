@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import type { EquipmentEstimateHistoryRow } from '@/lib/db/estimate-history'
+import ScrollableTable from '@/components/ScrollableTable'
 
 interface EstimateHistoryProps {
   items: EquipmentEstimateHistoryRow[]
@@ -112,7 +113,7 @@ export default function EstimateHistory({ items, collapsible = false }: Estimate
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
+          <ScrollableTable className="hidden md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
@@ -161,7 +162,7 @@ export default function EstimateHistory({ items, collapsible = false }: Estimate
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         </>
       )}
     </div>

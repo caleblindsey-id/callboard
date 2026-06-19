@@ -385,7 +385,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
           <p className="text-sm text-gray-500 dark:text-gray-400">No leads in this tab.</p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+        <ScrollableTable className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-900/40">
               <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -549,7 +549,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
 
       <LeadReviewModal

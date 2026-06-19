@@ -7,6 +7,7 @@ import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import ConfirmDialog from './ConfirmDialog'
 import { formatMoney, formatDate } from '@/lib/format'
+import ScrollableTable from '@/components/ScrollableTable'
 
 interface Props {
   leads: TechLeadWithJoins[]
@@ -357,7 +358,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
           <p className="text-sm text-gray-500 dark:text-gray-400">No bonuses earned in the selected range.</p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+        <ScrollableTable className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-900/40">
               <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -426,7 +427,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
 
       {/* ── ACE Labor section — same date range, separate mark-paid path ── */}
@@ -456,7 +457,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
             <p className="text-sm text-gray-500 dark:text-gray-400">No ACE labor approved in this range.</p>
           </div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <ScrollableTable className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900/40">
                 <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -525,7 +526,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         )}
       </div>
 

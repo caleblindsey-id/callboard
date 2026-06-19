@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import StatusBadge from '@/components/StatusBadge'
+import ScrollableTable from '@/components/ScrollableTable'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import type { ServiceHistoryItem } from '@/types/service-tickets'
 import type { TicketStatus } from '@/types/database'
@@ -114,7 +115,7 @@ export default function ServiceHistory({ items, showBilling, collapsible = false
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block overflow-x-auto">
+          <ScrollableTable className="hidden md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
@@ -171,7 +172,7 @@ export default function ServiceHistory({ items, showBilling, collapsible = false
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         </>
       )}
     </div>

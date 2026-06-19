@@ -107,7 +107,7 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
                       Review &amp; confirm
                     </button>
                   </div>
-                  <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-x-auto">
                     <table className="min-w-full text-xs">
                       <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-500 dark:text-gray-400">
                         <tr>
