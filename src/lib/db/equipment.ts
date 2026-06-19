@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
-import { EquipmentRow, EquipmentInsert, EquipmentProspectRow, PmScheduleRow, PmTicketRow, EquipmentEstimateLogRow } from '@/types/database'
+import { EquipmentRow, EquipmentInsert, EquipmentProspectRow, PmScheduleRow, PmTicketRow } from '@/types/database'
 import { normalizeSerial, serialsMatch } from '@/lib/equipment'
+import {
+  mergeEstimateHistory,
+  type EstimateTicketInput,
+  type EstimateLogInput,
+  type EquipmentEstimateHistoryRow,
+} from './estimate-history'
 
 export type DuplicateEquipmentMatch = {
   id: string
@@ -140,22 +146,39 @@ export async function getEquipmentServiceHistory(
   return data as PmTicketRow[]
 }
 
-// Permanent estimate snapshots for a unit (migration 117) — the "Past Estimates"
-// card on the equipment detail page. Survives the source ticket being reopened
-// or re-quoted, unlike the live service history (which only shows completed work).
-export async function getEquipmentEstimateLog(
+// Unified estimate ledger for the equipment detail page (all roles). Pulls every
+// current estimate from service_tickets (any status, estimate set, not deleted)
+// plus the durable declined snapshots from equipment_estimate_log, then merges +
+// dedupes via mergeEstimateHistory. Both queries hit indexed equipment_id columns.
+export async function getEquipmentEstimateHistory(
   equipmentId: string,
-): Promise<EquipmentEstimateLogRow[]> {
+): Promise<EquipmentEstimateHistoryRow[]> {
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('equipment_estimate_log')
-    .select('*')
-    .eq('equipment_id', equipmentId)
-    .order('created_at', { ascending: false })
+  const [ticketsRes, logsRes] = await Promise.all([
+    supabase
+      .from('service_tickets')
+      .select(
+        'id, work_order_number, estimate_amount, status, decline_reason, estimated_at, problem_description',
+      )
+      .eq('equipment_id', equipmentId)
+      .not('estimate_amount', 'is', null)
+      .is('deleted_at', null),
+    supabase
+      .from('equipment_estimate_log')
+      .select(
+        'id, service_ticket_id, work_order_number, estimate_amount, outcome, decline_reason, problem_description, created_at',
+      )
+      .eq('equipment_id', equipmentId),
+  ])
 
-  if (error) throw error
-  return data as EquipmentEstimateLogRow[]
+  if (ticketsRes.error) throw ticketsRes.error
+  if (logsRes.error) throw logsRes.error
+
+  return mergeEstimateHistory(
+    (ticketsRes.data ?? []) as EstimateTicketInput[],
+    (logsRes.data ?? []) as EstimateLogInput[],
+  )
 }
 
 export async function findDuplicateEquipment(params: {
