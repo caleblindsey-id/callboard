@@ -25,6 +25,7 @@ type UpdateBody = {
     | 'order'
     | 'pull_from_stock'
     | 'mark_pulled'
+    | 'return_to_review'
   fields?: Partial<PartRequest>
   reason?: string
   // Used only by 'set_synergy_order' — written to the parent ticket column,
@@ -355,6 +356,40 @@ export async function POST(request: NextRequest) {
           cancelled_at: undefined,
           cancelled_by: undefined,
           status: 'requested',
+        }
+        break
+      }
+      case 'return_to_review': {
+        // Bounce a classified part back to the Review tab so the office can
+        // re-triage stock-vs-order (e.g. "this should be pulled from stock, not
+        // ordered"). Allowed from any live pre-receipt state — but never from a
+        // received part, whose goods are physically in hand.
+        if (current.status === 'received') {
+          return NextResponse.json(
+            { error: 'A received part cannot be returned to review.' },
+            { status: 409 }
+          )
+        }
+        // Idempotent — already awaiting review, so a retry / double-click is a no-op.
+        if (current.status === 'pending_review') {
+          return NextResponse.json({ success: true, part: current })
+        }
+        // Clear the prior triage decision and any order/pull lifecycle stamps so
+        // the part re-enters Review as if freshly requested. Office-entered field
+        // data (vendor, PO #, Synergy item #) is intentionally preserved — only
+        // the sourcing decision is undone.
+        next = {
+          ...next,
+          status: 'pending_review',
+          triaged_by: undefined,
+          triaged_at: undefined,
+          triage_reason: undefined,
+          qoh_at_triage: undefined,
+          qopo_at_triage: undefined,
+          ordered_at: undefined,
+          ordered_by: undefined,
+          pulled_at: undefined,
+          pulled_by: undefined,
         }
         break
       }

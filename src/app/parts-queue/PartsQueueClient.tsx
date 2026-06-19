@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Check, Download, ExternalLink, FileText, PackageCheck, RefreshCw, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Check, Download, ExternalLink, FileText, PackageCheck, RefreshCw, Undo2, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
 import {
   cancelPart,
   markPartOrdered,
   markPartPulled,
   markPartReceived,
+  returnPartToReview,
   revalidateTicket,
   setSynergyOrderNumber,
   ticketDeepLink,
@@ -440,6 +441,24 @@ export default function PartsQueueClient({
     }
   }, [applyUpdate])
 
+  // Bounce a classified part back to Review so the office can re-triage it
+  // (e.g. pull from stock instead of order). The row drops out of its current
+  // tab; jump to Review so the user sees where it landed.
+  const handleReturnToReview = useCallback(async (row: PartsQueueRow) => {
+    const key = rowKey(row)
+    setPendingRow(key)
+    setError(null)
+    try {
+      const part = await returnPartToReview(row.source, row.ticket_id, row.part_index)
+      applyUpdate(row, part)
+      set('tab', 'review')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to return to review')
+    } finally {
+      setPendingRow(cur => (cur === key ? null : cur))
+    }
+  }, [applyUpdate])
+
   const [pdfPending, setPdfPending] = useState(false)
   const handleExportPdf = useCallback(async (rowsToExport: PartsQueueRow[]) => {
     setPdfPending(true)
@@ -593,6 +612,9 @@ export default function PartsQueueClient({
   const canEditFields = tab !== 'received' && tab !== 'review'
   const canMarkOrdered = tab === 'to_order'
   const canMarkReceived = tab === 'ordered'
+  // Return-to-Review is offered on every live, pre-receipt tab (To Order /
+  // Ordered here; To Pull has its own table below). Not on Received.
+  const canReturnToReview = tab === 'to_order' || tab === 'ordered'
   // canCancel is now derived per-row inline (status-aware) instead of tab-driven —
   // see the row-render block.
 
@@ -687,6 +709,7 @@ export default function PartsQueueClient({
           pendingRow={pendingRow}
           flashedRow={flashedRow}
           onMarkPulled={handleMarkPulled}
+          onReturnToReview={handleReturnToReview}
           onExportCsv={() => exportPickList(filteredRows)}
           onExportPdf={() => handleExportPdf(filteredRows)}
           pdfPending={pdfPending}
@@ -887,6 +910,20 @@ export default function PartsQueueClient({
                             Mark Received
                           </button>
                         )}
+                        {/* Return to Review — undo the sourcing decision and
+                            send the part back to the Review tab for re-triage
+                            (e.g. pull from stock instead of order). */}
+                        {canReturnToReview && !row.cancelled && (
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => handleReturnToReview(row)}
+                            title="Return to Review — re-triage stock vs. order"
+                            className="p-1 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                          >
+                            <Undo2 className="h-4 w-4" />
+                          </button>
+                        )}
                         {/* Cancel is gated on row status (not just tab) so a
                             received row never shows an enabled cancel button. */}
                         {!row.cancelled && row.status !== 'received' && (
@@ -1082,6 +1119,7 @@ function ToPullTable({
   pendingRow,
   flashedRow,
   onMarkPulled,
+  onReturnToReview,
   onExportCsv,
   onExportPdf,
   pdfPending,
@@ -1090,6 +1128,7 @@ function ToPullTable({
   pendingRow: string | null
   flashedRow: string | null
   onMarkPulled: (row: PartsQueueRow) => void
+  onReturnToReview: (row: PartsQueueRow) => void
   onExportCsv: () => void
   onExportPdf: () => void
   pdfPending: boolean
@@ -1183,6 +1222,15 @@ function ToPullTable({
                         >
                           <PackageCheck className="h-3.5 w-3.5" />
                           Mark Pulled
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => onReturnToReview(row)}
+                          title="Return to Review — re-triage stock vs. order"
+                          className="p-1 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                        >
+                          <Undo2 className="h-4 w-4" />
                         </button>
                         <Link
                           href={ticketDeepLink(row.source, row.ticket_id)}

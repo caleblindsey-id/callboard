@@ -25,6 +25,7 @@ type UpdateArgs = {
     | 'order'
     | 'pull_from_stock'
     | 'mark_pulled'
+    | 'return_to_review'
   reason?: string
   triage_reason?: string
 }
@@ -138,6 +139,18 @@ export async function setSynergyOrderNumber(
     throw err
   }
   return (data.synergy_order_number ?? null) as string | null
+}
+
+// Bounces a classified part (requested / from_stock / ordered) back to
+// 'pending_review' so the office can re-triage it — e.g. pull from stock
+// instead of order. The server clears the prior triage decision and order/pull
+// stamps; field data is preserved. Rejected server-side for received parts.
+export function returnPartToReview(
+  source: PartsQueueSource,
+  ticket_id: string,
+  part_index: number,
+): Promise<PartRequest> {
+  return postUpdate({ source, ticket_id, part_index, action: 'return_to_review' })
 }
 
 // Reserved for a future "Cancelled" tab UI surface — the server route handles
