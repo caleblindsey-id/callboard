@@ -75,6 +75,11 @@ export function CreateServiceTicketForm({
   // keyed on the real Synergy code, so work can start before the nightly sync copies it.
   const isOfficeStaff = !!currentUser.role && MANAGER_ROLES.includes(currentUser.role)
 
+  // Technicians may only key Outside (Field) tickets. Inside (bench) work originates
+  // in the office, so the inside/outside choice is hidden + locked to outside for techs
+  // (also enforced in the API route and the service_tickets_tech_insert RLS policy).
+  const isTech = currentUser.role === 'technician'
+
   // --- Provisional customer entry (same-day, before nightly Synergy sync) ---
   const [provCustOpen, setProvCustOpen] = useState(false)
   const [provCustCode, setProvCustCode] = useState('')
@@ -107,7 +112,8 @@ export function CreateServiceTicketForm({
   const [eqConflictId, setEqConflictId] = useState<string | null>(null)
 
   // --- Ticket fields ---
-  const [ticketType, setTicketType] = useState<ServiceTicketType>('inside')
+  // Techs are locked to outside; office defaults to inside (the common bench case).
+  const [ticketType, setTicketType] = useState<ServiceTicketType>(isTech ? 'outside' : 'inside')
   const [billingType, setBillingType] = useState<ServiceBillingType>('non_warranty')
   const [priority, setPriority] = useState<ServicePriority>('standard')
   const [laborRateType, setLaborRateType] = useState('')
@@ -129,7 +135,6 @@ export function CreateServiceTicketForm({
   const [serviceZip, setServiceZip] = useState('')
 
   // --- Technician ---
-  const isTech = currentUser.role === 'technician'
   const [technicians, setTechnicians] = useState<UserRow[]>([])
   // A technician may only create tickets assigned to themselves (enforced
   // server-side and by the service_tickets_tech_insert RLS policy), so their
@@ -213,7 +218,9 @@ export function CreateServiceTicketForm({
       setEqSerial(d.eqSerial || '')
       setEqDescription(d.eqDescription || '')
       setEqLocation(d.eqLocation || '')
-      if (d.ticketType === 'inside' || d.ticketType === 'outside') setTicketType(d.ticketType)
+      // Techs stay locked to outside even from a stale draft that saved 'inside'.
+      if (isTech) setTicketType('outside')
+      else if (d.ticketType === 'inside' || d.ticketType === 'outside') setTicketType(d.ticketType)
       if (d.billingType) setBillingType(d.billingType)
       if (d.priority) setPriority(d.priority)
       setLaborRateType(d.laborRateType || '')
@@ -249,7 +256,7 @@ export function CreateServiceTicketForm({
     setEqDescription('')
     setEqLocation('')
     setEqConflictId(null)
-    setTicketType('inside')
+    setTicketType(isTech ? 'outside' : 'inside')
     setBillingType('non_warranty')
     setPriority('standard')
     setLaborRateType('standard')
@@ -1116,40 +1123,47 @@ export function CreateServiceTicketForm({
               <span className="text-xs text-gray-400 dark:text-gray-500">3 of {totalSteps}</span>
             </div>
 
-            {/* Ticket Type — radio buttons */}
-            <div>
-              <label className={labelClass}>
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <div className="flex gap-4 mt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="ticket_type"
-                    value="inside"
-                    checked={ticketType === 'inside'}
-                    onChange={() => setTicketType('inside')}
-                    className="accent-slate-600"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">
-                    Inside (Shop)
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="ticket_type"
-                    value="outside"
-                    checked={ticketType === 'outside'}
-                    onChange={() => setTicketType('outside')}
-                    className="accent-slate-600"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">
-                    Outside (Field)
-                  </span>
-                </label>
+            {/* Ticket Type — radio buttons (office). Techs are locked to Outside. */}
+            {isTech ? (
+              <div>
+                <label className={labelClass}>Ticket Type</label>
+                <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">Outside (Field)</p>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className={labelClass}>
+                  Ticket Type <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-4 mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="ticket_type"
+                      value="inside"
+                      checked={ticketType === 'inside'}
+                      onChange={() => setTicketType('inside')}
+                      className="accent-slate-600"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Inside (Shop)
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="ticket_type"
+                      value="outside"
+                      checked={ticketType === 'outside'}
+                      onChange={() => setTicketType('outside')}
+                      className="accent-slate-600"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Outside (Field)
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
 
             {/* Billing Type / Priority / Labor Rate */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
