@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Trash2 } from 'lucide-react'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
@@ -1628,6 +1628,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
+  // Drop an un-ordered part request off the ticket entirely. Only offered for
+  // pending_review/requested parts (see the gated button) — those never reached
+  // the office order queue, carry no PO, and have no audit value, so we hard-remove
+  // (mirrors PM's handleDeletePart) rather than leaving a cancelled tombstone. The
+  // PATCH validators only fire on new/ordered parts, so a shrunk array passes; the
+  // route recomputes parts_received over what's left.
+  async function handleRemovePartRequest(index: number) {
+    const updatedParts = partsRequested.filter((_, i) => i !== index)
+    await apiAction(async () => {
+      await patchTicket({ parts_requested: updatedParts })
+      setPartsRequested(updatedParts)
+    })
+  }
+
   async function handleSaveSynergyOrderNumber(synergyOrder: string) {
     await apiAction(async () => {
       await patchTicket({
@@ -3231,6 +3245,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                             <span className={`text-xs font-medium uppercase ${statusColors[part.status] ?? ''}`}>
                               {statusLabels[part.status] ?? part.status}
                             </span>
+                          )}
+                          {!part.cancelled && (part.status === 'pending_review' || part.status === 'requested') && (
+                            <button
+                              onClick={() => handleRemovePartRequest(i)}
+                              disabled={loading}
+                              title="Remove part"
+                              className="p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 disabled:opacity-40 transition-colors rounded min-h-[44px] sm:min-h-0 flex items-center"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           )}
                           {!part.cancelled && isStaff && part.status === 'requested' && (
                             <button
