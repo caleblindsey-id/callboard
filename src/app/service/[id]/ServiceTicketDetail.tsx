@@ -2870,7 +2870,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                     <div className="flex items-center gap-3">
                       <input
                         type="number"
-                        step="1"
+                        step="0.5"
                         min="0"
                         value={tripChargeQty}
                         onChange={(e) => setTripChargeQty(e.target.value)}
@@ -3404,7 +3404,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               <div className="flex items-center gap-3">
                 <input
                   type="number"
-                  step="1"
+                  step="0.5"
                   min="0"
                   value={tripChargeQty}
                   onChange={(e) => setTripChargeQty(e.target.value)}

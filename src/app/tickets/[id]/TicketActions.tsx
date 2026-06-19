@@ -1073,7 +1073,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      step="1"
+                      step="0.5"
                       min="0"
                       value={tripChargeQty}
                       onChange={(e) => setTripChargeQty(e.target.value)}
