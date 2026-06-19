@@ -18,6 +18,7 @@ const KIND_BADGE: Record<SalesRepKind, string> = {
 import { useUser } from '@/components/UserProvider'
 import { X } from 'lucide-react'
 import EnablePushButton from '@/components/push/EnablePushButton'
+import ScrollableTable from '@/components/ScrollableTable'
 
 interface SettingsContentProps {
   users: UserRow[]
@@ -126,7 +127,7 @@ export default function SettingsContent({
           </button>
         </div>
 
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -145,7 +146,7 @@ export default function SettingsContent({
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       </div>
 
       {/* Sync log section */}
@@ -160,7 +161,7 @@ export default function SettingsContent({
             No sync history.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -209,7 +210,7 @@ export default function SettingsContent({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         )}
       </div>
 
@@ -1223,7 +1224,7 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
           No sales reps yet. Add one above to start forwarding equipment leads.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -1241,7 +1242,7 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
     </div>
   )
@@ -1531,7 +1532,7 @@ function SupplyCatalogSection({ items }: { items: SupplyCatalogRow[] }) {
           No supplies yet. Add one above so techs have something to pick from.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -1548,7 +1549,7 @@ function SupplyCatalogSection({ items }: { items: SupplyCatalogRow[] }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
     </div>
   )

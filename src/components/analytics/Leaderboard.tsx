@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import type { TechRow } from '@/lib/db/analytics'
+import ScrollableTable from '@/components/ScrollableTable'
 
 type SortMetric = 'revenue' | 'tickets' | 'profit' | 'efficiency'
 
@@ -88,7 +89,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
       </div>
 
       {/* Desktop table */}
-      <div className="hidden lg:block overflow-x-auto">
+      <ScrollableTable className="hidden lg:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -151,7 +152,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
         <div className="px-5 py-2.5 border-t border-gray-100 dark:border-gray-700 text-center text-xs text-gray-400 dark:text-gray-500">
           Click any row to view detailed technician profile
         </div>
-      </div>
+      </ScrollableTable>
 
       {/* Mobile cards */}
       <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">

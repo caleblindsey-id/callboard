@@ -5,6 +5,7 @@ import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import BackButton from '@/components/BackButton'
+import ScrollableTable from '@/components/ScrollableTable'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import ActiveToggle from './ActiveToggle'
 import ShowPricingToggle from './ShowPricingToggle'
@@ -143,7 +144,7 @@ export default async function CustomerDetailPage({
             No contacts on file.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -170,7 +171,7 @@ export default async function CustomerDetailPage({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         )}
       </div>
 
@@ -186,7 +187,7 @@ export default async function CustomerDetailPage({
             No ship-to locations on file.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -209,7 +210,7 @@ export default async function CustomerDetailPage({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         )}
       </div>
 
@@ -225,7 +226,7 @@ export default async function CustomerDetailPage({
             No equipment on file.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <ScrollableTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -263,7 +264,7 @@ export default async function CustomerDetailPage({
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
         )}
       </div>
 

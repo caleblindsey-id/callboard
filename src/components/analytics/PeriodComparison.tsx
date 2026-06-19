@@ -1,6 +1,7 @@
 'use client'
 
 import type { TechRow } from '@/lib/db/analytics'
+import ScrollableTable from '@/components/ScrollableTable'
 
 interface PeriodComparisonProps {
   current: TechRow
@@ -58,7 +59,7 @@ export default function PeriodComparison({ current, prior, yoy }: PeriodComparis
       </div>
 
       {/* Desktop table */}
-      <div className="hidden lg:block overflow-x-auto">
+      <ScrollableTable className="hidden lg:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -87,7 +88,7 @@ export default function PeriodComparison({ current, prior, yoy }: PeriodComparis
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
 
       {/* Mobile cards */}
       <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">

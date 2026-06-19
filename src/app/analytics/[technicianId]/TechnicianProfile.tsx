@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, Target } from 'lucide-react'
 import type { TechnicianAnalytics } from '@/lib/db/analytics'
 import KpiCard from '@/components/analytics/KpiCard'
+import ScrollableTable from '@/components/ScrollableTable'
 import RevenueBreakdown from '@/components/analytics/RevenueBreakdown'
 import PeriodComparison from '@/components/analytics/PeriodComparison'
 import TargetsForm from '@/components/analytics/TargetsForm'
@@ -187,7 +188,7 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           </div>
 
           {/* Desktop table */}
-          <div className="hidden lg:block overflow-x-auto">
+          <ScrollableTable className="hidden lg:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
@@ -242,7 +243,7 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollableTable>
 
           {/* Mobile cards */}
           <div className="lg:hidden divide-y divide-gray-100">

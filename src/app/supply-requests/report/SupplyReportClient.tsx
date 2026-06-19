@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Download, BarChart3 } from 'lucide-react'
 import KpiCard from '@/components/analytics/KpiCard'
+import ScrollableTable from '@/components/ScrollableTable'
 import { formatDate } from '@/lib/format'
 import type { SupplyReport } from '@/lib/db/supply-requests'
 
@@ -162,7 +163,7 @@ function ReportTable({
           CSV
         </button>
       </div>
-      <div className="overflow-x-auto">
+      <ScrollableTable>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -193,7 +194,7 @@ function ReportTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
     </div>
   )
 }
