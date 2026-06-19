@@ -109,6 +109,17 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     model: string | null
     serial: string | null
   } | null>(null)
+  // Exact-serial match returned by the API (HTTP 409 + exact_duplicate). Instead
+  // of a dead-end error, we let the office set up the PM schedule on the existing
+  // unit — unless it already has an active schedule (hasActiveSchedule), in which
+  // case we block + link to it.
+  const [existingEquipment, setExistingEquipment] = useState<{
+    id: string
+    make: string | null
+    model: string | null
+    serial: string | null
+    hasActiveSchedule: boolean
+  } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -136,6 +147,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setFlatRate(flatRateFromQuote(lead.quoted_amount))
     setError(null)
     setNearDuplicate(null)
+    setExistingEquipment(null)
     setSubmitting(false)
     // Focus dialog so onKeyDown captures Escape.
     dialogRef.current?.focus()
@@ -194,16 +206,22 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
 
   // `confirmNearDuplicate` re-submits past the near-miss serial warning once the
   // office has eyeballed the existing unit and confirmed it's genuinely distinct.
-  async function handleSubmit(confirmNearDuplicate = false) {
+  // `useExistingEquipmentId` re-submits against an exact-match unit to set up the
+  // schedule on it (no new equipment row).
+  async function handleSubmit(
+    opts: { confirmNearDuplicate?: boolean; useExistingEquipmentId?: string } = {}
+  ) {
     if (!lead) return
+    const { confirmNearDuplicate = false, useExistingEquipmentId } = opts
     setError(null)
     if (!confirmNearDuplicate) setNearDuplicate(null)
+    if (!useExistingEquipmentId) setExistingEquipment(null)
 
     if (!customerId) {
       setError('Pick the customer this equipment belongs to.')
       return
     }
-    if (!make.trim() && !model.trim()) {
+    if (!useExistingEquipmentId && !make.trim() && !model.trim()) {
       setError('Enter at least a make or model.')
       return
     }
@@ -215,9 +233,9 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setSubmitting(true)
 
     try {
-      // Single server-side call wraps link_customer + equipment insert +
-      // pm_schedule insert + link_equipment with rollback on failure (see
-      // /api/tech-leads/[id]/create-equipment-from-lead).
+      // Single server-side call wraps link_customer + equipment insert (or reuse
+      // of an existing unit) + pm_schedule insert + link_equipment with rollback
+      // on failure (see /api/tech-leads/[id]/create-equipment-from-lead).
       const flatRateNum = billingType === 'flat_rate' ? parseFloat(flatRate) : null
       const res = await fetch(`/api/tech-leads/${lead.id}/create-equipment-from-lead`, {
         method: 'POST',
@@ -235,10 +253,36 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           billing_type: billingType,
           flat_rate: flatRateNum,
           confirm_near_duplicate: confirmNearDuplicate,
+          use_existing_equipment_id: useExistingEquipmentId,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        // Exact-serial match: offer to set up the schedule on the existing unit
+        // instead of a dead-end error (or block if it already has a schedule).
+        if (data?.exact_duplicate && data?.existing_id) {
+          setExistingEquipment({
+            id: data.existing_id as string,
+            make: (data.existing_make as string | null) ?? null,
+            model: (data.existing_model as string | null) ?? null,
+            serial: (data.existing_serial as string | null) ?? null,
+            hasActiveSchedule: !!data.has_active_schedule,
+          })
+          setSubmitting(false)
+          return
+        }
+        // Reuse attempt lost the race — the unit gained a schedule meanwhile.
+        if (data?.schedule_exists && data?.existing_id) {
+          setExistingEquipment({
+            id: data.existing_id as string,
+            make: null,
+            model: null,
+            serial: null,
+            hasActiveSchedule: true,
+          })
+          setSubmitting(false)
+          return
+        }
         // Near-miss serial: surface a confirmable warning instead of a dead-end error.
         if (data?.near_duplicate && data?.existing_id) {
           setNearDuplicate({
@@ -313,13 +357,64 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
                 </a>
                 <button
                   type="button"
-                  onClick={() => handleSubmit(true)}
+                  onClick={() => handleSubmit({ confirmNearDuplicate: true })}
                   disabled={submitting}
                   className="text-amber-900 dark:text-amber-200 underline hover:text-amber-700 disabled:opacity-50"
                 >
                   It&apos;s a different unit — create anyway
                 </button>
               </div>
+            </div>
+          )}
+
+          {existingEquipment && (
+            <div className="text-sm text-blue-800 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2 space-y-2">
+              {existingEquipment.hasActiveSchedule ? (
+                <>
+                  <p>
+                    <strong>Already on a PM schedule.</strong> This customer&apos;s unit
+                    {existingEquipment.make || existingEquipment.model
+                      ? ` — ${[existingEquipment.make, existingEquipment.model].filter(Boolean).join(' ')}`
+                      : ''}
+                    {existingEquipment.serial ? ` (serial ${existingEquipment.serial})` : ''} already has an
+                    active PM schedule. No second schedule was created.
+                  </p>
+                  <a
+                    href={`/equipment/${existingEquipment.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-blue-900 dark:text-blue-200 hover:text-blue-700"
+                  >
+                    View existing unit &amp; schedule
+                  </a>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <strong>This unit already exists.</strong> {[existingEquipment.make, existingEquipment.model].filter(Boolean).join(' ')}
+                    {existingEquipment.serial ? ` (serial ${existingEquipment.serial})` : ''} is already on file for
+                    this customer. Set up the PM schedule below on the existing record instead of creating a duplicate.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={`/equipment/${existingEquipment.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline text-blue-900 dark:text-blue-200 hover:text-blue-700"
+                    >
+                      View existing unit
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleSubmit({ useExistingEquipmentId: existingEquipment.id })}
+                      disabled={submitting}
+                      className="font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 disabled:opacity-50"
+                    >
+                      {submitting ? 'Setting up…' : 'Use existing unit & create schedule'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
