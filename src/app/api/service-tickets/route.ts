@@ -100,7 +100,10 @@ export async function POST(request: NextRequest) {
         ? user.id
         : (body.assigned_technician_id || null),
       created_by_id: user.id,
-      ticket_type,
+      // Technicians may only key Outside (Field) tickets — inside/bench work is
+      // keyed by the office. Coerce defensively (mirrors the self-assignment
+      // override above); the service_tickets_tech_insert RLS policy also enforces it.
+      ticket_type: isTechnician(user.role) ? 'outside' : ticket_type,
       billing_type: body.billing_type || 'non_warranty',
       priority: body.priority || 'standard',
       problem_description,
