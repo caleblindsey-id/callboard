@@ -960,7 +960,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         // Staff-only field — server re-resolves and snapshots estimate_labor_rate from it.
         ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
         // Trip charge qty lives inline under labor hours; persist it with the estimate.
-        ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
+        // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; the server
+        // allowlist is the authority on who may write it. Gating it on isStaff here
+        // silently dropped a tech's trip charge on submit (WO 816).
+        trip_charge_qty: parseFloat(tripChargeQty) || 0,
       })
       if (result.status === SERVICE_STATUS.APPROVED) {
         setSuccessMsg('Estimate auto-approved (under $100)')
@@ -1284,9 +1287,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         diagnosis_notes: diagnosisNotes || null,
         estimate_labor_hours: parseFloat(estimateLaborHours) || null,
         estimate_parts: estimateParts.length > 0 ? toServicePartUsed(estimateParts) : [],
-        // Staff-only fields — server filters them out for techs.
+        // Staff-only field — server filters it out for techs.
         ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
-        ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
+        // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; server allowlist gates it.
+        trip_charge_qty: parseFloat(tripChargeQty) || 0,
       }
     }
     return {
@@ -1294,9 +1298,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       completion_notes: completionNotes || null,
       parts_used: completionParts.length > 0 ? toServicePartUsed(completionParts) : [],
       photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-      // Trip charge qty lives inline under Hours Worked; persist staff edits so
-      // a refresh doesn't drop them (server filters it out for techs).
-      ...(isStaff ? { trip_charge_qty: parseFloat(tripChargeQty) || 0 } : {}),
+      // Trip charge qty lives inline under Hours Worked; persist edits so a refresh
+      // doesn't drop them. Tech-writable (in TECH_ALLOWED_FIELDS) — send
+      // unconditionally; the server allowlist is the authority on who may write it.
+      trip_charge_qty: parseFloat(tripChargeQty) || 0,
     }
   }
 
