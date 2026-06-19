@@ -1759,14 +1759,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   }
 
   async function handleCancel() {
-    if (!confirm('Cancel this ticket?')) return
+    if (!confirm('Cancel this ticket? It stays visible and editable on the boards but is marked Canceled. You can reopen it later.')) return
     await apiAction(async () => {
       await patchTicket({ status: 'canceled' })
     })
   }
 
   async function handleDelete() {
-    if (!confirm('Permanently delete this ticket? This cannot be undone.')) return
+    if (!confirm('Delete this ticket? It will be hidden from boards, billing, and PDFs. A manager can restore it later.')) return
     setLoading(true)
     setError(null)
     try {
@@ -4017,6 +4017,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               <button
                 onClick={handleCancel}
                 disabled={loading}
+                title="Mark the ticket Canceled. It stays visible and editable on the boards and can be reopened."
                 className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
               >
                 Cancel Ticket
@@ -4025,6 +4026,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             <button
               onClick={handleDelete}
               disabled={loading}
+              title="Hide the ticket from boards, billing, and PDFs. A manager can restore it later."
               className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               Delete
