@@ -1952,7 +1952,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const viewerHasPrimaryAction =
     isWarrantyOpen ||
     (ticket.status === SERVICE_STATUS.OPEN && !showEstimateForm) ||
-    (ticket.status === SERVICE_STATUS.ESTIMATED && isStaff) ||
+    (ticket.status === SERVICE_STATUS.ESTIMATED && (isStaff || isTech)) ||
     (ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking) ||
     (ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm) ||
     (ticket.status === SERVICE_STATUS.COMPLETED && isStaff)
