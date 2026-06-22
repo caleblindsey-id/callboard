@@ -752,6 +752,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [contactDraftEmail, setContactDraftEmail] = useState(ticket.contact_email ?? '')
   const [contactDraftPhone, setContactDraftPhone] = useState(ticket.contact_phone ?? '')
 
+  // Problem description edit state — staff can amend the reported problem after submission
+  const [editingProblem, setEditingProblem] = useState(false)
+  const [problemDraft, setProblemDraft] = useState(ticket.problem_description)
+
   // Request More Info modal (manager-side, on Awaiting Approval state)
   const [requestInfoOpen, setRequestInfoOpen] = useState(false)
   // Bypass-estimate (pre-authorized work) modal — non-warranty open tickets
@@ -1198,6 +1202,23 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     setContactDraftEmail(ticket.contact_email ?? '')
     setContactDraftPhone(ticket.contact_phone ?? '')
     setEditingContact(false)
+  }
+
+  async function handleSaveProblem() {
+    const problem = problemDraft.trim()
+    // Column is NOT NULL — the Save button is disabled when empty, but guard anyway.
+    if (!problem) return
+    await apiAction(async () => {
+      await patchTicket({ problem_description: problem })
+      setProblemDraft(problem)
+      setEditingProblem(false)
+      setSuccessMsg('Problem description updated')
+    })
+  }
+
+  function handleCancelProblemEdit() {
+    setProblemDraft(ticket.problem_description)
+    setEditingProblem(false)
   }
 
   async function handleSubmitDiagnosticCharge() {
@@ -2654,9 +2675,50 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* ── Section 3: Problem Description ── */}
       <Card title="Problem Description">
-        <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">
-          {ticket.problem_description}
-        </p>
+        {isStaff && editingProblem ? (
+          <div className="space-y-2">
+            <textarea
+              value={problemDraft}
+              onChange={(e) => setProblemDraft(e.target.value)}
+              rows={4}
+              placeholder="Describe the reported problem"
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveProblem}
+                disabled={loading || !problemDraft.trim() || problemDraft.trim() === ticket.problem_description}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-slate-600 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              >
+                {loading ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelProblemEdit}
+                disabled={loading}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2">
+            <p className="flex-1 min-w-0 text-sm text-gray-900 dark:text-white whitespace-pre-wrap">
+              {ticket.problem_description}
+            </p>
+            {isStaff && (
+              <button
+                type="button"
+                onClick={() => setEditingProblem(true)}
+                className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* ── Section 4: Diagnosis & Estimate ──
