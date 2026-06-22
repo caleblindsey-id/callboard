@@ -66,11 +66,16 @@ export default async function TicketDetailPage({
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user?.role ?? null) && RESET_ROLES.includes(user?.role ?? ('' as never))
 
-  const laborRate = await getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard')
-  const tripChargeRate = await getTripChargeRate()
-  const aceEntry = await getEntryByTicket('pm', ticket.id)
-  // Est. arrival dates for ordered parts (looked up live from Synergy open POs).
-  const poDueDates = await getPoDueDates(ticket.parts_requested ?? [])
+  // These four only read from `ticket` (already loaded), never from each other,
+  // so fetch them in one round-trip tier instead of four sequential ones.
+  // (poDueDates: est. arrival dates for ordered parts, looked up live from
+  // Synergy open POs.)
+  const [laborRate, tripChargeRate, aceEntry, poDueDates] = await Promise.all([
+    getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard'),
+    getTripChargeRate(),
+    getEntryByTicket('pm', ticket.id),
+    getPoDueDates(ticket.parts_requested ?? []),
+  ])
 
   const showBilling = !isTechnician(user?.role ?? null)
   const isManager = !isTechnician(user?.role ?? null)
