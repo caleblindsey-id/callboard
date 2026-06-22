@@ -4,7 +4,7 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 50
 summary: Review the leads techs submit, approve them, and turn a PM lead into live equipment + schedule.
-last_verified: 2026-06-04
+last_verified: 2026-06-22
 ---
 
 Technicians submit PM and equipment-sale leads; you review them and, for PM leads, create the equipment and schedule that make the bonus real. This all lives under **Tech Payouts**.
@@ -12,7 +12,7 @@ Technicians submit PM and equipment-sale leads; you review them and, for PM lead
 ## Review a submitted lead
 
 1. Open **Tech Payouts** and go to the **Submitted Leads** tab.
-2. Tap **Review** on a lead to see the tech, customer, contact, equipment, and notes.
+2. Tap **Review** on a lead to see the tech, customer, the account's primary sales rep, contact, equipment, and notes. The primary sales rep is pulled from the customer's Synergy account, so you can see who owns it without a separate lookup (it shows once the customer has synced from Synergy).
 3. Choose:
    - **Approve** — accepts the lead.
    - **Reject** — requires a reason (shown to the tech).

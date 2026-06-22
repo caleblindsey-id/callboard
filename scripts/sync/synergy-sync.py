@@ -244,6 +244,38 @@ def discover_tables(conn) -> set[str]:
     return tables
 
 
+# Candidate column names on the Synergy `cust` table that hold the customer's
+# salesman code (FK to sslsm.SlsmCode). Synergy installs vary, so we probe the
+# live schema and use the first match rather than hard-coding one — mirrors the
+# defensive table-name discovery used elsewhere in this script. Order = priority.
+CUST_SALESMAN_COLUMN_CANDIDATES = (
+    "Salesman", "SlsmCode", "SalesmanCode", "SlspCode", "SalesRep", "SlsmNum",
+)
+
+
+def detect_cust_salesman_column(cursor) -> str | None:
+    """Return the real `cust` column holding the salesman code, or None if no known
+    candidate exists (then primary_sales_rep is left null). Case-insensitive match
+    against the live table schema so a varying ERP install self-corrects."""
+    try:
+        cursor.execute("SHOW COLUMNS FROM cust")
+        cols = {row[0].lower(): row[0] for row in cursor.fetchall()}
+    except Exception as e:
+        log.warning(f"  Could not read 'cust' columns to find the salesman field: {e}")
+        return None
+    for cand in CUST_SALESMAN_COLUMN_CANDIDATES:
+        if cand.lower() in cols:
+            resolved = cols[cand.lower()]
+            log.info(f"  Resolved customer salesman column: cust.{resolved}")
+            return resolved
+    log.warning(
+        "  No salesman column found on 'cust' "
+        f"(tried: {', '.join(CUST_SALESMAN_COLUMN_CANDIDATES)}); "
+        "primary_sales_rep will be left null."
+    )
+    return None
+
+
 # ============================================================
 # Sync: Customers
 # ============================================================
@@ -294,9 +326,19 @@ def sync_customers(conn) -> int:
     # hold if balance exceeds credit limit, OR has AR past their CreditCheckDays.
     # vwCustomer JOIN exposes credit fields + AR aging buckets.
     # artermcode JOIN provides human-readable payment terms description.
+    # sslsm JOIN resolves the account's salesman name (primary_sales_rep, feedback #56);
+    # the cust→salesman column varies by install, so it is probed at runtime.
     # Exclude customers whose name contains "CLOSED" or "DO NOT USE" —
     # these are inactive accounts in Synergy that should not appear in CallBoard.
-    cursor.execute("""
+    salesman_col = detect_cust_salesman_column(cursor)
+    if salesman_col:
+        salesman_select = "sslsm.Name AS SalesmanName"
+        salesman_join = f"LEFT JOIN sslsm ON sslsm.SlsmCode = cust.{salesman_col}"
+    else:
+        salesman_select = "NULL AS SalesmanName"
+        salesman_join = ""
+
+    cursor.execute(f"""
         SELECT
             cust.CustomerCode,
             cust.Name,
@@ -312,10 +354,12 @@ def sync_customers(conn) -> int:
             vwCustomer.CurrentARAgeBalance,
             vwCustomer.AgeARAmount2,
             vwCustomer.AgeARAmount3,
-            vwCustomer.AgeARAmount4
+            vwCustomer.AgeARAmount4,
+            {salesman_select}
         FROM cust
         LEFT JOIN artermcode ON artermcode.xDL4RecNum = cust.Terms
         LEFT JOIN vwCustomer ON vwCustomer.CustomerCode = cust.CustomerCode
+        {salesman_join}
         WHERE cust.CustomerCode > 0
           AND UPPER(cust.Name) NOT LIKE '%CLOSED%'
           AND UPPER(cust.Name) NOT LIKE '%DO NOT USE%'
@@ -363,12 +407,17 @@ def sync_customers(conn) -> int:
         billing_address = build_address(
             row.Addr1, row.Addr2, row.City, row.State, row.Zip4
         )
+        # Synergy salesman names are stored ALL CAPS — title-case on import to match
+        # how technician names are normalized (see sync_technicians).
+        rep_raw = safe_str(row.SalesmanName)
+        primary_sales_rep = rep_raw.title() if rep_raw else None
         customers.append({
             "synergy_id": str(row.CustomerCode).strip(),
             "name": str(row.Name).strip() if row.Name else "",
             "account_number": str(row.CustomerCode).strip(),
             "ar_terms": safe_str(row.TermsDescription),
             "credit_hold": derive_credit_hold(row),
+            "primary_sales_rep": primary_sales_rep,
             "billing_address": billing_address,
             "billing_city": safe_str(row.City),
             "billing_state": safe_str(row.State),

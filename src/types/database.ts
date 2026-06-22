@@ -384,6 +384,9 @@ export type CustomerRow = {
   account_number: string | null
   ar_terms: string | null
   credit_hold: boolean
+  // Account's primary sales rep (display name), synced nightly from Synergy's
+  // sslsm salesman table (migration 131). Display-only; NULL until first sync.
+  primary_sales_rep: string | null
   billing_address: string | null
   billing_city: string | null
   billing_state: string | null
@@ -799,7 +802,7 @@ type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 
 export type CustomerInsert = MakeOptional<
   Omit<CustomerRow, 'id'>,
-  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum' | 'provisional' | 'provisional_created_by' | 'provisional_created_at'
+  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'primary_sales_rep' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum' | 'provisional' | 'provisional_created_by' | 'provisional_created_at'
 >
 
 export type ContactInsert = MakeOptional<
