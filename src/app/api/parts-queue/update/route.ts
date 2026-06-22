@@ -5,8 +5,10 @@
 // write or a 409.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { PartRequest } from '@/types/database'
+import { isPartStagedReady } from '@/lib/parts'
 import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
 
 type Source = 'pm' | 'service'
@@ -25,6 +27,7 @@ type UpdateBody = {
     | 'order'
     | 'pull_from_stock'
     | 'mark_pulled'
+    | 'mark_collected'
     | 'return_to_review'
   fields?: Partial<PartRequest>
   reason?: string
@@ -84,12 +87,17 @@ export async function POST(request: NextRequest) {
     if (!user?.role) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!MANAGER_ROLES.includes(user.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     const body = (await request.json()) as UpdateBody
     const { source, ticket_id, part_index, action = 'patch', fields, reason } = body
+
+    // Every action is manager-only EXCEPT mark_collected, which the assigned
+    // technician may run on their own ticket (own-ticket ownership is enforced
+    // after the ticket is loaded, below).
+    const isCollect = action === 'mark_collected'
+    if (!isCollect && !MANAGER_ROLES.includes(user.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     if (source !== 'pm' && source !== 'service') {
       return NextResponse.json({ error: 'Invalid source' }, { status: 400 })
@@ -127,12 +135,22 @@ export async function POST(request: NextRequest) {
     // overwriting each other.
     const { data: ticket, error: fetchErr } = await supabase
       .from(table)
-      .select('id, parts_requested, status, updated_at, parts_ready_notified_at')
+      .select('id, parts_requested, status, updated_at, parts_ready_notified_at, assigned_technician_id')
       .eq('id', ticket_id)
       .single()
 
     if (fetchErr || !ticket) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+    }
+
+    // A technician may only acknowledge pickup on a ticket assigned to them.
+    // Managers/coordinators (already past the gate above) may do it on any ticket.
+    if (
+      isCollect &&
+      !MANAGER_ROLES.includes(user.role) &&
+      ticket.assigned_technician_id !== user.id
+    ) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Service tickets: estimate must be approved before parts can be triaged or
@@ -271,6 +289,26 @@ export async function POST(request: NextRequest) {
           ...next,
           pulled_at: now,
           pulled_by: user.id,
+        }
+        break
+      }
+      case 'mark_collected': {
+        // Acknowledge that the staged part was physically picked up. Only a
+        // staged/ready part qualifies (received, or from_stock already pulled).
+        if (!isPartStagedReady(current)) {
+          return NextResponse.json(
+            { error: 'Only a staged part that is ready for pickup can be marked picked up.' },
+            { status: 409 }
+          )
+        }
+        // Idempotent — keep the original collected_at on a retry / double-tap.
+        if (current.collected_at) {
+          return NextResponse.json({ success: true, part: current })
+        }
+        next = {
+          ...next,
+          collected_at: now,
+          collected_by: user.id,
         }
         break
       }
@@ -433,6 +471,35 @@ export async function POST(request: NextRequest) {
     const wasNotified = ticket.parts_ready_notified_at != null
     const shouldNotify = allStaged && !wasNotified
     const shouldReset = !allStaged && wasNotified
+
+    if (isCollect) {
+      // fn_update_parts_queue bakes a manager-only role check, so a technician
+      // can't route a pickup acknowledgment through it. Ownership was validated
+      // above, so write parts_requested directly with a service-role client,
+      // preserving the same optimistic-lock on updated_at (the .eq filter matches
+      // the pre-write value; a concurrent edit moves it and the update no-ops).
+      const admin = await createAdminClient('SERVER_ONLY')
+      const { data: lockRow, error: collectErr } = await admin
+        .from(table)
+        .update({ parts_requested: updated })
+        .eq('id', ticket_id)
+        .eq('updated_at', ticket.updated_at)
+        .select('id')
+        .maybeSingle()
+      if (collectErr) {
+        console.error('parts-queue mark_collected write error:', collectErr)
+        return NextResponse.json({ error: 'Failed to update part' }, { status: 500 })
+      }
+      if (!lockRow) {
+        return NextResponse.json(
+          { error: 'This part was changed by someone else. Refresh and try again.' },
+          { status: 409 }
+        )
+      }
+      // Collection never changes the staged/notified state, so skip the
+      // parts_ready notification path entirely.
+      return NextResponse.json({ success: true, part: next })
+    }
 
     // Optimistic-lock on updated_at via fn_update_parts_queue. If another
     // writer touched the row between our read and write, the function raises

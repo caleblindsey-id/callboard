@@ -7,9 +7,10 @@
 // ticket unchanged and the client free to retry.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
-import { partsOnOrder } from '@/lib/parts'
+import { partsOnOrder, stampCollectedOnStaged } from '@/lib/parts'
 import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
@@ -299,6 +300,26 @@ export async function POST(
     if (!result?.ticket) {
       console.error(`[complete] fn_complete_pm_ticket returned no ticket for ${id}`)
       return NextResponse.json({ error: 'Failed to complete ticket' }, { status: 500 })
+    }
+
+    // Auto-acknowledge pickup on any staged part the tech took but never tapped
+    // "Picked Up" (the on-order hard-block above means every live part is already
+    // received or pulled by here). fn_complete_pm_ticket leaves parts_requested
+    // untouched, so stamp it in a follow-up write. Non-fatal: completion already
+    // landed. Service-role client — a technician can't write via the manager-
+    // gated parts RPC.
+    try {
+      const staged = stampCollectedOnStaged(
+        current.parts_requested as PartRequest[] | null,
+        user.id,
+        new Date().toISOString(),
+      )
+      if (staged.changed) {
+        const admin = await createAdminClient('SERVER_ONLY')
+        await admin.from('pm_tickets').update({ parts_requested: staged.parts }).eq('id', id)
+      }
+    } catch (stampErr) {
+      console.error(`[complete] auto-collect stamp failed for ticket ${id}:`, stampErr)
     }
 
     return NextResponse.json(result.ticket)
