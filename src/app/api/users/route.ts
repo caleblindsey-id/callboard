@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { getCurrentUser, ADMIN_ROLES } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { sendUserInviteEmail } from '@/lib/users/send-invite-email'
 import { UserRole } from '@/types/database'
 
 const ALLOWED_ROLES: readonly UserRole[] = ['super_admin', 'manager', 'coordinator', 'technician'] as const
@@ -90,11 +91,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
 
+    // Email the new user a single-use set-password link. Non-fatal: the user is
+    // already created, and the temp password below is the break-glass fallback if
+    // the send fails. inviteSent tells the UI which message to show.
+    let inviteSent = false
+    try {
+      await sendUserInviteEmail({ email: user.email, name: user.name })
+      inviteSent = true
+    } catch (inviteErr) {
+      console.error('POST /api/users: invite email failed (user created)', inviteErr)
+    }
+
     return NextResponse.json(
       {
         id: user.id, name: user.name, email: user.email, role: user.role, active: user.active,
-        // Temp password returned exactly once for the admin to share with the
-        // new user. Forced change on first login.
+        // Whether the set-password invite email went out. When false, the admin
+        // shares the temp password (or hits Resend invite) instead.
+        inviteSent,
+        // Temp password returned exactly once as a break-glass fallback. Forced
+        // change on first login.
         tempPassword,
       },
       { status: 201 }

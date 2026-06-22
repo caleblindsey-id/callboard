@@ -237,6 +237,7 @@ function UserTableRow({ user }: { user: UserRow }) {
   const [savingRole, setSavingRole] = useState(false)
   const [savingCreate, setSavingCreate] = useState(false)
   const [resetState, setResetState] = useState<'idle' | 'confirm' | 'busy' | 'done'>('idle')
+  const [inviteState, setInviteState] = useState<'idle' | 'busy' | 'done'>('idle')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -285,6 +286,22 @@ function UserTableRow({ user }: { user: UserRow }) {
     const ok = await patchUser({ can_create_service_tickets: !user.can_create_service_tickets })
     setSavingCreate(false)
     if (ok) router.refresh()
+  }
+
+  // Re-send the set-password invite email. Mints a fresh single-use link each
+  // time — the original temp password is never stored, so this is the only way
+  // to re-deliver login access to an already-created user.
+  async function handleResendInvite() {
+    setInviteState('busy')
+    setError(null)
+    const res = await fetch(`/api/users/${user.id}/resend-invite`, { method: 'POST' })
+    if (res.ok) {
+      setInviteState('done')
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error || 'Failed to send the invite email.')
+      setInviteState('idle')
+    }
   }
 
   // Wipe all of this user's quick-PINs (lost phone). They fall back to password on
@@ -401,6 +418,18 @@ function UserTableRow({ user }: { user: UserRow }) {
           >
             {loading ? '...' : user.active ? 'Deactivate' : 'Activate'}
           </button>
+          {inviteState === 'done' ? (
+            <span className="text-xs text-gray-500 dark:text-gray-400">Invite sent</span>
+          ) : (
+            <button
+              onClick={handleResendInvite}
+              disabled={inviteState === 'busy' || !user.active}
+              title={!user.active ? 'Reactivate the user to resend an invite' : undefined}
+              className="text-sm font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50 text-left"
+            >
+              {inviteState === 'busy' ? 'Sending…' : 'Resend invite'}
+            </button>
+          )}
           {resetState === 'done' ? (
             <span className="text-xs text-gray-500 dark:text-gray-400">PIN access reset</span>
           ) : resetState === 'confirm' ? (
@@ -953,6 +982,7 @@ function AddUserModal({
   const [error, setError] = useState<string | null>(null)
   const [createdEmail, setCreatedEmail] = useState<string | null>(null)
   const [tempPassword, setTempPassword] = useState<string | null>(null)
+  const [inviteSent, setInviteSent] = useState(false)
 
   function handleClose() {
     setName('')
@@ -961,6 +991,7 @@ function AddUserModal({
     setError(null)
     setCreatedEmail(null)
     setTempPassword(null)
+    setInviteSent(false)
     onClose()
   }
 
@@ -984,6 +1015,7 @@ function AddUserModal({
 
     setCreatedEmail(email)
     setTempPassword(data.tempPassword ?? null)
+    setInviteSent(data.inviteSent === true)
     setName('')
     setEmail('')
     setRole('technician')
@@ -1007,22 +1039,52 @@ function AddUserModal({
         {createdEmail ? (
           <div className="space-y-4">
             <p className="text-sm text-green-700 dark:text-green-400 font-medium">User created successfully.</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Share these credentials with <span className="font-medium text-gray-900 dark:text-white">{createdEmail}</span>:
-            </p>
-            <div className="rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Email</span>
-                <span className="font-mono text-gray-900 dark:text-white">{createdEmail}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Temp password</span>
-                <span className="font-mono text-gray-900 dark:text-white">{tempPassword ?? '(unavailable)'}</span>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              They will be prompted to set a new password on first login.
-            </p>
+            {inviteSent ? (
+              <>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  An invite email with a link to set their password was sent to{' '}
+                  <span className="font-medium text-gray-900 dark:text-white">{createdEmail}</span>.
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  If they do not receive it, you can resend the invite from their row in the user list, or share the
+                  temporary password below as a fallback.
+                </p>
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-gray-500 dark:text-gray-400">Fallback temporary password</summary>
+                  <div className="mt-2 rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">Email</span>
+                      <span className="font-mono text-gray-900 dark:text-white">{createdEmail}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">Temp password</span>
+                      <span className="font-mono text-gray-900 dark:text-white">{tempPassword ?? '(unavailable)'}</span>
+                    </div>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  The invite email could not be sent. Share these credentials with{' '}
+                  <span className="font-medium text-gray-900 dark:text-white">{createdEmail}</span>, or use Resend invite
+                  from their row in the user list:
+                </p>
+                <div className="rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Email</span>
+                    <span className="font-mono text-gray-900 dark:text-white">{createdEmail}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Temp password</span>
+                    <span className="font-mono text-gray-900 dark:text-white">{tempPassword ?? '(unavailable)'}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  They will be prompted to set a new password on first login.
+                </p>
+              </>
+            )}
             <div className="flex justify-end">
               <button
                 onClick={handleClose}
