@@ -1,11 +1,11 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, PackageCheck } from 'lucide-react'
+import { Check, ChevronRight, PackageCheck } from 'lucide-react'
 import PartsStatusBadge from '@/components/PartsStatusBadge'
 import ScrollableTable from '@/components/ScrollableTable'
-import { ticketDeepLink } from '@/lib/parts-queue'
+import { markPartCollected, ticketDeepLink } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
@@ -38,6 +38,29 @@ function fmtDate(value: string | null): string {
   const d = new Date(value)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString()
+}
+
+// A staged part that's waited this many whole days without being picked up is
+// flagged stale so it stands out from fresh ones.
+const STALE_DAYS = 7
+
+function fmtPickedUp(value: string | null): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+// "staged N days ago" for the Ready-for-Pickup aging badge; stale once it's sat
+// past STALE_DAYS.
+function stagedAgo(value: string | null): { label: string; stale: boolean } | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return null
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  const label =
+    days <= 0 ? 'staged today' : days === 1 ? 'staged 1 day ago' : `staged ${days} days ago`
+  return { label, stale: days >= STALE_DAYS }
 }
 
 // A from_stock part that's been physically pulled is staged and ready for the
@@ -101,8 +124,92 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
   const visible = byStatus[active]
   const dateLabel = dateColumnLabel(active)
 
+  // Pickup acknowledgment state. collectedLocal holds optimistic stamps so the
+  // badge flips instantly; router.refresh() then re-pulls the server truth.
+  const [collectedLocal, setCollectedLocal] = useState<Record<string, string>>({})
+  const [pending, setPending] = useState<Record<string, boolean>>({})
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const collectedAtFor = useCallback(
+    (row: MyPartRow): string | null => collectedLocal[rowKey(row)] ?? row.collected_at,
+    [collectedLocal],
+  )
+
+  const handleCollect = useCallback(
+    async (row: MyPartRow) => {
+      const key = rowKey(row)
+      setActionError(null)
+      setPending((p) => ({ ...p, [key]: true }))
+      try {
+        const part = await markPartCollected(row.source, row.ticket_id, row.part_index)
+        setCollectedLocal((c) => ({ ...c, [key]: part.collected_at ?? new Date().toISOString() }))
+        router.refresh()
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : 'Could not mark the part picked up.')
+      } finally {
+        setPending((p) => {
+          const next = { ...p }
+          delete next[key]
+          return next
+        })
+      }
+    },
+    [router],
+  )
+
+  // Greyed "Picked up" badge once acknowledged, otherwise a Mark Picked Up button.
+  const renderPickup = (row: MyPartRow) => {
+    const collectedAt = collectedAtFor(row)
+    if (collectedAt) {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-gray-500">
+          <Check className="h-3.5 w-3.5" />
+          Picked up {fmtPickedUp(collectedAt)}
+        </span>
+      )
+    }
+    const isPending = !!pending[rowKey(row)]
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          handleCollect(row)
+        }}
+        disabled={isPending}
+        className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50 min-h-[36px]"
+      >
+        {isPending ? 'Saving…' : 'Mark Picked Up'}
+      </button>
+    )
+  }
+
+  // "staged N days ago" — hidden once the part has been picked up.
+  const renderAging = (row: MyPartRow) => {
+    if (collectedAtFor(row)) return null
+    const ago = stagedAgo(rowDate(row))
+    if (!ago) return null
+    return (
+      <span
+        className={`text-xs ${
+          ago.stale
+            ? 'text-amber-600 dark:text-amber-400 font-medium'
+            : 'text-gray-500 dark:text-gray-400'
+        }`}
+      >
+        {ago.stale ? '! ' : ''}
+        {ago.label}
+      </span>
+    )
+  }
+
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div className="rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+          {actionError}
+        </div>
+      )}
       {/* Status tabs — Ready for Pickup is the most actionable, so it leads. */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
         <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter parts by status">
@@ -155,6 +262,8 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                   tabIndex={0}
                   onClick={() => router.push(ticketDeepLink(row.source, row.ticket_id))}
                   onKeyDown={(e) => {
+                    // Ignore key events bubbling up from the Mark Picked Up button.
+                    if (e.target !== e.currentTarget) return
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
                       router.push(ticketDeepLink(row.source, row.ticket_id))
@@ -188,6 +297,12 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                     {row.unit_price != null ? `$${row.unit_price.toFixed(2)} · ` : ''}
                     {dateLabel}: {fmtDate(rowDate(row))}
                   </p>
+                  {displayStatus(row) === 'received' && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span>{renderAging(row)}</span>
+                      {renderPickup(row)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -229,7 +344,10 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                         {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
                       </td>
                       <td className="px-4 py-3">
-                        <PartsStatusBadge status={displayStatus(row)} />
+                        <div className="flex flex-col gap-1">
+                          <PartsStatusBadge status={displayStatus(row)} />
+                          {displayStatus(row) === 'received' && renderAging(row)}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                         {row.customer_name || '—'}
@@ -241,8 +359,11 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                       <td className="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">
                         {fmtDate(rowDate(row))}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 inline" />
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {displayStatus(row) === 'received' && (
+                          <span className="mr-2 align-middle">{renderPickup(row)}</span>
+                        )}
+                        <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 inline align-middle" />
                       </td>
                     </tr>
                   ))}

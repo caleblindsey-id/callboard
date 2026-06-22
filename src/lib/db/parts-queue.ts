@@ -112,6 +112,9 @@ export type MyPartRow = {
   // Set when a from_stock part has been physically pulled and staged for the
   // tech (migration 104). null = still being pulled.
   pulled_at: string | null
+  // Set when the tech/office acknowledged picking the staged part up. null =
+  // still awaiting pickup. Drives the "Picked up" badge on Ready for Pickup.
+  collected_at: string | null
 }
 
 type TicketPartsRow = {
@@ -176,6 +179,7 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
         received_at: part.received_at ?? null,
         triaged_at: part.triaged_at ?? null,
         pulled_at: part.pulled_at ?? null,
+        collected_at: part.collected_at ?? null,
       })
     })
   }

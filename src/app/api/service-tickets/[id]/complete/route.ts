@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
+import { stampCollectedOnStaged } from '@/lib/parts'
+import type { PartRequest } from '@/types/database'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
@@ -108,7 +111,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, labor_rate_type, equipment_id, customer_id')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, labor_rate_type, equipment_id, customer_id, parts_requested')
       .eq('id', id)
       .single()
 
@@ -358,6 +361,25 @@ export async function POST(
           }
         : {}),
     })
+
+    // Auto-acknowledge pickup on any staged part the tech took but never tapped
+    // "Picked Up", so history shows a real collection instead of a blank. The
+    // part write is non-fatal: completion already landed, so a stamp failure
+    // must never turn this into an error. Uses a service-role client since a
+    // technician can't write parts_requested via the manager-gated RPC.
+    try {
+      const staged = stampCollectedOnStaged(
+        (current.parts_requested ?? null) as PartRequest[] | null,
+        user.id,
+        new Date().toISOString(),
+      )
+      if (staged.changed) {
+        const admin = await createAdminClient('SERVER_ONLY')
+        await admin.from('service_tickets').update({ parts_requested: staged.parts }).eq('id', id)
+      }
+    } catch (stampErr) {
+      console.error('service-tickets/[id]/complete auto-collect stamp failed:', stampErr)
+    }
 
     return NextResponse.json(updated)
   } catch (err) {

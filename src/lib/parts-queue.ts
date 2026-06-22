@@ -25,6 +25,7 @@ type UpdateArgs = {
     | 'order'
     | 'pull_from_stock'
     | 'mark_pulled'
+    | 'mark_collected'
     | 'return_to_review'
   reason?: string
   triage_reason?: string
@@ -81,6 +82,17 @@ export function markPartPulled(
   part_index: number,
 ): Promise<PartRequest> {
   return postUpdate({ source, ticket_id, part_index, action: 'mark_pulled' })
+}
+
+// Acknowledges that the tech (or office) physically picked up a staged part.
+// Callable by the assigned technician on their own ticket — server validates
+// ownership. Idempotent server-side if already collected.
+export function markPartCollected(
+  source: PartsQueueSource,
+  ticket_id: string,
+  part_index: number,
+): Promise<PartRequest> {
+  return postUpdate({ source, ticket_id, part_index, action: 'mark_collected' })
 }
 
 export function cancelPart(

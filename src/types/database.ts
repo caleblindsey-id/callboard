@@ -263,6 +263,11 @@ export interface PartRequest {
   // record who staged it for the tech and when.
   pulled_at?: string
   pulled_by?: string
+  // Tech (or office) acknowledged physically picking the staged part up. JSONB
+  // only — no migration. Set by the 'mark_collected' parts-queue action, or
+  // auto-stamped on ticket completion for any staged part never acknowledged.
+  collected_at?: string
+  collected_by?: string
 }
 
 // ============================================================

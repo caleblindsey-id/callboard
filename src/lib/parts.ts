@@ -19,6 +19,46 @@ export function partsOnOrder(
 }
 
 /**
+ * True when a part is staged and ready for the tech to pick up — the same
+ * definition the My Parts "Ready for Pickup" tab uses: received, or a from_stock
+ * part that's been physically pulled off the shelf. Cancelled parts never count.
+ * Single source of truth shared by the mark_collected action and the
+ * auto-stamp-on-completion sweep so the two can't drift.
+ */
+export function isPartStagedReady(p: PartRequest): boolean {
+  return (
+    !p.cancelled &&
+    (p.status === 'received' || (p.status === 'from_stock' && !!p.pulled_at))
+  )
+}
+
+/**
+ * Stamp collected_at/collected_by on every staged-but-unacknowledged part.
+ *
+ * Called on ticket completion so a part the tech took but never tapped "Picked
+ * Up" still gets a pickup record instead of vanishing with a blank collected_at.
+ * Already-collected parts keep their original stamp; on-order / cancelled parts
+ * are left alone. Returns the (possibly new) array plus whether anything changed,
+ * so the caller can skip the write when there's nothing to do.
+ */
+export function stampCollectedOnStaged(
+  parts: PartRequest[] | null | undefined,
+  userId: string,
+  nowIso: string,
+): { parts: PartRequest[]; changed: boolean } {
+  const list = parts ?? []
+  let changed = false
+  const out = list.map((p) => {
+    if (isPartStagedReady(p) && !p.collected_at) {
+      changed = true
+      return { ...p, collected_at: nowIso, collected_by: userId }
+    }
+    return p
+  })
+  return { parts: out, changed }
+}
+
+/**
  * Server-side gate for required fields on NEW manual part requests.
  *
  * The office can't backfill a manual (off-catalog) request, so vendor name,
