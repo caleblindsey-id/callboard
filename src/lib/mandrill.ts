@@ -3,6 +3,8 @@
 // out of CallBoard. Reads creds from env so the codebase never needs to know
 // the verified-from domain.
 
+import { outboundEnabled } from '@/lib/env'
+
 const MANDRILL_ENDPOINT = 'https://mandrillapp.com/api/1.0/messages/send.json'
 
 export type MandrillRecipient = {
@@ -46,6 +48,14 @@ type MandrillSendResponseItem = {
 export async function sendMandrillEmail(
   input: SendMandrillEmailInput
 ): Promise<SendMandrillEmailResult> {
+  // Outbound kill-switch for dev/preview environments holding a copy of prod
+  // data: log the intended recipient and return a synthetic queued result so
+  // callers behave identically, but never hit Mandrill / a real inbox.
+  if (!outboundEnabled) {
+    console.log(`[outbound disabled] email blocked -> ${input.to.email} | ${input.subject}`)
+    return { messageId: `outbound-disabled-${input.to.email}`, status: 'queued' }
+  }
+
   const apiKey = process.env.MANDRILL_API_KEY
   const fromEmail = process.env.MANDRILL_FROM_EMAIL
   const fromName = input.fromName?.trim() || process.env.MANDRILL_FROM_NAME || 'CallBoard'

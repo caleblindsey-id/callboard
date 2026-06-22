@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
-const SUPABASE_URL = "https://haohkybnmnpuxpiykjvb.supabase.co";
-const SUPABASE_WSS = "wss://haohkybnmnpuxpiykjvb.supabase.co";
+// Read from env so a dev/preview deployment pointed at a different Supabase
+// project is allowed by the CSP connect-src/img-src once it is enforced. Falls
+// back to the production project URL when the env var is absent (e.g. local).
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://haohkybnmnpuxpiykjvb.supabase.co";
+const SUPABASE_WSS = SUPABASE_URL.replace(/^https/, "wss");
 
 // CSP staged in Report-Only first so violations surface in DevTools without
 // breaking the app. Once a reporting window shows the policy is clean, flip

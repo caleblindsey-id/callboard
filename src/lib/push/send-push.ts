@@ -8,6 +8,7 @@
 import 'server-only'
 import webpush from 'web-push'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { outboundEnabled } from '@/lib/env'
 
 export type PushPayload = {
   title: string
@@ -42,6 +43,9 @@ function ensureVapid(): boolean {
 type SubRow = { id: string; endpoint: string; p256dh: string; auth: string }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<SendPushResult> {
+  // Outbound kill-switch: a dev/preview environment holding a copy of prod data
+  // must never push to a real tech's device. Treated as "not configured".
+  if (!outboundEnabled) return { configured: false, sent: 0, pruned: 0 }
   if (!ensureVapid()) return { configured: false, sent: 0, pruned: 0 }
 
   const admin = await createAdminClient('SERVER_ONLY')
