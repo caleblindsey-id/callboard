@@ -4,7 +4,7 @@ import type { TechLeadRow, TechLeadStatus } from '@/types/database'
 // Lead joined with the bits of customer / tech / equipment the UI needs to render
 // a row without a second round-trip.
 export type TechLeadWithJoins = TechLeadRow & {
-  customers: { id: number; name: string; account_number: string | null } | null
+  customers: { id: number; name: string; account_number: string | null; primary_sales_rep: string | null } | null
   submitter: { id: string; name: string } | null
   approver: { id: string; name: string } | null
   payer: { id: string; name: string } | null
@@ -13,7 +13,7 @@ export type TechLeadWithJoins = TechLeadRow & {
 
 const SELECT_WITH_JOINS = `
   *,
-  customers(id, name, account_number),
+  customers(id, name, account_number, primary_sales_rep),
   submitter:users!tech_leads_submitted_by_fkey(id, name),
   approver:users!tech_leads_approved_by_fkey(id, name),
   payer:users!tech_leads_paid_by_fkey(id, name),

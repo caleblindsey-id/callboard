@@ -273,6 +273,9 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
         <div className="px-5 py-4 space-y-3 text-sm">
           <Field label="Tech">{lead.submitter?.name ?? '—'}</Field>
           <Field label="Customer">{customerLabel}</Field>
+          {lead.customers?.primary_sales_rep && (
+            <Field label="Primary sales rep">{lead.customers.primary_sales_rep}</Field>
+          )}
           {(lead.contact_name || lead.contact_email || lead.contact_phone) && (
             <Field label="Lead contact">
               <div className="space-y-0.5">

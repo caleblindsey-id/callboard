@@ -1,0 +1,12 @@
+-- Primary sales rep (account owner) for each customer.
+-- Stored as the rep's display name (text), populated by the nightly Synergy sync
+-- from the sslsm salesman table. Surfaced read-only in the tech-lead review modal
+-- on /tech-payouts so a reviewer can see who owns the account (feedback #56).
+-- Display-only: deliberately not an FK to sales_reps, whose ids are a separate
+-- (lead-email) list that does not map 1:1 to Synergy salesman codes.
+--
+-- NOTE: recorded in schema_migrations as "130_customers_primary_sales_rep" (applied
+-- before this file was renumbered 130→131 to avoid colliding with
+-- 130_tech_leads_first_pm). The drift checker matches by descriptive name, not
+-- number, so the prefix divergence is benign.
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS primary_sales_rep TEXT;
