@@ -200,7 +200,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
       setSynergyEditingValue('')
       router.refresh()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save Synergy #.'
+      const message = err instanceof Error ? err.message : 'Failed to save Synergy Order #.'
       setToast({ message, type: 'error' })
     } finally {
       setSynergySaving(false)
@@ -298,7 +298,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
               if (e.key === 'Enter') handleSaveInvoice()
               if (e.key === 'Escape') cancelEdit()
             }}
-            placeholder="Invoice #"
+            placeholder="Synergy Invoice #"
             autoFocus
             disabled={savingValue}
             className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -336,7 +336,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
         onClick={(e) => { e.stopPropagation(); startEdit(t.id, null) }}
         className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
       >
-        Invoice # Needed
+        Synergy Invoice # Needed
       </button>
     )
   }
@@ -353,7 +353,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
               if (e.key === 'Enter') handleSaveSynergy()
               if (e.key === 'Escape') cancelSynergyEdit()
             }}
-            placeholder="Synergy #"
+            placeholder="Synergy Order #"
             autoFocus
             disabled={synergySaving}
             className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -391,7 +391,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
         onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, null) }}
         className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:underline"
       >
-        + Synergy #
+        + Synergy Order #
       </button>
     )
   }
@@ -563,7 +563,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                             : '—'}
                         </p>
                         <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                          <span>Synergy #:</span>
+                          <span>Synergy Order #:</span>
                           {renderSynergyCell(t)}
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
@@ -595,8 +595,8 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                       />
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortHeader label="Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortHeader label="Synergy #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Synergy Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Synergy Order #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
