@@ -434,7 +434,9 @@ export async function getPartsOnOrderCount(
     .select('id', { count: 'exact', head: true })
     .is('deleted_at', null)
     .filter('parts_requested', 'cs', JSON.stringify([{ status: 'ordered' }]))
-    .not('status', 'in', '("billed","declined","canceled")')
+    // Service parts drop off the tech queue at completion (parity with PM),
+    // not at billing — once the work is done the tech is finished with them.
+    .not('status', 'in', '("completed","billed","declined","canceled")')
   let pmQuery = supabase
     .from('pm_tickets')
     .select('id', { count: 'exact', head: true })
@@ -478,7 +480,9 @@ export async function getPartsReadyForPickupCount(
     .select('id', { count: 'exact', head: true })
     .is('deleted_at', null)
     .filter('parts_requested', 'cs', JSON.stringify([{ status: 'received' }]))
-    .not('status', 'in', '("billed","declined","canceled")')
+    // Service parts drop off the tech queue at completion (parity with PM),
+    // not at billing — once the work is done the tech is finished with them.
+    .not('status', 'in', '("completed","billed","declined","canceled")')
   let pmQuery = supabase
     .from('pm_tickets')
     .select('id', { count: 'exact', head: true })
