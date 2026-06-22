@@ -18,6 +18,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/tickets\/[0-9a-f-]{36}(\/|$)/i,                   // PATCH /api/tickets/[uuid] and /api/tickets/[uuid]/complete
   /^\/api\/service-tickets(\/|$)/,                           // GET /api/service-tickets + /api/service-tickets/[id]/*
   /^\/api\/equipment$/,                                      // POST /api/equipment — register equipment during tech service-ticket create (collection endpoint only; route gates on can_create_service_tickets)
+  /^\/api\/equipment\/[^/]+$/,                               // PATCH /api/equipment/[id] — techs may edit contact fields only (Save Contact on the equipment page). The route's TECH_FIELDS allowlist + the equipment_tech_field_lock trigger (migration 048) restrict the write to contact_* server-side. Anchored to one path segment so it can't match /notes or /verify siblings (feedback #61).
   /^\/api\/equipment\/[^/]+\/notes$/,                        // GET + POST /api/equipment/[id]/notes
   /^\/api\/equipment\/[^/]+\/verify$/,                       // POST /api/equipment/[id]/verify (tech confirms make/model/serial at completion)
   /^\/api\/tech-leads(\/|$)/,                                // POST /api/tech-leads (Submit Lead modal)

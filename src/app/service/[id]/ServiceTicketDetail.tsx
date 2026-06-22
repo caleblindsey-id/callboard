@@ -2548,8 +2548,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           <InfoField label="Serial Number">
             {equipSerial ?? '—'}
           </InfoField>
-          {/* Contact — staff can edit; techs see read-only */}
-          {isStaff ? (
+          {/* Contact — staff and the assigned tech can edit. A tech needs to add
+              a customer email here to email the estimate themselves (feedback #61);
+              ownership is enforced server-side by the ticket PATCH route. */}
+          {(isStaff || isTech) ? (
             <InfoField label="Contact">
               {editingContact ? (
                 <div className="space-y-2">
