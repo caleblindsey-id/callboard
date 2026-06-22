@@ -1,7 +1,7 @@
 import { getEquipmentDetail, getEquipmentServiceHistory, getEquipmentEstimateHistory } from '@/lib/db/equipment'
 import { getServiceTicketsForEquipment } from '@/lib/db/service-tickets'
 import { getUsers } from '@/lib/db/users'
-import { requireRole, MANAGER_ROLES } from '@/lib/auth'
+import { requireRole, MANAGER_ROLES, RESET_ROLES } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import BackButton from '@/components/BackButton'
@@ -23,6 +23,8 @@ export default async function EquipmentDetailPage({
 }) {
   const user = await requireRole(...MANAGER_ROLES, 'technician')
   const isTech = user.role === 'technician'
+  // Bill-to reassignment is a manager/super-admin action; coordinators see it read-only.
+  const canEditBillTo = !!user.role && RESET_ROLES.includes(user.role)
   const showBilling = !isTech
   const { id } = await params
   const [equipment, users] = await Promise.all([
@@ -86,7 +88,7 @@ export default async function EquipmentDetailPage({
         </div>
       </div>
 
-      <EquipmentForm equipment={equipment} users={users} shipToLocations={shipToLocations ?? []} isTech={isTech} />
+      <EquipmentForm equipment={equipment} users={users} shipToLocations={shipToLocations ?? []} isTech={isTech} canEditBillTo={canEditBillTo} />
 
       {!isTech && (
         <ScheduleSection

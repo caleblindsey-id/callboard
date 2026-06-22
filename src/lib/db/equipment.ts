@@ -30,7 +30,7 @@ export type EquipmentWithCustomer = EquipmentRow & {
 }
 
 export type EquipmentDetail = EquipmentRow & {
-  customers: { name: string } | null
+  customers: { name: string; account_number: string | null } | null
   pm_schedules: PmScheduleRow[]
   pm_tickets: PmTicketRow[]
 }
@@ -91,7 +91,7 @@ export async function getEquipmentDetail(id: string): Promise<EquipmentDetail | 
     .from('equipment')
     .select(`
       *,
-      customers(name),
+      customers(name, account_number),
       pm_schedules(*)
     `)
     .eq('id', id)

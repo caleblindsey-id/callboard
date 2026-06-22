@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { getCurrentUser, MANAGER_ROLES, RESET_ROLES } from '@/lib/auth'
 import type { DefaultProduct } from '@/types/database'
 
 const STAFF_FIELDS = new Set([
+  'customer_id',
   'make',
   'model',
   'serial_number',
@@ -77,10 +78,24 @@ export async function PATCH(
 
     const supabase = await createClient()
 
-    // If a manager is changing ship_to_location_id, verify it belongs to the
-    // equipment's current customer. (Cross-customer ship-to assignment was the
-    // EQ-7 finding.)
-    if (isStaff && update.ship_to_location_id !== undefined && update.ship_to_location_id !== null) {
+    // When a manager reassigns the bill-to account (customer_id) and/or the
+    // ship-to, validate both against the *resulting* customer. We fetch the
+    // equipment's current customer once so ship-to validation can fall back to
+    // it when only the ship-to is changing.
+    // Reassigning the bill-to account is a manager/super-admin action only —
+    // coordinators may edit every other equipment field but not the billing
+    // account. (The UI hides the control for them; this is the server backstop.)
+    if (update.customer_id !== undefined && !RESET_ROLES.includes(user.role)) {
+      return NextResponse.json(
+        { error: 'Only managers can change the bill-to account.' },
+        { status: 403 }
+      )
+    }
+
+    const touchingCustomer = isStaff && update.customer_id !== undefined
+    const touchingShipTo = isStaff && update.ship_to_location_id !== undefined
+    let currentCustomerId: number | null | undefined
+    if (touchingCustomer || touchingShipTo) {
       const { data: equip } = await supabase
         .from('equipment')
         .select('customer_id')
@@ -89,17 +104,58 @@ export async function PATCH(
       if (!equip) {
         return NextResponse.json({ error: 'Equipment not found.' }, { status: 404 })
       }
+      currentCustomerId = equip.customer_id
+    }
+
+    // Validate a bill-to (customer) reassignment: must reference an existing,
+    // active customer. Equipment always belongs to exactly one account.
+    if (touchingCustomer) {
+      const cid = update.customer_id
+      if (typeof cid !== 'number' || !Number.isInteger(cid) || cid <= 0) {
+        return NextResponse.json({ error: 'A valid bill-to account is required.' }, { status: 400 })
+      }
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('id, active')
+        .eq('id', cid)
+        .maybeSingle()
+      if (!cust || cust.active === false) {
+        return NextResponse.json(
+          { error: 'Selected bill-to account was not found or is inactive.' },
+          { status: 422 }
+        )
+      }
+    }
+
+    const effectiveCustomerId = touchingCustomer
+      ? (update.customer_id as number)
+      : currentCustomerId
+
+    // Ship-to must belong to the effective (post-reassignment) customer.
+    // (Cross-customer ship-to assignment was the EQ-7 finding.)
+    if (isStaff && update.ship_to_location_id !== undefined && update.ship_to_location_id !== null) {
       const { data: shipTo } = await supabase
         .from('ship_to_locations')
         .select('customer_id')
         .eq('id', update.ship_to_location_id as number)
         .maybeSingle()
-      if (!shipTo || shipTo.customer_id !== equip.customer_id) {
+      if (!shipTo || shipTo.customer_id !== effectiveCustomerId) {
         return NextResponse.json(
-          { error: "Ship-to location does not belong to this equipment's customer." },
+          { error: "Ship-to location does not belong to this equipment's bill-to account." },
           { status: 422 }
         )
       }
+    }
+
+    // Reassigning the bill-to account orphans the old ship-to (it belongs to the
+    // previous customer). If the caller didn't supply a ship-to that's valid for
+    // the new account, clear it rather than leave a dangling cross-customer link.
+    if (
+      touchingCustomer &&
+      update.customer_id !== currentCustomerId &&
+      (update.ship_to_location_id === undefined || update.ship_to_location_id === null)
+    ) {
+      update.ship_to_location_id = null
     }
 
     // Validate default_products payload if present.
