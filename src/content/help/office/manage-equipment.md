@@ -4,7 +4,7 @@ category: Office
 roles: [super_admin, manager, coordinator]
 order: 40
 summary: Add and edit machines, set default parts, and configure the PM schedule that drives ticket generation.
-last_verified: 2026-05-28
+last_verified: 2026-06-22
 ---
 
 Equipment and its PM schedule are owned by CallBoard (unlike customers and products, which come from Synergy). This is where you set up what gets maintained, how often, and at what rate.
@@ -20,6 +20,13 @@ Equipment and its PM schedule are owned by CallBoard (unlike customers and produ
 7. Tap **Add Equipment**.
 
 You can edit any of these later from the machine's detail page (**Save Changes**).
+
+## Changing the bill-to account
+
+The **Bill-To Account** at the top of the equipment detail page controls which Synergy customer gets invoiced for this machine's PM and service work. If a machine was set up on the wrong account, search by name or account number and pick the correct one.
+
+- **Managers and super-admins only.** Coordinators and technicians see this field but can't change it.
+- **Reassigning clears the Ship-To Location**, since the old ship-to belonged to the previous account. Pick a new ship-to for the new account before saving.
 
 ## Setting the PM schedule
 
