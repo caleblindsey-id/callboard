@@ -89,14 +89,22 @@ export async function getEstimateQueue(): Promise<EstimateQueueRow[]> {
   const rows = (data ?? []) as unknown as RawRow[]
   if (rows.length === 0) return []
 
-  // Resolve the customer's primary contact (email/phone) in one batched query —
-  // service_tickets has no FK to contacts, so we join in JS by customer_id.
+  // Resolve the customer's primary contact (email/phone) and who logged each call.
+  // service_tickets has no FK to contacts and several FKs to users, so we join in
+  // JS. Both lookups derive from `rows` but not from each other, so fetch them in
+  // one parallel tier instead of two sequential round-trips.
   const customerIds = [...new Set(rows.map((r) => r.customer_id))]
-  const { data: contactsData } = await supabase
-    .from('contacts')
-    .select('customer_id, email, phone, is_primary')
-    .in('customer_id', customerIds)
-    .eq('is_primary', true)
+  const callerIds = [...new Set(rows.map((r) => r.estimate_called_by_id).filter((v): v is string => !!v))]
+  const [{ data: contactsData }, { data: callers }] = await Promise.all([
+    supabase
+      .from('contacts')
+      .select('customer_id, email, phone, is_primary')
+      .in('customer_id', customerIds)
+      .eq('is_primary', true),
+    callerIds.length > 0
+      ? supabase.from('users').select('id, name').in('id', callerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
+  ])
 
   const primaryByCustomer = new Map<number, { email: string | null; phone: string | null }>()
   for (const c of (contactsData ?? []) as { customer_id: number; email: string | null; phone: string | null }[]) {
@@ -105,15 +113,9 @@ export async function getEstimateQueue(): Promise<EstimateQueueRow[]> {
     }
   }
 
-  // Resolve who logged each call (JS join, not a PostgREST embed — service_tickets
-  // has several FKs to users).
-  const callerIds = [...new Set(rows.map((r) => r.estimate_called_by_id).filter((v): v is string => !!v))]
   const callerNameById = new Map<string, string | null>()
-  if (callerIds.length > 0) {
-    const { data: callers } = await supabase.from('users').select('id, name').in('id', callerIds)
-    for (const u of (callers ?? []) as { id: string; name: string | null }[]) {
-      callerNameById.set(u.id, u.name)
-    }
+  for (const u of (callers ?? []) as { id: string; name: string | null }[]) {
+    callerNameById.set(u.id, u.name)
   }
 
   const now = Date.now()

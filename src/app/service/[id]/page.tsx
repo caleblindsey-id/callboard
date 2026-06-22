@@ -53,24 +53,30 @@ export default async function ServiceTicketPage({
   // reaching this page always owns the ticket — no extra ownership check needed.
   const canEmailEstimate = canCreateServiceTickets(user)
 
-  const [standardRate, industrialRate, vacuumRate, tripChargeRate] = await Promise.all([
-    getCustomerLaborRate(ticket.customer_id, 'standard'),
-    getCustomerLaborRate(ticket.customer_id, 'industrial'),
-    getCustomerLaborRate(ticket.customer_id, 'vacuum'),
-    getTripChargeRate(),
+  // Everything below only reads from `ticket` (already loaded), never from each
+  // other, so fetch all three groups in one round-trip tier instead of three
+  // sequential ones. With the DB cross-region this waterfall cost ~3x the latency.
+  const [
+    [standardRate, industrialRate, vacuumRate, tripChargeRate],
+    aceEntry,
+    // Estimated arrival dates for ordered parts, looked up live from Synergy's
+    // open PO lines (see getPoDueDates). The detail renders parts from the JSONB,
+    // so the date can't come through the parts_order_queue view here.
+    poDueDates,
+  ] = await Promise.all([
+    Promise.all([
+      getCustomerLaborRate(ticket.customer_id, 'standard'),
+      getCustomerLaborRate(ticket.customer_id, 'industrial'),
+      getCustomerLaborRate(ticket.customer_id, 'vacuum'),
+      getTripChargeRate(),
+    ]),
+    getEntryByTicket('service', ticket.id),
+    getPoDueDates(Array.isArray(ticket.parts_requested) ? ticket.parts_requested : []),
   ])
   const laborRates: Record<string, number> = { standard: standardRate, industrial: industrialRate, vacuum: vacuumRate }
   // The ticket's saved type drives completion/billing math; the map above lets the
   // estimate builder preview any of the three rates live before it's snapshotted.
   const laborRate = laborRates[ticket.labor_rate_type ?? 'standard'] ?? standardRate
-  const aceEntry = await getEntryByTicket('service', ticket.id)
-
-  // Estimated arrival dates for ordered parts, looked up live from Synergy's
-  // open PO lines (see getPoDueDates). The detail renders parts from the JSONB,
-  // so the date can't come through the parts_order_queue view here.
-  const poDueDates = await getPoDueDates(
-    Array.isArray(ticket.parts_requested) ? ticket.parts_requested : []
-  )
 
   const equipmentLabel = ticket.equipment
     ? [ticket.equipment.make, ticket.equipment.model].filter(Boolean).join(' ')
