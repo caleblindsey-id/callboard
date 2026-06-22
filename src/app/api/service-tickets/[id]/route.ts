@@ -112,6 +112,15 @@ const TECH_ALLOWED_FIELDS = [
   // scopes this). Only the quantity — the per-trip RATE stays office-controlled
   // in Settings. Mirrors tech part-price edit / approve-estimate access.
   'trip_charge_qty',
+  // Techs can add/correct the customer contact on their OWN ticket (the
+  // ownership check below scopes this). The estimate sender resolves the
+  // recipient from ticket.contact_email first, so this is the field a tech needs
+  // to fill before emailing the estimate to the customer themselves — previously
+  // the ticket Contact block was staff-only, leaving techs with no way to add it
+  // (feedback #61).
+  'contact_name',
+  'contact_email',
+  'contact_phone',
 ] as const
 
 export async function GET(
