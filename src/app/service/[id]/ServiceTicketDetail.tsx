@@ -26,6 +26,7 @@ import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipm
 import type { LineViolation } from '@/lib/margin'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
+import ChangeBillToSection from '@/app/tickets/[id]/ChangeBillToSection'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
@@ -2462,6 +2463,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 {ticket.customers.name}
               </Link>
             ) : '—'}
+            {isManager && ticket.customer_id != null && (
+              <ChangeBillToSection
+                billToUrl={`/api/service-tickets/${ticket.id}/bill-to`}
+                currentCustomerId={ticket.customer_id}
+                currentLabel={
+                  ticket.customers?.account_number
+                    ? `${ticket.customers?.name ?? 'Unknown'} (${ticket.customers.account_number})`
+                    : ticket.customers?.name ?? 'Unknown'
+                }
+                locked={!!(ticket.synergy_order_number || ticket.synergy_invoice_number)}
+              />
+            )}
           </InfoField>
           <InfoField label="Account Number">
             {ticket.customers?.account_number ?? '—'}
