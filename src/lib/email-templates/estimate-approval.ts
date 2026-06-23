@@ -8,6 +8,9 @@ export type EstimateApprovalTemplateInput = {
     customer_name: string | null
     contact_name: string | null
     estimate_amount: number | null
+    // Sales tax on parts (display-only). null/0 = exempt or no rate; no tax line shown.
+    tax_amount?: number | null
+    tax_rate_percent?: number | null
   }
   approvalUrl: string
   settings: {
@@ -34,6 +37,13 @@ export function renderEstimateApprovalEmail(
     ticket.estimate_amount != null
       ? `$${ticket.estimate_amount.toFixed(2)}`
       : null
+  // Optional sales-tax lines (parts only). Only shown when there's a rate AND a
+  // base total; the "with tax" figure adds tax to the pre-tax estimate amount.
+  const taxAmt = ticket.tax_amount ?? 0
+  const showTax = taxAmt > 0 && ticket.estimate_amount != null
+  const taxLine = showTax ? `$${taxAmt.toFixed(2)}` : null
+  const totalWithTaxLine = showTax ? `$${(ticket.estimate_amount! + taxAmt).toFixed(2)}` : null
+  const taxRateLabel = ticket.tax_rate_percent != null ? ` (${ticket.tax_rate_percent}%)` : ''
   const supportLine = settings.support_phone
     ? `If you have any questions, please call us at ${settings.support_phone}.`
     : 'If you have any questions, please reply to this email.'
@@ -45,6 +55,8 @@ export function renderEstimateApprovalEmail(
     '',
     `Please find your service estimate for ${customerName} (${woLabel}) ready for review.`,
     totalLine ? `Estimate total: ${totalLine}` : null,
+    showTax ? `Sales tax${taxRateLabel}: ${taxLine}` : null,
+    showTax ? `Total with tax: ${totalWithTaxLine}` : null,
     '',
     'Approve or decline online:',
     approvalUrl,
@@ -84,7 +96,13 @@ export function renderEstimateApprovalEmail(
               </p>
               ${
                 totalLine
-                  ? `<p style="margin:0 0 24px;font-size:18px;"><strong>Estimate total:</strong> ${escapeHtml(totalLine)}</p>`
+                  ? `<p style="margin:0 0 ${showTax ? '4px' : '24px'};font-size:18px;"><strong>Estimate total:</strong> ${escapeHtml(totalLine)}</p>`
+                  : ''
+              }
+              ${
+                showTax
+                  ? `<p style="margin:0 0 2px;font-size:14px;color:#52525b;">Sales tax${escapeHtml(taxRateLabel)}: ${escapeHtml(taxLine!)}</p>` +
+                    `<p style="margin:0 0 24px;font-size:16px;"><strong>Total with tax:</strong> ${escapeHtml(totalWithTaxLine!)}</p>`
                   : ''
               }
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">

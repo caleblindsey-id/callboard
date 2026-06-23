@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Metadata } from 'next'
+import { computePartsTax, taxRatePercent } from '@/lib/tax'
 import ApprovalForm from './ApprovalForm'
 
 export const metadata: Metadata = {
@@ -26,7 +27,7 @@ export default async function ApprovalPage({
       service_address, service_city, service_state, service_zip,
       equipment_make, equipment_model, equipment_serial_number,
       approval_token_expires_at, created_at,
-      customers!inner ( name, account_number ),
+      customers!inner ( name, account_number, tax_rate, tax_exempt ),
       equipment ( make, model, serial_number, description )
     `)
     .eq('approval_token', token)
@@ -76,6 +77,12 @@ export default async function ApprovalPage({
         .filter(p => !p.warranty_covered)
         .reduce((sum, p) => sum + p.quantity * p.unit_price, 0)
   const total = laborTotal + partsTotal
+  // Sales tax (parts only, display-only) — mirrors the estimate PDF so the
+  // online approval total reflects what the customer is billed. 0 when exempt.
+  const custRow = (Array.isArray(ticket.customers) ? ticket.customers[0] : ticket.customers) as
+    { tax_rate: number | null; tax_exempt: boolean | null } | null
+  const taxPct = taxRatePercent(custRow)
+  const taxAmount = isWarranty ? 0 : computePartsTax(partsTotal, taxPct / 100)
 
   const equipmentRow = Array.isArray(ticket.equipment) ? ticket.equipment[0] : ticket.equipment
   const equipmentLabel = equipmentRow
@@ -187,9 +194,22 @@ export default async function ApprovalPage({
                 <span className="text-base font-bold text-gray-900 dark:text-white">Estimate Total</span>
                 <span className="text-lg font-bold text-gray-900 dark:text-white">${total.toFixed(2)}</span>
               </div>
+              {taxAmount > 0 && (
+                <>
+                  <div className="flex justify-between text-gray-600 dark:text-gray-400">
+                    <span>Sales Tax ({taxPct}%)</span>
+                    <span>${taxAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-gray-900 dark:text-white">
+                    <span>Total with tax</span>
+                    <span>${(total + taxAmount).toFixed(2)}</span>
+                  </div>
+                </>
+              )}
             </div>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
-              This estimate is subject to change. All prices are subject to applicable taxes.
+              This estimate is subject to change. Any sales tax shown is estimated; the final tax is
+              calculated at invoicing.
             </p>
           </div>
         </div>

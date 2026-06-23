@@ -14,6 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { sendMandrillEmail, MandrillError } from '@/lib/mandrill'
 import { renderEstimateApprovalEmail } from '@/lib/email-templates/estimate-approval'
+import { computePartsTax, taxRatePercent } from '@/lib/tax'
 
 const APPROVAL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const SETTING_KEYS = ['company_name', 'support_phone', 'email_from_address'] as const
@@ -50,8 +51,8 @@ export async function sendEstimateNotice(
     .from('service_tickets')
     .select(
       `id, customer_id, work_order_number, status, contact_name, contact_email,
-       estimate_amount, estimate_emailed_at, estimate_notify_count,
-       customers(name),
+       estimate_amount, estimate_parts, billing_type, estimate_emailed_at, estimate_notify_count,
+       customers(name, tax_rate, tax_exempt),
        equipment(contact_email)`
     )
     .eq('id', ticketId)
@@ -125,10 +126,25 @@ export async function sendEstimateNotice(
   }
   const approvalUrl = `${appUrl}/e/${approvalToken}`
 
-  const customerJoin = ticket.customers as { name: string | null } | { name: string | null }[] | null
-  const customerName = Array.isArray(customerJoin)
-    ? customerJoin[0]?.name ?? null
-    : customerJoin?.name ?? null
+  const customerJoin = ticket.customers as
+    { name: string | null; tax_rate: number | null; tax_exempt: boolean | null }
+    | { name: string | null; tax_rate: number | null; tax_exempt: boolean | null }[]
+    | null
+  const customer = Array.isArray(customerJoin) ? customerJoin[0] ?? null : customerJoin
+  const customerName = customer?.name ?? null
+
+  // Sales tax on parts (display-only), so the email's total matches the PDF.
+  const estParts = (ticket.estimate_parts ?? []) as Array<{
+    quantity: number; unit_price: number; warranty_covered?: boolean
+  }>
+  const partsSubtotal =
+    ticket.billing_type === 'warranty'
+      ? 0
+      : estParts
+          .filter((p) => !p.warranty_covered)
+          .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+  const taxPct = taxRatePercent(customer)
+  const taxAmount = computePartsTax(partsSubtotal, taxPct / 100)
 
   const company = companyName?.trim() || 'CallBoard'
 
@@ -138,6 +154,8 @@ export async function sendEstimateNotice(
       customer_name: customerName,
       contact_name: ticket.contact_name,
       estimate_amount: ticket.estimate_amount,
+      tax_amount: taxAmount,
+      tax_rate_percent: taxPct,
     },
     approvalUrl,
     settings: {

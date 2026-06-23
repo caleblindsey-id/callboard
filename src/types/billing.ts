@@ -52,4 +52,7 @@ export interface BillingTicket {
   customerSignature: string | null
   customerSignatureName: string | null
   photoUrls: string[]
+  // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
+  // file. Display-only — applied to additional (out-of-contract) parts only.
+  taxRatePercent: number
 }
