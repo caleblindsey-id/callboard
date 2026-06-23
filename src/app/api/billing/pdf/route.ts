@@ -24,6 +24,7 @@ import { APP_NAME } from '@/lib/branding'
 interface RawTicket {
   id: string
   work_order_number: number
+  synergy_order_number: string | null
   pm_schedule_id: string | null
   completed_date: string | null
   hours_worked: number | null
@@ -152,6 +153,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id,
         work_order_number,
+        synergy_order_number,
         pm_schedule_id,
         completed_date,
         hours_worked,
@@ -328,6 +330,7 @@ export async function POST(request: NextRequest) {
       return {
         id: raw.id,
         workOrderNumber: raw.work_order_number,
+        synergyOrderNumber: raw.synergy_order_number ?? null,
         customerName: raw.customers?.name ?? '—',
         accountNumber: raw.customers?.account_number ?? null,
         billingAddress: raw.customers?.billing_address ?? null,

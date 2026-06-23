@@ -27,6 +27,9 @@ interface PricingSummary {
 
 interface WorkOrderTicket {
   workOrderNumber: number
+  // Synergy parts-order # — printed so coordinators can match the exported WO
+  // back to its Synergy record when keying the invoice # (feedback #48). Optional.
+  synergyOrderNumber: string | null
   companyName: string
   serviceEmail: string | null
   servicePhone: string | null
@@ -474,6 +477,9 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.headerWoNumber}>WO-{ticket.workOrderNumber}</Text>
+            {ticket.synergyOrderNumber && (
+              <Text style={styles.headerPoLine}>Synergy #: {ticket.synergyOrderNumber}</Text>
+            )}
             {ticket.poNumber && (
               <Text style={styles.headerPoLine}>PO: {ticket.poNumber}</Text>
             )}

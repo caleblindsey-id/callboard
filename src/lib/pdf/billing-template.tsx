@@ -264,6 +264,12 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
         <Text style={styles.fieldLabel}>Work Order #:</Text>
         <Text style={[styles.fieldValue, { fontFamily: 'Helvetica-Bold' }]}>WO-{ticket.workOrderNumber}</Text>
       </View>
+      {ticket.synergyOrderNumber && (
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Synergy Order #:</Text>
+          <Text style={styles.fieldValue}>{ticket.synergyOrderNumber}</Text>
+        </View>
+      )}
 
       {/* CUSTOMER */}
       <Text style={styles.sectionLabel}>Customer</Text>

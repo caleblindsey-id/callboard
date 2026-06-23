@@ -15,6 +15,10 @@ export interface PartLine {
 export interface BillingTicket {
   id: string
   workOrderNumber: number
+  // Synergy parts-order # — printed on the billing summary so coordinators can
+  // match the exported ticket back to its Synergy record when keying the invoice #
+  // (feedback #48). Optional.
+  synergyOrderNumber: string | null
   customerName: string
   accountNumber: string | null
   billingAddress: string | null
