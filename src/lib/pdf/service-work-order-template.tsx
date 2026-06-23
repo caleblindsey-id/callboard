@@ -379,16 +379,22 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
               </Text>
             </View>
           )}
-          {taxAmount > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Sales Tax ({workOrder.taxRatePercent}%):</Text>
-              <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
-            </View>
-          )}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalValue}>{money(grandTotal)}</Text>
+            <Text style={styles.totalValue}>{money(workOrder.billingTotal)}</Text>
           </View>
+          {taxAmount > 0 && (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Sales Tax ({workOrder.taxRatePercent}%):</Text>
+                <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Total with tax:</Text>
+                <Text style={styles.summaryValue}>{money(grandTotal)}</Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Service Photos */}

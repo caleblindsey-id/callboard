@@ -368,16 +368,22 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
               <Text style={styles.summaryValue}>{money(estimate.tripCharge)}</Text>
             </View>
           )}
-          {taxAmount > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Sales Tax ({estimate.taxRatePercent}%):</Text>
-              <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
-            </View>
-          )}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Estimated Total:</Text>
-            <Text style={styles.totalValue}>{money(grandTotal)}</Text>
+            <Text style={styles.totalValue}>{money(estimate.estimateTotal)}</Text>
           </View>
+          {taxAmount > 0 && (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Sales Tax ({estimate.taxRatePercent}%):</Text>
+                <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Total with tax:</Text>
+                <Text style={styles.summaryValue}>{money(grandTotal)}</Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Disclaimer */}

@@ -450,18 +450,26 @@ function PricingSummarySection({
             </View>
           ))
         )}
-        {taxAmount > 0 && (
-          <View style={styles.pricingRow} wrap={false}>
-            <Text style={styles.pricingColDesc}>Sales Tax ({pricing.taxRatePercent}%)</Text>
-            <Text style={styles.pricingColQty}>—</Text>
-            <Text style={styles.pricingColRate}>—</Text>
-            <Text style={styles.pricingColTotal}>{money(taxAmount)}</Text>
-          </View>
-        )}
         <View style={styles.pricingTotalRow} wrap={false}>
           <Text style={styles.pricingTotalLabel}>Grand Total</Text>
-          <Text style={styles.pricingTotalValue}>{money(grandTotalWithTax)}</Text>
+          <Text style={styles.pricingTotalValue}>{money(pricing.grandTotal)}</Text>
         </View>
+        {taxAmount > 0 && (
+          <>
+            <View style={styles.pricingRow} wrap={false}>
+              <Text style={styles.pricingColDesc}>Sales Tax ({pricing.taxRatePercent}%)</Text>
+              <Text style={styles.pricingColQty}>—</Text>
+              <Text style={styles.pricingColRate}>—</Text>
+              <Text style={styles.pricingColTotal}>{money(taxAmount)}</Text>
+            </View>
+            <View style={styles.pricingRow} wrap={false}>
+              <Text style={styles.pricingColDesc}>Total with tax</Text>
+              <Text style={styles.pricingColQty}>—</Text>
+              <Text style={styles.pricingColRate}>—</Text>
+              <Text style={styles.pricingColTotal}>{money(grandTotalWithTax)}</Text>
+            </View>
+          </>
+        )}
       </View>
       <View style={styles.disclaimerBox} wrap={false}>
         <Text style={styles.disclaimerHeading}>NOT A FINAL INVOICE</Text>
