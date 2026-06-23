@@ -39,6 +39,8 @@ Exported a ticket by mistake? Tap **Un-export** on its row, then confirm **Just 
 
 Service tickets follow the same idea: each must have its **Synergy Invoice #** entered before it can be marked billed — that's the number proving the work was invoiced in Synergy. The service **Ready to Export** list carries the same optional **Synergy #** column — fill it in before you tap **Export** and it prints on the work order you download. Each service ticket exports its own work-order PDF (one per row). The Synergy # also stays editable later in **Awaiting Invoice #**, next to the invoice number.
 
+Use the **Service Type** toggle at the top of the tab — **All / Inside / Outside** — to work one group at a time. It narrows both the **Ready to Export** and **Awaiting Invoice #** lists at once, so you can clear all the inside (bench) repairs before switching to the outside (field) ones.
+
 ## What's on the PDF
 
 Per ticket: customer and account, equipment, technician, completion date, machine hours and date code, the **Synergy order #** (when you've entered one), the PM (flat-rate) line plus any additional labor/parts, the line total, and the customer's signature and photos when captured. Taxes are not included.

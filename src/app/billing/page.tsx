@@ -5,12 +5,13 @@ import BillingExport from './BillingExport'
 import PmAwaitingInvoice from './PmAwaitingInvoice'
 import ServiceBillingExport from './ServiceBillingExport'
 import ServiceAwaitingInvoice from './ServiceAwaitingInvoice'
+import ServiceTypeFilter from './ServiceTypeFilter'
 import BillingTabs from './BillingTabs'
 
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; year?: string; tab?: string }>
+  searchParams: Promise<{ month?: string; year?: string; tab?: string; serviceType?: string }>
 }) {
   await requireRole(...MANAGER_ROLES)
   const params = await searchParams
@@ -33,6 +34,20 @@ export default async function BillingPage({
     getServiceAwaitingInvoiceTickets(month, year),
   ])
 
+  // Inside/outside narrowing for the Service tab so a manager can work one group
+  // at a time (feedback #51). Applied to BOTH service lists; PM tickets have no
+  // inside/outside split. The tab badge keeps the unfiltered service total.
+  const serviceType =
+    params.serviceType === 'inside' || params.serviceType === 'outside'
+      ? params.serviceType
+      : undefined
+  const filteredServiceTickets = serviceType
+    ? serviceTickets.filter((t) => t.ticket_type === serviceType)
+    : serviceTickets
+  const filteredServiceAwaitingInvoice = serviceType
+    ? serviceAwaitingInvoice.filter((t) => t.ticket_type === serviceType)
+    : serviceAwaitingInvoice
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -53,8 +68,9 @@ export default async function BillingPage({
         }
         serviceContent={
           <div className="space-y-6">
-            <ServiceBillingExport tickets={serviceTickets} selectedMonth={month} selectedYear={year} />
-            <ServiceAwaitingInvoice tickets={serviceAwaitingInvoice} />
+            <ServiceTypeFilter initial={serviceType ?? ''} />
+            <ServiceBillingExport tickets={filteredServiceTickets} selectedMonth={month} selectedYear={year} />
+            <ServiceAwaitingInvoice tickets={filteredServiceAwaitingInvoice} />
           </div>
         }
       />
