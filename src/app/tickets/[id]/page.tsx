@@ -13,6 +13,7 @@ import PoNumberSection from './PoNumberSection'
 import DeletedBanner from './DeletedBanner'
 import ReviewBanner from './ReviewBanner'
 import ChangeLocationSection from './ChangeLocationSection'
+import ChangeBillToSection from './ChangeBillToSection'
 import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import AuditHistorySection from '@/components/AuditHistorySection'
@@ -65,6 +66,10 @@ export default async function TicketDetailPage({
 
   const isDeleted = !!ticket.deleted_at
   const canRestore = !isTechnician(user?.role ?? null) && RESET_ROLES.includes(user?.role ?? ('' as never))
+  // Bill-to correction is manager-only (RESET_ROLES), mirroring the equipment
+  // bill-to control. Locked once the ticket is keyed in Synergy.
+  const canEditBillTo = RESET_ROLES.includes(user?.role ?? ('' as never))
+  const billToLocked = !!(ticket.synergy_order_number || ticket.synergy_invoice_number)
 
   // These four only read from `ticket` (already loaded), never from each other,
   // so fetch them in one round-trip tier instead of four sequential ones.
@@ -192,6 +197,18 @@ export default async function TicketDetailPage({
                 </Link>
               )}
             </p>
+            {canEditBillTo && !isDeleted && ticket.customer_id != null && (
+              <ChangeBillToSection
+                billToUrl={`/api/tickets/${ticket.id}/bill-to`}
+                currentCustomerId={ticket.customer_id}
+                currentLabel={
+                  ticket.customers?.account_number
+                    ? `${ticket.customers?.name ?? 'Unknown'} (${ticket.customers.account_number})`
+                    : ticket.customers?.name ?? 'Unknown'
+                }
+                locked={billToLocked}
+              />
+            )}
           </div>
           <div>
             <span className="text-gray-500 dark:text-gray-400">Account Number</span>

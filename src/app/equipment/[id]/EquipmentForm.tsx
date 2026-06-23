@@ -8,6 +8,7 @@ import { EquipmentRow, UserRow } from '@/types/database'
 import { formatPhoneNumber } from '@/lib/phone'
 import { normalizeSerial, serialsMatch } from '@/lib/equipment'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import PropagateBillToModal, { type PropagationPayload } from './PropagateBillToModal'
 
 type DuplicateMatch = {
   id: string
@@ -42,6 +43,9 @@ export default function EquipmentForm({ equipment, users, shipToLocations, isTec
   const [error, setError] = useState<string | null>(null)
   const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null)
   const [success, setSuccess] = useState(false)
+  // Set when a bill-to reassignment leaves open tickets stranded on the old
+  // account — drives the "update open work orders too?" prompt.
+  const [propagation, setPropagation] = useState<PropagationPayload | null>(null)
 
   // Bill-to account (customer) — managers can reassign equipment to the correct
   // Synergy account via a name/account-number search (same pattern as ticket
@@ -228,7 +232,13 @@ export default function EquipmentForm({ equipment, users, shipToLocations, isTec
       setError(data?.error || 'Failed to save equipment.')
     } else {
       setSuccess(true)
-      router.refresh()
+      // If reassigning the bill-to stranded open tickets on the old account,
+      // prompt to repoint them too. The modal's onClose refreshes the page.
+      if (data?.propagation) {
+        setPropagation(data.propagation as PropagationPayload)
+      } else {
+        router.refresh()
+      }
     }
     setLoading(false)
   }
@@ -380,6 +390,17 @@ export default function EquipmentForm({ equipment, users, shipToLocations, isTec
           {loading ? 'Saving...' : isTech ? 'Save Contact' : 'Save Changes'}
         </button>
       </form>
+
+      {propagation && (
+        <PropagateBillToModal
+          equipmentId={equipment.id}
+          payload={propagation}
+          onClose={() => {
+            setPropagation(null)
+            router.refresh()
+          }}
+        />
+      )}
     </div>
   )
 }
