@@ -12,6 +12,65 @@ const TABLE: Record<RepointKind, 'service_tickets' | 'pm_tickets'> = {
   pm: 'pm_tickets',
 }
 
+// "Open and eligible to repoint" per table — non-terminal statuses only. A
+// terminal ticket (completed/billed/skipped/declined/canceled) is left alone.
+// (The Synergy-keyed hard guard is applied on top of these, separately.)
+export const SERVICE_REPOINT_ELIGIBLE_STATUSES = [
+  'open',
+  'estimated',
+  'approved',
+  'in_progress',
+] as const
+export const PM_REPOINT_ELIGIBLE_STATUSES = [
+  'unassigned',
+  'assigned',
+  'in_progress',
+  'skip_requested',
+] as const
+
+export type StrandedTicket = {
+  id: string
+  work_order_number: number | null
+  status: string
+}
+
+/**
+ * Find tickets on a given equipment that are stranded on a DIFFERENT account than
+ * `targetCustomerId` and are still safe to repoint: non-terminal status and not
+ * yet keyed in Synergy (no order/invoice #). Used to (a) surface propagation
+ * candidates after an equipment bill-to reassignment and (b) re-derive the exact
+ * set to repoint when the manager opts in — so the two never drift.
+ */
+export async function findStrandedTickets(
+  supabase: SupabaseClient<Database>,
+  { equipmentId, targetCustomerId }: { equipmentId: string; targetCustomerId: number }
+): Promise<{ serviceTickets: StrandedTicket[]; pmTickets: StrandedTicket[] }> {
+  const [svc, pm] = await Promise.all([
+    supabase
+      .from('service_tickets')
+      .select('id, work_order_number, status')
+      .eq('equipment_id', equipmentId)
+      .neq('customer_id', targetCustomerId)
+      .in('status', [...SERVICE_REPOINT_ELIGIBLE_STATUSES])
+      .is('synergy_order_number', null)
+      .is('synergy_invoice_number', null)
+      .is('deleted_at', null),
+    supabase
+      .from('pm_tickets')
+      .select('id, work_order_number, status')
+      .eq('equipment_id', equipmentId)
+      .neq('customer_id', targetCustomerId)
+      .in('status', [...PM_REPOINT_ELIGIBLE_STATUSES])
+      .is('synergy_order_number', null)
+      .is('synergy_invoice_number', null)
+      .is('deleted_at', null),
+  ])
+  return {
+    serviceTickets: (svc.data ?? []) as StrandedTicket[],
+    pmTickets: (pm.data ?? []) as StrandedTicket[],
+  }
+}
+
 type RepointTicketRow = {
   customer_id: number | null
   synergy_order_number: string | null

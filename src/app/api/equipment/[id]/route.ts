@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, MANAGER_ROLES, RESET_ROLES } from '@/lib/auth'
 import type { DefaultProduct } from '@/types/database'
+import { findStrandedTickets, type StrandedTicket } from '@/lib/db/repoint-billto'
 
 const STAFF_FIELDS = new Set([
   'customer_id',
@@ -211,7 +212,40 @@ export async function PATCH(
       return NextResponse.json({ error: 'Equipment not found.' }, { status: 404 })
     }
 
-    return NextResponse.json({ success: true, id: data.id })
+    // After a bill-to reassignment, surface still-open tickets on this equipment
+    // that are stranded on the OLD account so the manager can opt to repoint them
+    // too. Excludes anything already keyed in Synergy (hard guard). The bulk
+    // repoint itself is a separate, explicit call to /propagate-billto — this only
+    // reports the candidates.
+    let propagation:
+      | {
+          oldCustomerId: number
+          newCustomerId: number
+          serviceTickets: StrandedTicket[]
+          pmTickets: StrandedTicket[]
+        }
+      | undefined
+    if (
+      touchingCustomer &&
+      currentCustomerId != null &&
+      update.customer_id !== currentCustomerId
+    ) {
+      const newCustomerId = update.customer_id as number
+      const { serviceTickets, pmTickets } = await findStrandedTickets(supabase, {
+        equipmentId: id,
+        targetCustomerId: newCustomerId,
+      })
+      if (serviceTickets.length > 0 || pmTickets.length > 0) {
+        propagation = {
+          oldCustomerId: currentCustomerId,
+          newCustomerId,
+          serviceTickets,
+          pmTickets,
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, id: data.id, ...(propagation ? { propagation } : {}) })
   } catch (err) {
     console.error('equipment PATCH unexpected error:', err)
     return NextResponse.json({ error: 'Failed to update equipment.' }, { status: 500 })
