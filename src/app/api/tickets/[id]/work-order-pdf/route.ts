@@ -30,6 +30,7 @@ export async function POST(
       .select(`
         id,
         work_order_number,
+        synergy_order_number,
         po_number,
         status,
         completed_date,
@@ -246,6 +247,7 @@ export async function POST(
 
     const ticket = {
       workOrderNumber: raw.work_order_number as number,
+      synergyOrderNumber: (raw.synergy_order_number as string | null) ?? null,
       companyName,
       serviceEmail,
       servicePhone,

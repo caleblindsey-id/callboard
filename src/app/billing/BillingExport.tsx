@@ -90,6 +90,15 @@ export default function BillingExport({
   const [editingPoValue, setEditingPoValue] = useState('')
   const [savingPo, setSavingPo] = useState(false)
 
+  // Inline Synergy order # editing — lets the coordinator key the parts-order #
+  // BEFORE exporting so it prints on the billing PDF, making it easy to match the
+  // exported ticket back to its Synergy record when entering the invoice # later
+  // (feedback #48). Writes the same synergy_order_number column the parts-ordering
+  // and Awaiting Invoice flows use. Optional — never blocks export.
+  const [synergyEditingId, setSynergyEditingId] = useState<string | null>(null)
+  const [synergyEditingValue, setSynergyEditingValue] = useState('')
+  const [synergySaving, setSynergySaving] = useState(false)
+
   const poMissingCount = tickets.filter(needsPo).length
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
@@ -170,6 +179,45 @@ export default function BillingExport({
       setToast({ message, type: 'error' })
     } finally {
       setSavingPo(false)
+    }
+  }
+
+  function startSynergyEdit(ticketId: string, current: string | null) {
+    setSynergyEditingId(ticketId)
+    setSynergyEditingValue(current ?? '')
+  }
+
+  function cancelSynergyEdit() {
+    setSynergyEditingId(null)
+    setSynergyEditingValue('')
+  }
+
+  async function handleSaveSynergy() {
+    if (!synergyEditingId || synergySaving) return
+    const trimmed = synergyEditingValue.trim()
+    if (!trimmed) return
+
+    setSynergySaving(true)
+    try {
+      const res = await fetch(`/api/tickets/${synergyEditingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ synergy_order_number: trimmed }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errData.error ?? `Server error ${res.status}`)
+      }
+
+      setSynergyEditingId(null)
+      setSynergyEditingValue('')
+      router.refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Synergy Order #.'
+      setToast({ message, type: 'error' })
+    } finally {
+      setSynergySaving(false)
     }
   }
 
@@ -284,6 +332,61 @@ export default function BillingExport({
         className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
       >
         PO Needed
+      </button>
+    )
+  }
+
+  function renderSynergyCell(t: TicketWithJoins) {
+    if (synergyEditingId === t.id) {
+      return (
+        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={synergyEditingValue}
+            onChange={(e) => setSynergyEditingValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveSynergy()
+              if (e.key === 'Escape') cancelSynergyEdit()
+            }}
+            placeholder="Synergy Order #"
+            autoFocus
+            disabled={synergySaving}
+            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+          <button
+            onClick={handleSaveSynergy}
+            disabled={synergySaving || !synergyEditingValue.trim()}
+            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
+          >
+            {synergySaving ? '...' : 'Save'}
+          </button>
+          <button
+            onClick={cancelSynergyEdit}
+            disabled={synergySaving}
+            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      )
+    }
+    if (t.synergy_order_number) {
+      return (
+        <button
+          onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, t.synergy_order_number) }}
+          title={`${t.synergy_order_number} — click to edit`}
+          className="text-gray-700 dark:text-gray-300 truncate max-w-[140px] inline-block align-bottom hover:underline"
+        >
+          {t.synergy_order_number}
+        </button>
+      )
+    }
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, null) }}
+        className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:underline"
+      >
+        + Synergy Order #
       </button>
     )
   }
@@ -440,6 +543,10 @@ export default function BillingExport({
                           {renderPoStatus(t)}
                           {renderNotesButton(t)}
                         </div>
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400" onClick={(e) => e.stopPropagation()}>
+                          <span>Synergy #:</span>
+                          {renderSynergyCell(t)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -469,6 +576,7 @@ export default function BillingExport({
                     <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
                     <SortHeader label="Terms" colKey="terms" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Synergy #</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Notes</th>
                   </tr>
                 </thead>
@@ -525,6 +633,9 @@ export default function BillingExport({
                           {t.completed_date
                             ? new Date(t.completed_date).toLocaleDateString()
                             : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                          {renderSynergyCell(t)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           {renderNotesButton(t)}

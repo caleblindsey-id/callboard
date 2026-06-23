@@ -20,6 +20,9 @@ interface ServiceWorkOrderPart {
 
 interface ServiceWorkOrderData {
   workOrderNumber: number | null
+  // Synergy parts-order # — printed so coordinators can match the exported WO
+  // back to its Synergy record when keying the invoice # (feedback #48). Optional.
+  synergyOrderNumber: string | null
   customerName: string
   accountNumber: string | null
   serviceAddress: string | null
@@ -199,6 +202,7 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
           <Text style={styles.title}>Service Work Order</Text>
           <Text style={styles.subtitle}>
             {workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : 'Work Order'}
+            {workOrder.synergyOrderNumber ? `  |  Synergy #${workOrder.synergyOrderNumber}` : ''}
             {'  |  '}
             {workOrder.completedDate}
           </Text>
