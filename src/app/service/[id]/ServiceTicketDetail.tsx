@@ -446,10 +446,11 @@ interface QuickCompleteSheetProps {
   busy: boolean
   signatureRequired: boolean
   onCancel: () => void
+  onSwitchToFull: () => void
   onSubmit: (data: { hours: number; notes: string; signatureImage: string | null; signatureName: string }) => void
 }
 
-function QuickCompleteSheet({ open, busy, signatureRequired, onCancel, onSubmit }: QuickCompleteSheetProps) {
+function QuickCompleteSheet({ open, busy, signatureRequired, onCancel, onSwitchToFull, onSubmit }: QuickCompleteSheetProps) {
   // Parent uses `key={open}` to remount this on toggle so a fresh form is
   // guaranteed without setState-in-effect cascades.
   const [hours, setHours] = useState('')
@@ -548,6 +549,14 @@ function QuickCompleteSheet({ open, busy, signatureRequired, onCancel, onSubmit 
             className="w-full px-4 py-3 text-base font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[48px]"
           >
             {busy ? 'Completing...' : 'Mark Complete'}
+          </button>
+          <button
+            type="button"
+            onClick={onSwitchToFull}
+            disabled={busy}
+            className="w-full px-4 py-3 text-sm font-medium text-center text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+          >
+            Used parts or need to edit? Open full completion
           </button>
         </div>
       </div>
@@ -4233,6 +4242,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         busy={loading}
         signatureRequired={signatureRequired}
         onCancel={() => setQuickCompleteOpen(false)}
+        onSwitchToFull={() => {
+          setQuickCompleteOpen(false)
+          setShowCompletionForm(true)
+        }}
         onSubmit={handleQuickComplete}
       />
       <CompletionSuccessDialog
