@@ -9,6 +9,7 @@ import { BillingDocument } from '@/lib/pdf/billing-template'
 import type { BillingTicket, PartLine } from '@/types/billing'
 import { createClient } from '@/lib/supabase/server'
 import { getSetting, getLaborRate } from '@/lib/db/settings'
+import { taxRatePercent } from '@/lib/tax'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
 import { MONTHS } from '@/lib/pm-schedule-options'
@@ -59,6 +60,8 @@ interface RawTicket {
     special_labor_rate_standard: number | null
     special_labor_rate_industrial: number | null
     special_labor_rate_vacuum: number | null
+    tax_rate: number | null
+    tax_exempt: boolean | null
   } | null
   po_number: string | null
   billing_contact_name: string | null
@@ -172,7 +175,7 @@ export async function POST(request: NextRequest) {
         billing_contact_email,
         billing_contact_phone,
         labor_rate_type,
-        customers(name, account_number, ar_terms, billing_address, billing_city, billing_state, billing_zip, po_required, special_labor_rate_standard, special_labor_rate_industrial, special_labor_rate_vacuum),
+        customers(name, account_number, ar_terms, billing_address, billing_city, billing_state, billing_zip, po_required, special_labor_rate_standard, special_labor_rate_industrial, special_labor_rate_vacuum, tax_rate, tax_exempt),
         equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
         technician:users!assigned_technician_id(name),
         pm_schedules(billing_type, flat_rate)
@@ -382,6 +385,7 @@ export async function POST(request: NextRequest) {
         customerSignature: raw.customer_signature ?? null,
         customerSignatureName: raw.customer_signature_name ?? null,
         photoUrls: photoUrlMap.get(raw.id) ?? [],
+        taxRatePercent: taxRatePercent(raw.customers),
       }
     })
 

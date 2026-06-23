@@ -9,6 +9,7 @@ import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
+import { computePartsTax } from '@/lib/tax'
 import { formatDate } from '@/lib/format'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import VendorPicker from '@/components/VendorPicker'
@@ -46,6 +47,9 @@ interface ServiceTicketDetailProps {
   laborRate: number
   laborRates: Record<string, number>
   tripChargeRate: number
+  // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
+  // file. Display-only — applied to the parts subtotal only (migration 133).
+  taxRatePercent: number
   // Estimated arrival dates for ordered parts, keyed `${po_number}|${product_number}`.
   // Looked up server-side from Synergy's open PO lines (getPoDueDates). Absent
   // key = part isn't on an open PO, so nothing is shown.
@@ -601,7 +605,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -1858,6 +1862,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     ? -diagnosticChargeNum
     : diagnosticChargeNum
   const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum
+  // Sales tax (parts only, display-only) — mirrors the work-order PDF so the
+  // on-screen total matches what the customer sees. 0 on warranty (no parts billed).
+  const taxRateFraction = (taxRatePercent ?? 0) / 100
+  const billTaxAmount = ticket.billing_type === 'warranty' ? 0 : computePartsTax(partsTotal, taxRateFraction)
 
   // Estimate computed totals. The rate type can be re-picked in the builder, so the
   // preview uses the resolved rate for the selected type (server re-snapshots on submit).
@@ -1867,6 +1875,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal + tripChargeNum
+  const estTaxAmount = ticket.billing_type === 'warranty' ? 0 : computePartsTax(estPartsTotal, taxRateFraction)
+
+  // Sales tax for the READ-ONLY summary cards (saved estimate / completed billing),
+  // computed from the persisted parts so the on-screen review matches the PDF.
+  const savedEstPartsSubtotal = (ticket.estimate_parts ?? [])
+    .filter((p) => !p.warranty_covered)
+    .reduce((sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+  const savedEstTax = ticket.billing_type === 'warranty' ? 0 : computePartsTax(savedEstPartsSubtotal, taxRateFraction)
+  const savedBillPartsSubtotal = (ticket.parts_used ?? [])
+    .filter((p) => !p.warranty_covered)
+    .reduce((sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+  const savedBillTax = ticket.billing_type === 'warranty' ? 0 : computePartsTax(savedBillPartsSubtotal, taxRateFraction)
 
   // Service address
   const serviceAddress = ticket.ticket_type === 'outside'
@@ -2833,6 +2853,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   <span className="text-sm font-bold text-gray-900 dark:text-white">Estimate Total</span>
                   <span className="text-base font-bold text-gray-900 dark:text-white">${ticket.estimate_amount.toFixed(2)}</span>
                 </div>
+                {savedEstTax > 0 && (
+                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                    <div className="flex justify-between">
+                      <span>Sales Tax ({taxRatePercent}%)</span>
+                      <span>${savedEstTax.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>Customer total with tax</span>
+                      <span>${(ticket.estimate_amount + savedEstTax).toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {ticket.diagnosis_notes && (
@@ -3174,6 +3206,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                       <span className="text-base font-bold text-gray-900 dark:text-white">Estimate Total</span>
                       <span className="text-lg font-bold text-gray-900 dark:text-white">${estTotal.toFixed(2)}</span>
                     </div>
+                    {estTaxAmount > 0 && (
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                        <div className="flex justify-between">
+                          <span>Sales Tax ({taxRatePercent}%)</span>
+                          <span>${estTaxAmount.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                          <span>Customer total with tax</span>
+                          <span>${(estTotal + estTaxAmount).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <p className="text-xs text-gray-400 dark:text-gray-500">
@@ -3769,6 +3813,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 <span className="text-base font-bold text-gray-900 dark:text-white">Billing Total</span>
                 <span className="text-lg font-bold text-gray-900 dark:text-white">${billingTotal.toFixed(2)}</span>
               </div>
+              {billTaxAmount > 0 && (
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Sales Tax ({taxRatePercent}%)</span>
+                    <span>${billTaxAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium">
+                    <span>Customer total with tax</span>
+                    <span>${(billingTotal + billTaxAmount).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Photos — collapsible sub-section. Default-open whenever
@@ -3960,6 +4016,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             <InfoField label="Parts Total">
               ${(ticket.parts_used ?? []).reduce((sum, p) => sum + (p.warranty_covered ? 0 : p.quantity * p.unit_price), 0).toFixed(2)}
             </InfoField>
+            {savedBillTax > 0 && (
+              <>
+                <InfoField label={`Sales Tax (${taxRatePercent}%)`}>
+                  ${savedBillTax.toFixed(2)}
+                </InfoField>
+                <InfoField label="Customer Total (with tax)">
+                  ${((ticket.billing_amount ?? 0) + savedBillTax).toFixed(2)}
+                </InfoField>
+              </>
+            )}
             <InfoField label="Synergy Order #">
               {ticket.synergy_order_number ?? '—'}
             </InfoField>

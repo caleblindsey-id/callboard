@@ -155,7 +155,7 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
     .from('service_tickets')
     .select(`
       *,
-      customers ( name, account_number, po_required, ar_terms, credit_hold ),
+      customers ( name, account_number, po_required, ar_terms, credit_hold, tax_rate, tax_exempt ),
       equipment ( id, make, model, serial_number, description, details_verified_at,
         ship_to_locations ( name, address, city, state, zip )
       ),
@@ -317,7 +317,7 @@ async function getServiceBillingByExported(
       billing_exported, synergy_order_number, synergy_invoice_number, completed_at,
       customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
-      customers ( name, account_number, po_required, ar_terms, credit_hold ),
+      customers ( name, account_number, po_required, ar_terms, credit_hold, tax_rate, tax_exempt ),
       equipment ( make, model, serial_number,
         ship_to_locations ( name, address, city, state )
       ),

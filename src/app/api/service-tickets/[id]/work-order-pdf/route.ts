@@ -7,6 +7,7 @@ import { ServiceWorkOrderDocument } from '@/lib/pdf/service-work-order-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getCustomerLaborRate, getSetting } from '@/lib/db/settings'
+import { taxRatePercent } from '@/lib/tax'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -64,7 +65,7 @@ export async function POST(
         equipment_serial_number,
         assigned_technician_id,
         customer_id,
-        customers(name, account_number),
+        customers(name, account_number, tax_rate, tax_exempt),
         equipment:equipment!service_tickets_equipment_id_fkey(
           make, model, serial_number,
           ship_to_locations(address, city, state, zip)
@@ -92,7 +93,10 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const customer = raw.customers as { name: string; account_number: string | null } | null
+    const customer = raw.customers as {
+      name: string; account_number: string | null
+      tax_rate: number | null; tax_exempt: boolean | null
+    } | null
     const equipment = raw.equipment as {
       make: string | null; model: string | null; serial_number: string | null
       ship_to_locations: { address: string | null; city: string | null; state: string | null; zip: string | null } | null
@@ -207,6 +211,7 @@ export async function POST(
       diagnosticCharge: (raw.diagnostic_charge as number | null) ?? 0,
       diagnosticInvoiceNumber: (raw.diagnostic_invoice_number as string | null) ?? null,
       billingTotal: (raw.billing_amount as number | null) ?? 0,
+      taxRatePercent: taxRatePercent(customer),
       customerSignature: raw.customer_signature as string | null,
       customerSignatureName: raw.customer_signature_name as string | null,
       photoUrls,
