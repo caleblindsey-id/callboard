@@ -406,6 +406,15 @@ export type CustomerRow = {
   special_labor_rate_standard: number | null
   special_labor_rate_industrial: number | null
   special_labor_rate_vacuum: number | null
+  // Per-customer sales-tax profile, synced nightly from Synergy (migration 133).
+  // tax_rate is the jurisdiction percent (e.g. 7.7500); tax_exempt mirrors
+  // Synergy TaxType=2. DISPLAY-ONLY on estimates/work orders — billing_amount
+  // stays pre-tax and Synergy applies the authoritative tax at invoicing.
+  tax_rate: number | null
+  tax_exempt: boolean
+  tax_code: number | null
+  tax_jurisdiction: string | null
+  tax_exempt_cert: string | null
   // Same-day in-app entry awaiting nightly-sync confirmation (migration 127).
   // true = entered in CallBoard before the Synergy sync copied it; the next sync
   // upserts on synergy_id and flips this to false.
@@ -807,7 +816,7 @@ type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 
 export type CustomerInsert = MakeOptional<
   Omit<CustomerRow, 'id'>,
-  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'primary_sales_rep' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum' | 'provisional' | 'provisional_created_by' | 'provisional_created_at'
+  'credit_hold' | 'synced_at' | 'account_number' | 'ar_terms' | 'primary_sales_rep' | 'billing_address' | 'billing_city' | 'billing_state' | 'billing_zip' | 'po_required' | 'active' | 'special_labor_rate_standard' | 'special_labor_rate_industrial' | 'special_labor_rate_vacuum' | 'tax_rate' | 'tax_exempt' | 'tax_code' | 'tax_jurisdiction' | 'tax_exempt_cert' | 'provisional' | 'provisional_created_by' | 'provisional_created_at'
 >
 
 export type ContactInsert = MakeOptional<

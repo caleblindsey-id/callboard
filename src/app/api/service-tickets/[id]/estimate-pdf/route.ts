@@ -6,6 +6,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { EstimateDocument } from '@/lib/pdf/estimate-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { taxRatePercent } from '@/lib/tax'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -51,7 +52,7 @@ export async function POST(
         equipment_serial_number,
         assigned_technician_id,
         created_at,
-        customers(name, account_number),
+        customers(name, account_number, tax_rate, tax_exempt),
         equipment:equipment!service_tickets_equipment_id_fkey(
           make, model, serial_number,
           ship_to_locations(address, city, state, zip)
@@ -76,7 +77,10 @@ export async function POST(
     }
 
     // Build service address
-    const customer = raw.customers as { name: string; account_number: string | null } | null
+    const customer = raw.customers as {
+      name: string; account_number: string | null
+      tax_rate: number | null; tax_exempt: boolean | null
+    } | null
     const equipment = raw.equipment as {
       make: string | null; model: string | null; serial_number: string | null;
       ship_to_locations: { address: string | null; city: string | null; state: string | null; zip: string | null } | null
@@ -145,6 +149,7 @@ export async function POST(
       })),
       tripCharge: tripChargePdf,
       estimateTotal: raw.estimate_amount as number,
+      taxRatePercent: taxRatePercent(customer),
       createdDate: new Date(raw.created_at).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
