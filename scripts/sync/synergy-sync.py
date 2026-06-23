@@ -351,6 +351,11 @@ def sync_customers(conn) -> int:
             cust.PORequiredFlag,
             cust.CreditLimit,
             cust.CreditCheckDays,
+            cust.TaxCode,
+            cust.TaxType,
+            cust.TaxExemp,
+            taxcode.TaxRate,
+            taxcode.`Desc` AS TaxJurisdiction,
             vwCustomer.CurrentARAgeBalance,
             vwCustomer.AgeARAmount2,
             vwCustomer.AgeARAmount3,
@@ -358,6 +363,7 @@ def sync_customers(conn) -> int:
             {salesman_select}
         FROM cust
         LEFT JOIN artermcode ON artermcode.xDL4RecNum = cust.Terms
+        LEFT JOIN taxcode ON taxcode.xDL4RecNum = cust.TaxCode
         LEFT JOIN vwCustomer ON vwCustomer.CustomerCode = cust.CustomerCode
         {salesman_join}
         WHERE cust.CustomerCode > 0
@@ -411,6 +417,14 @@ def sync_customers(conn) -> int:
         # how technician names are normalized (see sync_technicians).
         rep_raw = safe_str(row.SalesmanName)
         primary_sales_rep = rep_raw.title() if rep_raw else None
+        # Sales-tax profile (migration 133). TaxType=2 => exempt; rate is the
+        # jurisdiction percent from taxcode (e.g. 7.7500). Display-only downstream:
+        # CallBoard shows it on estimates/WOs, Synergy still charges the real tax.
+        tax_rate = float(row.TaxRate) if row.TaxRate is not None else None
+        tax_exempt = int(row.TaxType) == 2 if row.TaxType is not None else False
+        tax_code = int(row.TaxCode) if row.TaxCode is not None else None
+        tax_jurisdiction = safe_str(row.TaxJurisdiction)
+        tax_exempt_cert = safe_str(row.TaxExemp)
         customers.append({
             "synergy_id": str(row.CustomerCode).strip(),
             "name": str(row.Name).strip() if row.Name else "",
@@ -423,6 +437,11 @@ def sync_customers(conn) -> int:
             "billing_state": safe_str(row.State),
             "billing_zip": safe_str(row.Zip4),
             "po_required": bool(row.PORequiredFlag) if row.PORequiredFlag is not None else False,
+            "tax_rate": tax_rate,
+            "tax_exempt": tax_exempt,
+            "tax_code": tax_code,
+            "tax_jurisdiction": tax_jurisdiction,
+            "tax_exempt_cert": tax_exempt_cert,
             "active": True,  # explicit — anything falling out of the result set will be deactivated below
             # A customer present in Synergy is confirmed: clear any provisional flag set
             # by a same-day in-app entry. Real synced rows always carry provisional=false.

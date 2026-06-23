@@ -7,6 +7,7 @@ import { CustomerWorkOrderDocument } from '@/lib/pdf/work-order-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getCustomerLaborRate } from '@/lib/db/settings'
+import { taxRatePercent } from '@/lib/tax'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -49,7 +50,7 @@ export async function POST(
         assigned_technician_id,
         labor_rate_type,
         customer_id,
-        customers(name, account_number, billing_address, billing_city, billing_state, billing_zip, show_pricing_on_pm_pdf),
+        customers(name, account_number, billing_address, billing_city, billing_state, billing_zip, show_pricing_on_pm_pdf, tax_rate, tax_exempt),
         equipment(make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, ship_to_locations(address, city, state, zip)),
         schedule:pm_schedules!pm_schedule_id(flat_rate, billing_type),
         technician:users!assigned_technician_id(name)
@@ -138,7 +139,7 @@ export async function POST(
 
     // Build service location
     const shipTo = (raw.equipment as Record<string, unknown>)?.ship_to_locations as { address?: string; city?: string; state?: string; zip?: string } | null
-    const customer = raw.customers as { name: string; account_number: string | null; billing_address: string | null; billing_city: string | null; billing_state: string | null; billing_zip: string | null; show_pricing_on_pm_pdf: boolean } | null
+    const customer = raw.customers as { name: string; account_number: string | null; billing_address: string | null; billing_city: string | null; billing_state: string | null; billing_zip: string | null; show_pricing_on_pm_pdf: boolean; tax_rate: number | null; tax_exempt: boolean | null } | null
     const equipment = raw.equipment as { make: string | null; model: string | null; serial_number: string | null; location_on_site: string | null; contact_name: string | null; contact_email: string | null; contact_phone: string | null } | null
 
     // Read the schedule the ticket was actually generated against (via the
@@ -202,6 +203,7 @@ export async function POST(
       pmPartsPriced: boolean
       tripCharge: number
       grandTotal: number
+      taxRatePercent: number
     } | null = null
 
     // Prefer the snapshotted ticket-level flag (set at completion time per
@@ -242,6 +244,7 @@ export async function POST(
         pmPartsPriced: !isFlatRate,
         tripCharge: tripChargePdf,
         grandTotal: Number(raw.billing_amount),
+        taxRatePercent: taxRatePercent(customer),
       }
     }
 

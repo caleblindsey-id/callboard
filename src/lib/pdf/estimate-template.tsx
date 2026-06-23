@@ -1,6 +1,7 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { APP_NAME } from '@/lib/branding'
 import { partLabel } from '@/lib/parts'
+import { computePartsTax } from '@/lib/tax'
 
 // ============================================================
 // Types
@@ -33,6 +34,9 @@ interface EstimateData {
   parts: EstimatePart[]
   tripCharge: number
   estimateTotal: number
+  // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
+  // file. Display-only — applied to the parts subtotal only (migration 133).
+  taxRatePercent: number
   createdDate: string
 }
 
@@ -225,6 +229,10 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
     : estimate.parts
         .filter((p) => !p.warrantyCovered)
         .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+  // Tax applies to parts only (labor/trip excluded). Display-only line; the
+  // estimateTotal passed in is pre-tax, so the printed Total = pre-tax + tax.
+  const taxAmount = computePartsTax(partsTotal, (estimate.taxRatePercent ?? 0) / 100)
+  const grandTotal = estimate.estimateTotal + taxAmount
 
   return (
     <Document>
@@ -364,15 +372,27 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
             <Text style={styles.totalLabel}>Estimated Total:</Text>
             <Text style={styles.totalValue}>{money(estimate.estimateTotal)}</Text>
           </View>
+          {taxAmount > 0 && (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Sales Tax ({estimate.taxRatePercent}%):</Text>
+                <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Total with tax:</Text>
+                <Text style={styles.summaryValue}>{money(grandTotal)}</Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Disclaimer */}
         <View style={styles.disclaimer}>
           <Text style={styles.disclaimerText}>
             This is an estimate only and is subject to change. Actual charges may vary based on
-            findings during service. All prices are subject to applicable taxes. This estimate does
-            not constitute a binding agreement. Parts availability and pricing are subject to change
-            without notice.
+            findings during service. Any sales tax shown is estimated; the final tax is calculated
+            at invoicing. This estimate does not constitute a binding agreement. Parts availability
+            and pricing are subject to change without notice.
           </Text>
         </View>
 

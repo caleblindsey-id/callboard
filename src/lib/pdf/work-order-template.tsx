@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { partLabel } from '@/lib/parts'
+import { computePartsTax } from '@/lib/tax'
 
 // ============================================================
 // Types
@@ -23,6 +24,9 @@ interface PricingSummary {
   pmPartsPriced: boolean
   tripCharge: number
   grandTotal: number
+  // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
+  // file. Display-only — applied to the itemized parts only (migration 133).
+  taxRatePercent: number
 }
 
 interface WorkOrderTicket {
@@ -415,6 +419,15 @@ function PricingSummarySection({
     rows.push({ desc: 'Trip Charge', total: pricing.tripCharge })
   }
 
+  // Sales tax applies to itemized PARTS only (tangible goods). For flat-rate the
+  // flat fee is a service (not taxed); additional parts are taxable. For T&M /
+  // contract every part line is taxable. Labor and trip are never taxed.
+  const taxableParts = isFlatRate
+    ? additionalParts.reduce((s, p) => s + (p.unitPrice ?? 0) * p.quantity, 0)
+    : [...pmParts, ...additionalParts].reduce((s, p) => s + (p.unitPrice ?? 0) * p.quantity, 0)
+  const taxAmount = computePartsTax(taxableParts, (pricing.taxRatePercent ?? 0) / 100)
+  const grandTotalWithTax = pricing.grandTotal + taxAmount
+
   return (
     <View>
       <Text style={styles.sectionLabel}>Pricing Summary</Text>
@@ -441,12 +454,29 @@ function PricingSummarySection({
           <Text style={styles.pricingTotalLabel}>Grand Total</Text>
           <Text style={styles.pricingTotalValue}>{money(pricing.grandTotal)}</Text>
         </View>
+        {taxAmount > 0 && (
+          <>
+            <View style={styles.pricingRow} wrap={false}>
+              <Text style={styles.pricingColDesc}>Sales Tax ({pricing.taxRatePercent}%)</Text>
+              <Text style={styles.pricingColQty}>—</Text>
+              <Text style={styles.pricingColRate}>—</Text>
+              <Text style={styles.pricingColTotal}>{money(taxAmount)}</Text>
+            </View>
+            <View style={styles.pricingRow} wrap={false}>
+              <Text style={styles.pricingColDesc}>Total with tax</Text>
+              <Text style={styles.pricingColQty}>—</Text>
+              <Text style={styles.pricingColRate}>—</Text>
+              <Text style={styles.pricingColTotal}>{money(grandTotalWithTax)}</Text>
+            </View>
+          </>
+        )}
       </View>
       <View style={styles.disclaimerBox} wrap={false}>
         <Text style={styles.disclaimerHeading}>NOT A FINAL INVOICE</Text>
         <Text style={styles.disclaimerBody}>
           This document is for customer reference only. Final amounts are subject
-          to change and do not include applicable taxes.
+          to change. Any sales tax shown is estimated; the final tax is calculated
+          at invoicing.
         </Text>
       </View>
     </View>

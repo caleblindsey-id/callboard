@@ -2,6 +2,7 @@ import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/render
 import { APP_NAME } from '@/lib/branding'
 import type { BillingTicket, PartLine } from '@/types/billing'
 import { partLabel } from '@/lib/parts'
+import { computePartsTax } from '@/lib/tax'
 
 // ============================================================
 // Types
@@ -252,6 +253,10 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
   )
   const additionalLaborTotal = (ticket.additionalHoursWorked ?? 0) * ticket.laborRate
   const additionalSubtotal = additionalLaborTotal + additionalPartsTotal
+  // Sales tax on PARTS only — the flat rate is a service (not taxed); only the
+  // additional (out-of-contract) parts are tangible goods. Display-only: TOTAL
+  // AMOUNT DUE stays pre-tax (= the figure keyed into Synergy).
+  const taxAmount = computePartsTax(additionalPartsTotal, (ticket.taxRatePercent ?? 0) / 100)
 
   const equipmentLine = [ticket.equipmentMake, ticket.equipmentModel]
     .filter(Boolean)
@@ -443,7 +448,8 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
         </View>
       )}
 
-      {/* GRAND TOTAL */}
+      {/* GRAND TOTAL — TOTAL AMOUNT DUE stays pre-tax (the Synergy-keying figure);
+          sales tax + customer total shown below for the customer's reference. */}
       <View style={styles.summaryBlock}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>TOTAL AMOUNT DUE:</Text>
@@ -451,11 +457,24 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
             {ticket.billingAmount != null ? fmt(ticket.billingAmount) : '—'}
           </Text>
         </View>
-        <View style={[styles.summaryRow, { marginTop: 2 }]}>
-          <Text style={[styles.summaryLabel, { fontSize: 7, color: '#888888', fontStyle: 'italic' }]}>
-            Taxes not included
-          </Text>
-        </View>
+        {taxAmount > 0 && ticket.billingAmount != null ? (
+          <>
+            <View style={[styles.summaryRow, { marginTop: 2 }]}>
+              <Text style={styles.summaryLabel}>Sales Tax ({ticket.taxRatePercent}%):</Text>
+              <Text style={styles.summaryValue}>{fmt(taxAmount)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { fontFamily: 'Helvetica-Bold' }]}>Customer Total (with tax):</Text>
+              <Text style={[styles.summaryValue, { fontFamily: 'Helvetica-Bold' }]}>{fmt(ticket.billingAmount + taxAmount)}</Text>
+            </View>
+          </>
+        ) : (
+          <View style={[styles.summaryRow, { marginTop: 2 }]}>
+            <Text style={[styles.summaryLabel, { fontSize: 7, color: '#888888', fontStyle: 'italic' }]}>
+              Taxes not included
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* CUSTOMER SIGNATURE */}

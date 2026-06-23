@@ -2,6 +2,7 @@ import { getServiceTicket } from '@/lib/db/service-tickets'
 import { getPoDueDates } from '@/lib/db/parts-queue'
 import { getCurrentUser, isTechnician, canCreateServiceTickets, RESET_ROLES } from '@/lib/auth'
 import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
+import { taxRatePercent } from '@/lib/tax'
 import { notFound, redirect } from 'next/navigation'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import BackButton from '@/components/BackButton'
@@ -163,6 +164,7 @@ export default async function ServiceTicketPage({
         laborRate={laborRate}
         laborRates={laborRates}
         tripChargeRate={tripChargeRate}
+        taxRatePercent={taxRatePercent(ticket.customers)}
         poDueDates={poDueDates}
         canEmailEstimate={canEmailEstimate}
       />

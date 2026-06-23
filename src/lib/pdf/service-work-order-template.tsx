@@ -1,6 +1,7 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { APP_NAME } from '@/lib/branding'
 import { partLabel } from '@/lib/parts'
+import { computePartsTax } from '@/lib/tax'
 
 // ============================================================
 // Types
@@ -48,6 +49,9 @@ interface ServiceWorkOrderData {
   // so it renders as a negative credit on this work order rather than a charge.
   diagnosticInvoiceNumber: string | null
   billingTotal: number
+  // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
+  // file. Display-only — applied to the parts subtotal only (migration 133).
+  taxRatePercent: number
   customerSignature: string | null
   customerSignatureName: string | null
   photoUrls: string[]
@@ -192,6 +196,10 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
     : workOrder.parts
         .filter((p) => !p.warrantyCovered)
         .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+  // Tax applies to parts only (labor/trip/diagnostic excluded). Display-only;
+  // billingTotal is pre-tax, so the printed Total = billingTotal + tax.
+  const taxAmount = computePartsTax(partsTotal, (workOrder.taxRatePercent ?? 0) / 100)
+  const grandTotal = workOrder.billingTotal + taxAmount
 
   return (
     <Document>
@@ -375,6 +383,18 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             <Text style={styles.totalLabel}>Total:</Text>
             <Text style={styles.totalValue}>{money(workOrder.billingTotal)}</Text>
           </View>
+          {taxAmount > 0 && (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Sales Tax ({workOrder.taxRatePercent}%):</Text>
+                <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Total with tax:</Text>
+                <Text style={styles.summaryValue}>{money(grandTotal)}</Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Service Photos */}

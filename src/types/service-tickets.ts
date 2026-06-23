@@ -217,6 +217,8 @@ export type ServiceTicketDetail = ServiceTicketRow & {
     po_required: boolean
     ar_terms: string | null
     credit_hold: boolean
+    tax_rate: number | null
+    tax_exempt: boolean | null
   } | null
   equipment: {
     id: string
