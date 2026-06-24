@@ -29,6 +29,12 @@ const BILLING_TYPE_LABELS: Record<string, string> = {
   partial_warranty: 'Partial Warranty',
 }
 
+// A ticket is blocked from export when its customer requires a PO but none is on
+// the ticket yet — mirrors the PM Ready-to-Export gate in BillingExport.tsx.
+function needsPo(t: ServiceBillingTicket): boolean {
+  return !!t.customers?.po_required && !t.po_number
+}
+
 interface ServiceBillingExportProps {
   tickets: ServiceBillingTicket[]
   // Active narrowing filter from the URL. undefined → "All months" (default).
@@ -41,6 +47,7 @@ const ALL_MONTHS = 0
 
 type ServiceBillingSortKey =
   | 'customer'
+  | 'poStatus'
   | 'equipment'
   | 'technician'
   | 'billing'
@@ -50,6 +57,8 @@ type ServiceBillingSortKey =
 
 const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, ServiceBillingSortKey> = {
   customer: t => t.customers?.name,
+  // Group PO-needed rows first (they block export), then has-PO, then not-required.
+  poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   equipment: t =>
     [t.equipment?.make ?? t.equipment_make, t.equipment?.model ?? t.equipment_model]
       .filter(Boolean)
@@ -104,6 +113,14 @@ export default function ServiceBillingExport({
   const [synergyEditingId, setSynergyEditingId] = useState<string | null>(null)
   const [synergyEditingValue, setSynergyEditingValue] = useState('')
   const [synergySaving, setSynergySaving] = useState(false)
+
+  // Inline PO editing — for PO-required customers a PO must be on the ticket
+  // before it can be exported (mirrors the PM Ready-to-Export gate).
+  const [editingPoId, setEditingPoId] = useState<string | null>(null)
+  const [editingPoValue, setEditingPoValue] = useState('')
+  const [savingPo, setSavingPo] = useState(false)
+
+  const poMissingCount = tickets.filter(needsPo).length
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ServiceBillingTicket,
@@ -192,6 +209,98 @@ export default function ServiceBillingExport({
       >
         <MessageSquare className="h-3.5 w-3.5" />
         Notes
+      </button>
+    )
+  }
+
+  function startEditPo(ticketId: string) {
+    setEditingPoId(ticketId)
+    setEditingPoValue('')
+  }
+
+  function cancelEditPo() {
+    setEditingPoId(null)
+    setEditingPoValue('')
+  }
+
+  async function handleSavePo() {
+    if (!editingPoId || savingPo) return
+    const trimmed = editingPoValue.trim()
+    if (!trimmed) return
+
+    setSavingPo(true)
+    try {
+      const res = await fetch(`/api/service-tickets/${editingPoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ po_number: trimmed }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errData.error ?? `Server error ${res.status}`)
+      }
+
+      setEditingPoId(null)
+      setEditingPoValue('')
+      router.refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save PO number.'
+      setToast({ message, type: 'error' })
+    } finally {
+      setSavingPo(false)
+    }
+  }
+
+  function renderPoStatus(t: ServiceBillingTicket) {
+    if (!t.customers?.po_required) return <span className="text-gray-400 dark:text-gray-600">—</span>
+    if (t.po_number) {
+      return (
+        <span className="text-green-700 dark:text-green-400 truncate max-w-[120px] inline-block align-bottom" title={t.po_number}>
+          {t.po_number}
+        </span>
+      )
+    }
+    // PO required but missing
+    if (editingPoId === t.id) {
+      return (
+        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={editingPoValue}
+            onChange={(e) => setEditingPoValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSavePo()
+              if (e.key === 'Escape') cancelEditPo()
+            }}
+            placeholder="PO #"
+            autoFocus
+            disabled={savingPo}
+            className="w-24 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+          <button
+            onClick={handleSavePo}
+            disabled={savingPo || !editingPoValue.trim()}
+            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
+          >
+            {savingPo ? '...' : 'Save'}
+          </button>
+          <button
+            onClick={cancelEditPo}
+            disabled={savingPo}
+            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      )
+    }
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); startEditPo(t.id) }}
+        className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+      >
+        PO Needed
       </button>
     )
   }
@@ -291,12 +400,13 @@ export default function ServiceBillingExport({
   }
 
   function renderExportButton(t: ServiceBillingTicket) {
+    const blocked = needsPo(t)
     return (
       <button
         onClick={(e) => { e.stopPropagation(); handleExport(t.id) }}
-        disabled={exportingId === t.id}
-        className="px-3 py-1 text-xs font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-        title="Download the work order PDF and move this ticket to Awaiting Invoice #"
+        disabled={exportingId === t.id || blocked}
+        className="px-3 py-1 text-xs font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        title={blocked ? 'A PO number is required before this ticket can be exported' : 'Download the work order PDF and move this ticket to Awaiting Invoice #'}
       >
         {exportingId === t.id ? 'Exporting…' : 'Export'}
       </button>
@@ -358,6 +468,13 @@ export default function ServiceBillingExport({
         </div>
       )}
 
+      {/* PO missing banner */}
+      {poMissingCount > 0 && (
+        <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} require{poMissingCount === 1 ? 's' : ''} a PO number before {poMissingCount === 1 ? 'it' : 'they'} can be exported.
+        </div>
+      )}
+
       {/* Billing list */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {tickets.length === 0 ? (
@@ -370,8 +487,10 @@ export default function ServiceBillingExport({
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {sorted.map((t) => (
-                <div key={t.id} className="px-4 py-3">
+              {sorted.map((t) => {
+                const blocked = needsPo(t)
+                return (
+                <div key={t.id} className={`px-4 py-3 ${blocked && editingPoId !== t.id ? 'opacity-50' : ''}`}>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {t.customers?.name ?? '—'}
@@ -407,6 +526,10 @@ export default function ServiceBillingExport({
                         : '—'}
                     </p>
                     <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      <span>PO:</span>
+                      {renderPoStatus(t)}
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                       <span>Synergy #:</span>
                       {renderSynergyCell(t)}
                     </div>
@@ -416,7 +539,8 @@ export default function ServiceBillingExport({
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Desktop table */}
@@ -425,6 +549,7 @@ export default function ServiceBillingExport({
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Billing" colKey="billing" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
@@ -436,8 +561,10 @@ export default function ServiceBillingExport({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {sorted.map((t) => (
-                    <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  {sorted.map((t) => {
+                    const blocked = needsPo(t)
+                    return (
+                    <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingPoId !== t.id ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3 text-gray-900 dark:text-white">
                         {t.customers?.name ?? '—'}
                         {customerSubline(t) && (
@@ -445,6 +572,9 @@ export default function ServiceBillingExport({
                             {customerSubline(t)}
                           </span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {renderPoStatus(t)}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {renderEquipment(t)}
@@ -483,7 +613,8 @@ export default function ServiceBillingExport({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </ScrollableTable>
