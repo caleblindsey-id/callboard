@@ -3704,15 +3704,14 @@ export function ServiceTicketDetail({ ticket, userRole, laborRate, laborRates, t
                   ))}
                 </div>
               )}
-              {/* `capture="environment"` opens the rear camera by default on
-                  mobile while still allowing library picks; desktop browsers
-                  ignore the attribute. `multiple` keeps batch upload working
-                  on both. */}
+              {/* No `capture` attribute: on mobile this opens the native picker
+                  (Photo Library / Take Photo / Choose File) instead of forcing
+                  the camera, matching PM tickets and the rest of the app.
+                  `multiple` keeps batch upload working. */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 multiple
                 onChange={handlePhotoUpload}
                 className="hidden"
