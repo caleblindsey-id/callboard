@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { useUser } from '@/components/UserProvider'
-import { getDeviceId, rememberProfile, forgetProfile } from '@/lib/pin-device'
+import { getStoredDeviceId, rememberProfile, forgetProfile } from '@/lib/pin-device'
 import SetPinPrompt from '@/app/login/SetPinPrompt'
 
 export default function AccountPage() {
@@ -17,11 +17,17 @@ export default function AccountPage() {
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    const id = getDeviceId()
-    setDeviceId(id)
-    fetch(`/api/auth/pin/status?device_id=${encodeURIComponent(id)}`)
-      .then((r) => (r.ok ? r.json() : { enrolled: false }))
-      .then((d) => setEnrolled(!!d.enrolled))
+    // Device id now lives in the durable httpOnly cb-did cookie; the status call
+    // resolves/issues it (adopting the legacy localStorage id once if present) and
+    // reports enrollment for the current user.
+    const legacy = getStoredDeviceId()
+    const qs = legacy ? `?adopt=${encodeURIComponent(legacy)}` : ''
+    fetch(`/api/auth/pin/status${qs}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : { enrolledForCurrentUser: false }))
+      .then((d) => {
+        setDeviceId(d.device_id ?? '')
+        setEnrolled(!!d.enrolledForCurrentUser)
+      })
       .catch(() => setEnrolled(false))
   }, [])
 

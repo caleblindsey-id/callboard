@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyPin, lockDurationMs } from '@/lib/pin'
+import { resolveDeviceId } from '@/lib/pin-device-cookie'
 
 // Quick-PIN login. UNauthenticated — the whole point is the tech has no session
 // yet. Verifies the PIN for a (device_id, user_id) row under the service-role key,
@@ -13,11 +14,16 @@ import { verifyPin, lockDurationMs } from '@/lib/pin'
 // Generic errors only: never reveal whether the device/user/PIN existed.
 export async function POST(request: NextRequest) {
   try {
-    const { device_id, user_id, pin } = (await request.json()) as {
+    const { device_id: bodyDeviceId, user_id, pin } = (await request.json()) as {
       device_id?: string
       user_id?: string
       pin?: string
     }
+    // The durable httpOnly cookie is canonical; the body device_id is only a
+    // transitional fallback for clients that predate the cookie. Passing the body
+    // value as the adopt hint lets a still-localStorage client seed the cookie here.
+    const device_id = await resolveDeviceId(bodyDeviceId)
+
     if (!device_id || !user_id || !pin) {
       return NextResponse.json({ error: 'Incorrect PIN.' }, { status: 401 })
     }
@@ -68,11 +74,22 @@ export async function POST(request: NextRequest) {
     // PIN correct. Confirm the account is still active and grab the email for minting.
     const { data: userRow } = await admin
       .from('users')
-      .select('email, active')
+      .select('email, active, must_change_password')
       .eq('id', user_id)
       .single()
     if (!userRow || !userRow.active || !userRow.email) {
       return NextResponse.json({ error: 'Incorrect PIN.' }, { status: 401 })
+    }
+
+    // A tech whose password was reset (must_change_password) can't be PIN-logged in:
+    // minting a session here would just bounce them to /change-password for a password
+    // they don't have. Mirror the enroll guard and send them to the password flow.
+    // (Not "Incorrect PIN" — the PIN was right; be specific so they don't keep retrying.)
+    if (userRow.must_change_password) {
+      return NextResponse.json(
+        { error: 'Please sign in with your password to finish setting up your account.' },
+        { status: 403 }
+      )
     }
 
     // Reset lockout counters and stamp last use.

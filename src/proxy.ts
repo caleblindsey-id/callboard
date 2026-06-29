@@ -53,7 +53,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth check for public routes
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/set-password') || pathname === '/api/auth/set-password' || pathname.startsWith('/auth/') || pathname === '/api/auth/pin/login' || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
+  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/set-password') || pathname === '/api/auth/set-password' || pathname.startsWith('/auth/') || pathname === '/api/auth/pin/login' || pathname === '/api/auth/pin/status' || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
     return supabaseResponse
   }
 

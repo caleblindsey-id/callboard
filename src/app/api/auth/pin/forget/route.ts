@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { resolveDeviceId } from '@/lib/pin-device-cookie'
 
 // Remove the calling tech's quick-PIN from a device ("Forget this device").
 // Session-required; only ever deletes the authenticated user's own row.
 export async function POST(request: NextRequest) {
   try {
-    const { device_id } = (await request.json()) as { device_id?: string }
-    if (!device_id || typeof device_id !== 'string') {
+    const { device_id: bodyDeviceId } = (await request.json().catch(() => ({}))) as { device_id?: string }
+    // Cookie is canonical; body is a transitional fallback / adopt hint.
+    const device_id = await resolveDeviceId(bodyDeviceId)
+    if (!device_id) {
       return NextResponse.json({ error: 'Missing device id.' }, { status: 400 })
     }
 

@@ -23,6 +23,17 @@ export function getDeviceId(): string {
   return id
 }
 
+/**
+ * Read the legacy localStorage device id WITHOUT minting one. The durable identity
+ * now lives in the httpOnly `cb-did` cookie (see lib/pin-device-cookie.ts); this is
+ * only the one-time adoption hint passed to /api/auth/pin/status?adopt= so a device
+ * enrolled before the cookie existed keeps its PIN. Returns '' if absent.
+ */
+export function getStoredDeviceId(): string {
+  if (typeof window === 'undefined') return ''
+  return localStorage.getItem(DEVICE_ID_KEY) ?? ''
+}
+
 /** Profiles that have enrolled a PIN on this device. */
 export function getProfiles(): PinProfile[] {
   if (typeof window === 'undefined') return []

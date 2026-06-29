@@ -7,8 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Wrench } from 'lucide-react'
 import { APP_NAME } from '@/lib/branding'
 import {
-  getDeviceId,
-  getProfiles,
+  getStoredDeviceId,
   rememberProfile,
   dismissEnroll,
   isEnrollDismissed,
@@ -51,19 +50,45 @@ function LoginForm() {
   const [enrollError, setEnrollError] = useState<string | null>(null)
   const [pendingEnroll, setPendingEnroll] = useState<PinProfile | null>(null)
 
-  // Resolve the device + remembered profiles once, after mount.
+  // Resolve PIN availability from the SERVER once, after mount. The device id now
+  // lives in a durable httpOnly cookie (cb-did); the server returns which PINs are
+  // enrolled on this device. This survives iOS ITP wiping localStorage — the bug this
+  // replaces, where an evicted cb-pin-profiles hid a still-valid PIN. The legacy
+  // localStorage id (if any) is passed as ?adopt= for one-time cookie adoption.
   useEffect(() => {
-    const id = getDeviceId()
-    const list = getProfiles()
-    setDeviceId(id)
-    setProfiles(list)
-    if (initialError || list.length === 0) {
+    if (initialError) {
       setView('password')
-    } else if (list.length === 1) {
-      setSelected(list[0])
-      setView('pin-entry')
-    } else {
-      setView('pin-pick')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const legacy = getStoredDeviceId()
+        const qs = legacy ? `?adopt=${encodeURIComponent(legacy)}` : ''
+        const res = await fetch(`/api/auth/pin/status${qs}`, { cache: 'no-store' })
+        if (cancelled) return
+        if (res.ok) {
+          const data = (await res.json()) as { device_id?: string; profiles?: PinProfile[] }
+          const list = Array.isArray(data.profiles) ? data.profiles : []
+          setDeviceId(data.device_id ?? '')
+          setProfiles(list)
+          if (list.length === 0) {
+            setView('password')
+          } else if (list.length === 1) {
+            setSelected(list[0])
+            setView('pin-entry')
+          } else {
+            setView('pin-pick')
+          }
+          return
+        }
+      } catch {
+        /* network error — fall through to password */
+      }
+      if (!cancelled) setView('password')
+    })()
+    return () => {
+      cancelled = true
     }
   }, [initialError])
 

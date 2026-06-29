@@ -2,19 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hashPin, pinPolicyError } from '@/lib/pin'
+import { resolveDeviceId } from '@/lib/pin-device-cookie'
 
 // Set or replace this device's quick-PIN for the CURRENTLY logged-in tech. Runs
 // under the tech's live session (they just did a full email+password login), so
 // the user_id is taken from the validated session, never the request body.
 export async function POST(request: NextRequest) {
   try {
-    const { device_id, pin, label } = (await request.json()) as {
+    const { device_id: bodyDeviceId, pin, label } = (await request.json()) as {
       device_id?: string
       pin?: string
       label?: string
     }
 
-    if (!device_id || typeof device_id !== 'string') {
+    // Cookie is canonical; body device_id is a transitional fallback / adopt hint.
+    // Because the cookie id is stable across ITP eviction, re-enrolling on the same
+    // physical device upserts the SAME (device_id, user_id) row instead of spawning a
+    // new one — which is what produced the orphaned duplicate rows.
+    const device_id = await resolveDeviceId(bodyDeviceId)
+    if (!device_id) {
       return NextResponse.json({ error: 'Missing device id.' }, { status: 400 })
     }
     if (!pin || typeof pin !== 'string') {
