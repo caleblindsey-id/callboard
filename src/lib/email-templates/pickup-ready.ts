@@ -4,6 +4,10 @@
 // already invoiced and B2B accounts settle on terms).
 
 export type PickupReadyTemplateInput = {
+  // 'repaired' = the unit was fixed + invoiced (the original flow). 'declined' =
+  // the repair estimate was not approved, so the unfixed unit is ready to collect
+  // as-is. Defaults to 'repaired' for back-compat with existing callers.
+  outcome?: 'repaired' | 'declined'
   ticket: {
     work_order_number: number | null
     contact_name: string | null
@@ -26,6 +30,7 @@ export type EmailTemplate = {
 
 export function renderPickupReadyEmail(input: PickupReadyTemplateInput): EmailTemplate {
   const { ticket, settings } = input
+  const declined = input.outcome === 'declined'
 
   const woLabel = ticket.work_order_number ? `WO-${ticket.work_order_number}` : null
   const greetingName = ticket.contact_name?.split(' ')[0]?.trim() || 'there'
@@ -49,15 +54,24 @@ export function renderPickupReadyEmail(input: PickupReadyTemplateInput): EmailTe
     ? `When you come by, just reference ${woLabel} and we'll have it ready for you.`
     : `When you come by, just mention your repair and we'll have it ready for you.`
 
-  const subject = woLabel
-    ? `Your repaired equipment is ready for pickup — ${woLabel}`
-    : 'Your repaired equipment is ready for pickup'
+  // Declined units were never repaired, so the copy avoids the word "repaired".
+  const introLine = declined
+    ? 'We have finished evaluating your equipment. The repair estimate was not approved, so your equipment is ready to be picked up as is.'
+    : 'Your equipment is repaired and ready to be picked up at our service department.'
+
+  const subject = declined
+    ? woLabel
+      ? `Your equipment is ready for pickup, ${woLabel}`
+      : 'Your equipment is ready for pickup'
+    : woLabel
+      ? `Your repaired equipment is ready for pickup — ${woLabel}`
+      : 'Your repaired equipment is ready for pickup'
 
   // --- Plain text ---
   const textLines: (string | null)[] = [
     `Hi ${greetingName},`,
     '',
-    'Your equipment is repaired and ready to be picked up at our service department.',
+    introLine,
     '',
     `Equipment: ${equipmentLine}`,
     woLabel ? `Work order: ${woLabel}` : null,
@@ -100,7 +114,7 @@ export function renderPickupReadyEmail(input: PickupReadyTemplateInput): EmailTe
             <td style="padding:32px;color:#1f2937;font-size:15px;line-height:1.55;">
               <p style="margin:0 0 16px;">Hi ${escapeHtml(greetingName)},</p>
               <p style="margin:0 0 20px;">
-                Your equipment is repaired and ready to be picked up at our service department.
+                ${escapeHtml(introLine)}
               </p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px;background:#f8fafc;border:1px solid #e4e4e7;border-radius:6px;">
                 <tr><td style="padding:16px 20px;">

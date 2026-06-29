@@ -253,7 +253,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -698,6 +698,22 @@ export async function PATCH(
       filtered.awaiting_pickup = true
       filtered.ready_for_pickup_at = new Date().toISOString()
     }
+    // Auto-stage an INSIDE unit when its estimate is DECLINED — the customer's
+    // (unrepaired) equipment is still physically in the shop and has to be
+    // collected, but a declined ticket never reaches 'billed' so the block above
+    // never fires for it. Same one-shot guards. Unlike the billed path this stays
+    // SILENT (no instant email): the front desk sends the pickup notice manually
+    // once any re-quote attempt is exhausted (see the send-gate below).
+    if (
+      filtered.status === 'declined' &&
+      current.ticket_type === 'inside' &&
+      current.status !== 'declined' &&
+      !current.awaiting_pickup &&
+      !current.ready_for_pickup_at
+    ) {
+      filtered.awaiting_pickup = true
+      filtered.ready_for_pickup_at = new Date().toISOString()
+    }
     // Any path that flips awaiting_pickup true (e.g. the manual "Mark Ready"
     // toggle on an inside ticket invoiced outside the app) starts the aging
     // clock if it isn't already running.
@@ -712,6 +728,14 @@ export async function PATCH(
     // the client never supplies released_by_id).
     if (filtered.picked_up_at) {
       filtered.released_by_id = user.id
+      // A picked-up DECLINED unit has nothing left to chase — the customer took
+      // it back. Auto-clear it from the managers' Declined Estimates worklist
+      // (same soft-dismiss flag as the manual "Mark handled" action; status stays
+      // 'declined'). Guarded so we don't re-stamp an already-resolved row.
+      if (current.status === 'declined' && !current.decline_resolved_at) {
+        filtered.decline_resolved_at = new Date().toISOString()
+        filtered.decline_resolved_by_id = user.id
+      }
     }
     // True when this PATCH moves the unit INTO the ready state (auto on billed,
     // or the manual Mark-Ready toggle). Drives the instant customer email after
@@ -951,8 +975,9 @@ export async function PATCH(
     // Instant pickup-ready email. Fire only after the staging write commits, so a
     // send failure can never undo the staging — the unit stays visible in the
     // pickup queue and the Round 4 scanner retries the email. Swallowed on
-    // purpose: the billing/staging action itself succeeded.
-    if (enteringPickup) {
+    // purpose: the billing/staging action itself succeeded. Skipped for a DECLINED
+    // entry: those stage silently and the front desk sends the notice by hand.
+    if (enteringPickup && filtered.status !== 'declined') {
       try {
         const notice = await sendPickupNotice(id)
         if (!notice.sent && notice.reason === 'no_email') {

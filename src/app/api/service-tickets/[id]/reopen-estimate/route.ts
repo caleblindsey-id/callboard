@@ -65,6 +65,11 @@ export async function POST(
         approval_token_expires_at: null,
         decline_reason: null,
         manual_decision_note: null,
+        // A declined unit may have been staged into the pickup queue (custody
+        // tracking). Reopening puts it back in play, so pull it out of the queue —
+        // it's no longer waiting to be collected.
+        awaiting_pickup: false,
+        ready_for_pickup_at: null,
       })
       .eq('id', id)
       .in('status', ['estimated', 'approved', 'declined'])

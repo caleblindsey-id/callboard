@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Phone, Mail, MapPin, PackageCheck } from 'lucide-react'
+import { Phone, Mail, MapPin, PackageCheck, Send } from 'lucide-react'
 import type { PickupQueueRow } from '@/lib/db/pickup-queue'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
@@ -180,6 +180,28 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     }
   }
 
+  async function sendNotice(id: string) {
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/service-tickets/${id}/send-pickup-notice`, { method: 'POST' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || 'Failed to send pickup notice')
+      if (body?.sent === false) {
+        throw new Error(
+          body?.reason === 'no_email'
+            ? 'No email on file for this customer.'
+            : 'This unit is no longer awaiting pickup.',
+        )
+      }
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send pickup notice')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function sendAbandonment(id: string) {
     if (!confirm('Send a formal abandonment notice to this customer? This sets a 14-day collection deadline.')) return
     setBusyId(id)
@@ -275,6 +297,11 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                       <div className="text-gray-900 dark:text-gray-100">{r.equipment_label}</div>
                       {r.serial_number && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">S/N {r.serial_number}</div>
+                      )}
+                      {!r.repaired && (
+                        <span className="mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                          Not repaired (declined)
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
@@ -402,6 +429,17 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                           >
                             Confirm Pickup
                           </button>
+                          {r.contact_status === 'has_contact' && (
+                            <button
+                              onClick={() => sendNotice(r.id)}
+                              disabled={busyId === r.id}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50"
+                              title="Email the customer that their equipment is ready for pickup"
+                            >
+                              <Send className="h-3 w-3" />
+                              {busyId === r.id ? 'Sending…' : 'Send pickup notice'}
+                            </button>
+                          )}
                           {noEmail && (
                             <button
                               onClick={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
