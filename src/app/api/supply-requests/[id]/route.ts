@@ -4,23 +4,27 @@ import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { sendSupplyReadyNotice } from '@/lib/supply-requests/send-supply-ready-notice'
 import { sendPushToUser } from '@/lib/push/send-push'
 import { createNotification } from '@/lib/notifications/create-notification'
+import { normalizeSupplyItems } from '@/lib/supply-requests/normalize-items'
 import type { SupplyRequestUpdate, SupplyRequestStatus } from '@/types/database'
 
 // PATCH /api/supply-requests/[id] — office staff move a request through its
-// lifecycle. DELETE — the owning tech cancels their own still-pending request.
+// lifecycle, and edit its line items (quantities + per-line deny, feedback #65).
+// DELETE — the owning tech cancels their own still-pending request.
 //
 // The proxy lets techs reach this path, so role/ownership is enforced HERE.
 // (Round 2 fires the tech "ready"/"denied" notifications from the relevant cases.)
 
-type Action = 'mark_ready' | 'mark_picked_up' | 'deny' | 'reopen'
-type PatchBody = { action?: Action; reason?: unknown }
+type Action = 'mark_ready' | 'mark_picked_up' | 'deny' | 'reopen' | 'update_items'
+type PatchBody = { action?: Action; reason?: unknown; items?: unknown }
 
 // Allowed source statuses for each action — keeps the lifecycle linear.
+// Line edits are only allowed while the request is still pending (Needs Pulling).
 const ALLOWED_FROM: Record<Action, SupplyRequestStatus[]> = {
   mark_ready: ['pending'],
   mark_picked_up: ['ready'],
   deny: ['pending', 'ready'],
   reopen: ['ready', 'denied', 'picked_up'],
+  update_items: ['pending'],
 }
 
 export async function PATCH(
@@ -75,6 +79,16 @@ export async function PATCH(
           return NextResponse.json({ error: 'Enter a reason for denying the request.' }, { status: 400 })
         }
         update = { status: 'denied', denied_at: now, denied_by: user.id, denied_reason: reason.slice(0, 500) }
+        break
+      }
+      case 'update_items': {
+        // Office edits the line items: adjust quantities and/or deny individual
+        // lines (feedback #65). allowDenied lets the per-line deny flags through.
+        const result = normalizeSupplyItems(body.items, { allowDenied: true })
+        if (!result.ok) {
+          return NextResponse.json({ error: result.error }, { status: 400 })
+        }
+        update = { items: result.items }
         break
       }
       case 'reopen':

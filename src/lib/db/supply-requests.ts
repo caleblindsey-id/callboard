@@ -104,7 +104,8 @@ export async function getSupplyRequestQueue(recentDays = 14): Promise<SupplyRequ
       id: r.id,
       requester_name: r.requester?.name ?? 'Unknown tech',
       items,
-      item_count: items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0),
+      // Denied lines won't be pulled, so they don't count toward the total.
+      item_count: items.reduce((sum, it) => sum + (it.denied ? 0 : Number(it.quantity) || 0), 0),
       note: r.note,
       status: r.status,
       denied_reason: r.denied_reason,

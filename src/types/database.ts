@@ -1009,11 +1009,18 @@ export type SupplyRequestStatus = 'pending' | 'ready' | 'picked_up' | 'denied'
 
 // One line on a request. catalog_id links a quick-pick item; free-text "other"
 // items leave it null. unit is copied from the catalog for display.
+//
+// denied lets the office reject a single line while still pulling the rest
+// (feedback #65). It lives in the JSONB item — there's no per-line DB column —
+// so a denied line stays on the request (struck-through, with its reason)
+// instead of being dropped. Absent/false means the line is still active.
 export type SupplyRequestItem = {
   name: string
   quantity: number
   catalog_id?: string | null
   unit?: string | null
+  denied?: boolean
+  denied_reason?: string | null
 }
 
 export type SupplyRequestRow = {
