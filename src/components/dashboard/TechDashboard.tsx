@@ -53,6 +53,8 @@ type Props = {
   // "Needs my action" service signals
   revisionRequestedCount: number
   equipmentToVerifyCount: number
+  // Completed jobs (mine) for PO-required customers still missing a customer PO
+  poNeededCount: number
   // Which tab to show first (seeded from server searchParams)
   initialTab: string
 }
@@ -70,7 +72,8 @@ export default function TechDashboard(p: Props) {
     p.skipRequestedCount +
     p.partsReady +
     p.revisionRequestedCount +
-    p.equipmentToVerifyCount
+    p.equipmentToVerifyCount +
+    p.poNeededCount
 
   // Combined "Up Next" feed — a few PM + active service items, emergencies first.
   const feedItems = [
@@ -187,6 +190,22 @@ export default function TechDashboard(p: Props) {
                 </div>
                 <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
                   {p.equipmentToVerifyCount}
+                </div>
+              </Link>
+            )}
+            {p.poNeededCount > 0 && (
+              <Link
+                href="/service?status=completed&poNeeded=1"
+                className="block rounded-lg border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 p-4 hover:shadow transition-shadow"
+              >
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                    My Jobs Waiting on PO
+                  </span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2 tabular-nums">
+                  {p.poNeededCount}
                 </div>
               </Link>
             )}
