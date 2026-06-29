@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { PackageCheck, Download, FileText, BarChart3 } from 'lucide-react'
+import { PackageCheck, Download, FileText, BarChart3, Pencil, Ban, RotateCcw } from 'lucide-react'
 import type { SupplyRequestQueueRow } from '@/lib/db/supply-requests'
+import type { SupplyRequestItem } from '@/types/database'
 
 // CSV cell escaper — quote when the value contains a comma, quote, or newline.
 function csvCell(value: unknown): string {
@@ -30,7 +31,8 @@ function exportPullList(rows: SupplyRequestQueueRow[]) {
   const lines = [header.map(csvCell).join(',')]
   for (const r of rows) {
     const requested = new Date(r.created_at).toLocaleDateString()
-    for (const it of r.items) {
+    // Denied lines aren't pulled — leave them off the warehouse list.
+    for (const it of r.items.filter((it) => !it.denied)) {
       lines.push(
         [
           csvCell(r.requester_name),
@@ -52,7 +54,8 @@ function exportPullList(rows: SupplyRequestQueueRow[]) {
 // flattened line per item, matching the CSV. Mirrors parts-queue's PDF export.
 async function exportPullListPdf(rows: SupplyRequestQueueRow[]) {
   const payload = rows.flatMap((r) =>
-    r.items.map((it) => ({
+    // Denied lines aren't pulled — leave them off the warehouse list.
+    r.items.filter((it) => !it.denied).map((it) => ({
       tech: r.requester_name,
       item: it.name,
       quantity: it.quantity,
@@ -99,6 +102,7 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
   const [error, setError] = useState<string | null>(null)
   const [denyingId, setDenyingId] = useState<string | null>(null)
   const [denyReason, setDenyReason] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [pdfBusy, setPdfBusy] = useState(false)
 
   const buckets = useMemo(() => {
@@ -131,6 +135,29 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // Persist office edits to a request's line items (quantities + per-line deny).
+  async function saveItems(id: string, items: SupplyRequestItem[]) {
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/supply-requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_items', items }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b?.error || 'Failed to save changes')
+      }
+      setEditingId(null)
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save changes')
     } finally {
       setBusyId(null)
     }
@@ -234,21 +261,38 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">Denied</span>
                     )}
                   </div>
-                  <ul className="mt-2 text-sm text-gray-700 dark:text-gray-300 space-y-0.5">
-                    {r.items.map((it, i) => (
-                      <li key={i}>
-                        {it.name}
-                        <span className="text-gray-400"> × {it.quantity}{it.unit ? ` ${it.unit}` : ''}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {editingId === r.id ? (
+                    <LineEditor
+                      request={r}
+                      busy={busyId === r.id}
+                      onCancel={() => setEditingId(null)}
+                      onSave={(items) => saveItems(r.id, items)}
+                    />
+                  ) : (
+                    <ul className="mt-2 text-sm text-gray-700 dark:text-gray-300 space-y-0.5">
+                      {r.items.map((it, i) => (
+                        <li key={i}>
+                          <span className={it.denied ? 'line-through text-gray-400 dark:text-gray-500' : ''}>
+                            {it.name}
+                            <span className="text-gray-400"> × {it.quantity}{it.unit ? ` ${it.unit}` : ''}</span>
+                          </span>
+                          {it.denied && (
+                            <span className="ml-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                              denied{it.denied_reason ? `: ${it.denied_reason}` : ''}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {r.note && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">“{r.note}”</p>}
                   {r.status === 'denied' && r.denied_reason && (
                     <p className="mt-2 text-xs text-red-600 dark:text-red-400">Reason: {r.denied_reason}</p>
                   )}
                 </div>
 
-                {/* Actions */}
+                {/* Actions — hidden while the line editor is open (it has its own buttons) */}
+                {editingId !== r.id && (
                 <div className="shrink-0">
                   {denyingId === r.id ? (
                     <div className="flex flex-col items-stretch gap-1.5 w-full sm:w-56">
@@ -288,6 +332,14 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
                             {busyId === r.id ? 'Saving…' : 'Mark Ready'}
                           </button>
                           <button
+                            onClick={() => { setEditingId(r.id); setDenyingId(null); setError(null) }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                            title="Adjust quantities or deny individual lines"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          <button
                             onClick={() => { setDenyingId(r.id); setDenyReason(''); setError(null) }}
                             className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
                           >
@@ -325,11 +377,158 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </li>
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+// Inline editor for a pending request's line items: adjust quantities and deny
+// individual lines (feedback #65). A denied line keeps its quantity but won't be
+// pulled; the office can restore it. Reason is optional.
+type DraftItem = {
+  name: string
+  quantity: string // string while editing so the input can be cleared mid-edit
+  unit: string | null
+  catalog_id: string | null
+  denied: boolean
+  denied_reason: string
+}
+
+function LineEditor({
+  request,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  request: SupplyRequestQueueRow
+  busy: boolean
+  onCancel: () => void
+  onSave: (items: SupplyRequestItem[]) => void
+}) {
+  const [items, setItems] = useState<DraftItem[]>(() =>
+    request.items.map((it) => ({
+      name: it.name,
+      quantity: String(it.quantity),
+      unit: it.unit ?? null,
+      catalog_id: it.catalog_id ?? null,
+      denied: it.denied ?? false,
+      denied_reason: it.denied_reason ?? '',
+    })),
+  )
+  const [localError, setLocalError] = useState<string | null>(null)
+
+  function update(i: number, changes: Partial<DraftItem>) {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...changes } : it)))
+  }
+
+  function handleSave() {
+    const out: SupplyRequestItem[] = []
+    for (const it of items) {
+      const qty = Math.floor(Number(it.quantity))
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setLocalError(`Enter a quantity greater than zero for "${it.name}".`)
+        return
+      }
+      out.push({
+        name: it.name,
+        quantity: qty,
+        catalog_id: it.catalog_id,
+        unit: it.unit,
+        ...(it.denied ? { denied: true, denied_reason: it.denied_reason.trim() || null } : {}),
+      })
+    }
+    setLocalError(null)
+    onSave(out)
+  }
+
+  const activeCount = items.filter((it) => !it.denied).length
+
+  return (
+    <div className="mt-2 space-y-2">
+      <ul className="space-y-1.5">
+        {items.map((it, i) => (
+          <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
+            <span
+              className={`min-w-[6rem] flex-1 ${
+                it.denied ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'
+              }`}
+            >
+              {it.name}
+            </span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={it.quantity}
+              disabled={it.denied || busy}
+              onChange={(e) => update(i, { quantity: e.target.value })}
+              className="w-16 px-2 py-1 text-xs text-right rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white disabled:opacity-50"
+              aria-label={`Quantity for ${it.name}`}
+            />
+            {it.unit && <span className="w-10 text-xs text-gray-400">{it.unit}</span>}
+            {it.denied ? (
+              <>
+                <input
+                  value={it.denied_reason}
+                  onChange={(e) => update(i, { denied_reason: e.target.value })}
+                  placeholder="Reason (optional)"
+                  disabled={busy}
+                  className="min-w-[6rem] flex-1 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                  aria-label={`Denial reason for ${it.name}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => update(i, { denied: false, denied_reason: '' })}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Restore
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => update(i, { denied: true })}
+                disabled={busy}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-50"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                Deny
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {localError && <p className="text-xs text-red-600 dark:text-red-400">{localError}</p>}
+      {activeCount === 0 && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Every line is denied — consider denying the whole request instead.
+        </p>
+      )}
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={busy}
+          className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save changes'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }

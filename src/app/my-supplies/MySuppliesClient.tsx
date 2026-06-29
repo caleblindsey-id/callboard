@@ -276,8 +276,15 @@ export default function MySuppliesClient({ catalog, requests }: Props) {
                   <ul className="mt-2 text-sm text-gray-700 dark:text-gray-300 space-y-0.5">
                     {r.items.map((it, i) => (
                       <li key={i}>
-                        {it.name}
-                        <span className="text-gray-400"> × {it.quantity}{it.unit ? ` ${it.unit}` : ''}</span>
+                        <span className={it.denied ? 'line-through text-gray-400 dark:text-gray-500' : ''}>
+                          {it.name}
+                          <span className="text-gray-400"> × {it.quantity}{it.unit ? ` ${it.unit}` : ''}</span>
+                        </span>
+                        {it.denied && (
+                          <span className="ml-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                            denied{it.denied_reason ? `: ${it.denied_reason}` : ''}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
