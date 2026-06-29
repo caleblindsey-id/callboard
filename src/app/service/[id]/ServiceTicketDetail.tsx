@@ -443,131 +443,6 @@ function MarginOverrideModal({ violations, onSubmit, onCancel }: MarginOverrideM
   )
 }
 
-// ── Quick Complete bottom sheet (mobile) ───────────────────────────────────
-
-interface QuickCompleteSheetProps {
-  open: boolean
-  busy: boolean
-  signatureRequired: boolean
-  onCancel: () => void
-  onSwitchToFull: () => void
-  onSubmit: (data: { hours: number; notes: string; signatureImage: string | null; signatureName: string }) => void
-}
-
-function QuickCompleteSheet({ open, busy, signatureRequired, onCancel, onSwitchToFull, onSubmit }: QuickCompleteSheetProps) {
-  // Parent uses `key={open}` to remount this on toggle so a fresh form is
-  // guaranteed without setState-in-effect cascades.
-  const [hours, setHours] = useState('')
-  const [notes, setNotes] = useState('')
-  const [sigImage, setSigImage] = useState<string | null>(null)
-  const [sigName, setSigName] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  if (!open) return null
-
-  const submit = () => {
-    const h = parseFloat(hours)
-    if (!Number.isFinite(h) || h <= 0) {
-      setError('Enter hours worked.')
-      return
-    }
-    if (signatureRequired && (!sigImage || !sigName.trim())) {
-      setError('Customer signature and printed name are required.')
-      return
-    }
-    setError(null)
-    onSubmit({ hours: h, notes: notes.trim(), signatureImage: sigImage, signatureName: sigName.trim() })
-  }
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Quick complete"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full sm:max-w-md sm:rounded-lg rounded-t-2xl bg-white dark:bg-gray-800 border-t sm:border border-gray-200 dark:border-gray-700 shadow-xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-white dark:bg-gray-800 px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Quick Complete</h3>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 min-w-[44px] min-h-[44px] flex items-center justify-center -mr-2"
-          >
-            &times;
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-3 py-2">
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-            </div>
-          )}
-          <div>
-            <label htmlFor="qc-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Hours worked
-            </label>
-            <input
-              id="qc-hours"
-              type="number"
-              inputMode="decimal"
-              step="0.25"
-              min="0"
-              autoFocus
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 text-base w-full focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[44px]"
-              placeholder="0.00"
-            />
-          </div>
-          <div>
-            <label htmlFor="qc-notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Completion notes
-            </label>
-            <textarea
-              id="qc-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 text-base w-full focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="What you fixed..."
-            />
-          </div>
-          {signatureRequired && (
-            <SignaturePad
-              onSignatureChange={({ image, name: sigPrinted }) => {
-                setSigImage(image)
-                setSigName(sigPrinted)
-              }}
-            />
-          )}
-          <button
-            type="button"
-            onClick={submit}
-            disabled={busy}
-            className="w-full px-4 py-3 text-base font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[48px]"
-          >
-            {busy ? 'Completing...' : 'Mark Complete'}
-          </button>
-          <button
-            type="button"
-            onClick={onSwitchToFull}
-            disabled={busy}
-            className="w-full px-4 py-3 text-sm font-medium text-center text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Used parts or need to edit? Open full completion
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Section accordion wrapper ──────────────────────────────────────────────
 // Uses uncontrolled <details> with a key so changes to `open` re-render the
 // element rather than fighting the browser's internal state. The `title` is
@@ -605,7 +480,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -785,7 +660,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [estimateCallNotes, setEstimateCallNotes] = useState('')
 
   // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
-  const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
   // Post-completion confirmation popup ("where to next")
   const [completed, setCompleted] = useState(false)
   // Set once the tech verifies the unit this session, for instant UI feedback
@@ -1064,47 +938,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       setEstimateCallOpen(false)
       setEstimateCallNotes('')
       setSuccessMsg('Call logged.')
-    })
-  }
-
-  async function handleQuickComplete({
-    hours,
-    notes,
-    signatureImage,
-    signatureName,
-  }: {
-    hours: number
-    notes: string
-    signatureImage: string | null
-    signatureName: string
-  }) {
-    await apiAction(async () => {
-      // Persist a warranty correction before completing — the /complete route
-      // recomputes billing from the STORED billing_type, so it must be saved
-      // first for the $0 math to apply.
-      if (billingType !== ticket.billing_type) {
-        await patchTicket({ billing_type: billingType })
-      }
-      const res = await fetch(`/api/service-tickets/${ticket.id}/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          completed_at: new Date().toISOString(),
-          hours_worked: hours,
-          parts_used: [],
-          completion_notes: notes || null,
-          customer_signature: signatureImage,
-          customer_signature_name: signatureName || null,
-          photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-          ace_labor: null,
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to complete ticket')
-      }
-      setQuickCompleteOpen(false)
-      setCompleted(true)
     })
   }
 
@@ -1959,16 +1792,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     ? (ticket.status === SERVICE_STATUS.APPROVED || ticket.status === SERVICE_STATUS.IN_PROGRESS)
     : completionOpenDefault
 
-  const quickCompleteEligible =
-    ticket.status === SERVICE_STATUS.IN_PROGRESS &&
-    isTech &&
-    ticket.assigned_technician_id === userId &&
-    // When the unit still needs verification, Quick Complete can't run — the
-    // tech is routed to the full form, which surfaces the verify panel.
-    !needsEquipmentVerify
-
-  const signatureRequired = ticket.ticket_type !== 'inside'
-
   // ── Next Step bar ──
   // One contextual primary action per stage, surfaced at the top so the
   // viewer never hunts for "what's next". The same booleans gate the bar's
@@ -2008,19 +1831,29 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // sub-inputs. When it shows, the top bar is hidden for that stage so the
   // action isn't duplicated.
   const showMobileActionBar =
-    isMobile && !showEstimateForm && !showCompletionForm && !quickCompleteOpen && (
+    isMobile && !showEstimateForm && !showCompletionForm && (
       isWarrantyOpen ||
       (ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen) ||
       (ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking) ||
       ticket.status === SERVICE_STATUS.IN_PROGRESS
     )
 
+  // Sticky "Mark Complete" bar shown on a phone once the full completion form
+  // is open, so the tech can submit without scrolling to the bottom. Gated off
+  // needsEquipmentVerify so it doesn't appear while the verify panel is up
+  // instead of the form. Submits the form via the `form` attribute.
+  const showMobileCompletionBar =
+    isMobile &&
+    ticket.status === SERVICE_STATUS.IN_PROGRESS &&
+    showCompletionForm &&
+    !needsEquipmentVerify
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
 
   return (
-    <div className={`space-y-6 ${showMobileActionBar ? 'pb-24' : ''}`}>
+    <div className={`space-y-6 ${showMobileActionBar || showMobileCompletionBar ? 'pb-24' : ''}`}>
       {/* Workflow state card — top of detail page, always visible. */}
       <WorkflowStatusCard
         state={workflowProps.state}
@@ -2303,7 +2136,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           completion form still live in their own cards below; the buttons
           here open them. On mobile, simple stages are handled by the sticky
           bottom bar, so the top bar yields to it (no duplicate button). */}
-      {viewerHasPrimaryAction && !showMobileActionBar && !quickCompleteOpen && (
+      {viewerHasPrimaryAction && !showMobileActionBar && (
         <div className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-5 space-y-3">
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Next Step
@@ -3653,7 +3486,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               relinkTicketKind="service"
             />
           ) : (
-          <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
+          <form id="service-completion-form" onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Prefilled-from-estimate reminder. Only shown when an estimate was
                 approved — the work order was seeded from it on Start Work. Calls
                 out the diagnosis-vs-completion distinction explicitly so the tech
@@ -3735,37 +3568,48 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
             {/* Machine Hours + Date Code — optional equipment service-life data
                 (parity with PM completion; optional since not every service unit
-                has an hour meter). */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="svc-machine-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Machine Hours <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  id="svc-machine-hours"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={machineHours}
-                  onChange={(e) => setMachineHours(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="e.g. 1247.5"
-                />
+                has an hour meter). Collapsed when empty so the core fields show
+                first on a phone; matches the Parts/Photos collapse pattern. */}
+            <details open={machineHours !== '' || dateCode !== ''} className="rounded-md border border-gray-200 dark:border-gray-700">
+              <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                <span>Machine Hours &amp; Date Code <span className="text-gray-400 font-normal">(optional)</span></span>
+                <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </summary>
+              <div className="p-3 pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="svc-machine-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Machine Hours <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="svc-machine-hours"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={machineHours}
+                      onChange={(e) => setMachineHours(e.target.value)}
+                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      placeholder="e.g. 1247.5"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="svc-date-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Date Code <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="svc-date-code"
+                      type="text"
+                      value={dateCode}
+                      onChange={(e) => setDateCode(e.target.value)}
+                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      placeholder="e.g. 26W15"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label htmlFor="svc-date-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Date Code <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  id="svc-date-code"
-                  type="text"
-                  value={dateCode}
-                  onChange={(e) => setDateCode(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="e.g. 26W15"
-                />
-              </div>
-            </div>
+            </details>
 
             {/* Parts Used — collapsible sub-section so the tech can skip
                 past it on mobile when nothing's been added. */}
@@ -3973,7 +3817,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               <button
                 type="submit"
                 disabled={loading || uploading || saving}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
+                className="hidden sm:block px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
               >
                 {loading ? 'Completing...' : 'Mark Complete'}
               </button>
@@ -4248,8 +4092,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* Mobile sticky action bar — the primary action stays reachable at the
           bottom of the screen on phones (≤640px) per the mobile-first-for-techs
-          rule. in_progress opens the QuickCompleteSheet for the assigned tech,
-          else the inline completion form. */}
+          rule. in_progress opens the inline completion form (the full work-order
+          form, which is mobile-first); a separate sticky bar below keeps "Mark
+          Complete" reachable once that form is open. */}
       {showMobileActionBar && (
         <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           {isWarrantyOpen && (
@@ -4294,7 +4139,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
             <button
               type="button"
-              onClick={() => (quickCompleteEligible ? setQuickCompleteOpen(true) : setShowCompletionForm(true))}
+              onClick={() => setShowCompletionForm(true)}
               className="w-full px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[48px]"
             >
               Complete Job
@@ -4302,18 +4147,21 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           )}
         </div>
       )}
-      <QuickCompleteSheet
-        key={`quick-complete-${quickCompleteOpen}`}
-        open={quickCompleteOpen}
-        busy={loading}
-        signatureRequired={signatureRequired}
-        onCancel={() => setQuickCompleteOpen(false)}
-        onSwitchToFull={() => {
-          setQuickCompleteOpen(false)
-          setShowCompletionForm(true)
-        }}
-        onSubmit={handleQuickComplete}
-      />
+      {/* Sticky "Mark Complete" bar — keeps submit reachable on a phone while
+          the full completion form is open. Submits the form by id so it works
+          even though the button sits outside the <form>. */}
+      {showMobileCompletionBar && (
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <button
+            type="submit"
+            form="service-completion-form"
+            disabled={loading || uploading || saving}
+            className="w-full px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[48px]"
+          >
+            {loading ? 'Completing...' : 'Mark Complete'}
+          </button>
+        </div>
+      )}
       <CompletionSuccessDialog
         open={completed}
         ticketsHref="/service"
