@@ -9,6 +9,7 @@ import {
   getPartsReadyForPickupCount,
   getServiceTicketCounts,
   getServiceTickets,
+  getPoNeededCount,
 } from '@/lib/db/service-tickets'
 import { getOpenWorkCounts, getMtdRevenue } from '@/lib/db/dashboard-metrics'
 import { redirect } from 'next/navigation'
@@ -28,6 +29,7 @@ import ReadyForPickupSection from '@/components/dashboard/sections/ReadyForPicku
 import EstimateFollowUpSection from '@/components/dashboard/sections/EstimateFollowUpSection'
 import DeclinedEstimatesSection from '@/components/dashboard/sections/DeclinedEstimatesSection'
 import WarrantyClaimsSection from '@/components/dashboard/sections/WarrantyClaimsSection'
+import PoNeededSection from '@/components/dashboard/sections/PoNeededSection'
 import {
   KpiSkeleton,
   AlertsSkeleton,
@@ -68,6 +70,7 @@ export default async function DashboardPage({
       mtd,
       serviceCounts,
       serviceTickets,
+      poNeededCount,
     ] = await Promise.all([
       getTickets({ month, year, technicianId: user.id }),
       getOverdueTicketCount({ technicianId: user.id }),
@@ -78,6 +81,7 @@ export default async function DashboardPage({
       getMtdRevenue(user.id),
       getServiceTicketCounts(user.id),
       getServiceTickets({ technicianId: user.id }),
+      getPoNeededCount(user.id),
     ])
 
     // PM "My Work" breakdown (this month).
@@ -135,6 +139,7 @@ export default async function DashboardPage({
         serviceWork={serviceWork}
         revisionRequestedCount={revisionRequestedCount}
         equipmentToVerifyCount={equipmentToVerifyCount}
+        poNeededCount={poNeededCount}
         initialTab={params.tab ?? ''}
       />
     )
@@ -180,6 +185,10 @@ export default async function DashboardPage({
 
       <Suspense fallback={<ReadyToBillSkeleton />}>
         <WarrantyClaimsSection />
+      </Suspense>
+
+      <Suspense fallback={<ReadyToBillSkeleton />}>
+        <PoNeededSection />
       </Suspense>
 
       <Suspense fallback={<ReadyToBillSkeleton />}>

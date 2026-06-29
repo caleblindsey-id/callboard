@@ -193,6 +193,7 @@ export async function GET(request: NextRequest) {
       ticketType?: ServiceTicketType
       billingType?: ServiceBillingType
       waitingOnParts?: boolean
+      poNeeded?: boolean
       deletedOnly?: boolean
     } = {}
 
@@ -203,6 +204,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.get('ticketType')) filters.ticketType = searchParams.get('ticketType') as ServiceTicketType
     if (searchParams.get('billingType')) filters.billingType = searchParams.get('billingType') as ServiceBillingType
     if (searchParams.get('waitingOnParts') === 'true') filters.waitingOnParts = true
+    if (searchParams.get('poNeeded') === '1') filters.poNeeded = true
 
     // Techs only see their own tickets (RLS enforces this too, but filter for clarity)
     if (isTechnician(user.role)) {

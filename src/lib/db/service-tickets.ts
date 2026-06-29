@@ -20,6 +20,12 @@ interface ServiceTicketFilters {
   ticketType?: ServiceTicketType
   billingType?: ServiceBillingType
   waitingOnParts?: boolean
+  // Completed tickets for PO-required customers that still have no customer PO on
+  // file — the "waiting on PO" worklist. Forces status='completed' and requires
+  // an inner customers join (see getServiceTickets), so it's handled there rather
+  // than in applyServiceTicketFilters. Mirrors the needsPo() gate in
+  // ServiceBillingExport.tsx.
+  poNeeded?: boolean
   // Soft-delete scoping (parity with PM getTickets). Default (both unset) excludes
   // deleted tickets. deletedOnly → only deleted; includeDeleted → both.
   includeDeleted?: boolean
@@ -64,6 +70,12 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
   // Listing query: only select columns the board renders. Avoids pulling
   // large JSONB blobs (estimate_parts, parts_requested, customer_signature,
   // photos) on every row — meaningful payload reduction at scale.
+  // The PO-needed view filters on customers.po_required, which requires an INNER
+  // join (a non-inner embed would null the embed but still return the parent row,
+  // defeating the filter), so swap the customers embed accordingly.
+  const customersJoin = filters?.poNeeded
+    ? 'customers!inner ( name, account_number, credit_hold, po_required )'
+    : 'customers ( name, account_number, credit_hold )'
   let query = supabase
     .from('service_tickets')
     .select(`
@@ -71,10 +83,10 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       problem_description, customer_id, equipment_id, assigned_technician_id,
       contact_name, contact_phone, service_address, service_city, service_state,
       equipment_make, equipment_model, equipment_serial_number, estimate_amount, billing_amount,
-      request_info_note,
+      request_info_note, po_number,
       synergy_order_number, synergy_invoice_number, synergy_validation_status, parts_received,
       created_at, updated_at, started_at, completed_at, deleted_at,
-      customers ( name, account_number, credit_hold ),
+      ${customersJoin},
       equipment ( make, model, serial_number, description, details_verified_at,
         ship_to_locations ( name, address, city, state, zip )
       ),
@@ -84,7 +96,16 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
     `)
     .order('created_at', { ascending: false })
 
-  if (filters?.status) query = query.eq('status', filters.status)
+  if (filters?.poNeeded) {
+    // PO-needed supersedes the plain status filter: completed tickets for
+    // PO-required customers with no customer PO yet (null or '').
+    query = query
+      .eq('status', 'completed')
+      .eq('customers.po_required', true)
+      .or('po_number.is.null,po_number.eq.')
+  } else if (filters?.status) {
+    query = query.eq('status', filters.status)
+  }
   query = applyServiceTicketFilters(query, filters)
 
   const { data, error } = await query
@@ -544,6 +565,29 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
     counts[ACTIVE_SERVICE_STATUSES[i]] = r.count ?? 0
   }
   return counts
+}
+
+// --- Completed-but-waiting-on-PO count (dashboard card) ---
+// Completed tickets for PO-required customers that still have no customer PO on
+// file — the same subset the billing Ready-to-Export gate blocks (needsPo in
+// ServiceBillingExport.tsx). The inner customers join restricts the count to
+// PO-required customers; po_number empty = null OR ''. Pass technicianId to scope
+// to a single tech's completed tickets (the technician dashboard card).
+export async function getPoNeededCount(technicianId?: string): Promise<number> {
+  const supabase = await createClient()
+  let q = supabase
+    .from('service_tickets')
+    .select('id, customers!inner(po_required)', { count: 'exact', head: true })
+    .eq('status', 'completed')
+    .eq('customers.po_required', true)
+    .is('deleted_at', null)
+    .or('po_number.is.null,po_number.eq.')
+  if (technicianId) {
+    q = q.eq('assigned_technician_id', technicianId)
+  }
+  const { count, error } = await q
+  if (error) throw error
+  return count ?? 0
 }
 
 // --- Bulk assign a technician to service tickets ---
