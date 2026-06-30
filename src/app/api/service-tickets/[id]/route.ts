@@ -658,6 +658,10 @@ export async function PATCH(
           estimate_approved: false,
           estimate_approved_at: null,
           auto_approved: false,
+          // A reopened bypass ("started without an estimate") is no longer
+          // pre-authorized — clear the flag so the orange banner doesn't stick
+          // and the ticket reads as a clean, un-estimated 'open' ticket.
+          estimate_bypassed: false,
           diagnosis_notes: null,
           estimate_signature: null,
           estimate_signature_name: null,
