@@ -34,6 +34,7 @@ export async function POST(
         id,
         work_order_number,
         synergy_order_number,
+        po_number,
         status,
         ticket_type,
         billing_type,
@@ -178,6 +179,7 @@ export async function POST(
     const workOrder = {
       workOrderNumber: raw.work_order_number as number | null,
       synergyOrderNumber: (raw.synergy_order_number as string | null) ?? null,
+      poNumber: (raw.po_number as string | null) ?? null,
       customerName: customer?.name ?? '—',
       accountNumber: customer?.account_number ?? null,
       serviceAddress,
