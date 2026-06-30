@@ -391,6 +391,7 @@ export default async function TicketDetailPage({
               !!ticket.equipment?.serial_number?.trim()
             }
             poDueDates={poDueDates}
+            userId={user?.id ?? null}
           />
 
           <TicketActions
