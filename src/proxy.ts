@@ -31,6 +31,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/notifications(\/|$)/,                             // GET /api/notifications + POST /api/notifications/mark-read (the bell)
   /^\/api\/supply-requests(\/|$)/,                           // POST /api/supply-requests (tech requests supplies) + DELETE /api/supply-requests/[id] (cancel own); manager-only PATCH actions are role-gated in the route
   /^\/api\/supply-catalog(\/|$)/,                            // GET /api/supply-catalog (quick-pick list — all roles)
+  /^\/api\/parts-queue\/update$/,                            // POST /api/parts-queue/update — techs may only run action:'mark_collected' (Mark Picked Up) on their OWN ticket; all other actions are MANAGER_ROLES-gated in the route. Exact-match: it's the only /api/parts-queue/* route.
 ]
 
 function isTechAllowed(pathname: string): boolean {
