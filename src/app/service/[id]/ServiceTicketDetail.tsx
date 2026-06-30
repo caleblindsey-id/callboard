@@ -1137,8 +1137,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     showEstimateForm &&
     (ticket.status === SERVICE_STATUS.OPEN ||
       ticket.status === SERVICE_STATUS.ESTIMATED ||
-      ticket.status === SERVICE_STATUS.DECLINED)
-  const completionPhaseActive = ticket.status === SERVICE_STATUS.IN_PROGRESS
+      ticket.status === SERVICE_STATUS.DECLINED ||
+      // Add-estimate-after-bypass: the builder can also be opened on an
+      // in_progress ticket that was started without an estimate.
+      (ticket.status === SERVICE_STATUS.IN_PROGRESS && ticket.estimate_bypassed))
+  // Completion auto-save yields to the estimate builder when it's open (the two
+  // are mutually exclusive), so a bypassed ticket mid-estimate doesn't also try
+  // to auto-save completion fields.
+  const completionPhaseActive =
+    ticket.status === SERVICE_STATUS.IN_PROGRESS && !estimatePhaseActive
   const autoSavePhase: SavePhase | null = estimatePhaseActive
     ? 'estimate'
     : completionPhaseActive
@@ -2287,14 +2294,32 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </button>
           )}
 
-          {/* In progress → complete the job (opens completion form below) */}
-          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && (
-            <button
-              onClick={() => setShowCompletionForm(true)}
-              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
-            >
-              Complete Job
-            </button>
+          {/* In progress → complete the job (opens completion form below), plus
+              an escape hatch on a "started without an estimate" (bypassed) ticket
+              to add a real estimate after the fact. Building the estimate flips
+              the ticket back to the estimate/approval flow without losing the
+              diagnosis, photos, or started_at already captured. Hidden while
+              either form is open. */}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && !showEstimateForm && (
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+              <button
+                onClick={() => setShowCompletionForm(true)}
+                className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
+              >
+                Complete Job
+              </button>
+              {ticket.estimate_bypassed && (
+                <button
+                  onClick={() => {
+                    setShowCompletionForm(false)
+                    setShowEstimateForm(true)
+                  }}
+                  className="w-full sm:w-auto px-5 py-3 text-sm font-medium text-yellow-700 dark:text-yellow-400 bg-white dark:bg-gray-700 border border-yellow-400 dark:border-yellow-600 rounded-md hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors min-h-[44px]"
+                >
+                  Build Estimate
+                </button>
+              )}
+            </div>
           )}
 
           {/* Completed + staff → record Synergy invoice #, then bill */}
@@ -2919,7 +2944,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           )}
 
           {/* Estimate builder — opened from the Next Step bar above */}
-          {ticket.status === SERVICE_STATUS.OPEN && showEstimateForm && (
+          {(ticket.status === SERVICE_STATUS.OPEN ||
+            (ticket.status === SERVICE_STATUS.IN_PROGRESS && ticket.estimate_bypassed)) &&
+            showEstimateForm && (
             <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
               <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
                 {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}

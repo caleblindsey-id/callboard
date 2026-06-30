@@ -256,7 +256,7 @@ export const SERVICE_VALID_TRANSITIONS: Record<ServiceTicketStatus, ServiceTicke
   open:        ['estimated', 'in_progress', 'canceled'],
   estimated:   ['approved', 'declined', 'canceled'],
   approved:    ['in_progress', 'canceled'],
-  in_progress: ['completed', 'open', 'approved', 'canceled'],
+  in_progress: ['completed', 'open', 'approved', 'estimated', 'canceled'],
   completed:   ['billed', 'open', 'approved'],
   billed:      ['open', 'approved'],
   declined:    ['open'],
