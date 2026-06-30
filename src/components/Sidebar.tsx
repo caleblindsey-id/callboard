@@ -318,7 +318,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 {APP_NAME}
               </span>
             </div>
-            <NotificationBell />
+            {/* Desktop only — on mobile the top-header bell (LayoutShell) covers
+                notifications; a second bell here would duplicate it and its panel
+                can't fit inside the narrow drawer. Opens rightward off the left rail. */}
+            <div className="hidden lg:block">
+              <NotificationBell align="left" />
+            </div>
           </div>
         </div>
         <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-1">
