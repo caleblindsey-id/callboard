@@ -1641,8 +1641,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     // estimate + approval survive and only completion data is cleared.
     // Everything else (declined-revise, canceled, or worked tickets without
     // an approved estimate) keeps the original wipe-to-'open' behavior.
+    //
+    // Bypassed tickets ("started without an estimate") are excluded: their
+    // estimate_approved=true is just the pre-authorized marker, not a real
+    // customer sign-off, and there's no estimate to preserve — so reopening
+    // them lands at 'open' (clearing the bypass flag) instead of leaving a
+    // hollow "Approved" status behind.
     const reopenToApproved =
       ticket.estimate_approved &&
+      !ticket.estimate_bypassed &&
       (ticket.status === SERVICE_STATUS.IN_PROGRESS ||
         ticket.status === SERVICE_STATUS.COMPLETED ||
         ticket.status === SERVICE_STATUS.BILLED)
