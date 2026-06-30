@@ -480,7 +480,7 @@ function CardSection({
   )
 }
 
-export function ServiceTicketDetail({ ticket, userRole, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
+export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -1496,14 +1496,22 @@ export function ServiceTicketDetail({ ticket, userRole, laborRate, laborRates, t
     })
   }
 
-  // Drop an un-ordered part request off the ticket entirely. Only offered for
-  // pending_review/requested parts (see the gated button) — those never reached
-  // the office order queue, carry no PO, and have no audit value, so we hard-remove
-  // (mirrors PM's handleDeletePart) rather than leaving a cancelled tombstone. The
-  // PATCH validators only fire on new/ordered parts, so a shrunk array passes; the
-  // route recomputes parts_received over what's left.
+  // Drop an un-ordered part request off the ticket. Only offered for
+  // pending_review/requested parts (see the gated button). We SOFT-cancel the
+  // element in place rather than splicing it out: the Parts Queue addresses each
+  // part by its position in this array (parts_order_queue.part_index = array
+  // ordinal), so removing an element reindexes every later part and strands the
+  // queue's reference to any ordered sibling that followed it — the "part_index
+  // out of range" bug from feedback #64. Marking it cancelled keeps positions
+  // stable; cancelled parts already drop off every queue tab and the
+  // parts_received recompute, and render here as a struck-through tombstone.
   async function handleRemovePartRequest(index: number) {
-    const updatedParts = partsRequested.filter((_, i) => i !== index)
+    const now = new Date().toISOString()
+    const updatedParts = partsRequested.map((p, i) =>
+      i === index
+        ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId }
+        : p
+    )
     await apiAction(async () => {
       await patchTicket({ parts_requested: updatedParts })
       setPartsRequested(updatedParts)
