@@ -253,7 +253,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -421,6 +421,27 @@ export async function PATCH(
           { error: `Invalid status transition: ${currentStatus} → ${nextStatus}` },
           { status: 409 }
         )
+      }
+
+      // Add-an-estimate-after-bypass: a ticket "started without an estimate"
+      // (the pre-authorized bypass) can be flipped back into the estimate flow
+      // to attach a real estimate. The in_progress -> estimated transition is
+      // permitted ONLY for bypassed tickets — a warranty or normally-approved
+      // in_progress ticket has no business re-entering the estimate phase this
+      // way. Clearing the bypass flags routes it through real customer approval
+      // and drops the orange "pre-authorized" banner. The work already done
+      // (diagnosis, photos, started_at) is preserved because this path never
+      // hits the reopen-to-open wipe below.
+      if (currentStatus === 'in_progress' && nextStatus === 'estimated') {
+        if (!current.estimate_bypassed) {
+          return NextResponse.json(
+            { error: 'Only a ticket started without an estimate can have one added from in progress.' },
+            { status: 409 }
+          )
+        }
+        filtered.estimate_bypassed = false
+        filtered.estimate_approved = false
+        filtered.estimate_approved_at = null
       }
 
       // Credit-hold gate: block advancement into "work" states while AR review
@@ -650,8 +671,10 @@ export async function PATCH(
       // unit must be tech-verified (make/model + details_verified_at) before the
       // estimate can be submitted, since parts are ordered off the estimate.
       // Mirrors the completion gate in /complete. Inline-only and equipment-less
-      // tickets are unaffected (no row to verify).
-      if (nextStatus === 'estimated' && currentStatus === 'open') {
+      // tickets are unaffected (no row to verify). Also applies to the
+      // add-estimate-after-bypass path (in_progress → estimated), which is the
+      // ticket's first real estimate and orders parts off it just the same.
+      if (nextStatus === 'estimated' && (currentStatus === 'open' || currentStatus === 'in_progress')) {
         const linked = current.equipment as
           | { make: string | null; model: string | null; details_verified_at: string | null }
           | null
@@ -665,11 +688,12 @@ export async function PATCH(
 
       // Resubmitting an estimate after a Request-More-Info round-trip clears
       // the manager's note so the tech doesn't see a stale prompt next time.
-      if (nextStatus === 'estimated' && currentStatus === 'open') {
+      if (nextStatus === 'estimated' && (currentStatus === 'open' || currentStatus === 'in_progress')) {
         filtered.request_info_note = null
         // Stamp the follow-up aging clock (drives the estimate follow-up queue +
-        // re-notify cadence). open → estimated is the only entry into 'estimated',
-        // so a resubmit after Request-More-Info correctly restarts the clock.
+        // re-notify cadence). Entries into 'estimated' are open → estimated (incl.
+        // a resubmit after Request-More-Info) and the add-estimate-after-bypass
+        // in_progress → estimated path; both should (re)start the clock.
         filtered.estimated_at = new Date().toISOString()
       }
 
