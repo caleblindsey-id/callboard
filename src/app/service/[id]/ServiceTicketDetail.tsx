@@ -480,6 +480,26 @@ function CardSection({
   )
 }
 
+// Requested parts eligible to copy onto the completed work order — fulfilled
+// (received, or pulled from stock) and not cancelled. Mirrors the PM ticket
+// completion-seed filter (TicketActions.tsx requestedReceived) so both ticket
+// types treat "fulfilled" the same way; unlike PM, this is copied on demand
+// via a button rather than auto-seeded (service tickets have no
+// completion_seeded_at guard to stop a re-seed from resurrecting a part the
+// tech deliberately removed).
+function fulfilledRequestedParts(requested: PartRequest[]): PartRequest[] {
+  return requested.filter(
+    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled
+  )
+}
+
+// Dedupe key for a requested part vs an already-added completion part:
+// Synergy item # when catalog-linked, else the normalized description.
+function partDedupeKey(p: { synergyProductId?: number | null; synergy_product_id?: number | null; description: string }): string {
+  const id = p.synergyProductId ?? p.synergy_product_id
+  return id != null ? `id:${id}` : `desc:${p.description.trim().toLowerCase()}`
+}
+
 export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -586,6 +606,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       ? partsFromSaved(ticket.parts_used)
       : []
   )
+  // Fulfilled requested parts not yet copied onto the work order — backs the
+  // "Copy Requested Parts" button below. Recomputed on every render so a part
+  // that arrives (or gets copied) updates the button immediately.
+  const copyableRequestedParts = fulfilledRequestedParts(partsRequested).filter(
+    (r) => !completionParts.some((p) => partDedupeKey(p) === partDedupeKey(r))
+  )
+  function handleCopyRequestedParts() {
+    const converted = partsFromSaved(
+      copyableRequestedParts.map((r) => ({
+        synergy_product_id: r.synergy_product_id ?? null,
+        description: r.description,
+        quantity: r.quantity,
+        unit_price: r.unit_price ?? 0,
+        detail: r.detail,
+        product_number: r.product_number,
+      }))
+    )
+    setCompletionParts((prev) => [...prev, ...converted])
+  }
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
 
@@ -1301,14 +1340,29 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     const entry = estimateParts[index]
     if (!entry || !entry.description.trim() || entry.alreadyRequested) return
     const priceParsed = parseFloat(entry.unitPrice)
+    // Hardening: if the estimate entry has no sourcing data (e.g. a legacy
+    // snapshot saved before toServicePartUsed carried these fields, or a hard
+    // reopen that cleared estimate_parts and the tech rebuilt the line by hand),
+    // fall back to an existing parts_requested line for the same part so a
+    // re-request never downgrades vendor linkage the office already captured.
+    // Match on the Synergy product id when present, else on description.
+    const priorMatch = partsRequested.find((p) =>
+      entry.synergyProductId != null
+        ? p.synergy_product_id === entry.synergyProductId
+        : (p.description ?? '').trim().toLowerCase() === entry.description.trim().toLowerCase()
+    )
+    const productNumber = entry.productNumber?.trim() || priorMatch?.product_number || undefined
+    const vendorItemCode = entry.vendorItemCode?.trim() || priorMatch?.vendor_item_code || undefined
+    const vendor = entry.vendor?.trim() || priorMatch?.vendor || undefined
+    const vendorCode = entry.vendorCode?.trim() || priorMatch?.vendor_code || undefined
     const newPart: PartRequest = {
       description: entry.description.trim(),
       quantity: Number(entry.quantity) || 1,
-      product_number: entry.productNumber?.trim() || undefined,
+      product_number: productNumber,
       synergy_product_id: entry.synergyProductId ?? undefined,
-      vendor_item_code: entry.vendorItemCode?.trim() || undefined,
-      vendor: entry.vendor?.trim() || undefined,
-      vendor_code: entry.vendorCode?.trim() || undefined,
+      vendor_item_code: vendorItemCode,
+      vendor: vendor,
+      vendor_code: vendorCode,
       unit_price:
         entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? priceParsed : undefined,
       // New requests enter the office Review step (stock-vs-order triage) before
@@ -3709,8 +3763,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </details>
 
             {/* Parts Used — collapsible sub-section so the tech can skip
-                past it on mobile when nothing's been added. */}
-            <details open={completionParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
+                past it on mobile when nothing's been added. Opens automatically
+                when there's something to copy so the button isn't missed. */}
+            <details open={completionParts.length > 0 || copyableRequestedParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
               <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
                 <span>Parts Used{completionParts.length > 0 ? ` (${completionParts.length})` : ''}</span>
                 <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -3718,6 +3773,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 </svg>
               </summary>
               <div className="p-3 pt-0">
+                {copyableRequestedParts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyRequestedParts}
+                    className="mb-3 w-full sm:w-auto px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 min-h-[44px] sm:min-h-0 transition-colors"
+                  >
+                    Copy Requested Parts ({copyableRequestedParts.length})
+                  </button>
+                )}
                 <PartsEntryList
                   parts={completionParts}
                   setParts={setCompletionParts}

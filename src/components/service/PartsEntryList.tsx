@@ -91,13 +91,13 @@ export function emptyPart(): PartEntry {
   }
 }
 
-export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; detail?: string; requires_detail?: boolean }[]): PartEntry[] {
+export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string }[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
     quantity: String(p.quantity),
     unitPrice: String(p.unit_price),
     synergyProductId: p.synergy_product_id ?? null,
-    productNumber: null,
+    productNumber: p.product_number ?? null,
     isFromDb: p.synergy_product_id != null,
     searchOpen: false,
     searchResults: [],
@@ -107,10 +107,16 @@ export function partsFromSaved(saved: { synergy_product_id?: number | null; desc
     // product-select event, which never fires again on rehydrate.
     requiresDetail: !!p.requires_detail,
     detail: p.detail ?? '',
+    // Restore sourcing fields so a part re-requested after a reload/reopen keeps
+    // its vendor linkage (these are why the round-trip used to blank vendor +
+    // vendor part #). Saved by toServicePartUsed below.
+    vendorItemCode: p.vendor_item_code ?? null,
+    vendor: p.vendor ?? null,
+    vendorCode: p.vendor_code ?? null,
   }))
 }
 
-export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; detail?: string; requires_detail?: boolean }[] {
+export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string }[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
@@ -120,6 +126,12 @@ export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: n
     // Persist only when meaningful so non-flagged parts stay lean.
     ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
     ...(p.requiresDetail ? { requires_detail: true } : {}),
+    // Persist sourcing fields through the round-trip (see partsFromSaved). Only
+    // when set, so vendor-less / non-catalog lines stay lean. Internal-only.
+    ...(p.productNumber?.trim() ? { product_number: p.productNumber.trim() } : {}),
+    ...(p.vendorItemCode?.trim() ? { vendor_item_code: p.vendorItemCode.trim() } : {}),
+    ...(p.vendor?.trim() ? { vendor: p.vendor.trim() } : {}),
+    ...(p.vendorCode?.trim() ? { vendor_code: p.vendorCode.trim() } : {}),
   }))
 }
 
