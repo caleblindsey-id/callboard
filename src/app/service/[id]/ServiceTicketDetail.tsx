@@ -1291,14 +1291,29 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     const entry = estimateParts[index]
     if (!entry || !entry.description.trim() || entry.alreadyRequested) return
     const priceParsed = parseFloat(entry.unitPrice)
+    // Hardening: if the estimate entry has no sourcing data (e.g. a legacy
+    // snapshot saved before toServicePartUsed carried these fields, or a hard
+    // reopen that cleared estimate_parts and the tech rebuilt the line by hand),
+    // fall back to an existing parts_requested line for the same part so a
+    // re-request never downgrades vendor linkage the office already captured.
+    // Match on the Synergy product id when present, else on description.
+    const priorMatch = partsRequested.find((p) =>
+      entry.synergyProductId != null
+        ? p.synergy_product_id === entry.synergyProductId
+        : (p.description ?? '').trim().toLowerCase() === entry.description.trim().toLowerCase()
+    )
+    const productNumber = entry.productNumber?.trim() || priorMatch?.product_number || undefined
+    const vendorItemCode = entry.vendorItemCode?.trim() || priorMatch?.vendor_item_code || undefined
+    const vendor = entry.vendor?.trim() || priorMatch?.vendor || undefined
+    const vendorCode = entry.vendorCode?.trim() || priorMatch?.vendor_code || undefined
     const newPart: PartRequest = {
       description: entry.description.trim(),
       quantity: Number(entry.quantity) || 1,
-      product_number: entry.productNumber?.trim() || undefined,
+      product_number: productNumber,
       synergy_product_id: entry.synergyProductId ?? undefined,
-      vendor_item_code: entry.vendorItemCode?.trim() || undefined,
-      vendor: entry.vendor?.trim() || undefined,
-      vendor_code: entry.vendorCode?.trim() || undefined,
+      vendor_item_code: vendorItemCode,
+      vendor: vendor,
+      vendor_code: vendorCode,
       unit_price:
         entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? priceParsed : undefined,
       // New requests enter the office Review step (stock-vs-order triage) before
