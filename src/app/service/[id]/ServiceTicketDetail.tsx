@@ -507,6 +507,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // service-address fields and the customer-signature requirement; switching to
   // "inside" makes the ticket eligible for the pickup queue.
   const [ticketType, setTicketType] = useState<ServiceTicketType>(ticket.ticket_type)
+  // Staff-editable labor type (standard/industrial/vacuum) — corrects a
+  // mis-keyed rate before the job is marked complete. The API already allows
+  // labor_rate_type in STAFF_ALLOWED_FIELDS and /complete reads it fresh from
+  // the DB row, so a correction made here flows straight into the final bill
+  // (feedback #68). Locked once the ticket is completed/billed since the bill
+  // is already computed by then.
+  const [laborRateType, setLaborRateType] = useState(ticket.labor_rate_type ?? 'standard')
+  useEffect(() => {
+    setLaborRateType(ticket.labor_rate_type ?? 'standard')
+  }, [ticket.labor_rate_type])
   useEffect(() => {
     if (!isStaff) return
     createClient()
@@ -2031,6 +2041,51 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               {loading ? 'Saving...' : 'Save'}
             </button>
           </div>
+
+          {/* Labor type — correct a mis-keyed labor rate before the job is
+              marked complete. Locked once completed/billed: the bill is
+              already computed by then, so changing it here would no longer
+              do anything (feedback #68). */}
+          {(() => {
+            const laborTypeLocked =
+              ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
+            return (
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex-1">
+                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                    Labor Type
+                  </label>
+                  <select
+                    value={laborRateType}
+                    onChange={(e) => setLaborRateType(e.target.value)}
+                    disabled={loading || laborTypeLocked}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="industrial">Industrial</option>
+                    <option value="vacuum">Vacuum</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {laborTypeLocked
+                      ? 'Locked once the ticket is completed/billed.'
+                      : 'Drives the labor rate used on the estimate and final bill.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    apiAction(async () => {
+                      await patchTicket({ labor_rate_type: laborRateType })
+                      setSuccessMsg('Labor type updated')
+                    })
+                  }
+                  disabled={loading || laborTypeLocked || laborRateType === (ticket.labor_rate_type ?? 'standard')}
+                  className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+                >
+                  {loading ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            )
+          })()}
         </Card>
       )}
 
