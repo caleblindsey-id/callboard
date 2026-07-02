@@ -5,9 +5,8 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
-import SignaturePad from '@/components/SignaturePad'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
-import PartsEntryList, { PartEntry, emptyPart, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
+import { PartEntry, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
@@ -17,14 +16,13 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
-import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import type { LineViolation } from '@/lib/margin'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
-import ServicePhotosSection from './ServicePhotosSection'
 import EstimateSection from './EstimateSection'
 import PartsSection from './PartsSection'
-import { Badge, Card, InfoField, CardSection, SynergyNumberField } from './detail-ui'
+import CompletionSection from './CompletionSection'
+import { Badge, Card, InfoField, SynergyNumberField, billingTypeLabels } from './detail-ui'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import ChangeBillToSection from '@/app/tickets/[id]/ChangeBillToSection'
 import type {
@@ -70,11 +68,6 @@ const ticketTypeConfig: Record<string, { label: string; classes: string }> = {
   outside: { label: 'Outside', classes: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
 }
 
-const billingTypeLabels: Record<string, string> = {
-  non_warranty: 'Non-Warranty',
-  warranty: 'Warranty',
-  partial_warranty: 'Partial Warranty',
-}
 
 // ── Component ──
 
@@ -2887,326 +2880,56 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           only open section. */}
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
         <div ref={completionCardRef}>
-        <CardSection title="Complete Job" open={completionOpen}>
-          {equipmentToVerify ? (
-            <VerifyEquipmentPanel
-              equipmentId={equipmentToVerify.id}
-              make={equipmentToVerify.make}
-              model={equipmentToVerify.model}
-              serial={equipmentToVerify.serial_number}
-              onVerified={handleEquipmentVerified}
-              relinkTicketId={ticket.id}
-              relinkTicketKind="service"
-            />
-          ) : (
-          <form id="service-completion-form" onSubmit={handleComplete} className="space-y-5 max-w-xl">
-            {/* Prefilled-from-estimate reminder. Only shown when an estimate was
-                approved — the work order was seeded from it on Start Work. Calls
-                out the diagnosis-vs-completion distinction explicitly so the tech
-                rewrites the notes to what was actually done. */}
-            {ticket.estimate_approved && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700/60 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-                These values were copied from the approved estimate. Update the
-                hours, parts, and completion notes to reflect the actual work
-                done before marking complete.
-              </div>
-            )}
-
-            {/* Warranty confirmation — a repair often turns out to be a warranty
-                claim once the tech is on the machine, but the ticket was keyed
-                non-warranty. Confirm/correct it here at completion. Warranty
-                bills the customer $0 and routes the ticket to the vendor-credit
-                worklist. Saved just before the job is marked complete. */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Billing Type
-              </label>
-              <select
-                value={billingType}
-                onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
-                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                <option value="non_warranty">Non-Warranty</option>
-                <option value="warranty">Warranty (no charge to customer)</option>
-                <option value="partial_warranty">Partial Warranty</option>
-              </select>
-              {billingType !== ticket.billing_type && (
-                <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                  Changed to {billingTypeLabels[billingType] ?? billingType} — saved when you complete the job.
-                </p>
-              )}
-            </div>
-
-            {/* Hours Worked */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Hours Worked
-              </label>
-              <input
-                type="number"
-                step="0.25"
-                min="0"
-                required
-                value={hoursWorked}
-                onChange={(e) => setHoursWorked(e.target.value)}
-                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                placeholder="0.00"
-              />
-            </div>
-
-            {/* Trip Charge — flat fee for the trip out, billed alongside labor.
-                Visible to techs too: they set the trip count on their own ticket;
-                the per-trip rate stays office-controlled in Settings. */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Trip Charge
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={tripChargeQty}
-                  onChange={(e) => setTripChargeQty(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="0"
-                />
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {tripChargeRate > 0
-                    ? `× $${tripChargeRate.toFixed(2)}/trip = $${tripChargeNum.toFixed(2)}`
-                    : 'trips — set the rate in Settings'}
-                </span>
-              </div>
-            </div>
-
-            {/* Machine Hours + Date Code — optional equipment service-life data
-                (parity with PM completion; optional since not every service unit
-                has an hour meter). Collapsed when empty so the core fields show
-                first on a phone; matches the Parts/Photos collapse pattern. */}
-            <details open={machineHours !== '' || dateCode !== ''} className="rounded-md border border-gray-200 dark:border-gray-700">
-              <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                <span>Machine Hours &amp; Date Code <span className="text-gray-400 font-normal">(optional)</span></span>
-                <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                </svg>
-              </summary>
-              <div className="p-3 pt-0">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="svc-machine-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Machine Hours <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      id="svc-machine-hours"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={machineHours}
-                      onChange={(e) => setMachineHours(e.target.value)}
-                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                      placeholder="e.g. 1247.5"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="svc-date-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Date Code <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      id="svc-date-code"
-                      type="text"
-                      value={dateCode}
-                      onChange={(e) => setDateCode(e.target.value)}
-                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                      placeholder="e.g. 26W15"
-                    />
-                  </div>
-                </div>
-              </div>
-            </details>
-
-            {/* Parts Used — collapsible sub-section so the tech can skip
-                past it on mobile when nothing's been added. Opens automatically
-                when there's something to copy so the button isn't missed. */}
-            <details open={completionParts.length > 0 || copyableRequestedParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
-              <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                <span>Parts Used{completionParts.length > 0 ? ` (${completionParts.length})` : ''}</span>
-                <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                </svg>
-              </summary>
-              <div className="p-3 pt-0">
-                {copyableRequestedParts.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleCopyRequestedParts}
-                    className="mb-3 w-full sm:w-auto px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 min-h-[44px] sm:min-h-0 transition-colors"
-                  >
-                    Copy Requested Parts ({copyableRequestedParts.length})
-                  </button>
-                )}
-                <PartsEntryList
-                  parts={completionParts}
-                  setParts={setCompletionParts}
-                  showPricing={true}
-                  showWarranty={billingType === 'warranty' || billingType === 'partial_warranty'}
-                  label=""
-                  allowPriceOverride={isStaff}
-                  allowPriceEdit={isTech}
-                />
-              </div>
-            </details>
-
-            {/* Billing summary */}
-            <div className="rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
-              <div className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
-                <div className="flex justify-between">
-                  <span>Labor: {hoursWorked || '0'} hrs x ${laborRate.toFixed(2)}</span>
-                  <span>${laborTotal.toFixed(2)}</span>
-                </div>
-                {completionParts.length > 0 && (
-                  <div className="flex justify-between">
-                    <span>Parts {ticket.billing_type === 'warranty' ? '(warranty — $0)' : ''}</span>
-                    <span>${partsTotal.toFixed(2)}</span>
-                  </div>
-                )}
-                {tripChargeNum > 0 && (
-                  <div className="flex justify-between">
-                    <span>Trip: {tripChargeQtyNum} × ${tripChargeRate.toFixed(2)}</span>
-                    <span>${tripChargeNum.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-300 dark:border-gray-700">
-                <span className="text-base font-bold text-gray-900 dark:text-white">Billing Total</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">${billingTotal.toFixed(2)}</span>
-              </div>
-              {billTaxAmount > 0 && (
-                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
-                  <div className="flex justify-between">
-                    <span>Sales Tax ({taxRatePercent}%)</span>
-                    <span>${billTaxAmount.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-medium">
-                    <span>Customer total with tax</span>
-                    <span>${(billingTotal + billTaxAmount).toFixed(2)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Photos — collapsible sub-section (extracted, audit P3 round 1). */}
-            <ServicePhotosSection
-              ticketId={ticket.id}
-              photos={photos}
-              onPhotosChange={setPhotos}
-              uploading={uploading}
-              onUploadingChange={setUploading}
-              onError={setError}
-            />
-
-            {/* Completion Notes */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Completion Notes
-              </label>
-              <textarea
-                value={completionNotes}
-                onChange={(e) => setCompletionNotes(e.target.value)}
-                rows={3}
-                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                placeholder="Notes about the work performed..."
-              />
-            </div>
-
-            {/* ── ACE Labor (tech payout — not on customer invoice) ── */}
-            <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/40 dark:bg-purple-900/15 p-4">
-              {!aceLaborOpen ? (
-                <button
-                  type="button"
-                  onClick={() => setAceLaborOpen(true)}
-                  aria-expanded={false}
-                  className="text-sm font-medium text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-200"
-                >
-                  + Add ACE Labor
-                </button>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-sm font-semibold text-purple-800 dark:text-purple-300 uppercase tracking-wide">
-                      ACE Labor — Pending Manager Approval
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => { setAceLaborOpen(false); setAceHours(''); setAceReason('') }}
-                      className="text-xs text-purple-700 dark:text-purple-300 hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                    Tech-payout labor on no-charge work. Does not appear on the customer invoice.
-                  </p>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        ACE Hours
-                      </label>
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        value={aceHours}
-                        onChange={(e) => setAceHours(e.target.value)}
-                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Reason
-                      </label>
-                      <textarea
-                        value={aceReason}
-                        onChange={(e) => setAceReason(e.target.value)}
-                        rows={2}
-                        className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        placeholder="Why this is ACE-eligible (visible to your manager)..."
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Customer Signature — not required for inside (shop) tickets */}
-            {ticket.ticket_type !== 'inside' && (
-              <SignaturePad
-                onSignatureChange={({ image, name: sigName }) => {
-                  setSignatureImage(image)
-                  setSignatureName(sigName)
-                }}
-              />
-            )}
-
-            {/* Submit */}
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="submit"
-                disabled={loading || uploading || saving}
-                className="hidden sm:block px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
-              >
-                {loading ? 'Completing...' : 'Mark Complete'}
-              </button>
-              {saving && (
-                <span className="text-sm text-gray-500 dark:text-gray-400">Saving...</span>
-              )}
-              {saveSuccess && !saving && (
-                <span className="text-sm text-green-600">Saved</span>
-              )}
-            </div>
-          </form>
-          )}
-        </CardSection>
+        <CompletionSection
+          ticket={ticket}
+          isStaff={isStaff}
+          isTech={isTech}
+          loading={loading}
+          saving={saving}
+          saveSuccess={saveSuccess}
+          taxRatePercent={taxRatePercent}
+          laborRate={laborRate}
+          tripChargeRate={tripChargeRate}
+          completionOpen={completionOpen}
+          equipmentToVerify={equipmentToVerify}
+          onEquipmentVerified={handleEquipmentVerified}
+          billingType={billingType}
+          setBillingType={setBillingType}
+          hoursWorked={hoursWorked}
+          setHoursWorked={setHoursWorked}
+          tripChargeQty={tripChargeQty}
+          setTripChargeQty={setTripChargeQty}
+          machineHours={machineHours}
+          setMachineHours={setMachineHours}
+          dateCode={dateCode}
+          setDateCode={setDateCode}
+          completionParts={completionParts}
+          setCompletionParts={setCompletionParts}
+          copyableRequestedPartsCount={copyableRequestedParts.length}
+          completionNotes={completionNotes}
+          setCompletionNotes={setCompletionNotes}
+          aceLaborOpen={aceLaborOpen}
+          setAceLaborOpen={setAceLaborOpen}
+          aceHours={aceHours}
+          setAceHours={setAceHours}
+          aceReason={aceReason}
+          setAceReason={setAceReason}
+          setSignatureImage={setSignatureImage}
+          setSignatureName={setSignatureName}
+          photos={photos}
+          setPhotos={setPhotos}
+          uploading={uploading}
+          setUploading={setUploading}
+          onError={setError}
+          laborTotal={laborTotal}
+          partsTotal={partsTotal}
+          billingTotal={billingTotal}
+          billTaxAmount={billTaxAmount}
+          tripChargeNum={tripChargeNum}
+          tripChargeQtyNum={tripChargeQtyNum}
+          onComplete={handleComplete}
+          onCopyRequestedParts={handleCopyRequestedParts}
+        />
         </div>
       )}
 
