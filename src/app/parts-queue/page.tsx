@@ -24,7 +24,10 @@ function firstString(raw: string | string[] | undefined): string | null {
 export default async function PartsQueuePage({
   searchParams,
 }: {
-  searchParams?: {
+  // Next 15+ delivers searchParams as a Promise — reading properties without
+  // awaiting silently yields undefined, which broke the ?ticket deep-link and
+  // the Back-button filter restore on this page after the Next 16 upgrade.
+  searchParams?: Promise<{
     source?: string | string[]
     ticket?: string | string[]
     tab?: string | string[]
@@ -32,21 +35,22 @@ export default async function PartsQueuePage({
     dir?: string | string[]
     q?: string | string[]
     vendor?: string | string[]
-  }
+  }>
 }) {
   await requireRole(...MANAGER_ROLES)
   const rows = await getPartsQueue()
 
-  const ticketFilter = firstString(searchParams?.ticket)
-  const sourceFilter = normalizeSource(searchParams?.source)
+  const params = (await searchParams) ?? {}
+  const ticketFilter = firstString(params.ticket)
+  const sourceFilter = normalizeSource(params.source)
   // Seed the board's controls from the URL so the Back button restores them.
   const initialFilters = {
-    tab: firstString(searchParams?.tab) ?? '',
-    sort: firstString(searchParams?.sort) ?? '',
-    dir: firstString(searchParams?.dir) ?? '',
-    q: firstString(searchParams?.q) ?? '',
+    tab: firstString(params.tab) ?? '',
+    sort: firstString(params.sort) ?? '',
+    dir: firstString(params.dir) ?? '',
+    q: firstString(params.q) ?? '',
     source: sourceFilter ?? '',
-    vendor: firstString(searchParams?.vendor) ?? '',
+    vendor: firstString(params.vendor) ?? '',
   }
 
   return (
