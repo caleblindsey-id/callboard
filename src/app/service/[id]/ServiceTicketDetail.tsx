@@ -1414,6 +1414,76 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
+  // Estimate lines quoted but never handed to the parts queue — the manual seam
+  // where the office re-keyed each quoted part after approval. Identity-matched
+  // the same way handleRequestEstimatePart's vendor fallback matches: Synergy
+  // product id when present, else case-insensitive description. Cancelled
+  // requests still count as handled so a deliberate office cancel is never
+  // silently re-added by the bulk promote.
+  const unpromotedEstimateParts = (ticket.estimate_parts ?? []).filter((ep) => {
+    if (!ep.description?.trim()) return false
+    return !partsRequested.some((p) =>
+      ep.synergy_product_id != null
+        ? p.synergy_product_id === ep.synergy_product_id
+        : (p.description ?? '').trim().toLowerCase() === ep.description.trim().toLowerCase()
+    )
+  })
+
+  // Post-approval only: before the customer approves, quoted parts don't belong
+  // in review (the estimate builder's per-row Request covers deliberate early
+  // ordering), and after completion the parts section is read-only anyway.
+  const canPromoteEstimateParts =
+    (ticket.status === 'approved' || ticket.status === 'in_progress') &&
+    unpromotedEstimateParts.length > 0
+
+  // One-click promote of the approved estimate's quoted parts into the parts
+  // queue — each lands as pending_review, identical to a hand-keyed request.
+  // A manual (off-catalog) line missing vendor info can't pass the server's
+  // new-request validation, so it's skipped with a note instead of failing the
+  // whole batch.
+  async function handlePromoteEstimateParts() {
+    if (!canPromoteEstimateParts) return
+    const promotable = unpromotedEstimateParts.filter(
+      (ep) =>
+        ep.synergy_product_id != null ||
+        (!!ep.vendor?.trim() &&
+          !!ep.vendor_item_code?.trim() &&
+          Number.isFinite(ep.unit_price) &&
+          ep.unit_price >= 0)
+    )
+    const skipped = unpromotedEstimateParts.length - promotable.length
+    if (promotable.length === 0) {
+      setError(
+        'None of the estimate parts have the vendor info needed to request them — add them individually with + Request Part.'
+      )
+      return
+    }
+    const nowIso = new Date().toISOString()
+    const newParts: PartRequest[] = promotable.map((ep) => ({
+      description: ep.description.trim(),
+      quantity: ep.quantity || 1,
+      product_number: ep.product_number?.trim() || undefined,
+      synergy_product_id: ep.synergy_product_id ?? undefined,
+      vendor_item_code: ep.vendor_item_code?.trim() || undefined,
+      vendor: ep.vendor?.trim() || undefined,
+      vendor_code: ep.vendor_code?.trim() || undefined,
+      unit_price: Number.isFinite(ep.unit_price) ? ep.unit_price : undefined,
+      status: 'pending_review',
+      requested_at: nowIso,
+    }))
+    const updatedRequests = [...partsRequested, ...newParts]
+    await apiAction(async () => {
+      await patchTicket({ parts_requested: updatedRequests })
+      setPartsRequested(updatedRequests)
+      setSuccessMsg(
+        `${newParts.length} estimate part${newParts.length === 1 ? '' : 's'} sent to parts review.` +
+          (skipped > 0
+            ? ` ${skipped} skipped — missing vendor info; add ${skipped === 1 ? 'it' : 'them'} with + Request Part.`
+            : '')
+      )
+    })
+  }
+
   // The machine must be identified before any part request so the office knows
   // what it's for. Shared with the server machine gate via equipmentReadyForParts:
   // a LINKED unit is ready once tech-verified (make+model+verified, serial
@@ -3531,6 +3601,23 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               )
             ) : (
             <>
+              {/* One-click promote — the approved estimate's quoted parts go to
+                  the parts queue as pending_review, no re-keying. Hidden once
+                  every estimate line has a matching request. */}
+              {canPromoteEstimateParts && (
+                <div className="mt-2">
+                  <button
+                    onClick={handlePromoteEstimateParts}
+                    disabled={loading}
+                    className="px-3 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+                  >
+                    Add Estimate Parts to Queue ({unpromotedEstimateParts.length})
+                  </button>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Sends the quoted parts from the approved estimate to the parts queue for office review.
+                  </p>
+                </div>
+              )}
               {!showAddPart ? (
                 <button
                   onClick={() => setShowAddPart(true)}
