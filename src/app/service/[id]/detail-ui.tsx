@@ -6,6 +6,12 @@
 
 import { useState } from 'react'
 
+export const billingTypeLabels: Record<string, string> = {
+  non_warranty: 'Non-Warranty',
+  warranty: 'Warranty',
+  partial_warranty: 'Partial Warranty',
+}
+
 export function Badge({ label, classes }: { label: string; classes: string }) {
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${classes}`}>
