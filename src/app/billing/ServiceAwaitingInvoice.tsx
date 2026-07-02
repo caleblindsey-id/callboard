@@ -31,6 +31,19 @@ function needsInvoice(t: ServiceBillingTicket): boolean {
   return !t.synergy_invoice_number?.trim()
 }
 
+// Warranty work isn't billed until the vendor credit lands (logged on the
+// warranty-claims worklist). Mirrors the server gate in mark-billed.
+function awaitingWarrantyCredit(t: ServiceBillingTicket): boolean {
+  return (
+    (t.billing_type === 'warranty' || t.billing_type === 'partial_warranty') &&
+    !t.warranty_credit_received_at
+  )
+}
+
+function isBlocked(t: ServiceBillingTicket): boolean {
+  return needsInvoice(t) || awaitingWarrantyCredit(t)
+}
+
 type ServiceInvoiceSortKey =
   | 'customer'
   | 'invoice'
@@ -113,7 +126,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
-    if (ticket && needsInvoice(ticket)) return
+    if (ticket && isBlocked(ticket)) return
     const next = new Set(selected)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -121,7 +134,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
   }
 
   function toggleAll() {
-    const selectable = tickets.filter((t) => !needsInvoice(t))
+    const selectable = tickets.filter((t) => !isBlocked(t))
     if (selected.size === selectable.length) {
       setSelected(new Set())
     } else {
@@ -284,7 +297,8 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
     .filter((t) => selected.has(t.id))
     .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
 
-  const selectableCount = tickets.filter((t) => !needsInvoice(t)).length
+  const selectableCount = tickets.filter((t) => !isBlocked(t)).length
+  const awaitingCreditCount = tickets.filter(awaitingWarrantyCredit).length
 
   function renderInvoiceStatus(t: ServiceBillingTicket) {
     if (editingId === t.id) {
@@ -488,6 +502,13 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
         </div>
       )}
 
+      {/* Awaiting warranty credit banner */}
+      {awaitingCreditCount > 0 && (
+        <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+          {awaitingCreditCount} warranty ticket{awaitingCreditCount === 1 ? '' : 's'} {awaitingCreditCount === 1 ? 'is' : 'are'} waiting on the vendor credit — log it on the Warranty Claims worklist before billing.
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div
@@ -512,7 +533,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {sorted.map((t) => {
-                const blocked = needsInvoice(t)
+                const blocked = isBlocked(t)
                 return (
                   <div
                     key={t.id}
@@ -555,6 +576,11 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                           </span>
+                          {awaitingWarrantyCredit(t) && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                              Awaiting vendor credit
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           Completed:{' '}
@@ -608,7 +634,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {sorted.map((t) => {
-                    const blocked = needsInvoice(t)
+                    const blocked = isBlocked(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
@@ -655,6 +681,11 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                          {awaitingWarrantyCredit(t) && (
+                            <span className="block text-xs font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                              Awaiting vendor credit
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {t.completed_at

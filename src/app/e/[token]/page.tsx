@@ -76,7 +76,11 @@ export default async function ApprovalPage({
     : parts
         .filter(p => !p.warranty_covered)
         .reduce((sum, p) => sum + p.quantity * p.unit_price, 0)
-  const total = laborTotal + partsTotal
+  // The trip charge is baked into estimate_amount by the server recompute.
+  // Derive the line as total − labor − parts (mirrors the estimate PDF) so the
+  // total the customer signs here always matches the emailed/printed estimate.
+  const total = isWarranty ? 0 : (ticket.estimate_amount ?? laborTotal + partsTotal)
+  const tripCharge = Math.max(0, total - laborTotal - partsTotal)
   // Sales tax (parts only, display-only) — mirrors the estimate PDF so the
   // online approval total reflects what the customer is billed. 0 when exempt.
   const custRow = (Array.isArray(ticket.customers) ? ticket.customers[0] : ticket.customers) as
@@ -190,6 +194,12 @@ export default async function ApprovalPage({
                   </span>
                 </div>
               ))}
+              {tripCharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">Trip Charge</span>
+                  <span className="font-medium text-gray-900 dark:text-white">${tripCharge.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between pt-3 mt-3 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-base font-bold text-gray-900 dark:text-white">Estimate Total</span>
                 <span className="text-lg font-bold text-gray-900 dark:text-white">${total.toFixed(2)}</span>

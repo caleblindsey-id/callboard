@@ -89,6 +89,58 @@ export async function POST(
       return NextResponse.json({ error: 'Equipment not found.' }, { status: 404 })
     }
 
+    // Ownership gate for technicians: a tech may only verify a unit they are
+    // actually working on. The service-role write below deliberately bypasses
+    // RLS and the migration-048 field lock, so without this check any tech
+    // could rewrite make/model/serial on ANY unit (and relink tickets to it).
+    // Staff (MANAGER_ROLES) may verify any unit.
+    if (isTech && !isStaff) {
+      const TERMINAL_SERVICE = '("completed","billed","declined","canceled")'
+      const TERMINAL_PM = '("completed","billed","skipped","skip_requested")'
+      let authorized = false
+
+      if (relinkTicketId && relinkTicketKind) {
+        // Relink flow: `id` is the EXISTING on-file unit, which is not on the
+        // tech's ticket yet — authorize via the ticket being relinked instead.
+        // The tech must be its assigned technician and it must still be open.
+        const table = relinkTicketKind === 'service' ? 'service_tickets' : 'pm_tickets'
+        const terminal = relinkTicketKind === 'service' ? TERMINAL_SERVICE : TERMINAL_PM
+        const { count } = await supabase
+          .from(table)
+          .select('id', { count: 'exact', head: true })
+          .eq('id', relinkTicketId)
+          .eq('assigned_technician_id', user.id)
+          .is('deleted_at', null)
+          .not('status', 'in', terminal)
+        authorized = (count ?? 0) > 0
+      } else {
+        const [svc, pm] = await Promise.all([
+          supabase
+            .from('service_tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('equipment_id', id)
+            .eq('assigned_technician_id', user.id)
+            .is('deleted_at', null)
+            .not('status', 'in', TERMINAL_SERVICE),
+          supabase
+            .from('pm_tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('equipment_id', id)
+            .eq('assigned_technician_id', user.id)
+            .is('deleted_at', null)
+            .not('status', 'in', TERMINAL_PM),
+        ])
+        authorized = (svc.count ?? 0) > 0 || (pm.count ?? 0) > 0
+      }
+
+      if (!authorized) {
+        return NextResponse.json(
+          { error: 'You can only verify equipment on an open ticket assigned to you.' },
+          { status: 403 }
+        )
+      }
+    }
+
     // Serial uniqueness per customer (mirrors POST /api/equipment), excluding self.
     if (serial && equip.customer_id != null) {
       const { data: candidates } = await supabase

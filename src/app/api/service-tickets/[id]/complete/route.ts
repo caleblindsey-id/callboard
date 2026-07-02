@@ -10,6 +10,7 @@ import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, COST_FLOOR } from '@/lib/margin'
 import { equipmentNeedsVerification } from '@/lib/equipment'
+import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -88,6 +89,22 @@ export async function POST(
     const dateCode = typeof body.date_code === 'string' && body.date_code.trim()
       ? body.date_code.trim()
       : null
+
+    // Photos validation (mirrors the PATCH route): each entry must be a known
+    // image type scoped to this ticket id. Prevents stored XSS via a malicious
+    // `.svg` served by signed URL.
+    if (photos !== undefined && photos !== null) {
+      if (!Array.isArray(photos)) {
+        return NextResponse.json({ error: 'photos must be an array' }, { status: 400 })
+      }
+      const expectedPrefix = `${id}/`
+      for (const p of photos as Array<{ storage_path?: unknown }>) {
+        const check = validatePhotoStoragePath(p?.storage_path, expectedPrefix)
+        if (!check.ok) {
+          return NextResponse.json({ error: check.error }, { status: 400 })
+        }
+      }
+    }
 
     // Validate parts_used: every line non-negative price + positive qty
     if (Array.isArray(parts_used)) {
