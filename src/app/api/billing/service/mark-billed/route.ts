@@ -19,6 +19,8 @@ type ServiceTicketBillingRow = {
   ticket_type: string | null
   awaiting_pickup: boolean | null
   ready_for_pickup_at: string | null
+  billing_type: string | null
+  warranty_credit_received_at: string | null
   customers: { name: string } | null
 }
 
@@ -58,6 +60,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id, work_order_number, status, billing_exported, synergy_invoice_number,
         ticket_type, awaiting_pickup, ready_for_pickup_at,
+        billing_type, warranty_credit_received_at,
         customers ( name )
       `)
       .in('id', ticketIds as string[])
@@ -94,6 +97,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `Tickets must be exported before billing: ${names}` },
         { status: 409 }
+      )
+    }
+
+    // Hard block (parity with the single-ticket PATCH gate): warranty work
+    // isn't billed until the vendor credit lands. Billing before the credit
+    // closes the claim prematurely — cleared by logging the credit on the
+    // warranty-claims worklist (warranty_credit_received_at).
+    const awaitingCredit = tickets.filter(
+      (t) =>
+        (t.billing_type === 'warranty' || t.billing_type === 'partial_warranty') &&
+        !t.warranty_credit_received_at
+    )
+    if (awaitingCredit.length > 0) {
+      const names = awaitingCredit
+        .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
+        .join(', ')
+      return NextResponse.json(
+        { error: `Vendor credit not yet received — log the warranty credit before billing: ${names}` },
+        { status: 400 }
       )
     }
 

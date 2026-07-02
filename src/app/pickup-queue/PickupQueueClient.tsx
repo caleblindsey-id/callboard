@@ -3,10 +3,11 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Phone, Mail, MapPin, PackageCheck } from 'lucide-react'
+import { Phone, Mail, MapPin, PackageCheck, Send } from 'lucide-react'
 import type { PickupQueueRow } from '@/lib/db/pickup-queue'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type Tab = 'all' | 'call'
@@ -74,6 +75,9 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
   const [editingLocId, setEditingLocId] = useState<string | null>(null)
   const [locValue, setLocValue] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Ticket whose abandonment notice is awaiting confirmation in the dialog —
+  // this emails the customer and starts a 14-day collection deadline.
+  const [pendingAbandonId, setPendingAbandonId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Actionable backlog: phone-only units (no email) that haven't been called yet.
@@ -180,8 +184,29 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     }
   }
 
+  async function sendNotice(id: string) {
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/service-tickets/${id}/send-pickup-notice`, { method: 'POST' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || 'Failed to send pickup notice')
+      if (body?.sent === false) {
+        throw new Error(
+          body?.reason === 'no_email'
+            ? 'No email on file for this customer.'
+            : 'This unit is no longer awaiting pickup.',
+        )
+      }
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send pickup notice')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function sendAbandonment(id: string) {
-    if (!confirm('Send a formal abandonment notice to this customer? This sets a 14-day collection deadline.')) return
     setBusyId(id)
     setError(null)
     try {
@@ -244,7 +269,166 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
           {tab === 'call' ? 'No units waiting on a phone call.' : 'Nothing waiting for pickup.'}
         </div>
       ) : (
-        <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700">
+        <>
+        {/* Mobile cards */}
+        <div className="lg:hidden space-y-3">
+          {sorted.map((r) => {
+            const aging = agingBadge(r.days_ready)
+            const contact = contactBadge(r)
+            const noEmail = r.resolved_email == null
+            return (
+              <div key={r.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                      {r.customer_name}
+                    </Link>
+                    {r.work_order_number != null && (
+                      <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
+                    )}
+                  </div>
+                  <span className={`shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
+                    {aging.label}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-900 dark:text-gray-100">
+                  {r.equipment_label}
+                  {r.serial_number && <span className="text-xs text-gray-400 dark:text-gray-500"> · S/N {r.serial_number}</span>}
+                </div>
+                {!r.repaired && (
+                  <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                    Not repaired (declined)
+                  </span>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${contact.classes}`}>
+                    {contact.label}
+                  </span>
+                  {editingLocId === r.id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={locValue}
+                        onChange={(e) => setLocValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveLocation(r.id); if (e.key === 'Escape') setEditingLocId(null) }}
+                        placeholder="Shelf / bin"
+                        className="w-24 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      />
+                      <button onClick={() => saveLocation(r.id)} disabled={busyId === r.id} className="text-xs font-medium text-blue-600 dark:text-blue-400 disabled:opacity-50">
+                        {busyId === r.id ? '…' : 'Save'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setEditingLocId(r.id); setLocValue(r.shop_location ?? ''); setError(null) }}
+                      className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400"
+                    >
+                      <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                      {r.shop_location || <span className="text-gray-300 dark:text-gray-600">Set location</span>}
+                    </button>
+                  )}
+                </div>
+                {noEmail && r.resolved_phone && (
+                  <div className="text-xs text-gray-600 dark:text-gray-300 inline-flex items-center gap-1">
+                    <Phone className="h-3 w-3 text-gray-400" />{r.resolved_phone}
+                  </div>
+                )}
+                {r.resolved_email && !noEmail && (
+                  <div className="text-xs text-gray-400 dark:text-gray-500 inline-flex items-center gap-1">
+                    <Mail className="h-3 w-3" />{r.resolved_email}
+                  </div>
+                )}
+                {r.pickup_called_at && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Called {fmtDate(r.pickup_called_at)}{r.pickup_called_by_name ? ` by ${r.pickup_called_by_name}` : ''}
+                  </div>
+                )}
+                {r.abandonment_notice_sent_at && (
+                  <div className="text-xs text-amber-700 dark:text-amber-400">
+                    Abandonment notice sent {fmtDate(r.abandonment_notice_sent_at)}
+                  </div>
+                )}
+
+                {confirmingId === r.id ? (
+                  <div className="space-y-2 pt-1">
+                    <input
+                      autoFocus
+                      value={pickedUpName}
+                      onChange={(e) => setPickedUpName(e.target.value)}
+                      placeholder="Picked up by (optional)"
+                      className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => confirmPickup(r.id)} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">
+                        {busyId === r.id ? 'Saving…' : 'Confirm'}
+                      </button>
+                      <button onClick={() => { setConfirmingId(null); setPickedUpName('') }} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : callingId === r.id ? (
+                  <div className="space-y-2 pt-1">
+                    <input
+                      autoFocus
+                      value={callNotes}
+                      onChange={(e) => setCallNotes(e.target.value)}
+                      placeholder="Call notes (optional)"
+                      className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => markCalled(r.id)} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50">
+                        {busyId === r.id ? 'Saving…' : 'Log call'}
+                      </button>
+                      <button onClick={() => { setCallingId(null); setCallNotes('') }} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={() => { setConfirmingId(r.id); setPickedUpName(''); setCallingId(null); setError(null) }}
+                      className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                    >
+                      Confirm Pickup
+                    </button>
+                    {r.contact_status === 'has_contact' && (
+                      <button
+                        onClick={() => sendNotice(r.id)}
+                        disabled={busyId === r.id}
+                        className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1 px-3 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50"
+                      >
+                        <Send className="h-3 w-3" />
+                        {busyId === r.id ? 'Sending…' : 'Send notice'}
+                      </button>
+                    )}
+                    {noEmail && (
+                      <button
+                        onClick={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
+                        className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        {r.pickup_called_at ? 'Log follow-up call' : 'Mark Called'}
+                      </button>
+                    )}
+                    {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
+                      <button
+                        onClick={() => setPendingAbandonId(r.id)}
+                        disabled={busyId === r.id}
+                        className="flex-1 min-h-[44px] px-3 text-sm font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
+                      >
+                        {busyId === r.id ? 'Sending…' : r.abandonment_notice_sent_at ? 'Resend Abandonment' : 'Abandonment Notice'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Desktop table */}
+        <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -275,6 +459,11 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                       <div className="text-gray-900 dark:text-gray-100">{r.equipment_label}</div>
                       {r.serial_number && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">S/N {r.serial_number}</div>
+                      )}
+                      {!r.repaired && (
+                        <span className="mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                          Not repaired (declined)
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
@@ -402,6 +591,17 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                           >
                             Confirm Pickup
                           </button>
+                          {r.contact_status === 'has_contact' && (
+                            <button
+                              onClick={() => sendNotice(r.id)}
+                              disabled={busyId === r.id}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50"
+                              title="Email the customer that their equipment is ready for pickup"
+                            >
+                              <Send className="h-3 w-3" />
+                              {busyId === r.id ? 'Sending…' : 'Send pickup notice'}
+                            </button>
+                          )}
                           {noEmail && (
                             <button
                               onClick={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
@@ -412,7 +612,7 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                           )}
                           {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
                             <button
-                              onClick={() => sendAbandonment(r.id)}
+                              onClick={() => setPendingAbandonId(r.id)}
                               disabled={busyId === r.id}
                               className="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
                             >
@@ -428,7 +628,22 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
             </tbody>
           </table>
         </ScrollableTable>
+        </>
       )}
+      <ConfirmDialog
+        open={pendingAbandonId !== null}
+        title="Send abandonment notice?"
+        message="Send a formal abandonment notice to this customer? This sets a 14-day collection deadline."
+        confirmLabel="Send Notice"
+        confirmVariant="danger"
+        loading={busyId !== null && busyId === pendingAbandonId}
+        onConfirm={() => {
+          const id = pendingAbandonId
+          setPendingAbandonId(null)
+          if (id) sendAbandonment(id)
+        }}
+        onCancel={() => setPendingAbandonId(null)}
+      />
     </div>
   )
 }

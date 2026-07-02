@@ -75,6 +75,7 @@ export type ServiceBoardInitialFilters = {
   type: string
   tech: string
   waitingOnParts: string
+  poNeeded: string
   deleted: string
   search: string
 }
@@ -174,6 +175,9 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
   const typeFilter = filters.type as '' | ServiceTicketType
   const techFilter = filters.tech
   const waitingOnParts = filters.waitingOnParts === '1'
+  // Completed tickets for PO-required customers with no customer PO yet. Forces
+  // status='completed' server-side; deep-linked from the "Waiting on PO" cards.
+  const poNeeded = filters.poNeeded === '1'
   // Manager-only "Deleted" view — shows soft-deleted tickets (restore from detail).
   const deletedView = filters.deleted === '1'
 
@@ -251,6 +255,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
         if (typeFilter) params.set('ticketType', typeFilter)
         if (techFilter) params.set('technicianId', techFilter)
         if (waitingOnParts) params.set('waitingOnParts', 'true')
+        if (poNeeded) params.set('poNeeded', '1')
 
         const res = await fetch(`/api/service-tickets?${params.toString()}`)
         if (!res.ok) {
@@ -267,7 +272,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
       }
     }
     fetchTickets()
-  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, deletedView, refreshKey])
+  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, poNeeded, deletedView, refreshKey])
 
   // Prune any selected ids that are no longer in the current list (filter change
   // or refresh) so a stale selection can't be bulk-assigned.
@@ -485,6 +490,18 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                 className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Waiting on Parts</span>
+            </label>
+          </div>
+
+          <div className="w-full lg:w-auto flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer py-1.5">
+              <input
+                type="checkbox"
+                checked={poNeeded}
+                onChange={(e) => set('poNeeded', e.target.checked ? '1' : '')}
+                className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">PO Needed</span>
             </label>
           </div>
 

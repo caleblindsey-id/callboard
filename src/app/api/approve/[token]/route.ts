@@ -107,7 +107,7 @@ export async function POST(
 
   const { data: ticket, error: fetchError } = await supabase
     .from('service_tickets')
-    .select('id, status, approval_token_expires_at')
+    .select('id, status, approval_token_expires_at, ticket_type, awaiting_pickup, ready_for_pickup_at')
     .eq('approval_token', token)
     .single()
 
@@ -155,6 +155,18 @@ export async function POST(
     update.decline_resolved_by_id = null
     if (decline_reason?.trim()) {
       update.decline_reason = decline_reason.trim()
+    }
+    // The customer's (unrepaired) INSIDE unit is still in the shop and must be
+    // collected — stage it into the pickup queue so it's tracked + ages. Stays
+    // SILENT (no email here): the front desk sends the pickup notice manually.
+    // Guarded so a re-decline can't re-stamp the aging clock.
+    if (
+      ticket.ticket_type === 'inside' &&
+      !ticket.awaiting_pickup &&
+      !ticket.ready_for_pickup_at
+    ) {
+      update.awaiting_pickup = true
+      update.ready_for_pickup_at = new Date().toISOString()
     }
   }
 

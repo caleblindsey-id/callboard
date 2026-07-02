@@ -23,12 +23,16 @@ export type PickupQueueRow = {
   pickup_called_by_name: string | null
   pickup_call_notes: string | null
   abandonment_notice_sent_at: string | null
+  // false → the estimate was declined and the unfixed unit is waiting to be
+  // collected; true → the unit was repaired + invoiced (status 'billed').
+  repaired: boolean
 }
 
 type RawRow = {
   id: string
   work_order_number: number | null
   customer_id: number
+  status: string
   ready_for_pickup_at: string | null
   shop_location: string | null
   contact_email: string | null
@@ -66,7 +70,7 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
   const { data, error } = await supabase
     .from('service_tickets')
     .select(
-      `id, work_order_number, customer_id, ready_for_pickup_at, shop_location,
+      `id, work_order_number, customer_id, status, ready_for_pickup_at, shop_location,
        contact_email, contact_phone, pickup_notified_at, pickup_notify_count,
        pickup_called_at, pickup_call_notes, pickup_called_by_id, abandonment_notice_sent_at,
        equipment_make, equipment_model, equipment_serial_number,
@@ -149,6 +153,7 @@ export async function getPickupQueue(): Promise<PickupQueueRow[]> {
       pickup_called_by_name: r.pickup_called_by_id ? callerNameById.get(r.pickup_called_by_id) ?? null : null,
       pickup_call_notes: r.pickup_call_notes,
       abandonment_notice_sent_at: r.abandonment_notice_sent_at,
+      repaired: r.status === 'billed',
     }
   })
 }

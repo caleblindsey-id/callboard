@@ -11,6 +11,7 @@ export default async function ServicePage({
     type?: string
     tech?: string
     waitingOnParts?: string
+    poNeeded?: string
     deleted?: string
     search?: string
   }>
@@ -26,6 +27,7 @@ export default async function ServicePage({
     type: params.type ?? '',
     tech: params.tech ?? '',
     waitingOnParts: params.waitingOnParts ?? '',
+    poNeeded: params.poNeeded ?? '',
     deleted: params.deleted ?? '',
     search: params.search ?? '',
   }

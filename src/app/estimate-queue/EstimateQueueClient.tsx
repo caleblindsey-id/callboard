@@ -185,7 +185,104 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
           {tab === 'needs_contact' ? 'Every estimate has had first contact.' : 'No estimates awaiting a decision.'}
         </div>
       ) : (
-        <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700">
+        <>
+        {/* Mobile cards */}
+        <div className="lg:hidden space-y-3">
+          {sorted.map((r) => {
+            const aging = agingBadge(r.days_since_estimate)
+            const contact = contactBadge(r)
+            const hasEmail = r.resolved_email != null
+            return (
+              <div key={r.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                      {r.customer_name}
+                    </Link>
+                    {r.work_order_number != null && (
+                      <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
+                    )}
+                  </div>
+                  <span className={`shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
+                    {aging.label}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <TicketTypeBadge type={r.ticket_type} />
+                  <span className="text-sm text-gray-900 dark:text-gray-100">{r.equipment_label}</span>
+                </div>
+                {r.serial_number && (
+                  <div className="text-xs text-gray-400 dark:text-gray-500">S/N {r.serial_number}</div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-900 dark:text-gray-100 tabular-nums">{fmtMoney(r.estimate_amount)}</span>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${contact.classes}`}>
+                    {contact.label}
+                  </span>
+                </div>
+                {hasEmail ? (
+                  <div className="text-xs text-gray-400 dark:text-gray-500 inline-flex items-center gap-1">
+                    <Mail className="h-3 w-3" />{r.resolved_email}
+                  </div>
+                ) : r.resolved_phone ? (
+                  <div className="text-xs text-gray-600 dark:text-gray-300 inline-flex items-center gap-1">
+                    <Phone className="h-3 w-3 text-gray-400" />{r.resolved_phone}
+                  </div>
+                ) : (
+                  <div className="text-xs text-red-500 dark:text-red-400">No email or phone on file</div>
+                )}
+                {callingId === r.id ? (
+                  <div className="space-y-2 pt-1">
+                    <input
+                      autoFocus
+                      value={callNotes}
+                      onChange={(e) => setCallNotes(e.target.value)}
+                      placeholder="Call notes (optional)"
+                      className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => markContacted(r.id)}
+                        disabled={busyId === r.id}
+                        className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {busyId === r.id ? 'Saving…' : 'Log call'}
+                      </button>
+                      <button
+                        onClick={() => { setCallingId(null); setCallNotes('') }}
+                        disabled={busyId === r.id}
+                        className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 pt-1">
+                    {hasEmail && (
+                      <button
+                        onClick={() => emailEstimate(r.id)}
+                        disabled={busyId === r.id}
+                        className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50"
+                      >
+                        {busyId === r.id ? 'Sending…' : r.estimate_emailed_at ? 'Resend Estimate' : 'Email Estimate'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setCallingId(r.id); setCallNotes(''); setError(null) }}
+                      className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      {r.estimate_called_at ? 'Log follow-up call' : 'Log call'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Desktop table */}
+        <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
             <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -313,6 +410,7 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
             </tbody>
           </table>
         </ScrollableTable>
+        </>
       )}
     </div>
   )

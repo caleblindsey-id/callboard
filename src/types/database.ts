@@ -160,6 +160,18 @@ export interface PartUsed {
   // the detail input can be re-shown on reload (the product-select event that
   // first sets it never fires again on rehydrate). See partsFromSaved().
   requires_detail?: boolean
+  // Sourcing fields carried through the estimate-builder round-trip so a part
+  // re-requested after an estimate reload/reopen keeps its vendor linkage
+  // (mirrors the same fields on PartRequest). Without these the builder's vendor
+  // inputs are write-only: they survive into parts_requested only if the tech
+  // requests the part in the same session, and blank out on rehydrate. Optional
+  // and internal-only — never rendered on customer-facing estimate PDFs/views;
+  // legacy estimate snapshots won't carry them. See partsFromSaved()/
+  // toServicePartUsed() in PartsEntryList.tsx.
+  product_number?: string
+  vendor_item_code?: string
+  vendor?: string
+  vendor_code?: string
 }
 
 // First-PM-on-site completion captured by the tech at lead submission
@@ -1009,11 +1021,18 @@ export type SupplyRequestStatus = 'pending' | 'ready' | 'picked_up' | 'denied'
 
 // One line on a request. catalog_id links a quick-pick item; free-text "other"
 // items leave it null. unit is copied from the catalog for display.
+//
+// denied lets the office reject a single line while still pulling the rest
+// (feedback #65). It lives in the JSONB item — there's no per-line DB column —
+// so a denied line stays on the request (struck-through, with its reason)
+// instead of being dropped. Absent/false means the line is still active.
 export type SupplyRequestItem = {
   name: string
   quantity: number
   catalog_id?: string | null
   unit?: string | null
+  denied?: boolean
+  denied_reason?: string | null
 }
 
 export type SupplyRequestRow = {

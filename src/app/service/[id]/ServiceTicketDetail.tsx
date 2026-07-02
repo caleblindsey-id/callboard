@@ -16,6 +16,7 @@ import VendorPicker from '@/components/VendorPicker'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
@@ -443,131 +444,6 @@ function MarginOverrideModal({ violations, onSubmit, onCancel }: MarginOverrideM
   )
 }
 
-// ── Quick Complete bottom sheet (mobile) ───────────────────────────────────
-
-interface QuickCompleteSheetProps {
-  open: boolean
-  busy: boolean
-  signatureRequired: boolean
-  onCancel: () => void
-  onSwitchToFull: () => void
-  onSubmit: (data: { hours: number; notes: string; signatureImage: string | null; signatureName: string }) => void
-}
-
-function QuickCompleteSheet({ open, busy, signatureRequired, onCancel, onSwitchToFull, onSubmit }: QuickCompleteSheetProps) {
-  // Parent uses `key={open}` to remount this on toggle so a fresh form is
-  // guaranteed without setState-in-effect cascades.
-  const [hours, setHours] = useState('')
-  const [notes, setNotes] = useState('')
-  const [sigImage, setSigImage] = useState<string | null>(null)
-  const [sigName, setSigName] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  if (!open) return null
-
-  const submit = () => {
-    const h = parseFloat(hours)
-    if (!Number.isFinite(h) || h <= 0) {
-      setError('Enter hours worked.')
-      return
-    }
-    if (signatureRequired && (!sigImage || !sigName.trim())) {
-      setError('Customer signature and printed name are required.')
-      return
-    }
-    setError(null)
-    onSubmit({ hours: h, notes: notes.trim(), signatureImage: sigImage, signatureName: sigName.trim() })
-  }
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Quick complete"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full sm:max-w-md sm:rounded-lg rounded-t-2xl bg-white dark:bg-gray-800 border-t sm:border border-gray-200 dark:border-gray-700 shadow-xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-white dark:bg-gray-800 px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Quick Complete</h3>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 min-w-[44px] min-h-[44px] flex items-center justify-center -mr-2"
-          >
-            &times;
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-3 py-2">
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-            </div>
-          )}
-          <div>
-            <label htmlFor="qc-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Hours worked
-            </label>
-            <input
-              id="qc-hours"
-              type="number"
-              inputMode="decimal"
-              step="0.25"
-              min="0"
-              autoFocus
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 text-base w-full focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[44px]"
-              placeholder="0.00"
-            />
-          </div>
-          <div>
-            <label htmlFor="qc-notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Completion notes
-            </label>
-            <textarea
-              id="qc-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 text-base w-full focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="What you fixed..."
-            />
-          </div>
-          {signatureRequired && (
-            <SignaturePad
-              onSignatureChange={({ image, name: sigPrinted }) => {
-                setSigImage(image)
-                setSigName(sigPrinted)
-              }}
-            />
-          )}
-          <button
-            type="button"
-            onClick={submit}
-            disabled={busy}
-            className="w-full px-4 py-3 text-base font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[48px]"
-          >
-            {busy ? 'Completing...' : 'Mark Complete'}
-          </button>
-          <button
-            type="button"
-            onClick={onSwitchToFull}
-            disabled={busy}
-            className="w-full px-4 py-3 text-sm font-medium text-center text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Used parts or need to edit? Open full completion
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Section accordion wrapper ──────────────────────────────────────────────
 // Uses uncontrolled <details> with a key so changes to `open` re-render the
 // element rather than fighting the browser's internal state. The `title` is
@@ -605,6 +481,26 @@ function CardSection({
   )
 }
 
+// Requested parts eligible to copy onto the completed work order — fulfilled
+// (received, or pulled from stock) and not cancelled. Mirrors the PM ticket
+// completion-seed filter (TicketActions.tsx requestedReceived) so both ticket
+// types treat "fulfilled" the same way; unlike PM, this is copied on demand
+// via a button rather than auto-seeded (service tickets have no
+// completion_seeded_at guard to stop a re-seed from resurrecting a part the
+// tech deliberately removed).
+function fulfilledRequestedParts(requested: PartRequest[]): PartRequest[] {
+  return requested.filter(
+    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled
+  )
+}
+
+// Dedupe key for a requested part vs an already-added completion part:
+// Synergy item # when catalog-linked, else the normalized description.
+function partDedupeKey(p: { synergyProductId?: number | null; synergy_product_id?: number | null; description: string }): string {
+  const id = p.synergyProductId ?? p.synergy_product_id
+  return id != null ? `id:${id}` : `desc:${p.description.trim().toLowerCase()}`
+}
+
 export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -617,6 +513,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  // Destructive actions (reopen / cancel / delete / reopen-estimate) confirm
+  // through the shared dialog instead of window.confirm(); the pending action
+  // is held here.
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    action: () => void
+  } | null>(null)
 
   // Technician assign/reassign (staff only). Active techs loaded client-side,
   // mirroring the create form (CreateServiceTicketForm).
@@ -632,6 +537,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // service-address fields and the customer-signature requirement; switching to
   // "inside" makes the ticket eligible for the pickup queue.
   const [ticketType, setTicketType] = useState<ServiceTicketType>(ticket.ticket_type)
+  // Staff-editable labor type (standard/industrial/vacuum) — corrects a
+  // mis-keyed rate before the job is marked complete. The API already allows
+  // labor_rate_type in STAFF_ALLOWED_FIELDS and /complete reads it fresh from
+  // the DB row, so a correction made here flows straight into the final bill
+  // (feedback #68). Locked once the ticket is completed/billed since the bill
+  // is already computed by then.
+  const [laborRateType, setLaborRateType] = useState(ticket.labor_rate_type ?? 'standard')
+  useEffect(() => {
+    setLaborRateType(ticket.labor_rate_type ?? 'standard')
+  }, [ticket.labor_rate_type])
   useEffect(() => {
     if (!isStaff) return
     createClient()
@@ -701,6 +616,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       ? partsFromSaved(ticket.parts_used)
       : []
   )
+  // Fulfilled requested parts not yet copied onto the work order — backs the
+  // "Copy Requested Parts" button below. Recomputed on every render so a part
+  // that arrives (or gets copied) updates the button immediately.
+  const copyableRequestedParts = fulfilledRequestedParts(partsRequested).filter(
+    (r) => !completionParts.some((p) => partDedupeKey(p) === partDedupeKey(r))
+  )
+  function handleCopyRequestedParts() {
+    const converted = partsFromSaved(
+      copyableRequestedParts.map((r) => ({
+        synergy_product_id: r.synergy_product_id ?? null,
+        description: r.description,
+        quantity: r.quantity,
+        unit_price: r.unit_price ?? 0,
+        detail: r.detail,
+        product_number: r.product_number,
+      }))
+    )
+    setCompletionParts((prev) => [...prev, ...converted])
+  }
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
 
@@ -785,7 +719,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [estimateCallNotes, setEstimateCallNotes] = useState('')
 
   // Quick Complete bottom sheet (mobile, in_progress + viewer is assigned tech)
-  const [quickCompleteOpen, setQuickCompleteOpen] = useState(false)
   // Post-completion confirmation popup ("where to next")
   const [completed, setCompleted] = useState(false)
   // Set once the tech verifies the unit this session, for instant UI feedback
@@ -798,6 +731,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // trigger can sit a full screen away from the form.
   const estimateCardRef = useRef<HTMLDivElement>(null)
   const completionCardRef = useRef<HTMLDivElement>(null)
+  const errorBannerRef = useRef<HTMLDivElement>(null)
 
   // Track mobile viewport so the mobile sticky action bar / quick-complete
   // sheet only render on small screens. Runs after mount to avoid SSR mismatch.
@@ -832,6 +766,23 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       completionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [showCompletionForm])
+
+  // Bring the error banner into view after a validation failure. The banner
+  // sits near the top of a ~4,000px page while the completion submit is the
+  // sticky "Mark Complete" bar at the bottom on a phone — without this, a
+  // failed validation set the message far off-screen and looked like the tap
+  // did nothing. Ticking a counter (rather than watching `error`) means a
+  // repeat of the same message still scrolls.
+  const [errorScrollTick, setErrorScrollTick] = useState(0)
+  useEffect(() => {
+    if (errorScrollTick > 0) {
+      errorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [errorScrollTick])
+  function failValidation(msg: string) {
+    setError(msg)
+    setErrorScrollTick((t) => t + 1)
+  }
 
   // Load preview URLs for existing photos
   useEffect(() => {
@@ -1030,21 +981,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  async function handleReopenEstimate() {
-    if (!confirm(
-      'Reopen this estimate for editing? The customer’s approval/signature ' +
-      'will be cleared and you’ll need to re-send it for approval. ' +
-      'The estimate numbers are kept.'
-    )) return
-    await apiAction(async () => {
-      const res = await fetch(`/api/service-tickets/${ticket.id}/reopen-estimate`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to reopen estimate')
-      }
-      setSuccessMsg('Estimate reopened for editing.')
+  function handleReopenEstimate() {
+    setPendingConfirm({
+      title: 'Reopen estimate?',
+      message:
+        'Reopen this estimate for editing? The customer’s approval/signature ' +
+        'will be cleared and you’ll need to re-send it for approval. ' +
+        'The estimate numbers are kept.',
+      confirmLabel: 'Reopen Estimate',
+      action: () =>
+        apiAction(async () => {
+          const res = await fetch(`/api/service-tickets/${ticket.id}/reopen-estimate`, {
+            method: 'POST',
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || 'Failed to reopen estimate')
+          }
+          setSuccessMsg('Estimate reopened for editing.')
+        }),
     })
   }
 
@@ -1064,47 +1019,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       setEstimateCallOpen(false)
       setEstimateCallNotes('')
       setSuccessMsg('Call logged.')
-    })
-  }
-
-  async function handleQuickComplete({
-    hours,
-    notes,
-    signatureImage,
-    signatureName,
-  }: {
-    hours: number
-    notes: string
-    signatureImage: string | null
-    signatureName: string
-  }) {
-    await apiAction(async () => {
-      // Persist a warranty correction before completing — the /complete route
-      // recomputes billing from the STORED billing_type, so it must be saved
-      // first for the $0 math to apply.
-      if (billingType !== ticket.billing_type) {
-        await patchTicket({ billing_type: billingType })
-      }
-      const res = await fetch(`/api/service-tickets/${ticket.id}/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          completed_at: new Date().toISOString(),
-          hours_worked: hours,
-          parts_used: [],
-          completion_notes: notes || null,
-          customer_signature: signatureImage,
-          customer_signature_name: signatureName || null,
-          photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
-          ace_labor: null,
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to complete ticket')
-      }
-      setQuickCompleteOpen(false)
-      setCompleted(true)
     })
   }
 
@@ -1304,8 +1218,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     showEstimateForm &&
     (ticket.status === SERVICE_STATUS.OPEN ||
       ticket.status === SERVICE_STATUS.ESTIMATED ||
-      ticket.status === SERVICE_STATUS.DECLINED)
-  const completionPhaseActive = ticket.status === SERVICE_STATUS.IN_PROGRESS
+      ticket.status === SERVICE_STATUS.DECLINED ||
+      // Add-estimate-after-bypass: the builder can also be opened on an
+      // in_progress ticket that was started without an estimate.
+      (ticket.status === SERVICE_STATUS.IN_PROGRESS && ticket.estimate_bypassed))
+  // Completion auto-save yields to the estimate builder when it's open (the two
+  // are mutually exclusive), so a bypassed ticket mid-estimate doesn't also try
+  // to auto-save completion fields.
+  const completionPhaseActive =
+    ticket.status === SERVICE_STATUS.IN_PROGRESS && !estimatePhaseActive
   const autoSavePhase: SavePhase | null = estimatePhaseActive
     ? 'estimate'
     : completionPhaseActive
@@ -1451,14 +1372,29 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     const entry = estimateParts[index]
     if (!entry || !entry.description.trim() || entry.alreadyRequested) return
     const priceParsed = parseFloat(entry.unitPrice)
+    // Hardening: if the estimate entry has no sourcing data (e.g. a legacy
+    // snapshot saved before toServicePartUsed carried these fields, or a hard
+    // reopen that cleared estimate_parts and the tech rebuilt the line by hand),
+    // fall back to an existing parts_requested line for the same part so a
+    // re-request never downgrades vendor linkage the office already captured.
+    // Match on the Synergy product id when present, else on description.
+    const priorMatch = partsRequested.find((p) =>
+      entry.synergyProductId != null
+        ? p.synergy_product_id === entry.synergyProductId
+        : (p.description ?? '').trim().toLowerCase() === entry.description.trim().toLowerCase()
+    )
+    const productNumber = entry.productNumber?.trim() || priorMatch?.product_number || undefined
+    const vendorItemCode = entry.vendorItemCode?.trim() || priorMatch?.vendor_item_code || undefined
+    const vendor = entry.vendor?.trim() || priorMatch?.vendor || undefined
+    const vendorCode = entry.vendorCode?.trim() || priorMatch?.vendor_code || undefined
     const newPart: PartRequest = {
       description: entry.description.trim(),
       quantity: Number(entry.quantity) || 1,
-      product_number: entry.productNumber?.trim() || undefined,
+      product_number: productNumber,
       synergy_product_id: entry.synergyProductId ?? undefined,
-      vendor_item_code: entry.vendorItemCode?.trim() || undefined,
-      vendor: entry.vendor?.trim() || undefined,
-      vendor_code: entry.vendorCode?.trim() || undefined,
+      vendor_item_code: vendorItemCode,
+      vendor: vendor,
+      vendor_code: vendorCode,
       unit_price:
         entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? priceParsed : undefined,
       // New requests enter the office Review step (stock-vs-order triage) before
@@ -1663,14 +1599,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  // Drop an un-ordered part request off the ticket entirely. Only offered for
-  // pending_review/requested parts (see the gated button) — those never reached
-  // the office order queue, carry no PO, and have no audit value, so we hard-remove
-  // (mirrors PM's handleDeletePart) rather than leaving a cancelled tombstone. The
-  // PATCH validators only fire on new/ordered parts, so a shrunk array passes; the
-  // route recomputes parts_received over what's left.
+  // Drop an un-ordered part request off the ticket. Only offered for
+  // pending_review/requested parts (see the gated button). We SOFT-cancel the
+  // element in place rather than splicing it out: the Parts Queue addresses each
+  // part by its position in this array (parts_order_queue.part_index = array
+  // ordinal), so removing an element reindexes every later part and strands the
+  // queue's reference to any ordered sibling that followed it — the "part_index
+  // out of range" bug from feedback #64. Marking it cancelled keeps positions
+  // stable; cancelled parts already drop off every queue tab and the
+  // parts_received recompute, and render here as a struck-through tombstone.
   async function handleRemovePartRequest(index: number) {
-    const updatedParts = partsRequested.filter((_, i) => i !== index)
+    const now = new Date().toISOString()
+    const updatedParts = partsRequested.map((p, i) =>
+      i === index
+        ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId }
+        : p
+    )
     await apiAction(async () => {
       await patchTicket({ parts_requested: updatedParts })
       setPartsRequested(updatedParts)
@@ -1706,30 +1650,30 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     e.preventDefault()
 
     if (needsEquipmentVerify) {
-      setError('Verify the equipment details above before completing.')
+      failValidation('Verify the equipment details above before completing.')
       return
     }
 
     const signatureRequired = ticket.ticket_type !== 'inside'
     if (signatureRequired && (!signatureImage || !signatureName.trim())) {
-      setError('Customer signature and printed name are required.')
+      failValidation('Customer signature and printed name are required.')
       return
     }
 
     const hours = parseFloat(hoursWorked)
     if (isNaN(hours) || hours < 0) {
-      setError('Please enter valid hours worked.')
+      failValidation('Please enter valid hours worked.')
       return
     }
 
     if (aceLaborOpen) {
       const aceH = parseFloat(aceHours)
       if (!Number.isFinite(aceH) || aceH <= 0) {
-        setError('ACE hours must be greater than 0, or remove the ACE Labor section.')
+        failValidation('ACE hours must be greater than 0, or remove the ACE Labor section.')
         return
       }
       if (!aceReason.trim()) {
-        setError('ACE Labor reason is required.')
+        failValidation('ACE Labor reason is required.')
         return
       }
     }
@@ -1766,7 +1710,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
   async function handleMarkBilled() {
     if (!synergyInvoiceNumber.trim()) {
-      setError('Synergy invoice number is required to mark as billed')
+      failValidation('Synergy invoice number is required to mark as billed')
       return
     }
     await apiAction(async () => {
@@ -1787,49 +1731,72 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  async function handleReopen() {
+  function handleReopen() {
     // Reopen from a worked state (in_progress/completed/billed) on a ticket
     // whose estimate was already approved drops back to 'approved' so the
     // estimate + approval survive and only completion data is cleared.
     // Everything else (declined-revise, canceled, or worked tickets without
     // an approved estimate) keeps the original wipe-to-'open' behavior.
+    //
+    // Bypassed tickets ("started without an estimate") are excluded: their
+    // estimate_approved=true is just the pre-authorized marker, not a real
+    // customer sign-off, and there's no estimate to preserve — so reopening
+    // them lands at 'open' (clearing the bypass flag) instead of leaving a
+    // hollow "Approved" status behind.
     const reopenToApproved =
       ticket.estimate_approved &&
+      !ticket.estimate_bypassed &&
       (ticket.status === SERVICE_STATUS.IN_PROGRESS ||
         ticket.status === SERVICE_STATUS.COMPLETED ||
         ticket.status === SERVICE_STATUS.BILLED)
     const message = reopenToApproved
       ? 'Reopen this ticket? Completion data will be cleared. The estimate and approval will be kept.'
       : 'Reopen this ticket? Completion data will be cleared.'
-    if (!confirm(message)) return
-    await apiAction(async () => {
-      await patchTicket({ status: reopenToApproved ? 'approved' : 'open' })
+    setPendingConfirm({
+      title: 'Reopen ticket?',
+      message,
+      confirmLabel: 'Reopen',
+      action: () =>
+        apiAction(async () => {
+          await patchTicket({ status: reopenToApproved ? 'approved' : 'open' })
+        }),
     })
   }
 
-  async function handleCancel() {
-    if (!confirm('Cancel this ticket? It stays visible and editable on the boards but is marked Canceled. You can reopen it later.')) return
-    await apiAction(async () => {
-      await patchTicket({ status: 'canceled' })
+  function handleCancel() {
+    setPendingConfirm({
+      title: 'Cancel ticket?',
+      message: 'Cancel this ticket? It stays visible and editable on the boards but is marked Canceled. You can reopen it later.',
+      confirmLabel: 'Cancel Ticket',
+      action: () =>
+        apiAction(async () => {
+          await patchTicket({ status: 'canceled' })
+        }),
     })
   }
 
-  async function handleDelete() {
-    if (!confirm('Delete this ticket? It will be hidden from boards, billing, and PDFs. A manager can restore it later.')) return
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/service-tickets/${ticket.id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to delete ticket')
-      }
-      router.push('/service')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setLoading(false)
-    }
+  function handleDelete() {
+    setPendingConfirm({
+      title: 'Delete ticket?',
+      message: 'Delete this ticket? It will be hidden from boards, billing, and PDFs. A manager can restore it later.',
+      confirmLabel: 'Delete',
+      action: async () => {
+        setLoading(true)
+        setError(null)
+        try {
+          const res = await fetch(`/api/service-tickets/${ticket.id}`, { method: 'DELETE' })
+          if (!res.ok) {
+            const data = await res.json()
+            throw new Error(data.error || 'Failed to delete ticket')
+          }
+          router.push('/service')
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'An error occurred')
+        } finally {
+          setLoading(false)
+        }
+      },
+    })
   }
 
   // ── Computed ──
@@ -1959,16 +1926,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     ? (ticket.status === SERVICE_STATUS.APPROVED || ticket.status === SERVICE_STATUS.IN_PROGRESS)
     : completionOpenDefault
 
-  const quickCompleteEligible =
-    ticket.status === SERVICE_STATUS.IN_PROGRESS &&
-    isTech &&
-    ticket.assigned_technician_id === userId &&
-    // When the unit still needs verification, Quick Complete can't run — the
-    // tech is routed to the full form, which surfaces the verify panel.
-    !needsEquipmentVerify
-
-  const signatureRequired = ticket.ticket_type !== 'inside'
-
   // ── Next Step bar ──
   // One contextual primary action per stage, surfaced at the top so the
   // viewer never hunts for "what's next". The same booleans gate the bar's
@@ -2008,19 +1965,29 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // sub-inputs. When it shows, the top bar is hidden for that stage so the
   // action isn't duplicated.
   const showMobileActionBar =
-    isMobile && !showEstimateForm && !showCompletionForm && !quickCompleteOpen && (
+    isMobile && !showEstimateForm && !showCompletionForm && (
       isWarrantyOpen ||
       (ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen) ||
       (ticket.status === SERVICE_STATUS.APPROVED && !partsBlocking) ||
       ticket.status === SERVICE_STATUS.IN_PROGRESS
     )
 
+  // Sticky "Mark Complete" bar shown on a phone once the full completion form
+  // is open, so the tech can submit without scrolling to the bottom. Gated off
+  // needsEquipmentVerify so it doesn't appear while the verify panel is up
+  // instead of the form. Submits the form via the `form` attribute.
+  const showMobileCompletionBar =
+    isMobile &&
+    ticket.status === SERVICE_STATUS.IN_PROGRESS &&
+    showCompletionForm &&
+    !needsEquipmentVerify
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
 
   return (
-    <div className={`space-y-6 ${showMobileActionBar ? 'pb-24' : ''}`}>
+    <div className={`space-y-6 ${showMobileActionBar || showMobileCompletionBar ? 'pb-24' : ''}`}>
       {/* Workflow state card — top of detail page, always visible. */}
       <WorkflowStatusCard
         state={workflowProps.state}
@@ -2176,6 +2143,51 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               {loading ? 'Saving...' : 'Save'}
             </button>
           </div>
+
+          {/* Labor type — correct a mis-keyed labor rate before the job is
+              marked complete. Locked once completed/billed: the bill is
+              already computed by then, so changing it here would no longer
+              do anything (feedback #68). */}
+          {(() => {
+            const laborTypeLocked =
+              ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
+            return (
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex-1">
+                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                    Labor Type
+                  </label>
+                  <select
+                    value={laborRateType}
+                    onChange={(e) => setLaborRateType(e.target.value)}
+                    disabled={loading || laborTypeLocked}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="industrial">Industrial</option>
+                    <option value="vacuum">Vacuum</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {laborTypeLocked
+                      ? 'Locked once the ticket is completed/billed.'
+                      : 'Drives the labor rate used on the estimate and final bill.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    apiAction(async () => {
+                      await patchTicket({ labor_rate_type: laborRateType })
+                      setSuccessMsg('Labor type updated')
+                    })
+                  }
+                  disabled={loading || laborTypeLocked || laborRateType === (ticket.labor_rate_type ?? 'standard')}
+                  className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+                >
+                  {loading ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            )
+          })()}
         </Card>
       )}
 
@@ -2211,7 +2223,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* Error / Success messages */}
       {error && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3">
+        <div ref={errorBannerRef} role="alert" className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3 scroll-mt-20">
           <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
         </div>
       )}
@@ -2303,7 +2315,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           completion form still live in their own cards below; the buttons
           here open them. On mobile, simple stages are handled by the sticky
           bottom bar, so the top bar yields to it (no duplicate button). */}
-      {viewerHasPrimaryAction && !showMobileActionBar && !quickCompleteOpen && (
+      {viewerHasPrimaryAction && !showMobileActionBar && (
         <div className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-5 space-y-3">
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Next Step
@@ -2446,14 +2458,32 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             </button>
           )}
 
-          {/* In progress → complete the job (opens completion form below) */}
-          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && (
-            <button
-              onClick={() => setShowCompletionForm(true)}
-              className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
-            >
-              Complete Job
-            </button>
+          {/* In progress → complete the job (opens completion form below), plus
+              an escape hatch on a "started without an estimate" (bypassed) ticket
+              to add a real estimate after the fact. Building the estimate flips
+              the ticket back to the estimate/approval flow without losing the
+              diagnosis, photos, or started_at already captured. Hidden while
+              either form is open. */}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && !showCompletionForm && !showEstimateForm && (
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+              <button
+                onClick={() => setShowCompletionForm(true)}
+                className="w-full sm:w-auto px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[44px]"
+              >
+                Complete Job
+              </button>
+              {ticket.estimate_bypassed && (
+                <button
+                  onClick={() => {
+                    setShowCompletionForm(false)
+                    setShowEstimateForm(true)
+                  }}
+                  className="w-full sm:w-auto px-5 py-3 text-sm font-medium text-yellow-700 dark:text-yellow-400 bg-white dark:bg-gray-700 border border-yellow-400 dark:border-yellow-600 rounded-md hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors min-h-[44px]"
+                >
+                  Build Estimate
+                </button>
+              )}
+            </div>
           )}
 
           {/* Completed + staff → record Synergy invoice #, then bill */}
@@ -3078,7 +3108,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           )}
 
           {/* Estimate builder — opened from the Next Step bar above */}
-          {ticket.status === SERVICE_STATUS.OPEN && showEstimateForm && (
+          {(ticket.status === SERVICE_STATUS.OPEN ||
+            (ticket.status === SERVICE_STATUS.IN_PROGRESS && ticket.estimate_bypassed)) &&
+            showEstimateForm && (
             <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700">
               <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
                 {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}
@@ -3653,7 +3685,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               relinkTicketKind="service"
             />
           ) : (
-          <form onSubmit={handleComplete} className="space-y-5 max-w-xl">
+          <form id="service-completion-form" onSubmit={handleComplete} className="space-y-5 max-w-xl">
             {/* Prefilled-from-estimate reminder. Only shown when an estimate was
                 approved — the work order was seeded from it on Start Work. Calls
                 out the diagnosis-vs-completion distinction explicitly so the tech
@@ -3735,41 +3767,53 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
             {/* Machine Hours + Date Code — optional equipment service-life data
                 (parity with PM completion; optional since not every service unit
-                has an hour meter). */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="svc-machine-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Machine Hours <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  id="svc-machine-hours"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={machineHours}
-                  onChange={(e) => setMachineHours(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="e.g. 1247.5"
-                />
+                has an hour meter). Collapsed when empty so the core fields show
+                first on a phone; matches the Parts/Photos collapse pattern. */}
+            <details open={machineHours !== '' || dateCode !== ''} className="rounded-md border border-gray-200 dark:border-gray-700">
+              <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                <span>Machine Hours &amp; Date Code <span className="text-gray-400 font-normal">(optional)</span></span>
+                <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </summary>
+              <div className="p-3 pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="svc-machine-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Machine Hours <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="svc-machine-hours"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={machineHours}
+                      onChange={(e) => setMachineHours(e.target.value)}
+                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      placeholder="e.g. 1247.5"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="svc-date-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Date Code <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="svc-date-code"
+                      type="text"
+                      value={dateCode}
+                      onChange={(e) => setDateCode(e.target.value)}
+                      className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                      placeholder="e.g. 26W15"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label htmlFor="svc-date-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Date Code <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  id="svc-date-code"
-                  type="text"
-                  value={dateCode}
-                  onChange={(e) => setDateCode(e.target.value)}
-                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="e.g. 26W15"
-                />
-              </div>
-            </div>
+            </details>
 
             {/* Parts Used — collapsible sub-section so the tech can skip
-                past it on mobile when nothing's been added. */}
-            <details open={completionParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
+                past it on mobile when nothing's been added. Opens automatically
+                when there's something to copy so the button isn't missed. */}
+            <details open={completionParts.length > 0 || copyableRequestedParts.length > 0} className="rounded-md border border-gray-200 dark:border-gray-700">
               <summary className="px-3 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 marker:content-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
                 <span>Parts Used{completionParts.length > 0 ? ` (${completionParts.length})` : ''}</span>
                 <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -3777,6 +3821,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 </svg>
               </summary>
               <div className="p-3 pt-0">
+                {copyableRequestedParts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyRequestedParts}
+                    className="mb-3 w-full sm:w-auto px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 min-h-[44px] sm:min-h-0 transition-colors"
+                  >
+                    Copy Requested Parts ({copyableRequestedParts.length})
+                  </button>
+                )}
                 <PartsEntryList
                   parts={completionParts}
                   setParts={setCompletionParts}
@@ -3860,15 +3913,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                   ))}
                 </div>
               )}
-              {/* `capture="environment"` opens the rear camera by default on
-                  mobile while still allowing library picks; desktop browsers
-                  ignore the attribute. `multiple` keeps batch upload working
-                  on both. */}
+              {/* No `capture` attribute: on mobile this opens the native picker
+                  (Photo Library / Take Photo / Choose File) instead of forcing
+                  the camera, matching PM tickets and the rest of the app.
+                  `multiple` keeps batch upload working. */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 multiple
                 onChange={handlePhotoUpload}
                 className="hidden"
@@ -3973,7 +4025,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               <button
                 type="submit"
                 disabled={loading || uploading || saving}
-                className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
+                className="hidden sm:block px-4 py-3 sm:py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
               >
                 {loading ? 'Completing...' : 'Mark Complete'}
               </button>
@@ -4248,8 +4300,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* Mobile sticky action bar — the primary action stays reachable at the
           bottom of the screen on phones (≤640px) per the mobile-first-for-techs
-          rule. in_progress opens the QuickCompleteSheet for the assigned tech,
-          else the inline completion form. */}
+          rule. in_progress opens the inline completion form (the full work-order
+          form, which is mobile-first); a separate sticky bar below keeps "Mark
+          Complete" reachable once that form is open. */}
       {showMobileActionBar && (
         <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           {isWarrantyOpen && (
@@ -4294,7 +4347,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
             <button
               type="button"
-              onClick={() => (quickCompleteEligible ? setQuickCompleteOpen(true) : setShowCompletionForm(true))}
+              onClick={() => setShowCompletionForm(true)}
               className="w-full px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors min-h-[48px]"
             >
               Complete Job
@@ -4302,23 +4355,39 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           )}
         </div>
       )}
-      <QuickCompleteSheet
-        key={`quick-complete-${quickCompleteOpen}`}
-        open={quickCompleteOpen}
-        busy={loading}
-        signatureRequired={signatureRequired}
-        onCancel={() => setQuickCompleteOpen(false)}
-        onSwitchToFull={() => {
-          setQuickCompleteOpen(false)
-          setShowCompletionForm(true)
-        }}
-        onSubmit={handleQuickComplete}
-      />
+      {/* Sticky "Mark Complete" bar — keeps submit reachable on a phone while
+          the full completion form is open. Submits the form by id so it works
+          even though the button sits outside the <form>. */}
+      {showMobileCompletionBar && (
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <button
+            type="submit"
+            form="service-completion-form"
+            disabled={loading || uploading || saving}
+            className="w-full px-5 py-3 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[48px]"
+          >
+            {loading ? 'Completing...' : 'Mark Complete'}
+          </button>
+        </div>
+      )}
       <CompletionSuccessDialog
         open={completed}
         ticketsHref="/service"
         ticketsLabel="Back to Service Tickets"
         onViewWorkOrder={() => setCompleted(false)}
+      />
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={pendingConfirm?.title ?? ''}
+        message={pendingConfirm?.message ?? ''}
+        confirmLabel={pendingConfirm?.confirmLabel}
+        confirmVariant="danger"
+        loading={loading}
+        onConfirm={() => {
+          pendingConfirm?.action()
+          setPendingConfirm(null)
+        }}
+        onCancel={() => setPendingConfirm(null)}
       />
     </div>
   )

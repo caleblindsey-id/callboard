@@ -31,6 +31,7 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/notifications(\/|$)/,                             // GET /api/notifications + POST /api/notifications/mark-read (the bell)
   /^\/api\/supply-requests(\/|$)/,                           // POST /api/supply-requests (tech requests supplies) + DELETE /api/supply-requests/[id] (cancel own); manager-only PATCH actions are role-gated in the route
   /^\/api\/supply-catalog(\/|$)/,                            // GET /api/supply-catalog (quick-pick list — all roles)
+  /^\/api\/parts-queue\/update$/,                            // POST /api/parts-queue/update — techs may only run action:'mark_collected' (Mark Picked Up) on their OWN ticket; all other actions are MANAGER_ROLES-gated in the route. Exact-match: it's the only /api/parts-queue/* route.
 ]
 
 function isTechAllowed(pathname: string): boolean {
@@ -53,7 +54,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth check for public routes
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/set-password') || pathname === '/api/auth/set-password' || pathname.startsWith('/auth/') || pathname === '/api/auth/pin/login' || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
+  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/set-password') || pathname === '/api/auth/set-password' || pathname.startsWith('/auth/') || pathname === '/api/auth/pin/login' || pathname === '/api/auth/pin/status' || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
     return supabaseResponse
   }
 

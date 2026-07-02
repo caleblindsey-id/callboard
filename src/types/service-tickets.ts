@@ -256,7 +256,7 @@ export const SERVICE_VALID_TRANSITIONS: Record<ServiceTicketStatus, ServiceTicke
   open:        ['estimated', 'in_progress', 'canceled'],
   estimated:   ['approved', 'declined', 'canceled'],
   approved:    ['in_progress', 'canceled'],
-  in_progress: ['completed', 'open', 'approved', 'canceled'],
+  in_progress: ['completed', 'open', 'approved', 'estimated', 'canceled'],
   completed:   ['billed', 'open', 'approved'],
   billed:      ['open', 'approved'],
   declined:    ['open'],
@@ -265,6 +265,40 @@ export const SERVICE_VALID_TRANSITIONS: Record<ServiceTicketStatus, ServiceTicke
 
 // Manager-only transitions (reopen from any state, cancel)
 export const SERVICE_MANAGER_ONLY_TARGETS: ServiceTicketStatus[] = ['open', 'canceled']
+
+// --- Reopen field-reset sets ---
+// Shared between PATCH /api/service-tickets/[id] (reopen-to-open, which WIPES
+// the estimate) and POST .../reopen-estimate (which PRESERVES the estimate for
+// revision) so the two reopen paths can never drift on the residue they clear
+// — the stale-flag class behind PRs #211/#213. Mirrors the PM pattern
+// (EMPTY_COMPLETION_FIELDS in src/lib/ticket-transitions.ts).
+
+// Customer sign-off: any reopen invalidates the prior approval round, so the
+// (new or revised) estimate must be re-approved.
+export const EMPTY_ESTIMATE_SIGNOFF_FIELDS = {
+  estimate_approved: false,
+  estimate_approved_at: null,
+  auto_approved: false,
+  estimate_signature: null,
+  estimate_signature_name: null,
+  approval_token: null,
+  approval_token_expires_at: null,
+} as const
+
+// Follow-up campaign (estimate queue + estimate-renotify cron): a reopened
+// ticket starts a fresh contact campaign when its estimate is re-sent.
+// Without this reset, the old round's counters carry over — "Emailed ×4",
+// first-contact aging from weeks ago, and a re-notify cadence computed off a
+// stale estimate_emailed_at.
+export const EMPTY_ESTIMATE_FOLLOWUP_FIELDS = {
+  estimated_at: null,
+  estimate_emailed_at: null,
+  estimate_last_emailed_at: null,
+  estimate_notify_count: 0,
+  estimate_called_at: null,
+  estimate_called_by_id: null,
+  estimate_contact_notes: null,
+} as const
 
 // --- Unified Service History Item (for combined PM + service timelines) ---
 

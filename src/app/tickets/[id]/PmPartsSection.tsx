@@ -16,6 +16,8 @@ interface PmPartsSectionProps {
   isTech: boolean
   canReset: boolean
   status: TicketStatus
+  // Current user — stamped as cancelled_by when a part is removed (soft-cancel).
+  userId: string | null
   // True when the linked equipment has make, model, AND serial. A part request
   // is blocked until then so the office knows which machine it's for.
   machineComplete: boolean
@@ -53,6 +55,7 @@ export default function PmPartsSection({
   status,
   machineComplete,
   poDueDates = {},
+  userId,
 }: PmPartsSectionProps) {
   const router = useRouter()
   const [parts, setParts] = useState<PartRequest[]>(initialPartsRequested)
@@ -219,11 +222,23 @@ export default function PmPartsSection({
     }
   }
 
+  // Soft-cancel in place rather than splicing the element out. The Parts Queue
+  // addresses each part by its position in this array (parts_order_queue
+  // .part_index = array ordinal), so removing an element reindexes every later
+  // part and strands the queue's reference to any ordered sibling that followed
+  // it — the "part_index out of range" bug from feedback #64. Cancelled parts
+  // already drop off every queue tab and the all-received count, and render as a
+  // struck-through tombstone here.
   async function handleDeletePart(index: number) {
     setSaving(true)
     setError(null)
     try {
-      const updated = parts.filter((_, i) => i !== index)
+      const now = new Date().toISOString()
+      const updated = parts.map((p, i) =>
+        i === index
+          ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId ?? undefined }
+          : p
+      )
       await patchTicket({ parts_requested: updated })
       setParts(updated)
       router.refresh()

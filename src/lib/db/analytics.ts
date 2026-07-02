@@ -551,31 +551,12 @@ export async function getTechnicianAnalytics(
   const priorRange = getPriorRange(periodType, range.start)
   const yoyRange = getYoyRange(range.start)
 
-  // Fetch tech info
-  const { data: tech, error: techErr } = await supabase
-    .from('users')
-    .select('id, name, hourly_cost')
-    .eq('id', techId)
-    .single()
-
-  if (techErr) throw techErr
-
   // Fetch all tickets for this tech (current, prior, yoy periods + last 12 months for trends)
   const trendStart = new Date(range.start + 'T12:00:00Z')
   trendStart.setUTCMonth(trendStart.getUTCMonth() - 11)
   const trendStartStr = trendStart.toISOString().split('T')[0]
 
-  const { data: allTickets, error: tickErr } = await supabase
-    .from('pm_tickets')
-    .select('assigned_technician_id, status, billing_amount, hours_worked, additional_hours_worked, additional_parts_used, completed_date, scheduled_date')
-    .is('deleted_at', null)
-    .eq('assigned_technician_id', techId)
-    .gte('completed_date', trendStartStr)
-    .order('completed_date', { ascending: false })
-
-  if (tickErr) throw tickErr
-
-  // Also fetch non-completed tickets for this period (completion rate denominator).
+  // Non-completed tickets for this period (completion rate denominator).
   //
   // AN-25: For monthly we keep the month/year anchor — same as the team query.
   // For weekly we anchor on scheduled_date <= range.end (tickets eligible to
@@ -601,7 +582,64 @@ export async function getTechnicianAnalytics(
           .eq('month', curDate.getUTCMonth() + 1)
           .eq('year', curDate.getUTCFullYear())
           .not('status', 'in', '("completed","billed")')
-  const { data: allStatusTickets } = await allStatusQuery
+
+  // All of these are independent (keyed only by techId + the ranges above), so
+  // issue them concurrently. This was a 5-query sequential waterfall of
+  // cross-region round-trips (pdx1 → us-west-2 is ~65ms each);
+  // getTeamAnalytics already parallelizes — this per-tech path was the
+  // straggler PR #192 missed.
+  const [techRes, allTicketsRes, allStatusRes, schedRes, recentRes, targetsRes, laborRateSetting] =
+    await Promise.all([
+      supabase
+        .from('users')
+        .select('id, name, hourly_cost')
+        .eq('id', techId)
+        .single(),
+      supabase
+        .from('pm_tickets')
+        .select('assigned_technician_id, status, billing_amount, hours_worked, additional_hours_worked, additional_parts_used, completed_date, scheduled_date')
+        .is('deleted_at', null)
+        .eq('assigned_technician_id', techId)
+        .gte('completed_date', trendStartStr)
+        .order('completed_date', { ascending: false }),
+      allStatusQuery,
+      // Flat-rate breakdown source (schedule join) for the current period.
+      supabase
+        .from('pm_tickets')
+        .select('id, billing_amount, additional_hours_worked, additional_parts_used, pm_schedules(flat_rate)')
+        .is('deleted_at', null)
+        .eq('assigned_technician_id', techId)
+        .in('status', ['completed', 'billed'])
+        .gte('completed_date', range.start)
+        .lte('completed_date', range.end + 'T23:59:59Z'),
+      // Recent tickets list.
+      supabase
+        .from('pm_tickets')
+        .select('id, work_order_number, completed_date, hours_worked, additional_hours_worked, billing_amount, status, customers(name)')
+        .is('deleted_at', null)
+        .eq('assigned_technician_id', techId)
+        .in('status', ['completed', 'billed', 'in_progress', 'assigned'])
+        .order('completed_date', { ascending: false, nullsFirst: false })
+        .limit(10),
+      // Targets (individual + team defaults, resolved below).
+      supabase
+        .from('technician_targets')
+        .select('*')
+        .eq('active', true)
+        .eq('period_type', periodType)
+        .lte('effective_from', date)
+        .or(`technician_id.eq.${techId},technician_id.is.null`)
+        .order('effective_from', { ascending: false }),
+      getSetting('labor_rate_per_hour'),
+    ])
+
+  const { data: tech, error: techErr } = techRes
+  if (techErr) throw techErr
+
+  const { data: allTickets, error: tickErr } = allTicketsRes
+  if (tickErr) throw tickErr
+
+  const { data: allStatusTickets } = allStatusRes
 
   const rawTickets = (allTickets ?? []) as RawTicket[]
 
@@ -660,7 +698,7 @@ export async function getTechnicianAnalytics(
   }
 
   // Revenue breakdown
-  const laborRate = parseFloat((await getSetting('labor_rate_per_hour')) ?? '75')
+  const laborRate = parseFloat(laborRateSetting ?? '75')
   let flatRateTotal = 0
   let additionalLaborTotal = 0
   let additionalPartsTotal = 0
@@ -670,15 +708,8 @@ export async function getTechnicianAnalytics(
   const currentCompletedIds = currentFiltered
     .filter((t) => t.status === 'completed' || t.status === 'billed')
 
-  // To get flat_rate we need to query tickets with schedule join
-  const { data: ticketsWithSchedule } = await supabase
-    .from('pm_tickets')
-    .select('id, billing_amount, additional_hours_worked, additional_parts_used, pm_schedules(flat_rate)')
-    .is('deleted_at', null)
-    .eq('assigned_technician_id', techId)
-    .in('status', ['completed', 'billed'])
-    .gte('completed_date', range.start)
-    .lte('completed_date', range.end + 'T23:59:59Z')
+  // flat_rate comes from the schedule join fetched in the Promise.all above.
+  const { data: ticketsWithSchedule } = schedRes
 
   for (const t of ticketsWithSchedule ?? []) {
     const schedule = t.pm_schedules as { flat_rate: number | null } | null
@@ -694,15 +725,8 @@ export async function getTechnicianAnalytics(
 
   const completedCount = currentCompletedIds.length
 
-  // Recent tickets
-  const { data: recentRaw } = await supabase
-    .from('pm_tickets')
-    .select('id, work_order_number, completed_date, hours_worked, additional_hours_worked, billing_amount, status, customers(name)')
-    .is('deleted_at', null)
-    .eq('assigned_technician_id', techId)
-    .in('status', ['completed', 'billed', 'in_progress', 'assigned'])
-    .order('completed_date', { ascending: false, nullsFirst: false })
-    .limit(10)
+  // Recent tickets (fetched in the Promise.all above)
+  const { data: recentRaw } = recentRes
 
   const recentTickets: RecentTicket[] = (recentRaw ?? []).map((t) => {
     const totalHrs = (t.hours_worked ?? 0) + (t.additional_hours_worked ?? 0)
@@ -719,15 +743,8 @@ export async function getTechnicianAnalytics(
     }
   })
 
-  // Targets
-  const { data: targets } = await supabase
-    .from('technician_targets')
-    .select('*')
-    .eq('active', true)
-    .eq('period_type', periodType)
-    .lte('effective_from', date)
-    .or(`technician_id.eq.${techId},technician_id.is.null`)
-    .order('effective_from', { ascending: false })
+  // Targets (fetched in the Promise.all above)
+  const { data: targets } = targetsRes
 
   // Two-pass resolution: individual targets always beat team defaults for
   // the same metric, regardless of effective_from ordering. The previous

@@ -6,6 +6,8 @@ import {
   ServiceTicketStatus,
   SERVICE_VALID_TRANSITIONS,
   SERVICE_MANAGER_ONLY_TARGETS,
+  EMPTY_ESTIMATE_SIGNOFF_FIELDS,
+  EMPTY_ESTIMATE_FOLLOWUP_FIELDS,
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
@@ -253,7 +255,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -421,6 +423,27 @@ export async function PATCH(
           { error: `Invalid status transition: ${currentStatus} → ${nextStatus}` },
           { status: 409 }
         )
+      }
+
+      // Add-an-estimate-after-bypass: a ticket "started without an estimate"
+      // (the pre-authorized bypass) can be flipped back into the estimate flow
+      // to attach a real estimate. The in_progress -> estimated transition is
+      // permitted ONLY for bypassed tickets — a warranty or normally-approved
+      // in_progress ticket has no business re-entering the estimate phase this
+      // way. Clearing the bypass flags routes it through real customer approval
+      // and drops the orange "pre-authorized" banner. The work already done
+      // (diagnosis, photos, started_at) is preserved because this path never
+      // hits the reopen-to-open wipe below.
+      if (currentStatus === 'in_progress' && nextStatus === 'estimated') {
+        if (!current.estimate_bypassed) {
+          return NextResponse.json(
+            { error: 'Only a ticket started without an estimate can have one added from in progress.' },
+            { status: 409 }
+          )
+        }
+        filtered.estimate_bypassed = false
+        filtered.estimate_approved = false
+        filtered.estimate_approved_at = null
       }
 
       // Credit-hold gate: block advancement into "work" states while AR review
@@ -629,29 +652,34 @@ export async function PATCH(
         })
       }
       if (nextStatus === 'open') {
-        Object.assign(filtered, {
+        Object.assign(filtered, EMPTY_ESTIMATE_SIGNOFF_FIELDS, EMPTY_ESTIMATE_FOLLOWUP_FIELDS, {
           estimate_amount: null,
           estimate_labor_hours: null,
           estimate_labor_rate: null,
           estimate_parts: [],
-          estimate_approved: false,
-          estimate_approved_at: null,
-          auto_approved: false,
+          // A reopened bypass ("started without an estimate") is no longer
+          // pre-authorized — clear the flag so the orange banner doesn't stick
+          // and the ticket reads as a clean, un-estimated 'open' ticket.
+          estimate_bypassed: false,
           diagnosis_notes: null,
-          estimate_signature: null,
-          estimate_signature_name: null,
-          approval_token: null,
-          approval_token_expires_at: null,
           // Note: decline_reason is intentionally preserved for reference
         })
+        // The bypass authorization note documented the now-cleared bypass, so
+        // it goes with the flag. Manual approve/decline notes stored in the
+        // same column are preserved for reference, like decline_reason.
+        if (current.estimate_bypassed) {
+          filtered.manual_decision_note = null
+        }
       }
 
       // Verify-first gate (parity with the client estimate builder): a linked
       // unit must be tech-verified (make/model + details_verified_at) before the
       // estimate can be submitted, since parts are ordered off the estimate.
       // Mirrors the completion gate in /complete. Inline-only and equipment-less
-      // tickets are unaffected (no row to verify).
-      if (nextStatus === 'estimated' && currentStatus === 'open') {
+      // tickets are unaffected (no row to verify). Also applies to the
+      // add-estimate-after-bypass path (in_progress → estimated), which is the
+      // ticket's first real estimate and orders parts off it just the same.
+      if (nextStatus === 'estimated' && (currentStatus === 'open' || currentStatus === 'in_progress')) {
         const linked = current.equipment as
           | { make: string | null; model: string | null; details_verified_at: string | null }
           | null
@@ -665,11 +693,12 @@ export async function PATCH(
 
       // Resubmitting an estimate after a Request-More-Info round-trip clears
       // the manager's note so the tech doesn't see a stale prompt next time.
-      if (nextStatus === 'estimated' && currentStatus === 'open') {
+      if (nextStatus === 'estimated' && (currentStatus === 'open' || currentStatus === 'in_progress')) {
         filtered.request_info_note = null
         // Stamp the follow-up aging clock (drives the estimate follow-up queue +
-        // re-notify cadence). open → estimated is the only entry into 'estimated',
-        // so a resubmit after Request-More-Info correctly restarts the clock.
+        // re-notify cadence). Entries into 'estimated' are open → estimated (incl.
+        // a resubmit after Request-More-Info) and the add-estimate-after-bypass
+        // in_progress → estimated path; both should (re)start the clock.
         filtered.estimated_at = new Date().toISOString()
       }
 
@@ -698,6 +727,22 @@ export async function PATCH(
       filtered.awaiting_pickup = true
       filtered.ready_for_pickup_at = new Date().toISOString()
     }
+    // Auto-stage an INSIDE unit when its estimate is DECLINED — the customer's
+    // (unrepaired) equipment is still physically in the shop and has to be
+    // collected, but a declined ticket never reaches 'billed' so the block above
+    // never fires for it. Same one-shot guards. Unlike the billed path this stays
+    // SILENT (no instant email): the front desk sends the pickup notice manually
+    // once any re-quote attempt is exhausted (see the send-gate below).
+    if (
+      filtered.status === 'declined' &&
+      current.ticket_type === 'inside' &&
+      current.status !== 'declined' &&
+      !current.awaiting_pickup &&
+      !current.ready_for_pickup_at
+    ) {
+      filtered.awaiting_pickup = true
+      filtered.ready_for_pickup_at = new Date().toISOString()
+    }
     // Any path that flips awaiting_pickup true (e.g. the manual "Mark Ready"
     // toggle on an inside ticket invoiced outside the app) starts the aging
     // clock if it isn't already running.
@@ -712,6 +757,14 @@ export async function PATCH(
     // the client never supplies released_by_id).
     if (filtered.picked_up_at) {
       filtered.released_by_id = user.id
+      // A picked-up DECLINED unit has nothing left to chase — the customer took
+      // it back. Auto-clear it from the managers' Declined Estimates worklist
+      // (same soft-dismiss flag as the manual "Mark handled" action; status stays
+      // 'declined'). Guarded so we don't re-stamp an already-resolved row.
+      if (current.status === 'declined' && !current.decline_resolved_at) {
+        filtered.decline_resolved_at = new Date().toISOString()
+        filtered.decline_resolved_by_id = user.id
+      }
     }
     // True when this PATCH moves the unit INTO the ready state (auto on billed,
     // or the manual Mark-Ready toggle). Drives the instant customer email after
@@ -951,8 +1004,9 @@ export async function PATCH(
     // Instant pickup-ready email. Fire only after the staging write commits, so a
     // send failure can never undo the staging — the unit stays visible in the
     // pickup queue and the Round 4 scanner retries the email. Swallowed on
-    // purpose: the billing/staging action itself succeeded.
-    if (enteringPickup) {
+    // purpose: the billing/staging action itself succeeded. Skipped for a DECLINED
+    // entry: those stage silently and the front desk sends the notice by hand.
+    if (enteringPickup && filtered.status !== 'declined') {
       try {
         const notice = await sendPickupNotice(id)
         if (!notice.sent && notice.reason === 'no_email') {

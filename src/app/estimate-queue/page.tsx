@@ -1,6 +1,7 @@
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getEstimateQueue } from '@/lib/db/estimate-queue'
 import EstimateQueueClient from './EstimateQueueClient'
+import SyncStaleNotice from '@/components/SyncStaleNotice'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,8 @@ export default async function EstimateQueuePage() {
           log a call — then follow up until the estimate is approved or declined.
         </p>
       </div>
+      {/* Estimate tax lines ride the synced customer tax rates — warn when stale. */}
+      <SyncStaleNotice />
       <EstimateQueueClient rows={rows} />
     </div>
   )

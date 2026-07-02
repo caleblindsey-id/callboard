@@ -44,7 +44,11 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-export default function NotificationBell() {
+// `align` controls which edge the dropdown is anchored to. The bell renders in
+// two spots with opposite geometry: the desktop sidebar (left rail) needs the
+// panel to open rightward (`left-0`), while the mobile top-header bell sits at
+// the top-right and must open leftward (`right-0`, the default) to stay on screen.
+export default function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' } = {}) {
   const user = useUser()
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -170,7 +174,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+        <div className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} z-40 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800`}>
           <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 dark:border-gray-700">
             <span className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</span>
             {unread > 0 && (

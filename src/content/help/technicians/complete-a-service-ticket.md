@@ -4,7 +4,7 @@ category: Technicians
 roles: [super_admin, manager, coordinator, technician]
 order: 20
 summary: Record the work on an assigned service (repair) ticket and mark it complete.
-last_verified: 2026-06-11
+last_verified: 2026-07-01
 ---
 
 A service ticket is reactive repair work — the customer called with a problem, rather than a scheduled PM. Completing one is simpler than a PM: you log your time, any parts used, notes, photos, and (for field work) a customer signature.
@@ -21,7 +21,7 @@ A service ticket is reactive repair work — the customer called with a problem,
 ## Step 2 — Record the work
 
 - **Hours Worked** *(required)* — your labor time on this repair.
-- **Parts Used** — add each part with quantity. This is what gets billed, so prices show here.
+- **Parts Used** — add each part with quantity. This is what gets billed, so prices show here. If you already requested parts through the Parts Queue and they've come in (received or pulled from stock), tap **Copy Requested Parts** to add them here instead of retyping them.
 - **Completion Notes** — describe what you found and what you did.
 - **Service Photos** — tap **+ Add Photo** to attach pictures.
 

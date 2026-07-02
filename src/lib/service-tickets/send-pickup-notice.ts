@@ -39,7 +39,7 @@ export async function sendPickupNotice(
   const { data: ticket, error } = await supabase
     .from('service_tickets')
     .select(
-      `id, customer_id, work_order_number, contact_name, contact_email,
+      `id, customer_id, status, work_order_number, contact_name, contact_email,
        awaiting_pickup, picked_up_at, pickup_notify_count,
        equipment_make, equipment_model, equipment_serial_number,
        customers(name),
@@ -102,6 +102,9 @@ export async function sendPickupNotice(
   const serial = firstNonEmpty(equip?.serial_number, ticket.equipment_serial_number)
 
   const email = renderPickupReadyEmail({
+    // A staged unit that never reached 'billed' is a declined estimate (unit
+    // ready to collect as-is); 'billed' is the repaired flow.
+    outcome: ticket.status === 'billed' ? 'repaired' : 'declined',
     ticket: {
       work_order_number: ticket.work_order_number,
       contact_name: ticket.contact_name,

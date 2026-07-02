@@ -14,6 +14,7 @@ import { partsOnOrder, stampCollectedOnStaged } from '@/lib/parts'
 import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
+import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 
 interface CompleteTicketBody {
   completedDate: string
@@ -97,6 +98,22 @@ export async function POST(
         { error: 'Customer signature and printed name are required' },
         { status: 400 }
       )
+    }
+
+    // Photos validation (mirrors the PATCH routes): each entry must be a known
+    // image type scoped to this ticket id. Prevents stored XSS via a malicious
+    // `.svg` served by signed URL.
+    if (photos !== undefined && photos !== null) {
+      if (!Array.isArray(photos)) {
+        return NextResponse.json({ error: 'photos must be an array' }, { status: 400 })
+      }
+      const expectedPrefix = `${id}/`
+      for (const p of photos as Array<{ storage_path?: unknown }>) {
+        const check = validatePhotoStoragePath(p?.storage_path, expectedPrefix)
+        if (!check.ok) {
+          return NextResponse.json({ error: check.error }, { status: 400 })
+        }
+      }
     }
 
     if (!isNonNegativeNumber(machineHours)) {

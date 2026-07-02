@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, RESET_ROLES } from '@/lib/auth'
+import {
+  EMPTY_ESTIMATE_SIGNOFF_FIELDS,
+  EMPTY_ESTIMATE_FOLLOWUP_FIELDS,
+} from '@/types/service-tickets'
 
 /**
  * POST /api/service-tickets/[id]/reopen-estimate
@@ -55,16 +59,18 @@ export async function POST(
       .from('service_tickets')
       .update({
         status: 'open',
-        // Clear the customer sign-off so the revised estimate is re-approved.
-        estimate_approved: false,
-        estimate_approved_at: null,
-        auto_approved: false,
-        estimate_signature: null,
-        estimate_signature_name: null,
-        approval_token: null,
-        approval_token_expires_at: null,
+        // Clear the customer sign-off so the revised estimate is re-approved,
+        // and reset the follow-up campaign so the re-sent estimate starts a
+        // fresh contact clock (shared field sets — see types/service-tickets).
+        ...EMPTY_ESTIMATE_SIGNOFF_FIELDS,
+        ...EMPTY_ESTIMATE_FOLLOWUP_FIELDS,
         decline_reason: null,
         manual_decision_note: null,
+        // A declined unit may have been staged into the pickup queue (custody
+        // tracking). Reopening puts it back in play, so pull it out of the queue —
+        // it's no longer waiting to be collected.
+        awaiting_pickup: false,
+        ready_for_pickup_at: null,
       })
       .eq('id', id)
       .in('status', ['estimated', 'approved', 'declined'])
