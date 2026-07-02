@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 
 const RATE_TYPE_KEY: Record<string, string> = {
@@ -71,7 +72,12 @@ export function effectiveTripChargeQty(
   return 0
 }
 
-export async function getSetting(key: string): Promise<string | null> {
+// Per-request memoized (React cache, keyed by `key`): hot paths — the estimate
+// recompute, completion billing math, billing PDFs — read several settings
+// serially per request, and each read was a cross-region round-trip. Settings
+// change rarely and only via setSetting, so within-request reuse is safe;
+// a fresh request always re-reads.
+export const getSetting = cache(async (key: string): Promise<string | null> => {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('settings')
@@ -84,7 +90,7 @@ export async function getSetting(key: string): Promise<string | null> {
     throw error
   }
   return data.value
-}
+})
 
 export async function setSetting(key: string, value: string): Promise<void> {
   const supabase = await createClient()
