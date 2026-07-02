@@ -6,6 +6,8 @@ import {
   ServiceTicketStatus,
   SERVICE_VALID_TRANSITIONS,
   SERVICE_MANAGER_ONLY_TARGETS,
+  EMPTY_ESTIMATE_SIGNOFF_FIELDS,
+  EMPTY_ESTIMATE_FOLLOWUP_FIELDS,
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
@@ -650,25 +652,24 @@ export async function PATCH(
         })
       }
       if (nextStatus === 'open') {
-        Object.assign(filtered, {
+        Object.assign(filtered, EMPTY_ESTIMATE_SIGNOFF_FIELDS, EMPTY_ESTIMATE_FOLLOWUP_FIELDS, {
           estimate_amount: null,
           estimate_labor_hours: null,
           estimate_labor_rate: null,
           estimate_parts: [],
-          estimate_approved: false,
-          estimate_approved_at: null,
-          auto_approved: false,
           // A reopened bypass ("started without an estimate") is no longer
           // pre-authorized — clear the flag so the orange banner doesn't stick
           // and the ticket reads as a clean, un-estimated 'open' ticket.
           estimate_bypassed: false,
           diagnosis_notes: null,
-          estimate_signature: null,
-          estimate_signature_name: null,
-          approval_token: null,
-          approval_token_expires_at: null,
           // Note: decline_reason is intentionally preserved for reference
         })
+        // The bypass authorization note documented the now-cleared bypass, so
+        // it goes with the flag. Manual approve/decline notes stored in the
+        // same column are preserved for reference, like decline_reason.
+        if (current.estimate_bypassed) {
+          filtered.manual_decision_note = null
+        }
       }
 
       // Verify-first gate (parity with the client estimate builder): a linked
