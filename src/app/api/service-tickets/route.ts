@@ -195,6 +195,8 @@ export async function GET(request: NextRequest) {
       waitingOnParts?: boolean
       poNeeded?: boolean
       deletedOnly?: boolean
+      limit?: number
+      offset?: number
     } = {}
 
     if (searchParams.get('status')) filters.status = searchParams.get('status') as ServiceTicketStatus
@@ -205,6 +207,15 @@ export async function GET(request: NextRequest) {
     if (searchParams.get('billingType')) filters.billingType = searchParams.get('billingType') as ServiceBillingType
     if (searchParams.get('waitingOnParts') === 'true') filters.waitingOnParts = true
     if (searchParams.get('poNeeded') === '1') filters.poNeeded = true
+
+    // Opt-in pagination (board load-more). No limit param = full result set,
+    // preserving every existing caller's behavior.
+    const limit = parseInt(searchParams.get('limit') ?? '', 10)
+    if (Number.isFinite(limit) && limit > 0) {
+      filters.limit = Math.min(limit, 200)
+      const offset = parseInt(searchParams.get('offset') ?? '', 10)
+      if (Number.isFinite(offset) && offset > 0) filters.offset = offset
+    }
 
     // Techs only see their own tickets (RLS enforces this too, but filter for clarity)
     if (isTechnician(user.role)) {

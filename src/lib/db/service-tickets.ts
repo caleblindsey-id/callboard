@@ -30,6 +30,11 @@ interface ServiceTicketFilters {
   // deleted tickets. deletedOnly → only deleted; includeDeleted → both.
   includeDeleted?: boolean
   deletedOnly?: boolean
+  // Opt-in pagination for the board's load-more flow. Unset = full result set
+  // (dashboard worklists and other callers rely on that). Only the listing
+  // query honors these — the count helpers always count everything.
+  limit?: number
+  offset?: number
 }
 
 // Applies the non-status filters shared by the listing query and the
@@ -94,7 +99,10 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
       credit_reviews ( status )
     `)
+    // Secondary id sort makes pagination stable: created_at alone isn't unique,
+    // so page boundaries could duplicate/skip rows without a tiebreaker.
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
 
   if (filters?.poNeeded) {
     // PO-needed supersedes the plain status filter: completed tickets for
@@ -107,6 +115,11 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
     query = query.eq('status', filters.status)
   }
   query = applyServiceTicketFilters(query, filters)
+
+  if (filters?.limit) {
+    const offset = filters.offset ?? 0
+    query = query.range(offset, offset + filters.limit - 1)
+  }
 
   const { data, error } = await query
 
