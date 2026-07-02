@@ -715,7 +715,192 @@ export default function PartsQueueClient({
           pdfPending={pdfPending}
         />
       ) : (
-      <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <>
+      {/* Mobile cards */}
+      <div className="lg:hidden space-y-3">
+        {filteredRows.length === 0 ? (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
+            {tab === 'ordered' && 'Nothing on order right now.'}
+            {tab === 'received' && `No parts received in the last ${RECEIVED_WINDOW_DAYS} days.`}
+          </div>
+        ) : (
+          filteredRows.map(row => {
+            const key = rowKey(row)
+            const isPending = pendingRow === key
+            const isFlashed = flashedRow === key
+            return (
+              <div
+                key={key}
+                className={`rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3 transition-colors ${
+                  isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'bg-white dark:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
+                      {partLabel(row) || '—'}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
+                      {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
+                      {row.customer_name ?? '—'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <SourceBadge source={row.source} />
+                    {row.covered_by_agreement !== null && <CoverageBadge covered={row.covered_by_agreement} />}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                  <ValidationBadge
+                    state={deriveValidationState(row)}
+                    synergyOrderNumber={row.synergy_order_number}
+                    onRevalidate={() => handleRevalidate(row)}
+                    disabled={isPending}
+                  />
+                  <span>Qty {row.quantity ?? 1}</span>
+                  {row.unit_price != null && <span className="tabular-nums">${row.unit_price.toFixed(2)}</span>}
+                  <span>{formatDay(row.requested_at)}</span>
+                  {row.assigned_technician_name && <span className="truncate">by {row.assigned_technician_name}</span>}
+                </div>
+                {(row.machine_make || row.machine_model || row.machine_serial) && (
+                  <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
+                )}
+                {tab === 'ordered' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Ordered {formatDateTime(row.ordered_at)}
+                    {row.po_due_date ? ` · Est. arrival ${formatDate(row.po_due_date)}` : ''}
+                  </p>
+                )}
+                {tab === 'received' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Received {formatDateTime(row.received_at)}</p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Synergy PO #</span>
+                    <InlineText
+                      value={row.po_number ?? ''}
+                      placeholder="Synergy PO #"
+                      disabled={!canEditFields}
+                      onBlurCommit={v => handleFieldBlur(row, 'po_number', v)}
+                      widthClass="w-full"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Synergy Order #</span>
+                    <InlineText
+                      value={row.synergy_order_number ?? ''}
+                      placeholder="SO #"
+                      disabled={!canEditFields}
+                      onBlurCommit={v => handleSynergyOrderCommit(row, v)}
+                      widthClass="w-full"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Synergy Item #</span>
+                    <InlineText
+                      value={row.product_number ?? ''}
+                      placeholder="Synergy Item #"
+                      disabled={!canEditFields}
+                      onBlurCommit={v => handleFieldBlur(row, 'product_number', v)}
+                      widthClass="w-full"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Vendor Item #</span>
+                    <InlineText
+                      value={row.vendor_item_code ?? ''}
+                      placeholder="Vendor Item #"
+                      disabled={!canEditFields}
+                      onBlurCommit={v => handleFieldBlur(row, 'vendor_item_code', v)}
+                      widthClass="w-full"
+                    />
+                  </label>
+                </div>
+                <div>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Vendor</span>
+                  <VendorPicker
+                    vendor={row.vendor}
+                    vendorCode={row.vendor_code}
+                    disabled={!canEditFields || isPending}
+                    onChange={picked =>
+                      handleFieldsCommit(row, { vendor: picked.vendor, vendor_code: picked.vendor_code })
+                    }
+                  />
+                  {suggestVendor(row.description) && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Suggested: <SuggestedVendor description={row.description} pickedVendor={row.vendor} />
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  {canMarkOrdered && (
+                    <button
+                      type="button"
+                      disabled={isPending || !row.product_number?.trim() || !row.po_number?.trim()}
+                      onClick={() => handleMarkOrdered(row)}
+                      title={
+                        !row.product_number?.trim()
+                          ? 'Enter Synergy Item # first'
+                          : !row.po_number?.trim()
+                          ? 'Enter Synergy PO # first'
+                          : 'Mark ordered'
+                      }
+                      className="flex-1 min-h-[44px] px-3 text-sm font-medium text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Mark Ordered
+                    </button>
+                  )}
+                  {canMarkReceived && (
+                    <button
+                      type="button"
+                      disabled={isPending || !row.product_number?.trim()}
+                      onClick={() => handleMarkReceived(row)}
+                      title={!row.product_number?.trim() ? 'Enter Synergy Item # first' : 'Mark received'}
+                      className="flex-1 min-h-[44px] px-3 text-sm font-medium text-green-600 dark:text-green-400 border border-green-300 dark:border-green-600 rounded-md hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Mark Received
+                    </button>
+                  )}
+                  {canReturnToReview && !row.cancelled && (
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => handleReturnToReview(row)}
+                      title="Return to Review — re-triage stock vs. order"
+                      className="p-3 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                    >
+                      <Undo2 className="h-5 w-5" />
+                    </button>
+                  )}
+                  {!row.cancelled && row.status !== 'received' && (
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => setCancelTarget(row)}
+                      title="Cancel request"
+                      className="p-3 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 rounded disabled:opacity-40 transition-colors"
+                    >
+                      <XCircle className="h-5 w-5" />
+                    </button>
+                  )}
+                  <Link
+                    href={ticketDeepLink(row.source, row.ticket_id)}
+                    title={row.source === 'pm' ? 'Open source PM ticket' : 'Open source service ticket'}
+                    aria-label="Open source ticket"
+                    className="p-3 text-gray-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
+                  >
+                    <ExternalLink className="h-5 w-5" />
+                  </Link>
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
@@ -958,6 +1143,7 @@ export default function PartsQueueClient({
           </tbody>
         </table>
       </ScrollableTable>
+      </>
       )}
 
       <CancelPartDialog
@@ -1014,7 +1200,96 @@ function ReviewTable({
   onCancel: (row: PartsQueueRow) => void
 }) {
   return (
-    <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <>
+    {/* Mobile cards */}
+    <div className="lg:hidden space-y-3">
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          No parts waiting on a stock-vs-order decision.
+        </div>
+      ) : (
+        rows.map(row => {
+          const key = rowKey(row)
+          const isPending = pendingRow === key
+          const isFlashed = flashedRow === key
+          return (
+            <div
+              key={key}
+              className={`rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3 transition-colors ${
+                isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'bg-white dark:bg-gray-800'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
+                    {partLabel(row) || '—'}
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
+                    {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
+                    {row.customer_name ?? '—'}
+                  </p>
+                </div>
+                <SourceBadge source={row.source} />
+              </div>
+              {(row.machine_make || row.machine_model || row.machine_serial) && (
+                <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
+              )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <span>Qty {row.quantity ?? 1}</span>
+                <span className="inline-flex items-center gap-1">
+                  On hand <StockBadge value={row.qty_on_hand} tone="hand" />
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  On PO <StockBadge value={row.qty_on_po} tone="po" />
+                </span>
+                <span>{formatDay(row.requested_at)}</span>
+                {row.assigned_technician_name && <span className="truncate">by {row.assigned_technician_name}</span>}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onStock(row)}
+                  title="Fulfill this part from existing stock — no PO"
+                  className="flex-1 min-h-[44px] px-3 text-sm font-medium text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 rounded-md hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Pull from Stock
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onOrder(row)}
+                  title="Send this part to the order queue"
+                  className="flex-1 min-h-[44px] px-3 text-sm font-medium text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Order
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onCancel(row)}
+                  title="Cancel request"
+                  className="p-3 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 rounded disabled:opacity-40 transition-colors"
+                >
+                  <XCircle className="h-5 w-5" />
+                </button>
+                <Link
+                  href={ticketDeepLink(row.source, row.ticket_id)}
+                  title={row.source === 'pm' ? 'Open source PM ticket' : 'Open source service ticket'}
+                  aria-label="Open source ticket"
+                  className="p-3 text-gray-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
+                >
+                  <ExternalLink className="h-5 w-5" />
+                </Link>
+              </div>
+            </div>
+          )
+        })
+      )}
+    </div>
+
+    {/* Desktop table */}
+    <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
           <tr>
@@ -1106,6 +1381,7 @@ function ReviewTable({
         </tbody>
       </table>
     </ScrollableTable>
+    </>
   )
 }
 
@@ -1165,7 +1441,85 @@ function ToPullTable({
           </button>
         </div>
       </div>
-      <ScrollableTable className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      {/* Mobile cards */}
+      <div className="lg:hidden space-y-3">
+        {rows.length === 0 ? (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            Nothing waiting to be pulled from stock.
+          </div>
+        ) : (
+          rows.map(row => {
+            const key = rowKey(row)
+            const isPending = pendingRow === key
+            const isFlashed = flashedRow === key
+            return (
+              <div
+                key={key}
+                className={`rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3 transition-colors ${
+                  isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'bg-white dark:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-white" title="Whse 4 bin/shelf location(s)">
+                      Bin {row.bin_location ?? '—'}
+                    </p>
+                    <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
+                      {partLabel(row) || '—'}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
+                      {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
+                      {row.customer_name ?? '—'}
+                    </p>
+                  </div>
+                  <SourceBadge source={row.source} />
+                </div>
+                {(row.machine_make || row.machine_model || row.machine_serial) && (
+                  <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
+                )}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                  <span>Qty {row.quantity ?? 1}</span>
+                  {row.product_number && <span>Item # {row.product_number}</span>}
+                  <span>Decided {formatDay(row.triaged_at)}</span>
+                  {row.assigned_technician_name && <span className="truncate">by {row.assigned_technician_name}</span>}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => onMarkPulled(row)}
+                    title="Mark this part pulled from stock and staged for the tech"
+                    className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 text-sm font-medium text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 rounded-md hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <PackageCheck className="h-4 w-4" />
+                    Mark Pulled
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => onReturnToReview(row)}
+                    title="Return to Review — re-triage stock vs. order"
+                    className="p-3 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                  >
+                    <Undo2 className="h-5 w-5" />
+                  </button>
+                  <Link
+                    href={ticketDeepLink(row.source, row.ticket_id)}
+                    title={row.source === 'pm' ? 'Open source PM ticket' : 'Open source service ticket'}
+                    aria-label="Open source ticket"
+                    className="p-3 text-gray-400 hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
+                  >
+                    <ExternalLink className="h-5 w-5" />
+                  </Link>
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
             <tr>
