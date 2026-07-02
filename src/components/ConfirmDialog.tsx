@@ -53,7 +53,15 @@ export default function ConfirmDialog({
       aria-labelledby="confirm-dialog-title"
       className="fixed inset-0 z-50 flex items-center justify-center outline-none"
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && !loading) onCancel()
+        if (e.key !== 'Escape') return
+        // Swallow the Escape so a parent modal's own Escape handler doesn't
+        // also fire (closing the parent, or re-opening this confirm). The
+        // native stopImmediatePropagation matters: Next mounts React's event
+        // root on `document`, so a parent's document-level keydown listener
+        // sits on the SAME node — plain stopPropagation can't block it.
+        e.stopPropagation()
+        e.nativeEvent.stopImmediatePropagation()
+        if (!loading) onCancel()
       }}
     >
       <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={loading ? undefined : onCancel} />

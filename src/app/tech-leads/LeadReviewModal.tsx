@@ -6,6 +6,7 @@ import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { TicketPhoto, SalesRep, SalesRepKind } from '@/types/database'
 import { tierLabel, EQUIPMENT_SALE_TIERS } from '@/lib/tech-leads/bonus-tiers'
 import { createClient } from '@/lib/supabase/client'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface Props {
   lead: TechLeadWithJoins | null
@@ -40,6 +41,17 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
   const [ccEmailInput, setCcEmailInput] = useState('')
   const [ccEmailError, setCcEmailError] = useState<string | null>(null)
   const [repNote, setRepNote] = useState('')
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
+
+  // Dirty when the manager has typed a rejection reason or built up the
+  // approve-and-email form — a backdrop tap must not silently wipe it (FE-4).
+  const isDirty =
+    reason.trim() !== '' ||
+    selectedRepId !== '' ||
+    ccIds.size > 0 ||
+    ccEmails.length > 0 ||
+    ccEmailInput.trim() !== '' ||
+    repNote.trim() !== ''
 
   useEffect(() => {
     if (lead) {
@@ -53,6 +65,7 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
       setCcEmailInput('')
       setCcEmailError(null)
       setRepNote('')
+      setConfirmDiscardOpen(false)
     }
   }, [lead])
 
@@ -98,17 +111,30 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
     }
   }, [lead])
 
-  // Escape-to-dismiss
+  // Escape-to-dismiss (dirty-guarded). While the discard confirm is up, its
+  // own Escape handling wins — this listener stands down so the same
+  // keystroke can't re-open the confirm it just dismissed.
   useEffect(() => {
     if (!lead) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onClose()
+      if (e.key !== 'Escape' || submitting || confirmDiscardOpen) return
+      if (isDirty) setConfirmDiscardOpen(true)
+      else onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [lead, submitting, onClose])
+  }, [lead, submitting, onClose, isDirty, confirmDiscardOpen])
 
   if (!lead) return null
+
+  function requestClose() {
+    if (submitting) return
+    if (isDirty) {
+      setConfirmDiscardOpen(true)
+      return
+    }
+    onClose()
+  }
 
   async function post(payload: Record<string, unknown>) {
     if (!lead) return
@@ -247,10 +273,10 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
       aria-modal="true"
       aria-labelledby="lead-review-title"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onClose()
+        if (e.target === e.currentTarget && !submitting) requestClose()
       }}
     >
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={requestClose} />
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full max-w-lg mx-4 max-h-[95vh] overflow-y-auto">
         <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h3 id="lead-review-title" className="text-base font-semibold text-gray-900 dark:text-white">
@@ -263,7 +289,7 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
           </h3>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 p-1 -m-1"
           >
             <X className="h-5 w-5" />
@@ -616,6 +642,18 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        title="Discard changes?"
+        message="You have unsent input on this lead review. Close and discard it?"
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        onConfirm={() => {
+          setConfirmDiscardOpen(false)
+          onClose()
+        }}
+        onCancel={() => setConfirmDiscardOpen(false)}
+      />
     </div>
   )
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { X } from 'lucide-react'
 import type { BillingType, TechLeadFrequency } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
@@ -121,6 +122,20 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     hasActiveSchedule: boolean
   } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
+  // Prefill snapshot — dirty means the manager edited past it (audit FE-4).
+  const initialRef = useRef<{
+    make: string
+    model: string
+    serialNumber: string
+    description: string
+    locationOnSite: string
+    intervalMonths: number
+    anchorMonth: number
+    startingYear: number
+    billingType: BillingType
+    flatRate: string
+  } | null>(null)
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
 
   useEffect(() => {
     if (!lead) return
@@ -132,23 +147,37 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     // Structured fields (migration 073) win when present; fall back to the
     // legacy free-text equipment_description for pre-073 PM leads.
     const hasStructured = !!(lead.make || lead.model || lead.serial_number)
-    setMake(lead.make ?? '')
-    setModel(lead.model ?? '')
-    setSerialNumber(lead.serial_number ?? '')
-    setLocationOnSite(lead.location_on_site ?? '')
-    setDescription(hasStructured ? '' : lead.equipment_description.slice(0, 200))
-    setIntervalMonths(proposedToInterval(lead.proposed_pm_frequency))
     const today = new Date()
-    setAnchorMonth(lead.proposed_start_month ?? today.getMonth() + 1)
-    setStartingYear(lead.proposed_start_year ?? today.getFullYear())
-    setBillingType('flat_rate')
-    // Prefill the flat rate from the tech's quote when it's a clean number; the
-    // manager can still edit. Non-numeric quotes ("TBD") leave the field blank.
-    setFlatRate(flatRateFromQuote(lead.quoted_amount))
+    const initial = {
+      make: lead.make ?? '',
+      model: lead.model ?? '',
+      serialNumber: lead.serial_number ?? '',
+      locationOnSite: lead.location_on_site ?? '',
+      description: hasStructured ? '' : lead.equipment_description.slice(0, 200),
+      intervalMonths: proposedToInterval(lead.proposed_pm_frequency),
+      anchorMonth: lead.proposed_start_month ?? today.getMonth() + 1,
+      startingYear: lead.proposed_start_year ?? today.getFullYear(),
+      billingType: 'flat_rate' as BillingType,
+      // Prefill the flat rate from the tech's quote when it's a clean number; the
+      // manager can still edit. Non-numeric quotes ("TBD") leave the field blank.
+      flatRate: flatRateFromQuote(lead.quoted_amount),
+    }
+    initialRef.current = initial
+    setMake(initial.make)
+    setModel(initial.model)
+    setSerialNumber(initial.serialNumber)
+    setLocationOnSite(initial.locationOnSite)
+    setDescription(initial.description)
+    setIntervalMonths(initial.intervalMonths)
+    setAnchorMonth(initial.anchorMonth)
+    setStartingYear(initial.startingYear)
+    setBillingType(initial.billingType)
+    setFlatRate(initial.flatRate)
     setError(null)
     setNearDuplicate(null)
     setExistingEquipment(null)
     setSubmitting(false)
+    setConfirmDiscardOpen(false)
     // Focus dialog so onKeyDown captures Escape.
     dialogRef.current?.focus()
   }, [lead])
@@ -192,6 +221,30 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
   }, [])
 
   if (!lead) return null
+
+  const initial = initialRef.current
+  const isDirty =
+    !!initial &&
+    (make !== initial.make ||
+      model !== initial.model ||
+      serialNumber !== initial.serialNumber ||
+      description !== initial.description ||
+      locationOnSite !== initial.locationOnSite ||
+      intervalMonths !== initial.intervalMonths ||
+      anchorMonth !== initial.anchorMonth ||
+      startingYear !== initial.startingYear ||
+      billingType !== initial.billingType ||
+      flatRate !== initial.flatRate ||
+      (needsCustomer && (customerId !== null || customerSearch !== '')))
+
+  function requestClose() {
+    if (submitting) return
+    if (isDirty) {
+      setConfirmDiscardOpen(true)
+      return
+    }
+    onClose()
+  }
 
   function pickCustomer(c: CustomerOption) {
     setCustomerId(c.id)
@@ -319,10 +372,10 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
       aria-modal="true"
       aria-labelledby="create-equipment-from-lead-title"
       onKeyDown={(e) => {
-        if (e.key === 'Escape' && !submitting) onClose()
+        if (e.key === 'Escape' && !submitting) requestClose()
       }}
     >
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={requestClose} />
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full max-w-2xl mx-4 max-h-[95vh] overflow-y-auto">
         <div className="sticky top-0 bg-white dark:bg-gray-800 px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div>
@@ -333,7 +386,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 p-1 -m-1"
           >
             <X className="h-5 w-5" />
@@ -651,7 +704,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
         <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 sticky bottom-0 bg-white dark:bg-gray-800">
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={submitting}
             className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
           >
@@ -667,6 +720,18 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        title="Discard changes?"
+        message="You have unsaved edits on this equipment setup. Close and discard them?"
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        onConfirm={() => {
+          setConfirmDiscardOpen(false)
+          onClose()
+        }}
+        onCancel={() => setConfirmDiscardOpen(false)}
+      />
     </div>
   )
 }

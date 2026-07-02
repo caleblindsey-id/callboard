@@ -8,6 +8,7 @@ import { BillingType, DefaultProduct } from '@/types/database'
 import { formatPhoneNumber } from '@/lib/phone'
 import { normalizeSerial, serialsMatch, serialsNearMatch } from '@/lib/equipment'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { X, Plus, Minus, Trash2 } from 'lucide-react'
 
 type DuplicateMatch = {
@@ -68,6 +69,7 @@ export default function AddEquipmentModal({
 }: AddEquipmentModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false)
   const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null)
   // Near-miss serial (one-character-off) on the same make+model — a soft,
   // confirmable warning (feedback #18), distinct from the hard exact-serial block.
@@ -384,7 +386,36 @@ export default function AddEquipmentModal({
     onCreated()
   }
 
+  // Dirty when any user-entered field has content — a backdrop tap or stray
+  // close must not silently wipe it (audit FE-4).
+  const isDirty =
+    customerSearch !== '' ||
+    customerId !== '' ||
+    make !== '' ||
+    model !== '' ||
+    serialNumber !== '' ||
+    description !== '' ||
+    locationOnSite !== '' ||
+    contactName !== '' ||
+    contactEmail !== '' ||
+    contactPhone !== '' ||
+    defaultTechId !== '' ||
+    defaultProducts.length > 0 ||
+    productSearch !== '' ||
+    addSchedule ||
+    flatRate !== ''
+
   function handleClose() {
+    if (isDirty) {
+      setConfirmDiscardOpen(true)
+      return
+    }
+    resetForm()
+    onClose()
+  }
+
+  function discardAndClose() {
+    setConfirmDiscardOpen(false)
     resetForm()
     onClose()
   }
@@ -787,6 +818,15 @@ export default function AddEquipmentModal({
           </div>
         </form>
       </div>
+      <ConfirmDialog
+        open={confirmDiscardOpen}
+        title="Discard changes?"
+        message="You have unsaved equipment details. Close and discard them?"
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        onConfirm={discardAndClose}
+        onCancel={() => setConfirmDiscardOpen(false)}
+      />
     </div>
   )
 }
