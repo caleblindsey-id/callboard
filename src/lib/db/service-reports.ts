@@ -69,10 +69,13 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
     .not('estimate_approved_at', 'is', null)
+  // Row-fetch queries carry an explicit generous limit: PostgREST silently caps
+  // un-limited selects at 1,000 rows, which would undercount without a signal.
   const declinesQ = supabase
     .from('equipment_estimate_log')
     .select('estimate_amount, decline_reason, created_at')
     .eq('outcome', 'declined')
+    .limit(10_000)
   const awaitingQ = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
@@ -120,12 +123,14 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
     .from('service_tickets')
     .select('warranty_claim_submitted_at, warranty_credit_received_at, warranty_credit_amount', { count: 'exact' })
     .not('warranty_claim_submitted_at', 'is', null)
+    .limit(10_000)
   const outstandingQ = supabase
     .from('service_tickets')
     .select('warranty_credit_expected')
     .not('warranty_claim_submitted_at', 'is', null)
     .is('warranty_credit_received_at', null)
     .is('deleted_at', null)
+    .limit(10_000)
 
   const [filedRes, outstandingRes] = await Promise.all([
     cutoff ? filedQ.gte('warranty_claim_submitted_at', cutoff) : filedQ,
@@ -158,6 +163,7 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
     .from('service_tickets')
     .select('margin_override_by, margin_override_at')
     .not('margin_override_at', 'is', null)
+    .limit(10_000)
   const overridesRes = await (cutoff ? overridesQ.gte('margin_override_at', cutoff) : overridesQ)
   if (overridesRes.error) throw overridesRes.error
   const overrideRows = (overridesRes.data ?? []) as { margin_override_by: string | null }[]
@@ -185,6 +191,7 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
     .select('month, year, skip_reason_category')
     .eq('status', 'skipped')
     .is('deleted_at', null)
+    .limit(10_000)
   if (skipErr) throw skipErr
 
   const cutoffMs = cutoff ? new Date(cutoff).getTime() : null
