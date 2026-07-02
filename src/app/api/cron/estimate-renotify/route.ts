@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEstimateNotice } from '@/lib/service-tickets/send-estimate-notice'
+import { timingSafeCompare } from '@/lib/security/timing-safe-compare'
 
 // Daily re-notify for estimates still awaiting a customer decision. Runs as a
 // Vercel Cron (see vercel.json), authenticated by the CRON_SECRET bearer Vercel
@@ -22,7 +23,8 @@ export async function GET(request: NextRequest) {
   // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. Reject anything else
   // so the endpoint isn't a public email trigger.
   const secret = process.env.CRON_SECRET
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
+  const auth = request.headers.get('authorization') ?? ''
+  if (!secret || !timingSafeCompare(auth, `Bearer ${secret}`)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
