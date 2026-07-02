@@ -2,6 +2,7 @@ import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getPartsQueue } from '@/lib/db/parts-queue'
 import type { PartsQueueSource } from '@/types/database'
 import PartsQueueClient from './PartsQueueClient'
+import SyncStaleNotice from '@/components/SyncStaleNotice'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,8 @@ export default async function PartsQueuePage({
           Parts requested by techs across PM and service tickets — enter Synergy item #, PO #, and vendor here.
         </p>
       </div>
+      {/* Stock-vs-order triage runs on synced qty-on-hand — warn when it's stale. */}
+      <SyncStaleNotice />
       <PartsQueueClient
         rows={rows}
         initialTicketFilter={ticketFilter}
