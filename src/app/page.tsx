@@ -1,22 +1,10 @@
 import { Suspense } from 'react'
-import {
-  getTickets,
-  getOverdueTicketCount,
-  getSkipRequestedCount,
-} from '@/lib/db/tickets'
-import {
-  getPartsOnOrderCount,
-  getPartsReadyForPickupCount,
-  getServiceTicketCounts,
-  getServiceTickets,
-  getPoNeededCount,
-} from '@/lib/db/service-tickets'
-import { getOpenWorkCounts, getMtdRevenue } from '@/lib/db/dashboard-metrics'
 import { redirect } from 'next/navigation'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import SyncStatusBanner from '@/components/SyncStatusBanner'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
-import TechDashboard from '@/components/dashboard/TechDashboard'
+import TechKpiSection from '@/components/dashboard/sections/TechKpiSection'
+import TechWorkSection from '@/components/dashboard/sections/TechWorkSection'
 import KpiSection from '@/components/dashboard/sections/KpiSection'
 import AlertsSection from '@/components/dashboard/sections/AlertsSection'
 import PmStatusSection from '@/components/dashboard/sections/PmStatusSection'
@@ -38,6 +26,8 @@ import {
   MoneySkeleton,
   ScheduleSkeleton,
   ReadyToBillSkeleton,
+  TechKpiSkeleton,
+  TechWorkSkeleton,
 } from '@/components/dashboard/sections/skeletons'
 
 export default async function DashboardPage({
@@ -57,91 +47,32 @@ export default async function DashboardPage({
   if (!user) redirect('/login')
   const isTech = isTechnician(user.role)
 
-  // ---- Tech view: lighter data load, dedicated layout ----
+  // ---- Tech view: static shell paints immediately, data streams in ----
   if (isTech && user) {
     const params = await searchParams
-    const [
-      tickets,
-      overdueCount,
-      skipRequestedCount,
-      partsOnOrder,
-      partsReadyForPickup,
-      openWork,
-      mtd,
-      serviceCounts,
-      serviceTickets,
-      poNeededCount,
-    ] = await Promise.all([
-      getTickets({ month, year, technicianId: user.id }),
-      getOverdueTicketCount({ technicianId: user.id }),
-      getSkipRequestedCount({ technicianId: user.id }),
-      getPartsOnOrderCount(user.id),
-      getPartsReadyForPickupCount(user.id),
-      getOpenWorkCounts(user.id),
-      getMtdRevenue(user.id),
-      getServiceTicketCounts(user.id),
-      getServiceTickets({ technicianId: user.id }),
-      getPoNeededCount(user.id),
-    ])
-
-    // PM "My Work" breakdown (this month).
-    const myCounts = { assigned: 0, in_progress: 0, completed: 0 }
-    for (const t of tickets) {
-      if (t.status === 'assigned') myCounts.assigned++
-      if (t.status === 'in_progress') myCounts.in_progress++
-      if (t.status === 'completed') myCounts.completed++
-    }
-
-    const upcoming = tickets.filter(
-      (t) => t.status === 'assigned' || t.status === 'in_progress'
-    )
-
-    // Service worklist — the actively-worked states a tech still owns.
-    const SERVICE_ACTIVE = ['open', 'estimated', 'approved', 'in_progress']
-    const serviceWork = serviceTickets.filter((t) =>
-      SERVICE_ACTIVE.includes(t.status)
-    )
-
-    // "Needs my action" service signals that aren't obvious from status alone.
-    const TERMINAL = ['completed', 'billed', 'declined', 'canceled']
-    const revisionRequestedCount = serviceTickets.filter(
-      (t) => t.request_info_note?.trim() && !TERMINAL.includes(t.status)
-    ).length
-    // Linked unit not yet verified, blocking parts/estimate on cleared-to-work tickets.
-    const equipmentToVerifyCount = serviceTickets.filter(
-      (t) =>
-        (t.status === 'approved' || t.status === 'in_progress') &&
-        t.equipment != null &&
-        !t.equipment.details_verified_at
-    ).length
-
     return (
-      <TechDashboard
-        monthName={monthName}
-        month={month}
-        year={year}
-        openWorkTotal={openWork.total}
-        mtdRevenue={mtd.total}
-        mtdPmRevenue={mtd.pm}
-        mtdServiceRevenue={mtd.service}
-        overdueCount={overdueCount}
-        skipRequestedCount={skipRequestedCount}
-        assignedCount={myCounts.assigned}
-        inProgressCount={myCounts.in_progress}
-        completedCount={myCounts.completed}
-        partsOnOrder={partsOnOrder}
-        partsReady={partsReadyForPickup}
-        upcoming={upcoming}
-        serviceOpenCount={serviceCounts.open ?? 0}
-        serviceEstimatedCount={serviceCounts.estimated ?? 0}
-        serviceApprovedCount={serviceCounts.approved ?? 0}
-        serviceInProgressCount={serviceCounts.in_progress ?? 0}
-        serviceWork={serviceWork}
-        revisionRequestedCount={revisionRequestedCount}
-        equipmentToVerifyCount={equipmentToVerifyCount}
-        poNeededCount={poNeededCount}
-        initialTab={params.tab ?? ''}
-      />
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">My Day</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {monthName} {year}
+          </p>
+        </div>
+
+        <Suspense fallback={<TechKpiSkeleton />}>
+          <TechKpiSection userId={user.id} />
+        </Suspense>
+
+        <Suspense fallback={<TechWorkSkeleton />}>
+          <TechWorkSection
+            userId={user.id}
+            month={month}
+            year={year}
+            monthName={monthName}
+            initialTab={params.tab ?? ''}
+          />
+        </Suspense>
+      </div>
     )
   }
 
