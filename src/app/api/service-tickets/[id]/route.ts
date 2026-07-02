@@ -1032,12 +1032,20 @@ export async function PATCH(
 
     // Queue an on-demand Synergy re-check for a new/changed diagnostic invoice #
     // so the estimate credit can flip within ~2 min instead of waiting for the
-    // nightly run. 23505 = a re-check is already pending — fine. Non-fatal.
+    // nightly run. revalidation_queue is service-role-only (RLS, no policies) —
+    // same admin-client pattern as the parts-queue revalidate route. 23505 = a
+    // re-check is already pending — fine. Non-fatal.
     if (diagInvoiceChanged && String(filtered.diagnostic_invoice_number ?? '').trim()) {
-      const { error: queueErr } = await supabase
-        .from('revalidation_queue')
-        .insert({ ticket_id: id, source: 'service', requested_by: user.id })
-      if (queueErr && queueErr.code !== '23505') {
+      try {
+        const { createAdminClient } = await import('@/lib/supabase/admin')
+        const admin = await createAdminClient('ADMIN_ONLY')
+        const { error: queueErr } = await admin
+          .from('revalidation_queue')
+          .insert({ ticket_id: id, source: 'service', requested_by: user.id })
+        if (queueErr && queueErr.code !== '23505') {
+          console.error('diagnostic-invoice: revalidation enqueue failed (nightly run will catch it)', queueErr)
+        }
+      } catch (queueErr) {
         console.error('diagnostic-invoice: revalidation enqueue failed (nightly run will catch it)', queueErr)
       }
     }
