@@ -394,7 +394,11 @@ export default function PartsQueueClient({
     const trimmed = value.trim()
     const current = (row[field as keyof PartsQueueRow] ?? '') as string
     if (trimmed === (current ?? '')) return true
-    const fields: Partial<PartRequest> = { [field]: trimmed || undefined } as Partial<PartRequest>
+    // An emptied field must send null, not undefined — undefined keys are
+    // dropped by JSON.stringify, so the API never saw the clear (the UI showed
+    // the field cleared with a saved-check while the old value survived in the
+    // DB). The route's sanitizePatchFields explicitly accepts null as "clear".
+    const fields = { [field]: trimmed || null } as unknown as Partial<PartRequest>
     return handleFieldsCommit(row, fields)
   }, [handleFieldsCommit])
 
