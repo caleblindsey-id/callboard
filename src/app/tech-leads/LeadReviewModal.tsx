@@ -111,17 +111,19 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
     }
   }, [lead])
 
-  // Escape-to-dismiss (dirty-guarded; ConfirmDialog swallows its own Escape)
+  // Escape-to-dismiss (dirty-guarded). While the discard confirm is up, its
+  // own Escape handling wins — this listener stands down so the same
+  // keystroke can't re-open the confirm it just dismissed.
   useEffect(() => {
     if (!lead) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || submitting) return
+      if (e.key !== 'Escape' || submitting || confirmDiscardOpen) return
       if (isDirty) setConfirmDiscardOpen(true)
       else onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [lead, submitting, onClose, isDirty])
+  }, [lead, submitting, onClose, isDirty, confirmDiscardOpen])
 
   if (!lead) return null
 
