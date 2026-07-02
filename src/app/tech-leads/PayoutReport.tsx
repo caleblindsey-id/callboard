@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
-import ConfirmDialog from './ConfirmDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { formatMoney, formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
 
@@ -535,7 +535,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
         title="Mark leads paid?"
         message={`Mark ${selected.size} lead${selected.size === 1 ? '' : 's'} paid in period ${toPayoutPeriod(to)}? Total: $${selectedSum.toFixed(2)}.`}
         confirmLabel="Mark paid"
-        busy={submitting}
+        loading={submitting}
         onCancel={() => setConfirmMarkPaidOpen(false)}
         onConfirm={performMarkPaid}
       />
@@ -545,7 +545,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
         title="Mark ACE labor paid?"
         message={`Mark ${selectedAce.size} ACE labor entr${selectedAce.size === 1 ? 'y' : 'ies'} paid in period ${toPayoutPeriod(to)}? Billable value: $${selectedAceSum.toFixed(2)}.`}
         confirmLabel="Mark paid"
-        busy={submittingAce}
+        loading={submittingAce}
         onCancel={() => setConfirmAceMarkPaidOpen(false)}
         onConfirm={performAceMarkPaid}
       />

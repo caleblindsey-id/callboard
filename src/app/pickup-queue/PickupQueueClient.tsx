@@ -7,6 +7,7 @@ import { Phone, Mail, MapPin, PackageCheck, Send } from 'lucide-react'
 import type { PickupQueueRow } from '@/lib/db/pickup-queue'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type Tab = 'all' | 'call'
@@ -74,6 +75,9 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
   const [editingLocId, setEditingLocId] = useState<string | null>(null)
   const [locValue, setLocValue] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Ticket whose abandonment notice is awaiting confirmation in the dialog —
+  // this emails the customer and starts a 14-day collection deadline.
+  const [pendingAbandonId, setPendingAbandonId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Actionable backlog: phone-only units (no email) that haven't been called yet.
@@ -203,7 +207,6 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
   }
 
   async function sendAbandonment(id: string) {
-    if (!confirm('Send a formal abandonment notice to this customer? This sets a 14-day collection deadline.')) return
     setBusyId(id)
     setError(null)
     try {
@@ -410,7 +413,7 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                     )}
                     {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
                       <button
-                        onClick={() => sendAbandonment(r.id)}
+                        onClick={() => setPendingAbandonId(r.id)}
                         disabled={busyId === r.id}
                         className="flex-1 min-h-[44px] px-3 text-sm font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
                       >
@@ -609,7 +612,7 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                           )}
                           {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
                             <button
-                              onClick={() => sendAbandonment(r.id)}
+                              onClick={() => setPendingAbandonId(r.id)}
                               disabled={busyId === r.id}
                               className="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
                             >
@@ -627,6 +630,20 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
         </ScrollableTable>
         </>
       )}
+      <ConfirmDialog
+        open={pendingAbandonId !== null}
+        title="Send abandonment notice?"
+        message="Send a formal abandonment notice to this customer? This sets a 14-day collection deadline."
+        confirmLabel="Send Notice"
+        confirmVariant="danger"
+        loading={busyId !== null && busyId === pendingAbandonId}
+        onConfirm={() => {
+          const id = pendingAbandonId
+          setPendingAbandonId(null)
+          if (id) sendAbandonment(id)
+        }}
+        onCancel={() => setPendingAbandonId(null)}
+      />
     </div>
   )
 }
