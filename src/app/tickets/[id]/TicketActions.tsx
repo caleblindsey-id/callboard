@@ -720,6 +720,14 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [completed, setCompleted] = useState(false)
+  // Destructive status changes (force / reset) confirm through the shared
+  // dialog instead of window.confirm(); the pending action is held here.
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    action: () => void
+  } | null>(null)
 
   async function handleDelete() {
     setDeleteConfirmOpen(false)
@@ -828,6 +836,22 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     }
   }
 
+  const confirmActionDialog = (
+    <ConfirmDialog
+      open={pendingConfirm !== null}
+      title={pendingConfirm?.title ?? ''}
+      message={pendingConfirm?.message ?? ''}
+      confirmLabel={pendingConfirm?.confirmLabel}
+      confirmVariant="danger"
+      loading={loading}
+      onConfirm={() => {
+        pendingConfirm?.action()
+        setPendingConfirm(null)
+      }}
+      onCancel={() => setPendingConfirm(null)}
+    />
+  )
+
   const superAdminOverride = userRole === 'super_admin' ? (
     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Super Admin: Force Status</p>
@@ -836,11 +860,14 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           <button
             key={target}
             type="button"
-            onClick={() => {
-              if (confirm(`Force ticket status to "${target.replace(/_/g, ' ')}"? This may clear completion data.`)) {
-                handleForceStatus(target)
-              }
-            }}
+            onClick={() =>
+              setPendingConfirm({
+                title: 'Force ticket status?',
+                message: `Force ticket status to "${target.replace(/_/g, ' ')}"? This may clear completion data.`,
+                confirmLabel: 'Force Status',
+                action: () => handleForceStatus(target),
+              })
+            }
             disabled={loading}
             className="px-3 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
           >
@@ -914,6 +941,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         )}
         {superAdminOverride}
         {deleteButton}
+        {confirmActionDialog}
       </div>
     )
   }
@@ -1348,7 +1376,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { if (confirm('Reset this ticket to Assigned? Draft work will be cleared.')) handleReopen('assigned') }}
+                  onClick={() => setPendingConfirm({ title: 'Reset to Assigned?', message: 'Reset this ticket to Assigned? Draft work will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('assigned') })}
                   disabled={loading}
                   className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
                 >
@@ -1356,7 +1384,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
                 </button>
                 <button
                   type="button"
-                  onClick={() => { if (confirm('Reset this ticket to Unassigned? Draft work and technician assignment will be cleared.')) handleReopen('unassigned') }}
+                  onClick={() => setPendingConfirm({ title: 'Reset to Unassigned?', message: 'Reset this ticket to Unassigned? Draft work and technician assignment will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('unassigned') })}
                   disabled={loading}
                   className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
                 >
@@ -1368,6 +1396,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           {superAdminOverride}
         </div>
         {deleteButton}
+        {confirmActionDialog}
       </>
     )
   }
@@ -1444,6 +1473,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           )}
           {superAdminOverride}
           {deleteButton}
+          {confirmActionDialog}
         </div>
 
         {skipDialogOpen && (
@@ -1503,6 +1533,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         )}
         {superAdminOverride}
         {deleteButton}
+        {confirmActionDialog}
       </div>
     )
   }
@@ -1706,28 +1737,28 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => { if (confirm('Move back to Completed? Billing export flag will be cleared.')) handleReopen('completed') }}
+              onClick={() => setPendingConfirm({ title: 'Back to Completed?', message: 'Move back to Completed? Billing export flag will be cleared.', confirmLabel: 'Move Back', action: () => handleReopen('completed') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
               Back to Completed
             </button>
             <button
-              onClick={() => { if (confirm('Reset to In Progress? All completion data will be cleared.')) handleReopen('in_progress') }}
+              onClick={() => setPendingConfirm({ title: 'Back to In Progress?', message: 'Reset to In Progress? All completion data will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('in_progress') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
               Back to In Progress
             </button>
             <button
-              onClick={() => { if (confirm('Reset to Assigned? All completion data will be cleared.')) handleReopen('assigned') }}
+              onClick={() => setPendingConfirm({ title: 'Back to Assigned?', message: 'Reset to Assigned? All completion data will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('assigned') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
               Back to Assigned
             </button>
             <button
-              onClick={() => { if (confirm('Reset to Unassigned? All data including technician assignment will be cleared.')) handleReopen('unassigned') }}
+              onClick={() => setPendingConfirm({ title: 'Back to Unassigned?', message: 'Reset to Unassigned? All data including technician assignment will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('unassigned') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
@@ -1738,6 +1769,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       )}
       {superAdminOverride}
       {deleteButton}
+      {confirmActionDialog}
       <CompletionSuccessDialog
         open={completed}
         ticketsHref="/tickets"

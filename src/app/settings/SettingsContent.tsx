@@ -19,6 +19,7 @@ import { useUser } from '@/components/UserProvider'
 import { X } from 'lucide-react'
 import EnablePushButton from '@/components/push/EnablePushButton'
 import ScrollableTable from '@/components/ScrollableTable'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface SettingsContentProps {
   users: UserRow[]
@@ -1318,6 +1319,7 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
   const [kind, setKind] = useState<SalesRepKind>(rep.kind)
   const [title, setTitle] = useState(rep.title ?? '')
   const [busy, setBusy] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function patch(body: Record<string, unknown>): Promise<boolean> {
@@ -1363,7 +1365,7 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete sales rep "${rep.name}"? This cannot be undone.`)) return
+    setConfirmDeleteOpen(false)
     setError(null)
     setBusy(true)
     const res = await fetch(`/api/sales-reps/${rep.id}`, { method: 'DELETE' })
@@ -1479,7 +1481,7 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
               {busy ? '...' : rep.active ? 'Deactivate' : 'Activate'}
             </button>
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
               disabled={busy}
               className="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 disabled:opacity-50"
             >
@@ -1488,6 +1490,16 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
           </div>
           {error && <span className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</span>}
         </div>
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Delete sales rep?"
+          message={`Delete sales rep "${rep.name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          confirmVariant="danger"
+          loading={busy}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDeleteOpen(false)}
+        />
       </td>
     </tr>
   )
@@ -1624,6 +1636,7 @@ function SupplyItemRow({ item }: { item: SupplyCatalogRow }) {
   const [unit, setUnit] = useState(item.unit ?? '')
   const [sortOrder, setSortOrder] = useState(String(item.sort_order))
   const [busy, setBusy] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function patch(body: Record<string, unknown>): Promise<boolean> {
@@ -1665,7 +1678,7 @@ function SupplyItemRow({ item }: { item: SupplyCatalogRow }) {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete supply "${item.name}"? This cannot be undone.`)) return
+    setConfirmDeleteOpen(false)
     setError(null)
     setBusy(true)
     const res = await fetch(`/api/supply-catalog/${item.id}`, { method: 'DELETE' })
@@ -1765,7 +1778,7 @@ function SupplyItemRow({ item }: { item: SupplyCatalogRow }) {
               {busy ? '...' : item.active ? 'Deactivate' : 'Activate'}
             </button>
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
               disabled={busy}
               className="text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 disabled:opacity-50"
             >
@@ -1774,6 +1787,16 @@ function SupplyItemRow({ item }: { item: SupplyCatalogRow }) {
           </div>
           {error && <span className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</span>}
         </div>
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Delete supply?"
+          message={`Delete supply "${item.name}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          confirmVariant="danger"
+          loading={busy}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDeleteOpen(false)}
+        />
       </td>
     </tr>
   )

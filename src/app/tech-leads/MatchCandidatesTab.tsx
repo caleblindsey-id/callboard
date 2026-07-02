@@ -5,7 +5,7 @@ import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import ConfirmMatchModal from './ConfirmMatchModal'
-import ConfirmDialog from './ConfirmDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { formatMoney, formatDate } from '@/lib/format'
 
 interface Props {
@@ -151,7 +151,7 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
         message="Dismiss ALL candidates on this lead? The lead will go back to Approved and wait for new matches."
         confirmLabel="Dismiss all"
         confirmVariant="danger"
-        busy={pendingDismissLeadId !== null && busyId === pendingDismissLeadId}
+        loading={pendingDismissLeadId !== null && busyId === pendingDismissLeadId}
         onCancel={() => setPendingDismissLeadId(null)}
         onConfirm={() => {
           if (pendingDismissLeadId) performDismissAll(pendingDismissLeadId)

@@ -16,6 +16,7 @@ import VendorPicker from '@/components/VendorPicker'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
 import { getPublicAppUrl } from '@/lib/urls'
@@ -512,6 +513,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  // Destructive actions (reopen / cancel / delete / reopen-estimate) confirm
+  // through the shared dialog instead of window.confirm(); the pending action
+  // is held here.
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    action: () => void
+  } | null>(null)
 
   // Technician assign/reassign (staff only). Active techs loaded client-side,
   // mirroring the create form (CreateServiceTicketForm).
@@ -971,21 +981,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  async function handleReopenEstimate() {
-    if (!confirm(
-      'Reopen this estimate for editing? The customer’s approval/signature ' +
-      'will be cleared and you’ll need to re-send it for approval. ' +
-      'The estimate numbers are kept.'
-    )) return
-    await apiAction(async () => {
-      const res = await fetch(`/api/service-tickets/${ticket.id}/reopen-estimate`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to reopen estimate')
-      }
-      setSuccessMsg('Estimate reopened for editing.')
+  function handleReopenEstimate() {
+    setPendingConfirm({
+      title: 'Reopen estimate?',
+      message:
+        'Reopen this estimate for editing? The customer’s approval/signature ' +
+        'will be cleared and you’ll need to re-send it for approval. ' +
+        'The estimate numbers are kept.',
+      confirmLabel: 'Reopen Estimate',
+      action: () =>
+        apiAction(async () => {
+          const res = await fetch(`/api/service-tickets/${ticket.id}/reopen-estimate`, {
+            method: 'POST',
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || 'Failed to reopen estimate')
+          }
+          setSuccessMsg('Estimate reopened for editing.')
+        }),
     })
   }
 
@@ -1717,7 +1731,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
-  async function handleReopen() {
+  function handleReopen() {
     // Reopen from a worked state (in_progress/completed/billed) on a ticket
     // whose estimate was already approved drops back to 'approved' so the
     // estimate + approval survive and only completion data is cleared.
@@ -1738,35 +1752,51 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     const message = reopenToApproved
       ? 'Reopen this ticket? Completion data will be cleared. The estimate and approval will be kept.'
       : 'Reopen this ticket? Completion data will be cleared.'
-    if (!confirm(message)) return
-    await apiAction(async () => {
-      await patchTicket({ status: reopenToApproved ? 'approved' : 'open' })
+    setPendingConfirm({
+      title: 'Reopen ticket?',
+      message,
+      confirmLabel: 'Reopen',
+      action: () =>
+        apiAction(async () => {
+          await patchTicket({ status: reopenToApproved ? 'approved' : 'open' })
+        }),
     })
   }
 
-  async function handleCancel() {
-    if (!confirm('Cancel this ticket? It stays visible and editable on the boards but is marked Canceled. You can reopen it later.')) return
-    await apiAction(async () => {
-      await patchTicket({ status: 'canceled' })
+  function handleCancel() {
+    setPendingConfirm({
+      title: 'Cancel ticket?',
+      message: 'Cancel this ticket? It stays visible and editable on the boards but is marked Canceled. You can reopen it later.',
+      confirmLabel: 'Cancel Ticket',
+      action: () =>
+        apiAction(async () => {
+          await patchTicket({ status: 'canceled' })
+        }),
     })
   }
 
-  async function handleDelete() {
-    if (!confirm('Delete this ticket? It will be hidden from boards, billing, and PDFs. A manager can restore it later.')) return
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/service-tickets/${ticket.id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to delete ticket')
-      }
-      router.push('/service')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setLoading(false)
-    }
+  function handleDelete() {
+    setPendingConfirm({
+      title: 'Delete ticket?',
+      message: 'Delete this ticket? It will be hidden from boards, billing, and PDFs. A manager can restore it later.',
+      confirmLabel: 'Delete',
+      action: async () => {
+        setLoading(true)
+        setError(null)
+        try {
+          const res = await fetch(`/api/service-tickets/${ticket.id}`, { method: 'DELETE' })
+          if (!res.ok) {
+            const data = await res.json()
+            throw new Error(data.error || 'Failed to delete ticket')
+          }
+          router.push('/service')
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'An error occurred')
+        } finally {
+          setLoading(false)
+        }
+      },
+    })
   }
 
   // ── Computed ──
@@ -4345,6 +4375,19 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         ticketsHref="/service"
         ticketsLabel="Back to Service Tickets"
         onViewWorkOrder={() => setCompleted(false)}
+      />
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={pendingConfirm?.title ?? ''}
+        message={pendingConfirm?.message ?? ''}
+        confirmLabel={pendingConfirm?.confirmLabel}
+        confirmVariant="danger"
+        loading={loading}
+        onConfirm={() => {
+          pendingConfirm?.action()
+          setPendingConfirm(null)
+        }}
+        onCancel={() => setPendingConfirm(null)}
       />
     </div>
   )
