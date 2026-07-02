@@ -32,6 +32,7 @@ interface SettingsContentProps {
   serviceEmail: string
   servicePhone: string
   arEmail: string
+  warrantyReminderEmail: string
   pickupAddress: string
   pickupHours: string
   passcodeConfigured: boolean
@@ -50,6 +51,7 @@ export default function SettingsContent({
   serviceEmail,
   servicePhone,
   arEmail,
+  warrantyReminderEmail,
   pickupAddress,
   pickupHours,
   passcodeConfigured,
@@ -107,6 +109,9 @@ export default function SettingsContent({
         initialArEmail={arEmail}
         passcodeConfigured={passcodeConfigured}
       />
+
+      {/* Warranty Reminders — weekly digest of claims still needing office action */}
+      <WarrantyRemindersSetting initialEmail={warrantyReminderEmail} />
 
       {/* Sales Reps — destination list for forwarded equipment leads */}
       <SalesRepsSection salesReps={salesReps} />
@@ -794,6 +799,76 @@ function PickupNotificationsSetting({
           {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
           {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function WarrantyRemindersSetting({ initialEmail }: { initialEmail: string }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    setError(null)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'warranty_reminder_email', value: email }),
+      })
+      if (res.ok) {
+        setSaved(true)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'Failed to save warranty reminder email.')
+      }
+    } catch {
+      setError('Could not save warranty reminder email.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+          Warranty Reminders
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Every Monday morning, a digest of warranty claims still waiting on office action
+          (unfiled claims and claims awaiting a vendor credit) is emailed here.
+        </p>
+      </div>
+      <div className="px-5 py-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Reminder email(s)
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); setSaved(false) }}
+            placeholder="service@example.com, office@example.com"
+            className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+          {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Separate multiple addresses with commas. Leave blank to turn the weekly digest off.
+        </p>
       </div>
     </div>
   )
