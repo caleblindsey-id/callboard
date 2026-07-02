@@ -1,20 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { CustomerRow, ContactRow, ShipToLocationRow } from '@/types/database'
+import { CUSTOMER_LIST_COLUMNS, CUSTOMER_LIST_LIMIT } from '@/lib/db/customer-list'
 
-// List columns the customers list page actually renders. The detail page uses
-// the wider `getCustomer` helper below for the full row.
-const LIST_COLUMNS = 'id, name, account_number, ar_terms, credit_hold, active, billing_city, billing_state, po_required, show_pricing_on_pm_pdf'
-
-export async function getCustomers(search?: string): Promise<CustomerRow[]> {
+export async function getCustomers(
+  search?: string
+): Promise<{ customers: CustomerRow[]; total: number }> {
   const supabase = await createClient()
 
   let query = supabase
     .from('customers')
-    .select(LIST_COLUMNS)
+    .select(CUSTOMER_LIST_COLUMNS, { count: 'exact' })
     .eq('active', true)
     .order('name')
-    .limit(50)
+    .limit(CUSTOMER_LIST_LIMIT)
 
   if (search) {
     // Sanitize before splicing into .or() — see lib/db/safe-or.
@@ -25,10 +24,11 @@ export async function getCustomers(search?: string): Promise<CustomerRow[]> {
     ]))
   }
 
-  const { data, error } = await query
+  const { data, error, count } = await query
 
   if (error) throw error
-  return data as unknown as CustomerRow[]
+  const customers = data as unknown as CustomerRow[]
+  return { customers, total: count ?? customers.length }
 }
 
 export async function getCustomer(
