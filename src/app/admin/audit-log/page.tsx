@@ -82,7 +82,7 @@ export default async function AuditLogPage({
     }
   }
 
-  const [{ events, total }, actors] = await Promise.all([
+  const [{ events, total }, { actors, truncated: actorsTruncated }] = await Promise.all([
     listAuditEvents({
       entityType, entityIds, changedBy, action, actorType, startDate, endDate,
       limit: PAGE_SIZE, offset,
@@ -144,6 +144,11 @@ export default async function AuditLogPage({
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
+          {actorsTruncated && (
+            <span className="block mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Recent actors only — older ones may be missing
+            </span>
+          )}
         </label>
 
         <label className="text-sm">

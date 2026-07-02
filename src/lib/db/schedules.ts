@@ -1,17 +1,23 @@
 import { createClient } from '@/lib/supabase/server'
 import { PmScheduleRow, PmScheduleInsert } from '@/types/database'
+import { columnsOf } from '@/lib/db/columns'
+
+const PM_SCHEDULE_COLUMNS = columnsOf<PmScheduleRow>()([
+  'id', 'equipment_id', 'interval_months', 'anchor_month', 'starting_year',
+  'billing_type', 'flat_rate', 'active', 'created_at',
+])
 
 export async function getSchedulesByEquipment(equipmentId: string): Promise<PmScheduleRow[]> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('pm_schedules')
-    .select('*')
+    .select(PM_SCHEDULE_COLUMNS)
     .eq('equipment_id', equipmentId)
     .order('created_at')
 
   if (error) throw error
-  return data as PmScheduleRow[]
+  return data as unknown as PmScheduleRow[]
 }
 
 export async function createSchedule(data: PmScheduleInsert): Promise<PmScheduleRow> {

@@ -68,19 +68,6 @@ export async function getEquipment(filters?: {
   return data as EquipmentWithCustomer[]
 }
 
-export async function getEquipmentByCustomer(customerId: number): Promise<EquipmentRow[]> {
-  const supabase = await createClient()
-
-  const { data, error } = await supabase
-    .from('equipment')
-    .select('*')
-    .eq('customer_id', customerId)
-    .order('created_at', { ascending: false })
-
-  if (error) throw error
-  return data
-}
-
 export async function getEquipmentDetail(id: string): Promise<EquipmentDetail | null> {
   const supabase = await createClient()
 
@@ -287,10 +274,11 @@ export type InactiveEquipmentProspect = {
 export async function getInactiveEquipmentProspects(): Promise<InactiveEquipmentProspect[]> {
   const supabase = await createClient()
 
-  // 1. Fetch inactive equipment with customer name
+  // 1. Fetch inactive equipment with customer name — only the fields the
+  // stitch below reads.
   const { data: equipment, error: eqError } = await supabase
     .from('equipment')
-    .select('*, customers(name)')
+    .select('id, customer_id, make, model, serial_number, location_on_site, contact_name, contact_email, contact_phone, customers(name)')
     .eq('active', false)
     .order('updated_at', { ascending: false })
 
@@ -303,7 +291,7 @@ export async function getInactiveEquipmentProspects(): Promise<InactiveEquipment
   const [prospectRes, ticketRes] = await Promise.all([
     supabase
       .from('equipment_prospects')
-      .select('*')
+      .select('equipment_id, is_prospect, removed, removal_reason, removal_note')
       .in('equipment_id', equipmentIds),
     supabase
       .from('pm_tickets')
@@ -317,9 +305,13 @@ export async function getInactiveEquipmentProspects(): Promise<InactiveEquipment
   const prospectData = prospectRes.data
   const ticketData = ticketRes.data
 
-  const prospectMap = new Map<string, EquipmentProspectRow>()
+  type ProspectFlags = Pick<
+    EquipmentProspectRow,
+    'equipment_id' | 'is_prospect' | 'removed' | 'removal_reason' | 'removal_note'
+  >
+  const prospectMap = new Map<string, ProspectFlags>()
   for (const p of prospectData ?? []) {
-    prospectMap.set(p.equipment_id, p as EquipmentProspectRow)
+    prospectMap.set(p.equipment_id, p as ProspectFlags)
   }
 
   const lastService = new Map<string, string>()

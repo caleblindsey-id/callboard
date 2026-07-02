@@ -9,7 +9,7 @@ export default async function CustomersPage({
 }) {
   await requireRole(...MANAGER_ROLES)
   const params = await searchParams
-  const customers = await getCustomers() // first 50, ordered by name
+  const { customers, total } = await getCustomers() // first 50, ordered by name
 
   return (
     <div className="p-6 space-y-6">
@@ -19,7 +19,7 @@ export default async function CustomersPage({
           Synced from SynergyERP — read only
         </p>
       </div>
-      <CustomerList customers={customers} initialSearch={params.q ?? ''} />
+      <CustomerList customers={customers} initialTotal={total} initialSearch={params.q ?? ''} />
     </div>
   )
 }

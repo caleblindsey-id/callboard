@@ -1,12 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { UserRow, UserRole } from '@/types/database'
+import { columnsOf } from '@/lib/db/columns'
+
+const USER_COLUMNS = columnsOf<UserRow>()([
+  'id', 'email', 'name', 'role', 'active', 'created_at', 'synergy_id',
+  'hourly_cost', 'must_change_password', 'can_create_service_tickets',
+])
 
 export async function getUsers(activeOnly?: boolean): Promise<UserRow[]> {
   const supabase = await createClient()
 
   let query = supabase
     .from('users')
-    .select('*')
+    .select(USER_COLUMNS)
     .order('name')
 
   if (activeOnly) {
@@ -16,7 +22,7 @@ export async function getUsers(activeOnly?: boolean): Promise<UserRow[]> {
   const { data, error } = await query
 
   if (error) throw error
-  return data as UserRow[]
+  return data as unknown as UserRow[]
 }
 
 export async function getUser(id: string): Promise<UserRow | null> {
@@ -24,7 +30,7 @@ export async function getUser(id: string): Promise<UserRow | null> {
 
   const { data, error } = await supabase
     .from('users')
-    .select('*')
+    .select(USER_COLUMNS)
     .eq('id', id)
     .single()
 
@@ -33,7 +39,7 @@ export async function getUser(id: string): Promise<UserRow | null> {
     throw error
   }
 
-  return data as UserRow
+  return data as unknown as UserRow
 }
 
 export async function createUser(data: {

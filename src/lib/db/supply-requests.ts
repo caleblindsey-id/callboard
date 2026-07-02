@@ -5,6 +5,7 @@ import type {
   SupplyRequestRow,
   SupplyRequestStatus,
 } from '@/types/database'
+import { columnsOf } from '@/lib/db/columns'
 
 // Shop-supply requests: a tech asks the warehouse/office to pull general
 // consumables (WD-40, gloves, wipers...). Standalone — not tied to a ticket.
@@ -35,16 +36,22 @@ export async function getAllSupplyCatalog(): Promise<SupplyCatalogRow[]> {
   return (data ?? []) as SupplyCatalogRow[]
 }
 
+const SUPPLY_REQUEST_COLUMNS = columnsOf<SupplyRequestRow>()([
+  'id', 'requested_by', 'items', 'note', 'status', 'denied_reason',
+  'ready_at', 'ready_by', 'ready_notified_at', 'picked_up_at', 'picked_up_by',
+  'denied_at', 'denied_by', 'created_at', 'updated_at',
+])
+
 // A single tech's own requests, newest first (for /my-supplies).
 export async function getMySupplyRequests(userId: string): Promise<SupplyRequestRow[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('supply_requests')
-    .select('*')
+    .select(SUPPLY_REQUEST_COLUMNS)
     .eq('requested_by', userId)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return (data ?? []) as SupplyRequestRow[]
+  return (data ?? []) as unknown as SupplyRequestRow[]
 }
 
 // Count of requests still waiting to be pulled — the office "Needs Attention"
