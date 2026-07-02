@@ -1,5 +1,6 @@
-import { CheckCircle, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { SYNC_STALE_AFTER_HOURS, hoursSince, syncAgeLabel } from '@/lib/sync-staleness'
 
 // Server component — reads sync_log directly. Replaces the prior client-side
 // useEffect + /api/sync/status fetch, which forced a second round-trip after
@@ -38,14 +39,23 @@ export default async function SyncStatusBanner() {
     ? new Date(sync.completed_at).toLocaleString()
     : 'In progress'
 
+  // A green "success" from days ago is not health — the sync is supposed to
+  // run nightly, so age past the threshold means the cron is broken and stock
+  // levels / customers / tax rates are silently drifting. Show that as its own
+  // amber state instead of a reassuring green check next to an old timestamp.
+  const age = hoursSince(sync.completed_at ?? sync.started_at)
+  const isStale = isSuccess && age !== null && age > SYNC_STALE_AFTER_HOURS
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {isSuccess ? (
-            <CheckCircle className="h-5 w-5 text-green-500" />
-          ) : (
+          {!isSuccess ? (
             <XCircle className="h-5 w-5 text-red-500" />
+          ) : isStale ? (
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+          ) : (
+            <CheckCircle className="h-5 w-5 text-green-500" />
           )}
           <div>
             <p className="text-sm font-medium text-gray-900 dark:text-white">
@@ -62,15 +72,23 @@ export default async function SyncStatusBanner() {
           )}
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              isSuccess
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-                : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+              !isSuccess
+                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+                : isStale
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                  : 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
             }`}
           >
-            {sync.status}
+            {isStale && age !== null ? `stale — ${syncAgeLabel(age)}` : sync.status}
           </span>
         </div>
       </div>
+      {isStale && (
+        <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+          The nightly sync has not completed in over {SYNC_STALE_AFTER_HOURS} hours — stock levels,
+          customers, ship-tos, and tax rates may be out of date. Check the sync scheduled task.
+        </p>
+      )}
       {sync.error_message && (
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">{sync.error_message}</p>
       )}
