@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { UserRow } from '@/types/database'
@@ -108,6 +108,11 @@ const TYPE_OPTIONS: { value: '' | ServiceTicketType; label: string }[] = [
   { value: 'outside', label: 'Outside' },
 ]
 
+// Rows fetched per page. Active-status tabs fit in one page; the big history
+// views (All / Completed / Billed) lazy-load via the footer instead of pulling
+// every row + joins cross-region on each visit.
+const PAGE_SIZE = 100
+
 // Location/ship-to cell, mirroring the PM board's LocationBlock: ship-to name on
 // the first line, street/city beneath. Falls back to the free-text service
 // address on the ticket when no synced ship-to is linked.
@@ -212,6 +217,10 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
   const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Load-more pagination: true when the last fetch returned a full page, so
+  // more rows likely exist beyond what's loaded.
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   // Bulk assign (managers + office staff). Technicians never see these controls.
   const canManage = !isTech
@@ -240,31 +249,38 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
       })
   }, [isTech])
 
+  // Shared by the initial fetch and load-more so the two can never drift on
+  // which filters they send.
+  const buildListParams = useCallback(() => {
+    const params = new URLSearchParams()
+    if (deletedView) {
+      params.set('deleted', '1')
+    } else if (statusFilter) {
+      params.set('status', statusFilter)
+    }
+    if (priorityFilter) params.set('priority', priorityFilter)
+    if (typeFilter) params.set('ticketType', typeFilter)
+    if (techFilter) params.set('technicianId', techFilter)
+    if (waitingOnParts) params.set('waitingOnParts', 'true')
+    if (poNeeded) params.set('poNeeded', '1')
+    params.set('limit', String(PAGE_SIZE))
+    return params
+  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, poNeeded, deletedView])
+
   useEffect(() => {
     async function fetchTickets() {
       setLoading(true)
       setError(null)
       try {
-        const params = new URLSearchParams()
-        if (deletedView) {
-          params.set('deleted', '1')
-        } else if (statusFilter) {
-          params.set('status', statusFilter)
-        }
-        if (priorityFilter) params.set('priority', priorityFilter)
-        if (typeFilter) params.set('ticketType', typeFilter)
-        if (techFilter) params.set('technicianId', techFilter)
-        if (waitingOnParts) params.set('waitingOnParts', 'true')
-        if (poNeeded) params.set('poNeeded', '1')
-
-        const res = await fetch(`/api/service-tickets?${params.toString()}`)
+        const res = await fetch(`/api/service-tickets?${buildListParams().toString()}`)
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
           setError(data.error ?? 'Failed to load service tickets')
           return
         }
-        const data = await res.json()
+        const data: ServiceTicketWithJoins[] = await res.json()
         setTickets(data)
+        setHasMore(data.length === PAGE_SIZE)
       } catch {
         setError('Failed to load service tickets')
       } finally {
@@ -272,7 +288,34 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
       }
     }
     fetchTickets()
-  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, poNeeded, deletedView, refreshKey])
+  }, [buildListParams, refreshKey])
+
+  async function loadMore() {
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const params = buildListParams()
+      params.set('offset', String(tickets.length))
+      const res = await fetch(`/api/service-tickets?${params.toString()}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'Failed to load more tickets')
+        return
+      }
+      const data: ServiceTicketWithJoins[] = await res.json()
+      // Dedup on append: a ticket created between fetches shifts the offset
+      // window, which would otherwise repeat the boundary row.
+      setTickets((prev) => {
+        const seen = new Set(prev.map((t) => t.id))
+        return [...prev, ...data.filter((t) => !seen.has(t.id))]
+      })
+      setHasMore(data.length === PAGE_SIZE)
+    } catch {
+      setError('Failed to load more tickets')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   // Prune any selected ids that are no longer in the current list (filter change
   // or refresh) so a stale selection can't be bulk-assigned.
@@ -770,6 +813,34 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
               </table>
             </ScrollableTable>
           </>
+        )}
+
+        {/* Load-more footer — only when more rows exist server-side, so small
+            boards render exactly as before. Search and sort operate on the
+            loaded rows; the count makes the cap visible instead of silent. */}
+        {!loading && tickets.length > 0 && hasMore && (
+          <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-3 flex items-center justify-between gap-3">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Showing {tickets.length}
+              {(() => {
+                const total = deletedView
+                  ? counts?.deleted
+                  : poNeeded
+                    ? undefined
+                    : counts?.[statusFilter || 'all']
+                return total !== undefined ? ` of ${total}` : ''
+              })()}{' '}
+              tickets
+            </span>
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="px-3 py-2.5 lg:py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px] lg:min-h-0"
+            >
+              {loadingMore ? 'Loading...' : 'Load More'}
+            </button>
+          </div>
         )}
       </div>
     </div>
