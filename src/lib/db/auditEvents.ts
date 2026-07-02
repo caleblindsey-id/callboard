@@ -110,35 +110,43 @@ export async function findTicketsByWorkOrder(wo: number): Promise<string[]> {
   return ids
 }
 
-export async function listAuditActors(): Promise<
-  Array<{ id: string; name: string }>
-> {
+const ACTOR_SCAN_LIMIT = 2000
+const ACTOR_LIST_LIMIT = 200
+
+// Scans the most recent ACTOR_SCAN_LIMIT events for distinct actors.
+// `truncated` = true when either cap was hit, so the filter dropdown can say
+// it may be missing actors who haven't acted recently.
+export async function listAuditActors(): Promise<{
+  actors: Array<{ id: string; name: string }>
+  truncated: boolean
+}> {
   const supabase = await createClient()
   const { data: ids, error: idsError } = await audit(supabase)
     .select('changed_by')
     .not('changed_by', 'is', null)
-    .limit(2000)
+    .order('occurred_at', { ascending: false })
+    .limit(ACTOR_SCAN_LIMIT)
   if (idsError) {
     console.error('listAuditActors ids error:', idsError)
-    return []
+    return { actors: [], truncated: false }
   }
+  const rows = (ids as Array<{ changed_by: string | null }> | null) ?? []
   const unique = Array.from(
     new Set(
-      ((ids as Array<{ changed_by: string | null }> | null) ?? [])
-        .map((r) => r.changed_by)
-        .filter((v): v is string => !!v)
+      rows.map((r) => r.changed_by).filter((v): v is string => !!v)
     )
   )
-  if (unique.length === 0) return []
+  const truncated = rows.length >= ACTOR_SCAN_LIMIT || unique.length > ACTOR_LIST_LIMIT
+  if (unique.length === 0) return { actors: [], truncated }
 
   const { data: users, error: usersError } = await supabase
     .from('users')
     .select('id, name')
-    .in('id', unique.slice(0, 200))
+    .in('id', unique.slice(0, ACTOR_LIST_LIMIT))
     .order('name')
   if (usersError) {
     console.error('listAuditActors users error:', usersError)
-    return []
+    return { actors: [], truncated }
   }
-  return (users ?? []) as Array<{ id: string; name: string }>
+  return { actors: (users ?? []) as Array<{ id: string; name: string }>, truncated }
 }

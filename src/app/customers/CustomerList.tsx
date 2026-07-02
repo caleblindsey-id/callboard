@@ -11,9 +11,11 @@ import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+import { CUSTOMER_LIST_COLUMNS, CUSTOMER_LIST_LIMIT } from '@/lib/db/customer-list'
 
 interface CustomerListProps {
   customers: CustomerRow[]
+  initialTotal: number
   initialSearch: string
 }
 
@@ -26,12 +28,13 @@ const CUSTOMER_SORT_ACCESSORS: SortAccessors<CustomerRow, CustomerSortKey> = {
   status: c => (c.credit_hold ? 1 : 0),
 }
 
-export default function CustomerList({ customers, initialSearch }: CustomerListProps) {
+export default function CustomerList({ customers, initialTotal, initialSearch }: CustomerListProps) {
   const router = useRouter()
   // Search term lives in the URL so the Back button restores it.
   const { filters, set } = useUrlFilters({ q: initialSearch })
   const search = filters.q
   const [displayedCustomers, setDisplayedCustomers] = useState<CustomerRow[]>(customers)
+  const [totalMatches, setTotalMatches] = useState(initialTotal)
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
@@ -44,6 +47,7 @@ export default function CustomerList({ customers, initialSearch }: CustomerListP
 
     if (!search.trim()) {
       setDisplayedCustomers(customers)
+      setTotalMatches(initialTotal)
       setSearching(false)
       return
     }
@@ -53,23 +57,27 @@ export default function CustomerList({ customers, initialSearch }: CustomerListP
       const supabase = createClient()
       // Sanitize before splicing into .or() — see lib/db/safe-or.
       const q = sanitizeOrValue(search.trim())
-      const { data } = await supabase
+      const { data, count } = await supabase
         .from('customers')
-        .select('id, name, account_number, ar_terms, credit_hold, active, billing_city, billing_state, po_required, show_pricing_on_pm_pdf')
+        .select(CUSTOMER_LIST_COLUMNS, { count: 'exact' })
+        .eq('active', true)
         .or(safeOrRaw([
           { column: 'name', op: 'ilike', raw: `%${q}%` },
           { column: 'account_number', op: 'ilike', raw: `%${q}%` },
         ]))
         .order('name')
-        .limit(50)
+        .limit(CUSTOMER_LIST_LIMIT)
       setDisplayedCustomers((data ?? []) as unknown as typeof customers)
+      setTotalMatches(count ?? (data ?? []).length)
       setSearching(false)
     }, 300)
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [search, customers])
+  }, [search, customers, initialTotal])
+
+  const truncated = totalMatches > displayedCustomers.length
 
   return (
     <>
@@ -83,6 +91,12 @@ export default function CustomerList({ customers, initialSearch }: CustomerListP
         />
         {searching && (
           <span className="text-sm text-gray-400 dark:text-gray-500 shrink-0">Searching...</span>
+        )}
+        {!searching && truncated && (
+          <span className="text-sm text-amber-600 dark:text-amber-400 shrink-0">
+            Showing first {displayedCustomers.length} of {totalMatches.toLocaleString()}
+            {search.trim() ? ' matches — refine your search' : ' — search to find others'}
+          </span>
         )}
       </div>
 

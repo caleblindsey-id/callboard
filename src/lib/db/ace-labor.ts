@@ -1,5 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import type { AceLaborEntry, AceLaborStatus } from '@/types/database'
+import { columnsOf } from '@/lib/db/columns'
+
+const ACE_LABOR_COLUMNS = columnsOf<AceLaborEntry>()([
+  'id', 'pm_ticket_id', 'service_ticket_id', 'tech_id', 'hours',
+  'labor_rate_type', 'reason', 'status', 'submitted_at', 'approved_by_id',
+  'approved_at', 'rejected_reason', 'rate_value_at_approval', 'paid_at',
+  'paid_by_id', 'payout_period', 'updated_by_id', 'created_by_id',
+  'created_at', 'updated_at',
+])
 
 // Entry joined with the bits the UI renders (tech name, ticket context,
 // approver/payer names). Both ticket FKs are pulled with their headline
@@ -41,7 +50,7 @@ export async function getEntryByTicket(
   const col = ticketType === 'pm' ? 'pm_ticket_id' : 'service_ticket_id'
   const { data, error } = await supabase
     .from('ace_labor_entries')
-    .select('*')
+    .select(ACE_LABOR_COLUMNS)
     .eq(col, ticketId)
     .maybeSingle()
   if (error) throw error
