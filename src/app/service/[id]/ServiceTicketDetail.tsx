@@ -721,6 +721,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // trigger can sit a full screen away from the form.
   const estimateCardRef = useRef<HTMLDivElement>(null)
   const completionCardRef = useRef<HTMLDivElement>(null)
+  const errorBannerRef = useRef<HTMLDivElement>(null)
 
   // Track mobile viewport so the mobile sticky action bar / quick-complete
   // sheet only render on small screens. Runs after mount to avoid SSR mismatch.
@@ -755,6 +756,23 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       completionCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [showCompletionForm])
+
+  // Bring the error banner into view after a validation failure. The banner
+  // sits near the top of a ~4,000px page while the completion submit is the
+  // sticky "Mark Complete" bar at the bottom on a phone — without this, a
+  // failed validation set the message far off-screen and looked like the tap
+  // did nothing. Ticking a counter (rather than watching `error`) means a
+  // repeat of the same message still scrolls.
+  const [errorScrollTick, setErrorScrollTick] = useState(0)
+  useEffect(() => {
+    if (errorScrollTick > 0) {
+      errorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [errorScrollTick])
+  function failValidation(msg: string) {
+    setError(msg)
+    setErrorScrollTick((t) => t + 1)
+  }
 
   // Load preview URLs for existing photos
   useEffect(() => {
@@ -1618,30 +1636,30 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     e.preventDefault()
 
     if (needsEquipmentVerify) {
-      setError('Verify the equipment details above before completing.')
+      failValidation('Verify the equipment details above before completing.')
       return
     }
 
     const signatureRequired = ticket.ticket_type !== 'inside'
     if (signatureRequired && (!signatureImage || !signatureName.trim())) {
-      setError('Customer signature and printed name are required.')
+      failValidation('Customer signature and printed name are required.')
       return
     }
 
     const hours = parseFloat(hoursWorked)
     if (isNaN(hours) || hours < 0) {
-      setError('Please enter valid hours worked.')
+      failValidation('Please enter valid hours worked.')
       return
     }
 
     if (aceLaborOpen) {
       const aceH = parseFloat(aceHours)
       if (!Number.isFinite(aceH) || aceH <= 0) {
-        setError('ACE hours must be greater than 0, or remove the ACE Labor section.')
+        failValidation('ACE hours must be greater than 0, or remove the ACE Labor section.')
         return
       }
       if (!aceReason.trim()) {
-        setError('ACE Labor reason is required.')
+        failValidation('ACE Labor reason is required.')
         return
       }
     }
@@ -1678,7 +1696,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
   async function handleMarkBilled() {
     if (!synergyInvoiceNumber.trim()) {
-      setError('Synergy invoice number is required to mark as billed')
+      failValidation('Synergy invoice number is required to mark as billed')
       return
     }
     await apiAction(async () => {
@@ -2175,7 +2193,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* Error / Success messages */}
       {error && (
-        <div className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3">
+        <div ref={errorBannerRef} role="alert" className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3 scroll-mt-20">
           <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
         </div>
       )}
