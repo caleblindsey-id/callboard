@@ -25,12 +25,6 @@ type Props = {
   monthName: string
   month: number
   year: number
-  // Open work tally (PM + service)
-  openWorkTotal: number
-  // Money (MTD, PM + service)
-  mtdRevenue: number
-  mtdPmRevenue: number
-  mtdServiceRevenue: number
   // Alerts
   overdueCount: number
   skipRequestedCount: number
@@ -57,10 +51,6 @@ type Props = {
   poNeededCount: number
   // Which tab to show first (seeded from server searchParams)
   initialTab: string
-}
-
-function fmtMoney(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 
 const cardClass =
@@ -472,51 +462,17 @@ export default function TechDashboard(p: Props) {
     </div>
   )
 
+  // === Tabs: Overview / PM / Service === (header + KPI strip live in page.tsx,
+  // streamed separately so this heavier chunk doesn't block them)
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">My Day</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          {p.monthName} {p.year}
-        </p>
-      </div>
-
-      {/* === KPI Strip — persistent above the tabs (PM + service combined) === */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="block rounded-lg border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 p-4">
-          <div className="text-xs uppercase tracking-wide font-medium text-blue-700 dark:text-blue-300">
-            My Open Work
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
-            {p.openWorkTotal}
-          </div>
-          <div className="text-xs text-blue-700/70 dark:text-blue-300/70 mt-1">PM + service</div>
-        </div>
-        <div className="block rounded-lg border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-4">
-          <div className="text-xs uppercase tracking-wide font-medium text-emerald-700 dark:text-emerald-300">
-            My MTD Revenue
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
-            {fmtMoney(p.mtdRevenue)}
-          </div>
-          {p.mtdServiceRevenue > 0 && (
-            <div className="text-xs text-emerald-700/70 dark:text-emerald-300/70 mt-1 tabular-nums">
-              PM {fmtMoney(p.mtdPmRevenue)} · Svc {fmtMoney(p.mtdServiceRevenue)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* === Tabs: Overview / PM / Service === */}
-      <TechDashboardTabs
-        initialTab={p.initialTab}
-        attentionCount={attentionCount}
-        pmCount={p.assignedCount + p.inProgressCount}
-        serviceCount={p.serviceWork.length}
-        overviewContent={overviewPanel}
-        pmContent={pmPanel}
-        serviceContent={servicePanel}
-      />
-    </div>
+    <TechDashboardTabs
+      initialTab={p.initialTab}
+      attentionCount={attentionCount}
+      pmCount={p.assignedCount + p.inProgressCount}
+      serviceCount={p.serviceWork.length}
+      overviewContent={overviewPanel}
+      pmContent={pmPanel}
+      serviceContent={servicePanel}
+    />
   )
 }
