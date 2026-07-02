@@ -91,6 +91,41 @@ export function ReadyToBillSkeleton() {
   )
 }
 
+export function TechKpiSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Card className="h-[104px]" />
+      <Card className="h-[104px]" />
+    </div>
+  )
+}
+
+export function TechWorkSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="border-b border-gray-200 dark:border-gray-700 pb-2 flex gap-4">
+        <Box className="h-6 w-24" />
+        <Box className="h-6 w-16" />
+        <Box className="h-6 w-20" />
+      </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+        <div className="px-4 py-3 space-y-2">
+          <Box className="h-4 w-40" />
+          <Box className="h-3 w-56" />
+        </div>
+        <div className="px-4 py-3 space-y-2">
+          <Box className="h-4 w-48" />
+          <Box className="h-3 w-44" />
+        </div>
+        <div className="px-4 py-3 space-y-2">
+          <Box className="h-4 w-36" />
+          <Box className="h-3 w-52" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ScheduleSkeleton() {
   return (
     <section>
