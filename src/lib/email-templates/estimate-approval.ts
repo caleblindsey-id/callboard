@@ -11,6 +11,10 @@ export type EstimateApprovalTemplateInput = {
     // Sales tax on parts (display-only). null/0 = exempt or no rate; no tax line shown.
     tax_amount?: number | null
     tax_rate_percent?: number | null
+    // Diagnostic fee shown as its own line (estimate_amount already includes the
+    // signed value). credited → already invoiced + verified, renders negative.
+    diagnostic_amount?: number | null
+    diagnostic_credited?: boolean
   }
   approvalUrl: string
   settings: {
@@ -44,6 +48,14 @@ export function renderEstimateApprovalEmail(
   const taxLine = showTax ? `$${taxAmt.toFixed(2)}` : null
   const totalWithTaxLine = showTax ? `$${(ticket.estimate_amount! + taxAmt).toFixed(2)}` : null
   const taxRateLabel = ticket.tax_rate_percent != null ? ` (${ticket.tax_rate_percent}%)` : ''
+  // Diagnostic line (informational — the estimate total above already includes it).
+  const diagAmt = ticket.diagnostic_amount ?? 0
+  const diagLine =
+    diagAmt > 0
+      ? ticket.diagnostic_credited
+        ? `Diagnostic fee (already invoiced, credited): -$${diagAmt.toFixed(2)}`
+        : `Diagnostic fee: $${diagAmt.toFixed(2)}`
+      : null
   const supportLine = settings.support_phone
     ? `If you have any questions, please call us at ${settings.support_phone}.`
     : 'If you have any questions, please reply to this email.'
@@ -54,6 +66,7 @@ export function renderEstimateApprovalEmail(
     `Hi ${greetingName},`,
     '',
     `Please find your service estimate for ${customerName} (${woLabel}) ready for review.`,
+    diagLine,
     totalLine ? `Estimate total: ${totalLine}` : null,
     showTax ? `Sales tax${taxRateLabel}: ${taxLine}` : null,
     showTax ? `Total with tax: ${totalWithTaxLine}` : null,
@@ -94,6 +107,11 @@ export function renderEstimateApprovalEmail(
                 Your service estimate for <strong>${escapeHtml(customerName)}</strong>
                 (${escapeHtml(woLabel)}) is ready for review.
               </p>
+              ${
+                diagLine
+                  ? `<p style="margin:0 0 4px;font-size:14px;color:#52525b;">${escapeHtml(diagLine)}</p>`
+                  : ''
+              }
               ${
                 totalLine
                   ? `<p style="margin:0 0 ${showTax ? '4px' : '24px'};font-size:18px;"><strong>Estimate total:</strong> ${escapeHtml(totalLine)}</p>`

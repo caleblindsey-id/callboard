@@ -33,6 +33,11 @@ interface EstimateData {
   laborRate: number
   parts: EstimatePart[]
   tripCharge: number
+  // Diagnostic fee as a signed display line (lib/service-tickets/diagnostic.ts):
+  // 0 = none. diagnosticCredited → already invoiced + verified, renders as a
+  // negative credit. estimateTotal passed in already includes the signed value.
+  diagnosticCharge: number
+  diagnosticCredited: boolean
   estimateTotal: number
   // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
   // file. Display-only — applied to the parts subtotal only (migration 133).
@@ -348,6 +353,24 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
               <Text style={styles.colTotal}>{money(estimate.tripCharge)}</Text>
             </View>
           )}
+
+          {/* Diagnostic fee line — credit when already invoiced + verified */}
+          {estimate.diagnosticCharge > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.colDescription}>
+                {estimate.diagnosticCredited
+                  ? 'Diagnostic Fee (already invoiced, credited)'
+                  : 'Diagnostic Fee'}
+              </Text>
+              <Text style={styles.colQty}></Text>
+              <Text style={styles.colPrice}></Text>
+              <Text style={styles.colTotal}>
+                {estimate.diagnosticCredited
+                  ? `-${money(estimate.diagnosticCharge)}`
+                  : money(estimate.diagnosticCharge)}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Summary */}
@@ -366,6 +389,18 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Trip Charge:</Text>
               <Text style={styles.summaryValue}>{money(estimate.tripCharge)}</Text>
+            </View>
+          )}
+          {estimate.diagnosticCharge > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>
+                {estimate.diagnosticCredited ? 'Diagnostic Credit:' : 'Diagnostic Fee:'}
+              </Text>
+              <Text style={styles.summaryValue}>
+                {estimate.diagnosticCredited
+                  ? `-${money(estimate.diagnosticCharge)}`
+                  : money(estimate.diagnosticCharge)}
+              </Text>
             </View>
           )}
           <View style={styles.totalRow}>

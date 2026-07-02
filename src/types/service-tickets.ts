@@ -98,6 +98,11 @@ export type ServiceTicketRow = {
   trip_charge: number | null
   trip_charge_qty: number | null
   diagnostic_invoice_number: string | null
+  // Verified-existence stamp for the diagnostic invoice # (migration 137).
+  // Written only by the nightly Synergy validator; gates the estimate-surface
+  // diagnostic credit (see lib/service-tickets/diagnostic.ts).
+  diagnostic_invoice_validation_status: 'valid' | 'invalid' | null
+  diagnostic_invoice_validated_at: string | null
   awaiting_pickup: boolean
   picked_up_at: string | null
   ready_for_pickup_at: string | null

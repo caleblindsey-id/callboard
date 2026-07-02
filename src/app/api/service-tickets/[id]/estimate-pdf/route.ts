@@ -7,6 +7,7 @@ import { EstimateDocument } from '@/lib/pdf/estimate-template'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { taxRatePercent } from '@/lib/tax'
+import { estimateDiagnosticLine, signedDiagnostic } from '@/lib/service-tickets/diagnostic'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -40,6 +41,9 @@ export async function POST(
         estimate_labor_hours,
         estimate_labor_rate,
         estimate_parts,
+        diagnostic_charge,
+        diagnostic_invoice_number,
+        diagnostic_invoice_validation_status,
         contact_name,
         contact_email,
         contact_phone,
@@ -125,6 +129,15 @@ export async function POST(
       .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
     const tripChargePdf = Math.max(0, ((raw.estimate_amount as number) ?? 0) - laborTotalPdf - partsTotalPdf)
 
+    // Diagnostic fee is NOT in estimate_amount — signed display-time line
+    // (credit only when the invoice # is verified, migration 137).
+    const diag = estimateDiagnosticLine({
+      diagnostic_charge: raw.diagnostic_charge as number | null,
+      diagnostic_invoice_number: raw.diagnostic_invoice_number as string | null,
+      diagnostic_invoice_validation_status: raw.diagnostic_invoice_validation_status as string | null,
+      billing_type: raw.billing_type as string | null,
+    })
+
     const estimate = {
       workOrderNumber: raw.work_order_number as number | null,
       customerName: customer?.name ?? '—',
@@ -148,7 +161,9 @@ export async function POST(
         warrantyCovered: p.warranty_covered ?? false,
       })),
       tripCharge: tripChargePdf,
-      estimateTotal: raw.estimate_amount as number,
+      diagnosticCharge: diag?.amount ?? 0,
+      diagnosticCredited: diag?.credited ?? false,
+      estimateTotal: (raw.estimate_amount as number) + signedDiagnostic(diag),
       taxRatePercent: taxRatePercent(customer),
       createdDate: new Date(raw.created_at).toLocaleDateString('en-US', {
         year: 'numeric',

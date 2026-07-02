@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/server'
 import { sendMandrillEmail, MandrillError } from '@/lib/mandrill'
 import { renderEstimateApprovalEmail } from '@/lib/email-templates/estimate-approval'
 import { computePartsTax, taxRatePercent } from '@/lib/tax'
+import { estimateDiagnosticLine, signedDiagnostic } from '@/lib/service-tickets/diagnostic'
 
 const APPROVAL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const SETTING_KEYS = ['company_name', 'support_phone', 'email_from_address'] as const
@@ -52,6 +53,7 @@ export async function sendEstimateNotice(
     .select(
       `id, customer_id, work_order_number, status, contact_name, contact_email,
        estimate_amount, estimate_parts, billing_type, estimate_emailed_at, estimate_notify_count,
+       diagnostic_charge, diagnostic_invoice_number, diagnostic_invoice_validation_status,
        customers(name, tax_rate, tax_exempt),
        equipment(contact_email)`
     )
@@ -146,6 +148,13 @@ export async function sendEstimateNotice(
   const taxPct = taxRatePercent(customer)
   const taxAmount = computePartsTax(partsSubtotal, taxPct / 100)
 
+  // Diagnostic fee is NOT in estimate_amount — signed display-time line so the
+  // emailed total matches the approval page and PDF (credit only when the
+  // invoice # is verified, migration 137).
+  const diag = estimateDiagnosticLine(ticket)
+  const emailTotal =
+    ticket.estimate_amount != null ? ticket.estimate_amount + signedDiagnostic(diag) : null
+
   const company = companyName?.trim() || 'CallBoard'
 
   const email = renderEstimateApprovalEmail({
@@ -153,9 +162,11 @@ export async function sendEstimateNotice(
       work_order_number: ticket.work_order_number,
       customer_name: customerName,
       contact_name: ticket.contact_name,
-      estimate_amount: ticket.estimate_amount,
+      estimate_amount: emailTotal,
       tax_amount: taxAmount,
       tax_rate_percent: taxPct,
+      diagnostic_amount: diag?.amount ?? null,
+      diagnostic_credited: diag?.credited ?? false,
     },
     approvalUrl,
     settings: {
