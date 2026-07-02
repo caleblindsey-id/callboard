@@ -1,19 +1,23 @@
 // "Your parts are ready for pickup" tech notification. Called from the
 // parts-queue update route after a part action tips a ticket into the fully-
-// staged state (every live part received from a PO or pulled from stock). One
-// code path so the email stays consistent. Modeled on sendPickupNotice (the
-// customer-facing pickup email) but pointed at the assigned technician.
+// staged state (every live part received from a PO or pulled from stock).
+// Three channels, each best-effort/non-fatal (push -> in-app bell -> email),
+// mirroring the assignment and supply-ready notices — a bench tech with no
+// email on file still gets the push + bell instead of silently nothing.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { sendMandrillEmail, MandrillError } from '@/lib/mandrill'
 import { renderPartsReadyEmail } from '@/lib/email-templates/parts-ready'
+import { sendPushToUser } from '@/lib/push/send-push'
+import { createNotification } from '@/lib/notifications/create-notification'
 import { partLabel } from '@/lib/parts'
 import type { PartRequest, PartsQueueSource } from '@/types/database'
 
 export type PartsReadyResult =
   | { sent: true; messageId: string }
-  | { sent: false; reason: 'no_tech' | 'no_tech_email' | 'no_staged_parts' }
+  | { sent: true; messageId: null }            // push/in-app went out, email skipped (no tech email)
+  | { sent: false; reason: 'no_tech' | 'no_staged_parts' }
 
 const SETTING_KEYS = ['company_name', 'service_phone', 'pickup_address', 'pickup_hours', 'email_from_address'] as const
 
@@ -80,13 +84,47 @@ export async function sendPartsReadyNotice(
   )
   if (staged.length === 0) return { sent: false, reason: 'no_staged_parts' }
 
+  const wo = ticket.work_order_number
+  const instantTitle = 'Parts ready for pickup'
+  const instantBody = [
+    wo != null ? `WO#${wo}` : null,
+    staged.length === 1 ? (partLabel(staged[0]) || staged[0].description) : `${staged.length} parts staged`,
+  ].filter(Boolean).join(' — ')
+
+  // --- Channel 1: Web Push (instant, best-effort) ---
+  try {
+    await sendPushToUser(techId, {
+      title: instantTitle,
+      body: instantBody,
+      url: '/my-parts',
+      tag: `parts-ready-${ticketId}`,
+    })
+  } catch (err) {
+    console.error('parts-ready push failed:', err)
+  }
+
+  // --- Channel 2: in-app bell (instant, best-effort) ---
+  try {
+    await createNotification(techId, {
+      type: 'parts_ready',
+      title: instantTitle,
+      body: instantBody,
+      url: '/my-parts',
+      entityType: source === 'pm' ? 'pm_ticket' : 'service_ticket',
+      entityId: ticketId,
+    })
+  } catch (err) {
+    console.error('parts-ready in-app notification failed:', err)
+  }
+
+  // --- Channel 3: email (best-effort; skipped when no address on file) ---
   const { data: tech } = await supabase
     .from('users')
     .select('name, email')
     .eq('id', techId)
     .maybeSingle()
   const techEmail = (tech as { email: string | null } | null)?.email ?? null
-  if (!techEmail) return { sent: false, reason: 'no_tech_email' }
+  if (!techEmail) return { sent: true, messageId: null }
   const techName = (tech as { name: string | null } | null)?.name ?? null
 
   const { data: settingsRows } = await supabase
