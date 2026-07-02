@@ -255,7 +255,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -771,6 +771,19 @@ export async function PATCH(
     // the write commits.
     const enteringPickup = filtered.awaiting_pickup === true && current.awaiting_pickup !== true
 
+    // A changed diagnostic invoice # invalidates its Synergy verification stamp
+    // (migration 137): clear it so the customer-facing estimate stops crediting
+    // the fee until the validator re-verifies the new number. An on-demand
+    // re-check is enqueued after the write commits (below).
+    const diagInvoiceChanged =
+      filtered.diagnostic_invoice_number !== undefined &&
+      String(filtered.diagnostic_invoice_number ?? '').trim() !==
+        String(current.diagnostic_invoice_number ?? '').trim()
+    if (diagInvoiceChanged) {
+      filtered.diagnostic_invoice_validation_status = null
+      filtered.diagnostic_invoice_validated_at = null
+    }
+
     // --- Estimate recomputation ---
     // Recompute estimate_amount whenever estimate_parts or estimate_labor_hours
     // is changing, regardless of status. The previous version only ran on
@@ -1014,6 +1027,18 @@ export async function PATCH(
         }
       } catch (notifyErr) {
         console.error('pickup-notice: send failed (unit staged; scanner will retry)', notifyErr)
+      }
+    }
+
+    // Queue an on-demand Synergy re-check for a new/changed diagnostic invoice #
+    // so the estimate credit can flip within ~2 min instead of waiting for the
+    // nightly run. 23505 = a re-check is already pending — fine. Non-fatal.
+    if (diagInvoiceChanged && String(filtered.diagnostic_invoice_number ?? '').trim()) {
+      const { error: queueErr } = await supabase
+        .from('revalidation_queue')
+        .insert({ ticket_id: id, source: 'service', requested_by: user.id })
+      if (queueErr && queueErr.code !== '23505') {
+        console.error('diagnostic-invoice: revalidation enqueue failed (nightly run will catch it)', queueErr)
       }
     }
 

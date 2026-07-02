@@ -3323,6 +3323,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           loading={loading}
           currentCharge={ticket.diagnostic_charge}
           currentInvoiceNumber={ticket.diagnostic_invoice_number}
+          validationStatus={ticket.diagnostic_invoice_validation_status}
         />
       )}
 

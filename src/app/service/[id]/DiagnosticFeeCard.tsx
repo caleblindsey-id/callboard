@@ -9,6 +9,9 @@ interface DiagnosticFeeCardProps {
   loading: boolean
   currentCharge: number | null
   currentInvoiceNumber: string | null
+  // Nightly Synergy verification of the invoice # (migration 137). Gates the
+  // credit on the customer-facing estimate, so surface it to the office here.
+  validationStatus: 'valid' | 'invalid' | null
 }
 
 /**
@@ -26,6 +29,7 @@ export default function DiagnosticFeeCard({
   loading,
   currentCharge,
   currentInvoiceNumber,
+  validationStatus,
 }: DiagnosticFeeCardProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -82,6 +86,21 @@ export default function DiagnosticFeeCard({
             {currentCharge != null && ` $${currentCharge.toFixed(2)}`}
             {currentInvoiceNumber && ` on invoice #${currentInvoiceNumber}`}
           </p>
+        )}
+        {currentInvoiceNumber && (
+          validationStatus === 'valid' ? (
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">
+              Verified in Synergy — shows as a credit on the customer estimate.
+            </p>
+          ) : validationStatus === 'invalid' ? (
+            <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+              Invoice # not found in Synergy — the estimate will charge the fee, not credit it. Check the number.
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              Verification pending (checked nightly) — the estimate charges the fee until the invoice # is verified.
+            </p>
+          )
         )}
       </div>
     </div>

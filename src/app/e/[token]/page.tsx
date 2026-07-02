@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Metadata } from 'next'
 import { computePartsTax, taxRatePercent } from '@/lib/tax'
+import { estimateDiagnosticLine, signedDiagnostic } from '@/lib/service-tickets/diagnostic'
 import ApprovalForm from './ApprovalForm'
 
 export const metadata: Metadata = {
@@ -23,7 +24,7 @@ export default async function ApprovalPage({
     .select(`
       id, work_order_number, status, problem_description, diagnosis_notes,
       estimate_labor_hours, estimate_labor_rate, estimate_parts, estimate_amount,
-      billing_type,
+      billing_type, diagnostic_charge, diagnostic_invoice_number, diagnostic_invoice_validation_status,
       service_address, service_city, service_state, service_zip,
       equipment_make, equipment_model, equipment_serial_number,
       approval_token_expires_at, created_at,
@@ -77,10 +78,14 @@ export default async function ApprovalPage({
         .filter(p => !p.warranty_covered)
         .reduce((sum, p) => sum + p.quantity * p.unit_price, 0)
   // The trip charge is baked into estimate_amount by the server recompute.
-  // Derive the line as total − labor − parts (mirrors the estimate PDF) so the
-  // total the customer signs here always matches the emailed/printed estimate.
-  const total = isWarranty ? 0 : (ticket.estimate_amount ?? laborTotal + partsTotal)
-  const tripCharge = Math.max(0, total - laborTotal - partsTotal)
+  // Derive the line as repair total − labor − parts (mirrors the estimate PDF)
+  // so the total the customer signs here always matches the emailed/printed
+  // estimate. The diagnostic fee is NOT in estimate_amount — it's a signed
+  // display-time line (credit only when the invoice # verified, migration 137).
+  const repairTotal = isWarranty ? 0 : (ticket.estimate_amount ?? laborTotal + partsTotal)
+  const tripCharge = Math.max(0, repairTotal - laborTotal - partsTotal)
+  const diag = estimateDiagnosticLine(ticket)
+  const total = repairTotal + signedDiagnostic(diag)
   // Sales tax (parts only, display-only) — mirrors the estimate PDF so the
   // online approval total reflects what the customer is billed. 0 when exempt.
   const custRow = (Array.isArray(ticket.customers) ? ticket.customers[0] : ticket.customers) as
@@ -198,6 +203,18 @@ export default async function ApprovalPage({
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Trip Charge</span>
                   <span className="font-medium text-gray-900 dark:text-white">${tripCharge.toFixed(2)}</span>
+                </div>
+              )}
+              {diag && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    {diag.credited
+                      ? `Diagnostic Fee (already invoiced${diag.invoiceNumber ? ` on #${diag.invoiceNumber}` : ''}, credited)`
+                      : 'Diagnostic Fee'}
+                  </span>
+                  <span className={`font-medium ${diag.credited ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-900 dark:text-white'}`}>
+                    {diag.credited ? `-$${diag.amount.toFixed(2)}` : `$${diag.amount.toFixed(2)}`}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between pt-3 mt-3 border-t border-gray-200 dark:border-gray-700">
