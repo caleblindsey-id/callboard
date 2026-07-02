@@ -126,8 +126,12 @@ def fetch_candidates(table: str, excluded_statuses: tuple[str, ...]) -> list[dic
 
 def fetch_single_ticket(table: str, ticket_id: str) -> dict | None:
     """Fetch one ticket by id for the on-demand re-validate path."""
+    select = "id,synergy_order_number,parts_requested,status"
+    if table == "service_tickets":
+        # PM tickets have no diagnostic fee — selecting the column there would 400.
+        select += ",diagnostic_invoice_number"
     rows = supabase_get(table, {
-        "select": "id,synergy_order_number,parts_requested,status",
+        "select": select,
         "id": f"eq.{ticket_id}",
     })
     return rows[0] if rows else None
@@ -138,74 +142,111 @@ def validate_single(table: str, ticket: dict) -> dict:
     Validate a single ticket against Synergy and write the result back.
     Mirrors the per-ticket logic of the batch path. Returns a small result dict
     so the API route can echo it to the caller without re-fetching.
+
+    Service tickets also get their diagnostic invoice # verified against
+    invh.KeyInvCMNo (migration 137) — a diagnostic can be invoiced before any
+    order # is keyed, so this runs even when synergy_order_number is empty.
     """
     raw = str(ticket.get("synergy_order_number") or "").strip()
     now_iso = datetime.now(timezone.utc).isoformat()
+    diag_raw = (
+        str(ticket.get("diagnostic_invoice_number") or "").strip()
+        if table == "service_tickets"
+        else ""
+    )
 
+    ord_num: int | None = None
+    order_non_numeric = False
+    if raw:
+        try:
+            ord_num = int(raw)
+        except ValueError:
+            order_non_numeric = True
+
+    order_ok = False
+    order_prodcodes: set[str] = set()
+    diag_status: str | None = None
+
+    if ord_num is not None or diag_raw:
+        try:
+            conn = pyodbc.connect("DSN=ERPlinked", autocommit=True, timeout=30)
+            cursor = conn.cursor()
+        except Exception as e:
+            return {"ok": False, "error": f"synergy_connect_failed: {e}"}
+
+        try:
+            if ord_num is not None:
+                # Real if still open (roh) OR already invoiced (invh) — see the batch
+                # path note. A roh-only check flags every billed order as "not found".
+                cursor.execute(
+                    "SELECT OrdNum FROM roh  WHERE OrdNum = ? "
+                    "UNION "
+                    "SELECT OrdNum FROM invh WHERE OrdNum = ?",
+                    ord_num, ord_num,
+                )
+                order_ok = cursor.fetchone() is not None
+
+                if order_ok:
+                    # Lines live in rolnew while open, invl once invoiced — union both.
+                    cursor.execute(
+                        "SELECT ProdCode FROM rolnew WHERE OrdNum = ? "
+                        "UNION "
+                        "SELECT ProdCode FROM invl   WHERE OrdNum = ?",
+                        ord_num, ord_num,
+                    )
+                    for (prod_code,) in cursor.fetchall():
+                        if prod_code is not None:
+                            order_prodcodes.add(str(prod_code).strip())
+
+            if diag_raw:
+                try:
+                    inv_num = int(diag_raw)
+                except ValueError:
+                    diag_status = "invalid"
+                else:
+                    cursor.execute(
+                        "SELECT KeyInvCMNo FROM invh WHERE KeyInvCMNo = ?", inv_num
+                    )
+                    diag_status = "valid" if cursor.fetchone() is not None else "invalid"
+        finally:
+            conn.close()
+
+    # Assemble the order-side patch (same shapes the old early-returns wrote).
+    reason: str | None = None
     if not raw:
-        patch = {
+        patch: dict = {
             "synergy_validation_status": None,
             "synergy_validated_at": now_iso,
             "parts_validation_status": None,
         }
-        supabase_patch_by_id(table, ticket["id"], patch)
-        return {"ok": True, **patch}
-
-    try:
-        ord_num = int(raw)
-    except ValueError:
+    elif order_non_numeric:
         patch = {
             "synergy_validation_status": "invalid",
             "synergy_validated_at": now_iso,
             "parts_validation_status": None,
         }
-        supabase_patch_by_id(table, ticket["id"], patch)
-        return {"ok": True, **patch, "reason": "non_numeric_order_number"}
-
-    try:
-        conn = pyodbc.connect("DSN=ERPlinked", autocommit=True, timeout=30)
-        cursor = conn.cursor()
-    except Exception as e:
-        return {"ok": False, "error": f"synergy_connect_failed: {e}"}
-
-    try:
-        # Real if still open (roh) OR already invoiced (invh) — see the batch
-        # path note. A roh-only check flags every billed order as "not found".
-        cursor.execute(
-            "SELECT OrdNum FROM roh  WHERE OrdNum = ? "
-            "UNION "
-            "SELECT OrdNum FROM invh WHERE OrdNum = ?",
-            ord_num, ord_num,
-        )
-        order_ok = cursor.fetchone() is not None
-
-        order_prodcodes: set[str] = set()
-        if order_ok:
-            # Lines live in rolnew while open, invl once invoiced — union both.
-            cursor.execute(
-                "SELECT ProdCode FROM rolnew WHERE OrdNum = ? "
-                "UNION "
-                "SELECT ProdCode FROM invl   WHERE OrdNum = ?",
-                ord_num, ord_num,
-            )
-            for (prod_code,) in cursor.fetchall():
-                if prod_code is not None:
-                    order_prodcodes.add(str(prod_code).strip())
-    finally:
-        conn.close()
-
-    patch: dict = {
-        "synergy_validation_status": "valid" if order_ok else "invalid",
-        "synergy_validated_at": now_iso,
-    }
-    if not order_ok:
-        patch["parts_validation_status"] = None
+        reason = "non_numeric_order_number"
     else:
-        patch["parts_validation_status"] = classify_parts(
-            ticket.get("parts_requested") or [], order_prodcodes
+        patch = {
+            "synergy_validation_status": "valid" if order_ok else "invalid",
+            "synergy_validated_at": now_iso,
+        }
+        patch["parts_validation_status"] = (
+            classify_parts(ticket.get("parts_requested") or [], order_prodcodes)
+            if order_ok
+            else None
         )
+
+    if table == "service_tickets":
+        # None when no invoice # — clears a stale stamp if the office removed it.
+        patch["diagnostic_invoice_validation_status"] = diag_status
+        patch["diagnostic_invoice_validated_at"] = now_iso
+
     supabase_patch_by_id(table, ticket["id"], patch)
-    return {"ok": True, **patch}
+    result = {"ok": True, **patch}
+    if reason:
+        result["reason"] = reason
+    return result
 
 
 def classify_parts(parts: list[dict], prodcodes_for_order: set[str]) -> str | None:
@@ -227,6 +268,82 @@ def classify_parts(parts: list[dict], prodcodes_for_order: set[str]) -> str | No
     if matches == 0:
         return "invalid"
     return "partial"
+
+
+def validate_diagnostic_invoices_batch() -> None:
+    """Verify every actionable service ticket's diagnostic invoice # exists in
+    Synergy (invh.KeyInvCMNo — migration 137). The customer-facing estimate
+    credits the diagnostic only when this stamps 'valid'; a typo'd or placeholder
+    invoice number stays a positive charge.
+
+    Self-contained (own fetch + own ERP connection) and independent of the order
+    validation flow below — a diagnostic can be invoiced before any order # is
+    keyed on the ticket, and the order flow's early-exits must not skip this.
+    """
+    excluded = ",".join(EXCLUDED_SERVICE_STATUSES)
+    rows = supabase_get("service_tickets", {
+        "select": "id,diagnostic_invoice_number",
+        "diagnostic_invoice_number": "not.is.null",
+        "status": f"not.in.({excluded})",
+    })
+    rows = [r for r in rows if str(r.get("diagnostic_invoice_number") or "").strip()]
+    log.info(f"Diagnostic invoice numbers to verify: {len(rows)}")
+    if not rows:
+        return
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    numeric: dict[int, list[str]] = {}
+    non_numeric_ids: list[str] = []
+    for r in rows:
+        raw = str(r["diagnostic_invoice_number"]).strip()
+        try:
+            numeric.setdefault(int(raw), []).append(r["id"])
+        except ValueError:
+            non_numeric_ids.append(r["id"])
+
+    valid_invoices: set[int] = set()
+    if numeric:
+        try:
+            conn = pyodbc.connect("DSN=ERPlinked", autocommit=True, timeout=30)
+        except Exception as e:
+            log.error(f"Diagnostic check: failed to connect to Synergy: {e}")
+            return
+        try:
+            cursor = conn.cursor()
+            nums = sorted(numeric.keys())
+            batch_size = 100
+            for i in range(0, len(nums), batch_size):
+                placeholders = ",".join(str(n) for n in nums[i:i + batch_size])
+                cursor.execute(
+                    f"SELECT KeyInvCMNo FROM invh WHERE KeyInvCMNo IN ({placeholders})"
+                )
+                for (inv,) in cursor.fetchall():
+                    valid_invoices.add(int(inv))
+        finally:
+            conn.close()
+
+    ok = bad = 0
+    for inv, ticket_ids in numeric.items():
+        status = "valid" if inv in valid_invoices else "invalid"
+        for tid in ticket_ids:
+            supabase_patch_by_id("service_tickets", tid, {
+                "diagnostic_invoice_validation_status": status,
+                "diagnostic_invoice_validated_at": now_iso,
+            })
+        if status == "valid":
+            ok += len(ticket_ids)
+        else:
+            bad += len(ticket_ids)
+            log.warning(f"  DIAG INVALID: invoice #{inv} not found in Synergy "
+                        f"(tickets: {', '.join(ticket_ids)})")
+    for tid in non_numeric_ids:
+        supabase_patch_by_id("service_tickets", tid, {
+            "diagnostic_invoice_validation_status": "invalid",
+            "diagnostic_invoice_validated_at": now_iso,
+        })
+        bad += 1
+        log.warning(f"  DIAG INVALID: service_tickets {tid} has a non-numeric invoice #")
+    log.info(f"Diagnostic invoices: {ok} valid, {bad} invalid.")
 
 
 def process_revalidation_queue() -> int:
@@ -349,6 +466,10 @@ def main() -> None:
     log.info("=" * 60)
     log.info("Synergy Order + Parts Validation - starting")
     log.info("=" * 60)
+
+    # 0. Diagnostic invoice verification (migration 137) — runs first and
+    # self-contained so the order flow's early-exits below can't skip it.
+    validate_diagnostic_invoices_batch()
 
     # 1. Fetch candidates from both ticket tables
     log.info("Fetching service_tickets with Synergy order numbers...")
