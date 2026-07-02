@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sweepCreditHoldOrphans } from '@/lib/credit-review'
-import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { timingSafeCompare } from '@/lib/security/timing-safe-compare'
 
 // Backfill AR credit reviews for on-hold customers' un-started open orders that
 // never got one (customer went on hold after the order existed, or it predates
@@ -16,11 +17,14 @@ export async function POST(req: Request) {
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
 
   let authorized = false
-  if (secret && bearer && bearer === secret) {
+  if (secret && bearer && timingSafeCompare(bearer, secret)) {
     authorized = true
   } else {
+    // Session fallback is manager-tier only. The old check (any non-technician)
+    // also let a null-role account through — a user row with no role assigned
+    // is not authorized to trigger a sweep.
     const user = await getCurrentUser()
-    if (user && !isTechnician(user.role)) authorized = true
+    if (user?.role && MANAGER_ROLES.includes(user.role)) authorized = true
   }
 
   if (!authorized) {
