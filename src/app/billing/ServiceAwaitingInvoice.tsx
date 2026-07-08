@@ -31,6 +31,15 @@ function needsInvoice(t: ServiceBillingTicket): boolean {
   return !t.synergy_invoice_number?.trim()
 }
 
+// A PO-required customer can't be billed until a PO is on the ticket. The
+// Ready-to-Export gate was relaxed (the Synergy order can be built before the
+// PO arrives), so a PO-required ticket can now reach this queue without a PO —
+// it's recorded here, and blocks Mark Billed until it is. Mirrors the server
+// gate in mark-billed and the PO gate on Ready to Export.
+function needsPo(t: ServiceBillingTicket): boolean {
+  return !!t.customers?.po_required && !t.po_number
+}
+
 // Warranty work isn't billed until the vendor credit lands (logged on the
 // warranty-claims worklist). Mirrors the server gate in mark-billed.
 function awaitingWarrantyCredit(t: ServiceBillingTicket): boolean {
@@ -41,12 +50,13 @@ function awaitingWarrantyCredit(t: ServiceBillingTicket): boolean {
 }
 
 function isBlocked(t: ServiceBillingTicket): boolean {
-  return needsInvoice(t) || awaitingWarrantyCredit(t)
+  return needsInvoice(t) || needsPo(t) || awaitingWarrantyCredit(t)
 }
 
 type ServiceInvoiceSortKey =
   | 'customer'
   | 'invoice'
+  | 'poStatus'
   | 'synergy'
   | 'equipment'
   | 'technician'
@@ -59,6 +69,8 @@ const SERVICE_INVOICE_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, Servic
   customer: t => t.customers?.name,
   // Invoice-needed rows first (they block mark-billed).
   invoice: t => (needsInvoice(t) ? 0 : 1),
+  // PO-needed rows first (they block mark-billed), then has-PO, then not-required.
+  poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   synergy: t => t.synergy_order_number,
   equipment: t =>
     [t.equipment?.make ?? t.equipment_make, t.equipment?.model ?? t.equipment_model]
@@ -117,7 +129,15 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
   const [synergyEditingValue, setSynergyEditingValue] = useState('')
   const [synergySaving, setSynergySaving] = useState(false)
 
+  // Inline PO editing — a PO-required ticket can now arrive here without a PO
+  // (export no longer blocks on it); this is where the coordinator records it so
+  // the ticket can be marked billed. Mirrors ServiceBillingExport's PO edit.
+  const [editingPoId, setEditingPoId] = useState<string | null>(null)
+  const [editingPoValue, setEditingPoValue] = useState('')
+  const [savingPo, setSavingPo] = useState(false)
+
   const missingCount = tickets.filter(needsInvoice).length
+  const poMissingCount = tickets.filter(needsPo).length
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ServiceBillingTicket,
@@ -218,6 +238,98 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
     } finally {
       setSynergySaving(false)
     }
+  }
+
+  function startEditPo(ticketId: string) {
+    setEditingPoId(ticketId)
+    setEditingPoValue('')
+  }
+
+  function cancelEditPo() {
+    setEditingPoId(null)
+    setEditingPoValue('')
+  }
+
+  async function handleSavePo() {
+    if (!editingPoId || savingPo) return
+    const trimmed = editingPoValue.trim()
+    if (!trimmed) return
+
+    setSavingPo(true)
+    try {
+      const res = await fetch(`/api/service-tickets/${editingPoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ po_number: trimmed }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errData.error ?? `Server error ${res.status}`)
+      }
+
+      setEditingPoId(null)
+      setEditingPoValue('')
+      router.refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save PO number.'
+      setToast({ message, type: 'error' })
+    } finally {
+      setSavingPo(false)
+    }
+  }
+
+  function renderPoStatus(t: ServiceBillingTicket) {
+    if (!t.customers?.po_required) return <span className="text-gray-400 dark:text-gray-600">—</span>
+    if (t.po_number) {
+      return (
+        <span className="text-green-700 dark:text-green-400 truncate max-w-[120px] inline-block align-bottom" title={t.po_number}>
+          {t.po_number}
+        </span>
+      )
+    }
+    // PO required but missing
+    if (editingPoId === t.id) {
+      return (
+        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={editingPoValue}
+            onChange={(e) => setEditingPoValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSavePo()
+              if (e.key === 'Escape') cancelEditPo()
+            }}
+            placeholder="PO #"
+            autoFocus
+            disabled={savingPo}
+            className="w-24 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          />
+          <button
+            onClick={handleSavePo}
+            disabled={savingPo || !editingPoValue.trim()}
+            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
+          >
+            {savingPo ? '...' : 'Save'}
+          </button>
+          <button
+            onClick={cancelEditPo}
+            disabled={savingPo}
+            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      )
+    }
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); startEditPo(t.id) }}
+        className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+      >
+        PO Needed
+      </button>
+    )
   }
 
   async function handleMarkBilled() {
@@ -502,6 +614,14 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
         </div>
       )}
 
+      {/* Waiting on PO banner — these were exported without a PO; record it here
+          before billing. */}
+      {poMissingCount > 0 && (
+        <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} need{poMissingCount === 1 ? 's' : ''} a PO number before {poMissingCount === 1 ? 'it' : 'they'} can be marked billed.
+        </div>
+      )}
+
       {/* Awaiting warranty credit banner */}
       {awaitingCreditCount > 0 && (
         <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
@@ -537,7 +657,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                 return (
                   <div
                     key={t.id}
-                    className={`px-4 py-3 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}
+                    className={`px-4 py-3 ${blocked && editingId !== t.id && synergyEditingId !== t.id && editingPoId !== t.id ? 'opacity-60' : ''}`}
                     onClick={() => toggleSelect(t.id)}
                   >
                     <div className="flex items-start gap-3">
@@ -589,6 +709,10 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                             : '—'}
                         </p>
                         <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <span>PO:</span>
+                          {renderPoStatus(t)}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           <span>Synergy Order #:</span>
                           {renderSynergyCell(t)}
                         </div>
@@ -621,6 +745,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                       />
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Order #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -636,7 +761,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                   {sorted.map((t) => {
                     const blocked = isBlocked(t)
                     return (
-                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}>
+                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id && synergyEditingId !== t.id && editingPoId !== t.id ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
@@ -653,6 +778,9 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                               {customerSubline(t)}
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {renderPoStatus(t)}
                         </td>
                         <td className="px-4 py-3">
                           {renderInvoiceStatus(t)}

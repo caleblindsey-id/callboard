@@ -399,14 +399,17 @@ export default function ServiceBillingExport({
     )
   }
 
+  // Export is no longer blocked by a missing PO — the Synergy order can be built
+  // before the PO arrives (speeds counter pickups). The PO requirement now lands
+  // at Mark Billed (Awaiting Invoice # queue + server gate). The PO Status column
+  // stays so a PO on hand can still be recorded early.
   function renderExportButton(t: ServiceBillingTicket) {
-    const blocked = needsPo(t)
     return (
       <button
         onClick={(e) => { e.stopPropagation(); handleExport(t.id) }}
-        disabled={exportingId === t.id || blocked}
+        disabled={exportingId === t.id}
         className="px-3 py-1 text-xs font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        title={blocked ? 'A PO number is required before this ticket can be exported' : 'Download the work order PDF and move this ticket to Awaiting Invoice #'}
+        title="Download the work order PDF and move this ticket to Awaiting Invoice #"
       >
         {exportingId === t.id ? 'Exporting…' : 'Export'}
       </button>
@@ -468,10 +471,11 @@ export default function ServiceBillingExport({
         </div>
       )}
 
-      {/* PO missing banner */}
+      {/* PO waiting banner — informational. Export is allowed without a PO now;
+          the PO is required later, at Mark Billed. */}
       {poMissingCount > 0 && (
         <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
-          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} require{poMissingCount === 1 ? 's' : ''} a PO number before {poMissingCount === 1 ? 'it' : 'they'} can be exported.
+          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} {poMissingCount === 1 ? 'is' : 'are'} waiting on a PO. {poMissingCount === 1 ? 'It' : 'They'} can be exported now, but can&apos;t be marked billed until the PO is recorded.
         </div>
       )}
 
@@ -487,10 +491,8 @@ export default function ServiceBillingExport({
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {sorted.map((t) => {
-                const blocked = needsPo(t)
-                return (
-                <div key={t.id} className={`px-4 py-3 ${blocked && editingPoId !== t.id ? 'opacity-50' : ''}`}>
+              {sorted.map((t) => (
+                <div key={t.id} className="px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {t.customers?.name ?? '—'}
@@ -539,8 +541,7 @@ export default function ServiceBillingExport({
                     </div>
                   </div>
                 </div>
-                )
-              })}
+              ))}
             </div>
 
             {/* Desktop table */}
@@ -561,10 +562,8 @@ export default function ServiceBillingExport({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {sorted.map((t) => {
-                    const blocked = needsPo(t)
-                    return (
-                    <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingPoId !== t.id ? 'opacity-50' : ''}`}>
+                  {sorted.map((t) => (
+                    <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-4 py-3 text-gray-900 dark:text-white">
                         {t.customers?.name ?? '—'}
                         {customerSubline(t) && (
@@ -613,8 +612,7 @@ export default function ServiceBillingExport({
                         </div>
                       </td>
                     </tr>
-                    )
-                  })}
+                  ))}
                 </tbody>
               </table>
             </ScrollableTable>

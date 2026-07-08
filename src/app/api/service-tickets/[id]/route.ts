@@ -543,6 +543,30 @@ export async function PATCH(
             }
           }
         }
+
+        // --- Hard block: a PO-required customer can't be billed without a PO ---
+        // The Ready-to-Export gate was relaxed so a completed ticket can be
+        // entered into Synergy before its PO arrives (speeds counter pickups).
+        // The PO requirement is enforced HERE, at finalization, instead — mirrors
+        // the batch mark-billed route. po_number empty = null OR ''.
+        const incomingPo =
+          typeof filtered.po_number === 'string' ? filtered.po_number.trim() : null
+        if (!incomingPo) {
+          const { data: full } = await supabase
+            .from('service_tickets')
+            .select('po_number, customers ( po_required )')
+            .eq('id', id)
+            .single()
+          const poRequired =
+            (full?.customers as { po_required?: boolean } | null)?.po_required ?? false
+          const existingPo = (full?.po_number ?? '').trim()
+          if (poRequired && !existingPo) {
+            return NextResponse.json(
+              { error: 'A PO number is required before this ticket can be billed.' },
+              { status: 400 }
+            )
+          }
+        }
       }
 
       // Auto-set started_at when transitioning to in_progress, and prefill the
