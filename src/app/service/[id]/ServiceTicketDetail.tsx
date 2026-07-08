@@ -1656,6 +1656,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       failValidation('Synergy invoice number is required to mark as billed')
       return
     }
+    // A PO-required customer can't be billed without a PO on the ticket. The
+    // Ready-to-Export gate was relaxed (the Synergy order can be built before the
+    // PO arrives), so the PO requirement lands here at billing. The server PATCH
+    // route enforces this too; this pre-check gives an immediate message.
+    if (ticket.customers?.po_required && !ticket.po_number) {
+      failValidation('A PO number is required before this ticket can be billed')
+      return
+    }
     await apiAction(async () => {
       await patchTicket({
         status: 'billed',
