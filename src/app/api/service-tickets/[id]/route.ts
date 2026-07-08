@@ -567,6 +567,13 @@ export async function PATCH(
             )
           }
         }
+
+        // Stamp the invoice date for the Invoiced archive (migration 141). Only
+        // on the actual completed->billed transition; a re-bill after reopen
+        // overwrites it, so no reset-on-reopen is needed.
+        if (currentStatus !== 'billed') {
+          filtered.billed_at = new Date().toISOString()
+        }
       }
 
       // Auto-set started_at when transitioning to in_progress, and prefill the

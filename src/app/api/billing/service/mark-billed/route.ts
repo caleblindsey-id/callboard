@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     // rows and we return 409 so the client refreshes.
     const { data: marked, error: updateError } = await supabase
       .from('service_tickets')
-      .update({ status: 'billed' })
+      .update({ status: 'billed', billed_at: new Date().toISOString() })
       .in('id', ticketIds as string[])
       .eq('status', 'completed')
       .eq('billing_exported', true)

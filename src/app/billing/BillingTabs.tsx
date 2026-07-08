@@ -6,22 +6,27 @@ import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 interface BillingTabsProps {
   pmCount: number
   serviceCount: number
+  invoicedCount: number
   pmContent: ReactNode
   serviceContent: ReactNode
+  invoicedContent: ReactNode
   initialTab: string
 }
 
 export default function BillingTabs({
   pmCount,
   serviceCount,
+  invoicedCount,
   pmContent,
   serviceContent,
+  invoicedContent,
   initialTab,
 }: BillingTabsProps) {
   // Tab lives in the URL (preserving the month/year params BillingExport owns)
   // so it survives Back and dashboard deep links.
   const { filters, set } = useUrlFilters({ tab: initialTab })
-  const active: 'pm' | 'service' = filters.tab === 'service' ? 'service' : 'pm'
+  const active: 'pm' | 'service' | 'invoiced' =
+    filters.tab === 'service' ? 'service' : filters.tab === 'invoiced' ? 'invoiced' : 'pm'
 
   return (
     <div className="space-y-4">
@@ -39,9 +44,15 @@ export default function BillingTabs({
             active={active === 'service'}
             onClick={() => set('tab', 'service')}
           />
+          <TabButton
+            label="Invoiced"
+            count={invoicedCount}
+            active={active === 'invoiced'}
+            onClick={() => set('tab', 'invoiced')}
+          />
         </nav>
       </div>
-      <div>{active === 'pm' ? pmContent : serviceContent}</div>
+      <div>{active === 'pm' ? pmContent : active === 'service' ? serviceContent : invoicedContent}</div>
     </div>
   )
 }
