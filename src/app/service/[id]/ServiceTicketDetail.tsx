@@ -1761,7 +1761,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // single source of truth via partsOnOrder(), matching the server-side
   // parts_received derivation. A from_stock part never becomes 'received', so
   // counting received-only left the ticket stuck "Waiting on parts 1 of 1".
-  const partsWaitingCount = partsOnOrder(partsRequested).length
+  const partsOnOrderList = partsOnOrder(partsRequested)
+  const partsWaitingCount = partsOnOrderList.length
   const partsReceivedCount = livePartsRequested.length - partsWaitingCount
   const allPartsReceived = livePartsRequested.length > 0 && partsWaitingCount === 0
   const partsTotal = completionParts
@@ -1884,6 +1885,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // viewer has a button (so we don't show "Next: Build the estimate" right
   // above a "Build Estimate" button).
   const partsBlocking = livePartsRequested.length > 0 && !allPartsReceived
+  // Pending parts that withhold Start Work, grouped by label for the
+  // blocked-state callout (feedback #71). Before this, an approved ticket with
+  // parts still pending simply hid the Start Work button, so a tech had no idea
+  // their own pending part requests were the blocker — or that they could
+  // remove them. Counts lines (matches partsWaitingCount), not quantities.
+  const blockingPartsSummary: Array<[string, number]> = partsBlocking
+    ? Object.entries(
+        partsOnOrderList.reduce<Record<string, number>>((acc, p) => {
+          const label = partLabel(p) || 'Part'
+          acc[label] = (acc[label] ?? 0) + 1
+          return acc
+        }, {}),
+      )
+    : []
   const isWarrantyOpen =
     ticket.status === SERVICE_STATUS.OPEN &&
     (ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty')
@@ -2292,6 +2307,49 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           onSaveSynergyInvoiceNumber={handleSaveSynergyInvoiceNumber}
           onMarkBilled={handleMarkBilled}
         />
+      )}
+
+      {/* Parts-blocked Next Step (feedback #71). An approved ticket with parts
+          still pending withholds Start Work — but the button used to just
+          vanish, so a tech (Richard Bryant) had no idea the SHOP SUPPLIES lines
+          he'd added were the blocker, or that he could remove them; a manager
+          had to cancel them before he could complete. Render an explicit,
+          actionable callout in the same slot the Start Work button would take,
+          on both desktop and mobile (viewerHasPrimaryAction is false here, so
+          neither the top bar nor the mobile bar renders). */}
+      {ticket.status === SERVICE_STATUS.APPROVED && partsBlocking && (
+        <div className="rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 shadow-sm p-4 sm:p-5 space-y-2">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+            Next Step
+          </p>
+          <div className="flex items-start gap-2">
+            <svg className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                Can’t start work yet — {partsWaitingCount} part request{partsWaitingCount === 1 ? '' : 's'} still pending in the Parts section below.
+              </p>
+              {blockingPartsSummary.length > 0 && (
+                <ul className="text-sm text-amber-800 dark:text-amber-200 list-disc list-inside">
+                  {blockingPartsSummary.slice(0, 6).map(([label, count]) => (
+                    <li key={label}>
+                      {label}{count > 1 ? ` ×${count}` : ''}
+                    </li>
+                  ))}
+                  {blockingPartsSummary.length > 6 && (
+                    <li>+{blockingPartsSummary.length - 6} more</li>
+                  )}
+                </ul>
+              )}
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                {isStaff
+                  ? 'Order and receive them below, or remove any that aren’t needed — then Start Work appears.'
+                  : 'Remove any you don’t need below (trash icon), or wait for the office to order and receive them — then Start Work appears.'}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Section 2: Customer & Equipment Info ── */}
