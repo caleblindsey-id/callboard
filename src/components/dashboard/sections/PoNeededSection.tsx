@@ -11,7 +11,7 @@ export default async function PoNeededSection() {
     <section>
       <ZoneHeader label="Waiting on PO" />
       <Link
-        href="/service?status=completed&poNeeded=1"
+        href="/billing/po-follow-up"
         className="block bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200 dark:border-slate-700 p-4 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow transition-all"
       >
         <div className="flex items-center justify-between gap-3">

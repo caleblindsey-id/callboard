@@ -663,6 +663,19 @@ export type CustomerNoteRow = {
   created_at: string
 }
 
+// Structured per-PO follow-up log (migration 140): one row per outreach attempt
+// to collect a customer PO on a completed service ticket.
+export type PoFollowUpMethod = 'call' | 'email' | 'text' | 'other'
+export type PoFollowUpRow = {
+  id: string
+  ticket_id: string
+  method: PoFollowUpMethod
+  note: string | null
+  contacted_by: string
+  contacted_at: string
+  created_at: string
+}
+
 export type TechnicianTargetRow = {
   id: string
   technician_id: string | null
@@ -1333,6 +1346,27 @@ export interface Database {
           {
             foreignKeyName: 'customer_notes_user_id_fkey'
             columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      po_follow_ups: {
+        Row: PoFollowUpRow
+        Insert: Omit<PoFollowUpRow, 'id' | 'created_at'>
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: 'po_follow_ups_ticket_id_fkey'
+            columns: ['ticket_id']
+            isOneToOne: false
+            referencedRelation: 'service_tickets'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'po_follow_ups_contacted_by_fkey'
+            columns: ['contacted_by']
             isOneToOne: false
             referencedRelation: 'users'
             referencedColumns: ['id']
