@@ -86,6 +86,9 @@ export type ServiceTicketRow = {
   // Synergy invoice # can be keyed. Stays status='completed' while exported.
   billing_exported: boolean
   billing_exported_at: string | null
+  // When the ticket was marked billed / invoiced (migration 141). Powers the
+  // Invoiced archive; stamped at the status->billed transition.
+  billed_at: string | null
   diagnostic_charge: number | null
   // Customer PO # for this job (migration 108), mirrors pm_tickets.po_number.
   // Distinct from the per-line po_number in parts_requested (the vendor PO used
