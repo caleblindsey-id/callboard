@@ -231,6 +231,14 @@ export async function PATCH(
         )
       }
 
+      // Stamp the invoice date for the Invoiced archive (migration 141) on the
+      // forward completed->billed transition. Set on `filtered`, which flows to
+      // the catch-all updateTicket below; the billed->completed reset returns
+      // earlier, so a re-bill overwrites it and no reset-on-reopen is needed.
+      if (nextStatus === 'billed' && currentStatus !== 'billed') {
+        ;(filtered as Record<string, unknown>).billed_at = new Date().toISOString()
+      }
+
       // Credit-hold gate: block advancement into "work" states while AR review
       // is pending/blocked.
       if (CREDIT_GATED_PM_TARGETS.includes(nextStatus)) {

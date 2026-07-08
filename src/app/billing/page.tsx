@@ -1,11 +1,13 @@
 import { getBillingTickets, getPmAwaitingInvoiceTickets } from '@/lib/db/tickets'
 import { getServiceBillingTickets, getServiceAwaitingInvoiceTickets } from '@/lib/db/service-tickets'
+import { getInvoicedRows } from '@/lib/db/invoiced'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import BillingExport from './BillingExport'
 import PmAwaitingInvoice from './PmAwaitingInvoice'
 import ServiceBillingExport from './ServiceBillingExport'
 import ServiceAwaitingInvoice from './ServiceAwaitingInvoice'
 import ServiceTypeFilter from './ServiceTypeFilter'
+import InvoicedArchive from './InvoicedArchive'
 import BillingTabs from './BillingTabs'
 
 export default async function BillingPage({
@@ -27,11 +29,14 @@ export default async function BillingPage({
   const month = hasFilter ? parsedMonth : undefined
   const year = hasFilter ? parsedYear : undefined
 
-  const [pmTickets, pmAwaitingInvoice, serviceTickets, serviceAwaitingInvoice] = await Promise.all([
+  const [pmTickets, pmAwaitingInvoice, serviceTickets, serviceAwaitingInvoice, invoicedRows] = await Promise.all([
     getBillingTickets(month, year),
     getPmAwaitingInvoiceTickets(month, year),
     getServiceBillingTickets(month, year),
     getServiceAwaitingInvoiceTickets(month, year),
+    // Invoiced archive narrows on billed_at (not completed_at) with the same
+    // month/year param — only rendered on its own tab, so the shared param is fine.
+    getInvoicedRows(month, year),
   ])
 
   // Inside/outside narrowing for the Service tab so a manager can work one group
@@ -59,6 +64,7 @@ export default async function BillingPage({
       <BillingTabs
         pmCount={pmTickets.length}
         serviceCount={serviceTickets.length + serviceAwaitingInvoice.length}
+        invoicedCount={invoicedRows.length}
         initialTab={params.tab ?? ''}
         pmContent={
           <div className="space-y-6">
@@ -72,6 +78,9 @@ export default async function BillingPage({
             <ServiceBillingExport tickets={filteredServiceTickets} selectedMonth={month} selectedYear={year} />
             <ServiceAwaitingInvoice tickets={filteredServiceAwaitingInvoice} />
           </div>
+        }
+        invoicedContent={
+          <InvoicedArchive rows={invoicedRows} selectedMonth={month} selectedYear={year} />
         }
       />
     </div>

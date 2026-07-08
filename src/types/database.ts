@@ -553,6 +553,9 @@ export type PmTicketRow = {
   hours_worked: number | null
   parts_used: PartUsed[]
   billing_amount: number | null
+  // When the ticket was marked billed / invoiced (migration 141). Powers the
+  // Invoiced archive; stamped at the status->billed transition.
+  billed_at: string | null
   // Trip charge = trip_charge_qty × settings 'trip_charge_amount' rate (mirrors
   // labor). trip_charge_qty = number of trips (migration 107); NULL → default 1
   // (PM is always field work). trip_charge (105, flat dollars) retained, unused.
@@ -858,7 +861,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at'
 >
 
 export type SettingsRow = {
