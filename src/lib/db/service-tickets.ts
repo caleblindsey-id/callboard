@@ -605,6 +605,57 @@ export async function getPoNeededCount(technicianId?: string): Promise<number> {
   return count ?? 0
 }
 
+// --- Waiting-on-PO worklist (PO collection tracking) ---
+// The same subset as getPoNeededCount / the billing PO gate: completed tickets
+// for PO-required customers with no customer PO yet. Adds the denormalized
+// follow-up recency (po_last_contacted_at / po_last_method) so the worklist can
+// show "N days since last contact · call". Ordered oldest-contact-first, with
+// never-contacted rows surfaced first (nulls) — the most urgent to chase.
+
+export type PoFollowUpQueueTicket = {
+  id: string
+  work_order_number: number | null
+  completed_at: string | null
+  billing_amount: number | null
+  po_number: string | null
+  po_last_contacted_at: string | null
+  po_last_method: string | null
+  equipment_make: string | null
+  equipment_model: string | null
+  customers: {
+    name: string
+    account_number: string | null
+  } | null
+  equipment: {
+    make: string | null
+    model: string | null
+    serial_number: string | null
+  } | null
+  assigned_technician: { name: string } | null
+}
+
+export async function getPoFollowUpQueue(): Promise<PoFollowUpQueueTicket[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .select(`
+      id, work_order_number, completed_at, billing_amount, po_number,
+      po_last_contacted_at, po_last_method, equipment_make, equipment_model,
+      customers!inner ( name, account_number, po_required ),
+      equipment ( make, model, serial_number ),
+      assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
+    `)
+    .eq('status', 'completed')
+    .eq('customers.po_required', true)
+    .is('deleted_at', null)
+    .or('po_number.is.null,po_number.eq.')
+    .order('po_last_contacted_at', { ascending: true, nullsFirst: true })
+
+  if (error) throw error
+  return (data ?? []) as unknown as PoFollowUpQueueTicket[]
+}
+
 // --- Bulk assign a technician to service tickets ---
 // Parity with PM's bulkAssignTechnician (src/lib/db/tickets.ts), but service
 // tickets have no 'assigned'/'unassigned' status, so only the technician is
