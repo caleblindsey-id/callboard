@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import {
   ClipboardList,
   UserCheck,
@@ -9,6 +8,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
+import StatusCountGrid, { type StatusCountItem } from '@/components/dashboard/StatusCountGrid'
 import { getDashboardPmSummary } from '@/lib/db/tickets'
 import type { TicketStatus } from '@/types/database'
 
@@ -47,31 +47,18 @@ export default async function PmStatusSection({ month, year, monthName }: Props)
   }
   for (const t of tickets) counts[t.status]++
 
+  const items: StatusCountItem[] = statusCards.map((card) => ({
+    key: card.status,
+    label: card.label,
+    icon: card.icon,
+    color: card.color,
+    href: `/tickets?month=${month}&year=${year}&status=${card.status}`,
+  }))
+
   return (
     <section>
       <ZoneHeader label={`PM Tickets — ${monthName}`} />
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-        {statusCards.map((card) => {
-          const Icon = card.icon
-          return (
-            <Link
-              key={card.status}
-              href={`/tickets?month=${month}&year=${year}&status=${card.status}`}
-              className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow transition-all"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  {card.label}
-                </span>
-                <Icon className={`h-5 w-5 ${card.color}`} />
-              </div>
-              <p className="mt-2 text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white tabular-nums">
-                {counts[card.status]}
-              </p>
-            </Link>
-          )
-        })}
-      </div>
+      <StatusCountGrid items={items} counts={counts} />
     </section>
   )
 }

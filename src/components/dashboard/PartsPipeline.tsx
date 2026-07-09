@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ClipboardCheck, PackageSearch, Truck, PackageCheck } from 'lucide-react'
+import { ClipboardCheck, PackageSearch, Truck, PackageCheck, ChevronRight } from 'lucide-react'
 import ZoneHeader from './ZoneHeader'
 
 type Card = {
@@ -31,8 +31,9 @@ function PartsCard({ card }: { card: Card }) {
               {card.title}
             </span>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white tabular-nums">
+          <p className="mt-2 flex items-center gap-1 text-2xl font-semibold text-gray-900 dark:text-white tabular-nums">
             {card.total}
+            <ChevronRight className="h-4 w-4 text-gray-300 dark:text-gray-600" />
           </p>
         </div>
         <div className="text-right text-xs text-gray-500 dark:text-gray-400 space-y-0.5">

@@ -27,7 +27,7 @@ import {
   PartsSkeleton,
   MoneySkeleton,
   ScheduleSkeleton,
-  ReadyToBillSkeleton,
+  QueueStatCardSkeleton,
   TechKpiSkeleton,
   TechWorkSkeleton,
 } from '@/components/dashboard/sections/skeletons'
@@ -128,41 +128,46 @@ export default async function DashboardPage({
         </Suspense>
       </ZoneErrorBoundary>
 
-      <ZoneErrorBoundary>
-        <Suspense fallback={<ReadyToBillSkeleton />}>
-          <EstimateFollowUpSection />
-        </Suspense>
-      </ZoneErrorBoundary>
+      <section>
+        <ZoneHeader label="Queues" />
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <EstimateFollowUpSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <ZoneErrorBoundary>
-        <Suspense fallback={<ReadyToBillSkeleton />}>
-          <DeclinedEstimatesSection />
-        </Suspense>
-      </ZoneErrorBoundary>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <DeclinedEstimatesSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <ZoneErrorBoundary>
-        <Suspense fallback={<ReadyToBillSkeleton />}>
-          <WarrantyClaimsSection />
-        </Suspense>
-      </ZoneErrorBoundary>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <WarrantyClaimsSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <ZoneErrorBoundary>
-        <Suspense fallback={<ReadyToBillSkeleton />}>
-          <PoNeededSection />
-        </Suspense>
-      </ZoneErrorBoundary>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <PoNeededSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <ZoneErrorBoundary>
-        <Suspense fallback={<ReadyToBillSkeleton />}>
-          <ReadyToBillSection />
-        </Suspense>
-      </ZoneErrorBoundary>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <ReadyToBillSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <ZoneErrorBoundary>
-        <Suspense fallback={<ReadyToBillSkeleton />}>
-          <ReadyForPickupSection />
-        </Suspense>
-      </ZoneErrorBoundary>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <ReadyForPickupSection />
+            </Suspense>
+          </ZoneErrorBoundary>
+        </div>
+      </section>
 
       <ZoneErrorBoundary>
         <Suspense fallback={<MoneySkeleton />}>

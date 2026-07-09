@@ -10,6 +10,7 @@ import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import InlineEditCell from './InlineEditCell'
 
 // Service tickets that have been exported (work-order PDF pulled) but are NOT yet
 // billed. They become 'billed' only once a manager keys the SynergyERP invoice
@@ -116,27 +117,19 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
   // ticket moves.
   const [confirmingUnexportId, setConfirmingUnexportId] = useState<string | null>(null)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
+  // Rows with an inline editor (invoice #, Synergy order #, or PO #) open —
+  // kept out of the "blocked" dim treatment below so a coordinator isn't
+  // typing into a grayed-out row.
+  const [editingRowIds, setEditingRowIds] = useState<Set<string>>(new Set())
 
-  // Inline Synergy invoice # editing.
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editingValue, setEditingValue] = useState('')
-  const [savingValue, setSavingValue] = useState(false)
-
-  // Inline Synergy order # editing — the reference coordinators key while billing
-  // so they can find the matching invoice in Synergy, then enter it above
-  // (feedback #37). Optional: unlike the invoice #, a missing Synergy # never
-  // blocks Mark Billed. Writes the same synergy_order_number column the
-  // parts-ordering flow uses.
-  const [synergyEditingId, setSynergyEditingId] = useState<string | null>(null)
-  const [synergyEditingValue, setSynergyEditingValue] = useState('')
-  const [synergySaving, setSynergySaving] = useState(false)
-
-  // Inline PO editing — a PO-required ticket can now arrive here without a PO
-  // (export no longer blocks on it); this is where the coordinator records it so
-  // the ticket can be marked billed. Mirrors ServiceBillingExport's PO edit.
-  const [editingPoId, setEditingPoId] = useState<string | null>(null)
-  const [editingPoValue, setEditingPoValue] = useState('')
-  const [savingPo, setSavingPo] = useState(false)
+  function setRowEditing(ticketId: string, editing: boolean) {
+    setEditingRowIds((prev) => {
+      const next = new Set(prev)
+      if (editing) next.add(ticketId)
+      else next.delete(ticketId)
+      return next
+    })
+  }
 
   const missingCount = tickets.filter(needsInvoice).length
   const poMissingCount = tickets.filter(needsPo).length
@@ -164,173 +157,81 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
     }
   }
 
-  function startEdit(ticketId: string, current: string | null) {
-    setEditingId(ticketId)
-    setEditingValue(current ?? '')
-  }
-
-  function cancelEdit() {
-    setEditingId(null)
-    setEditingValue('')
-  }
-
-  async function handleSaveInvoice() {
-    if (!editingId || savingValue) return
-    const trimmed = editingValue.trim()
-    if (!trimmed) return
-
-    setSavingValue(true)
+  // Shared onSave callbacks for the InlineEditCell instances below — same
+  // PATCH endpoint, same error handling (toast + rethrow so the cell can show
+  // its own fail tick and stay open) as before the extraction.
+  async function saveInvoice(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/service-tickets/${editingId}`, {
+      const res = await fetch(`/api/service-tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ synergy_invoice_number: trimmed }),
+        body: JSON.stringify({ synergy_invoice_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setEditingId(null)
-      setEditingValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save Synergy invoice #.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSavingValue(false)
+      throw err
     }
   }
 
-  function startSynergyEdit(ticketId: string, current: string | null) {
-    setSynergyEditingId(ticketId)
-    setSynergyEditingValue(current ?? '')
-  }
-
-  function cancelSynergyEdit() {
-    setSynergyEditingId(null)
-    setSynergyEditingValue('')
-  }
-
-  async function handleSaveSynergy() {
-    if (!synergyEditingId || synergySaving) return
-    const trimmed = synergyEditingValue.trim()
-    if (!trimmed) return
-
-    setSynergySaving(true)
+  async function saveSynergyOrder(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/service-tickets/${synergyEditingId}`, {
+      const res = await fetch(`/api/service-tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ synergy_order_number: trimmed }),
+        body: JSON.stringify({ synergy_order_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setSynergyEditingId(null)
-      setSynergyEditingValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save Synergy Order #.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSynergySaving(false)
+      throw err
     }
   }
 
-  function startEditPo(ticketId: string) {
-    setEditingPoId(ticketId)
-    setEditingPoValue('')
-  }
-
-  function cancelEditPo() {
-    setEditingPoId(null)
-    setEditingPoValue('')
-  }
-
-  async function handleSavePo() {
-    if (!editingPoId || savingPo) return
-    const trimmed = editingPoValue.trim()
-    if (!trimmed) return
-
-    setSavingPo(true)
+  async function savePo(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/service-tickets/${editingPoId}`, {
+      const res = await fetch(`/api/service-tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ po_number: trimmed }),
+        body: JSON.stringify({ po_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setEditingPoId(null)
-      setEditingPoValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save PO number.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSavingPo(false)
+      throw err
     }
   }
 
   function renderPoStatus(t: ServiceBillingTicket) {
     if (!t.customers?.po_required) return <span className="text-gray-400 dark:text-gray-600">—</span>
-    if (t.po_number) {
-      return (
-        <span className="text-green-700 dark:text-green-400 truncate max-w-[120px] inline-block align-bottom" title={t.po_number}>
-          {t.po_number}
-        </span>
-      )
-    }
-    // PO required but missing
-    if (editingPoId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={editingPoValue}
-            onChange={(e) => setEditingPoValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSavePo()
-              if (e.key === 'Escape') cancelEditPo()
-            }}
-            placeholder="PO #"
-            autoFocus
-            disabled={savingPo}
-            className="w-24 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSavePo}
-            disabled={savingPo || !editingPoValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {savingPo ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelEditPo}
-            disabled={savingPo}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startEditPo(t.id) }}
-        className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-      >
-        PO Needed
-      </button>
+      <InlineEditCell
+        value={t.po_number}
+        placeholder="PO #"
+        onSave={(v) => savePo(t.id, v)}
+        emptyVariant="pill"
+        emptyText="PO Needed"
+        valueClassName="text-green-700 dark:text-green-400"
+        inputWidthClassName="w-24"
+        valueMaxWidthClassName="max-w-[120px]"
+        readOnlyWhenSet
+        onEditingChange={(editing) => setRowEditing(t.id, editing)}
+      />
     )
   }
 
@@ -415,112 +316,30 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
   const awaitingCreditCount = tickets.filter(awaitingWarrantyCredit).length
 
   function renderInvoiceStatus(t: ServiceBillingTicket) {
-    if (editingId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={editingValue}
-            onChange={(e) => setEditingValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveInvoice()
-              if (e.key === 'Escape') cancelEdit()
-            }}
-            placeholder="Synergy Invoice #"
-            autoFocus
-            disabled={savingValue}
-            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSaveInvoice}
-            disabled={savingValue || !editingValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {savingValue ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelEdit}
-            disabled={savingValue}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
-    if (t.synergy_invoice_number) {
-      return (
-        <button
-          onClick={(e) => { e.stopPropagation(); startEdit(t.id, t.synergy_invoice_number) }}
-          title={`${t.synergy_invoice_number} — click to edit`}
-          className="text-green-700 dark:text-green-400 truncate max-w-[140px] inline-block align-bottom hover:underline"
-        >
-          {t.synergy_invoice_number}
-        </button>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startEdit(t.id, null) }}
-        className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-      >
-        Synergy Invoice # Needed
-      </button>
+      <InlineEditCell
+        value={t.synergy_invoice_number}
+        placeholder="Synergy Invoice #"
+        onSave={(v) => saveInvoice(t.id, v)}
+        emptyVariant="pill"
+        emptyText="Synergy Invoice # Needed"
+        valueClassName="text-green-700 dark:text-green-400"
+        onEditingChange={(editing) => setRowEditing(t.id, editing)}
+      />
     )
   }
 
   function renderSynergyCell(t: ServiceBillingTicket) {
-    if (synergyEditingId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={synergyEditingValue}
-            onChange={(e) => setSynergyEditingValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveSynergy()
-              if (e.key === 'Escape') cancelSynergyEdit()
-            }}
-            placeholder="Synergy Order #"
-            autoFocus
-            disabled={synergySaving}
-            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSaveSynergy}
-            disabled={synergySaving || !synergyEditingValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {synergySaving ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelSynergyEdit}
-            disabled={synergySaving}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
-    if (t.synergy_order_number) {
-      return (
-        <button
-          onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, t.synergy_order_number) }}
-          title={`${t.synergy_order_number} — click to edit`}
-          className="text-gray-700 dark:text-gray-300 truncate max-w-[140px] inline-block align-bottom hover:underline"
-        >
-          {t.synergy_order_number}
-        </button>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, null) }}
-        className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:underline"
-      >
-        + Synergy Order #
-      </button>
+      <InlineEditCell
+        value={t.synergy_order_number}
+        placeholder="Synergy Order #"
+        onSave={(v) => saveSynergyOrder(t.id, v)}
+        emptyVariant="ghost"
+        emptyText="+ Synergy Order #"
+        valueClassName="text-gray-700 dark:text-gray-300"
+        onEditingChange={(editing) => setRowEditing(t.id, editing)}
+      />
     )
   }
 
@@ -638,7 +457,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                 return (
                   <div
                     key={t.id}
-                    className={`px-4 py-3 ${blocked && editingId !== t.id && synergyEditingId !== t.id && editingPoId !== t.id ? 'opacity-60' : ''}`}
+                    className={`px-4 py-3 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}
                     onClick={() => toggleSelect(t.id)}
                   >
                     <div className="flex items-start gap-3">
@@ -742,7 +561,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                   {sorted.map((t) => {
                     const blocked = isBlocked(t)
                     return (
-                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id && synergyEditingId !== t.id && editingPoId !== t.id ? 'opacity-60' : ''}`}>
+                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"

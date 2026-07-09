@@ -21,6 +21,20 @@ import EnablePushButton from '@/components/push/EnablePushButton'
 import ScrollableTable from '@/components/ScrollableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import Modal from '@/components/ui/Modal'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+
+// The 11 cards grouped under Tabs (Round 8 de-bulk). Adjust here if a card is
+// added/removed — the render below switches on these same keys.
+const SETTINGS_TABS: TabItem[] = [
+  { key: 'rates', label: 'Rates & Billing' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'people', label: 'People' },
+  { key: 'catalog', label: 'Catalog' },
+  { key: 'system', label: 'System' },
+]
+const SETTINGS_TAB_KEYS = new Set(SETTINGS_TABS.map((t) => t.key))
 
 interface SettingsContentProps {
   users: UserRow[]
@@ -39,6 +53,8 @@ interface SettingsContentProps {
   passcodeConfigured: boolean
   salesReps: SalesRep[]
   supplyCatalog: SupplyCatalogRow[]
+  /** Seeded from ?tab= on the server so Back restores the open section. */
+  initialTab: string
 }
 
 export default function SettingsContent({
@@ -58,168 +74,190 @@ export default function SettingsContent({
   passcodeConfigured,
   salesReps,
   supplyCatalog,
+  initialTab,
 }: SettingsContentProps) {
   const router = useRouter()
   const [modalOpen, setModalOpen] = useState(false)
+  const { filters, set } = useUrlFilters({ tab: initialTab })
+  const activeTab = SETTINGS_TAB_KEYS.has(filters.tab) ? filters.tab : 'rates'
 
   return (
     <>
-      {/* System Settings */}
-      <LaborRatesSetting
-        initialRate={laborRate}
-        initialIndustrialRate={industrialLaborRate}
-        initialVacuumRate={vacuumLaborRate}
-      />
+      <Tabs ariaLabel="Settings sections" active={activeTab} onChange={(key) => set('tab', key)} tabs={SETTINGS_TABS} />
 
-      {/* Trip Charge — flat per-ticket fee for sending a tech out */}
-      <TripChargeSetting initialTripCharge={tripCharge} />
+      {activeTab === 'rates' && (
+        <>
+          <LaborRatesSetting
+            initialRate={laborRate}
+            initialIndustrialRate={industrialLaborRate}
+            initialVacuumRate={vacuumLaborRate}
+          />
 
-      {/* Customer PDF Branding */}
-      <PdfBrandingSetting
-        initialCompanyName={companyName}
-        initialServiceEmail={serviceEmail}
-        initialServicePhone={servicePhone}
-      />
+          {/* Trip Charge — flat per-ticket fee for sending a tech out */}
+          <TripChargeSetting initialTripCharge={tripCharge} />
 
-      {/* Pickup Notifications — address/hours shown in the ready-for-pickup email */}
-      <PickupNotificationsSetting
-        initialAddress={pickupAddress}
-        initialHours={pickupHours}
-      />
+          {/* Credit Review — AR notification + release passcode */}
+          <CreditReviewSetting
+            initialArEmail={arEmail}
+            passcodeConfigured={passcodeConfigured}
+          />
+        </>
+      )}
 
-      {/* Push notifications — per-device opt-in. The assignment push targets the
-          assigned tech; techs enable it from their service board, this is the
-          same control for anyone who reaches Settings (and for testing). */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-            Notifications
-          </h2>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            Turn on push notifications on this device to be alerted when a service ticket is
-            assigned to you.
-          </p>
-          <EnablePushButton />
-        </div>
-      </div>
+      {activeTab === 'documents' && (
+        <>
+          {/* Customer PDF Branding */}
+          <PdfBrandingSetting
+            initialCompanyName={companyName}
+            initialServiceEmail={serviceEmail}
+            initialServicePhone={servicePhone}
+          />
 
-      {/* Credit Review — AR notification + release passcode */}
-      <CreditReviewSetting
-        initialArEmail={arEmail}
-        passcodeConfigured={passcodeConfigured}
-      />
+          {/* Pickup Notifications — address/hours shown in the ready-for-pickup email */}
+          <PickupNotificationsSetting
+            initialAddress={pickupAddress}
+            initialHours={pickupHours}
+          />
 
-      {/* Warranty Reminders — weekly digest of claims still needing office action */}
-      <WarrantyRemindersSetting initialEmail={warrantyReminderEmail} />
+          {/* Warranty Reminders — weekly digest of claims still needing office action */}
+          <WarrantyRemindersSetting initialEmail={warrantyReminderEmail} />
+        </>
+      )}
 
-      {/* Sales Reps — destination list for forwarded equipment leads */}
-      <SalesRepsSection salesReps={salesReps} />
-
-      {/* Shop Supplies — quick-pick list techs choose from on /my-supplies */}
-      <SupplyCatalogSection items={supplyCatalog} />
-
-      {/* Users section */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-            Users
-          </h2>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
-          >
-            Add User
-          </button>
-        </div>
-
-        <ScrollableTable>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Name</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Email</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Role</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Hourly Rate</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Create Tickets</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
-                <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {users.map((user) => (
-                <UserTableRow key={user.id} user={user} />
-              ))}
-            </tbody>
-          </table>
-        </ScrollableTable>
-      </div>
-
-      {/* Sync log section */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-            Sync Log
-          </h2>
-        </div>
-        {syncLog.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            No sync history.
+      {activeTab === 'notifications' && (
+        /* Push notifications — per-device opt-in. The assignment push targets the
+           assigned tech; techs enable it from their service board, this is the
+           same control for anyone who reaches Settings (and for testing). */
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+              Notifications
+            </h2>
           </div>
-        ) : (
-          <ScrollableTable>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Type</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Started</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Records</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
-                  <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Error</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {syncLog.map((entry) => (
-                  <tr key={entry.id}>
-                    <td className="px-5 py-3 text-gray-900 dark:text-white capitalize">
-                      {entry.sync_type ?? '—'}
-                    </td>
-                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400 text-xs">
-                      {new Date(entry.started_at).toLocaleString()}
-                    </td>
-                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400 text-xs">
-                      {entry.completed_at
-                        ? new Date(entry.completed_at).toLocaleString()
-                        : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
-                      {entry.records_synced ?? '—'}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          entry.status === 'success'
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-                            : entry.status === 'running'
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                        }`}
-                      >
-                        {entry.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-red-600 dark:text-red-400 max-w-xs truncate">
-                      {entry.error_message ?? '—'}
-                    </td>
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Turn on push notifications on this device to be alerted when a service ticket is
+              assigned to you.
+            </p>
+            <EnablePushButton />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'people' && (
+        <>
+          {/* Users section */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+                Users
+              </h2>
+              <button
+                onClick={() => setModalOpen(true)}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
+              >
+                Add User
+              </button>
+            </div>
+
+            <ScrollableTable>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Name</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Email</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Role</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Hourly Rate</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Create Tickets</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollableTable>
-        )}
-      </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {users.map((user) => (
+                    <UserTableRow key={user.id} user={user} />
+                  ))}
+                </tbody>
+              </table>
+            </ScrollableTable>
+          </div>
+
+          {/* Sales Reps — destination list for forwarded equipment leads */}
+          <SalesRepsSection salesReps={salesReps} />
+        </>
+      )}
+
+      {activeTab === 'catalog' && (
+        /* Shop Supplies — quick-pick list techs choose from on /my-supplies */
+        <SupplyCatalogSection items={supplyCatalog} />
+      )}
+
+      {activeTab === 'system' && (
+        /* Sync log section */
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+              Sync Log
+            </h2>
+          </div>
+          {syncLog.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+              No sync history.
+            </div>
+          ) : (
+            <ScrollableTable>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Type</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Started</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Records</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Status</th>
+                    <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Error</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {syncLog.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="px-5 py-3 text-gray-900 dark:text-white capitalize">
+                        {entry.sync_type ?? '—'}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400 text-xs">
+                        {new Date(entry.started_at).toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400 text-xs">
+                        {entry.completed_at
+                          ? new Date(entry.completed_at).toLocaleString()
+                          : '—'}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
+                        {entry.records_synced ?? '—'}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            entry.status === 'success'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                              : entry.status === 'running'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                          }`}
+                        >
+                          {entry.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-red-600 dark:text-red-400 max-w-xs truncate">
+                        {entry.error_message ?? '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollableTable>
+          )}
+        </div>
+      )}
 
       <AddUserModal
         open={modalOpen}
@@ -243,7 +281,8 @@ function UserTableRow({ user }: { user: UserRow }) {
   const [savingCost, setSavingCost] = useState(false)
   const [savingRole, setSavingRole] = useState(false)
   const [savingCreate, setSavingCreate] = useState(false)
-  const [resetState, setResetState] = useState<'idle' | 'confirm' | 'busy' | 'done'>('idle')
+  const [resetState, setResetState] = useState<'idle' | 'busy' | 'done'>('idle')
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false)
   const [inviteState, setInviteState] = useState<'idle' | 'busy' | 'done'>('idle')
 
   const [error, setError] = useState<string | null>(null)
@@ -312,8 +351,10 @@ function UserTableRow({ user }: { user: UserRow }) {
   }
 
   // Wipe all of this user's quick-PINs (lost phone). They fall back to password on
-  // every device until they re-enroll. Mildly destructive → inline confirm.
+  // every device until they re-enroll. Mildly destructive → ConfirmDialog, not
+  // irreversible, so the shared default (non-danger) variant.
   async function handleResetPins() {
+    setConfirmResetOpen(false)
     setResetState('busy')
     setError(null)
     const res = await fetch(`/api/users/${user.id}/reset-pins`, { method: 'POST' })
@@ -439,30 +480,24 @@ function UserTableRow({ user }: { user: UserRow }) {
           )}
           {resetState === 'done' ? (
             <span className="text-xs text-gray-500 dark:text-gray-400">PIN access reset</span>
-          ) : resetState === 'confirm' ? (
-            <span className="flex items-center gap-2 text-xs">
-              <button
-                onClick={handleResetPins}
-                className="font-medium text-red-600 dark:text-red-400 hover:underline"
-              >
-                Reset PIN?
-              </button>
-              <button
-                onClick={() => setResetState('idle')}
-                className="text-gray-400 dark:text-gray-500 hover:text-gray-600"
-              >
-                Cancel
-              </button>
-            </span>
           ) : (
             <button
-              onClick={() => setResetState('confirm')}
+              onClick={() => setConfirmResetOpen(true)}
               disabled={resetState === 'busy'}
               className="text-sm font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50 text-left"
             >
               {resetState === 'busy' ? 'Resetting…' : 'Reset PIN'}
             </button>
           )}
+          <ConfirmDialog
+            open={confirmResetOpen}
+            title="Reset PIN access?"
+            message={`${user.name} will need to sign in with a password on every device until they re-enroll a new PIN.`}
+            confirmLabel="Reset PIN"
+            loading={resetState === 'busy'}
+            onConfirm={handleResetPins}
+            onCancel={() => setConfirmResetOpen(false)}
+          />
           {error && (
             <span className="text-xs text-red-600 dark:text-red-400" role="alert">
               {error}
@@ -1232,41 +1267,7 @@ function AddUserModal({
 
 function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
   const router = useRouter()
-  const [adding, setAdding] = useState(false)
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [kind, setKind] = useState<SalesRepKind>('rep')
-  const [title, setTitle] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    setError(null)
-    const res = await fetch('/api/sales-reps', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name.trim(),
-        email: email.trim(),
-        kind,
-        title: title.trim() || null,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    setSubmitting(false)
-    if (!res.ok) {
-      setError(data.error ?? 'Failed to add sales rep')
-      return
-    }
-    setName('')
-    setEmail('')
-    setKind('rep')
-    setTitle('')
-    setAdding(false)
-    router.refresh()
-  }
+  const [modalOpen, setModalOpen] = useState(false)
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -1279,81 +1280,13 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
             Reps a manager can forward an approved equipment lead to via email. Not CallBoard users.
           </p>
         </div>
-        {!adding && (
-          <button
-            onClick={() => { setAdding(true); setError(null) }}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
-          >
-            Add Rep
-          </button>
-        )}
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
+        >
+          Add Rep
+        </button>
       </div>
-
-      {adding && (
-        <form onSubmit={handleAdd} className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[180px]">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-          <div className="flex-1 min-w-[220px]">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
-            <select
-              value={kind}
-              onChange={(e) => setKind(e.target.value as SalesRepKind)}
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              <option value="rep">Sales Rep</option>
-              <option value="sales_manager">Sales Manager</option>
-              <option value="branch_manager">Branch Manager</option>
-            </select>
-          </div>
-          <div className="flex-1 min-w-[180px]">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Title <span className="text-gray-400">(optional)</span></label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Sales Rep"
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-3 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50"
-            >
-              {submitting ? 'Adding...' : 'Add'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAdding(false); setName(''); setEmail(''); setKind('rep'); setTitle(''); setError(null) }}
-              className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-            >
-              Cancel
-            </button>
-          </div>
-          {error && (
-            <p className="basis-full text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
-        </form>
-      )}
 
       {salesReps.length === 0 ? (
         <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -1380,7 +1313,147 @@ function SalesRepsSection({ salesReps }: { salesReps: SalesRep[] }) {
           </table>
         </ScrollableTable>
       )}
+
+      <AddRepModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          setModalOpen(false)
+          router.refresh()
+        }}
+      />
     </div>
+  )
+}
+
+function AddRepModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [kind, setKind] = useState<SalesRepKind>('rep')
+  const [title, setTitle] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function handleClose() {
+    setName('')
+    setEmail('')
+    setKind('rep')
+    setTitle('')
+    setError(null)
+    onClose()
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    const res = await fetch('/api/sales-reps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim(),
+        kind,
+        title: title.trim() || null,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setSubmitting(false)
+    if (!res.ok) {
+      setError(data.error ?? 'Failed to add sales rep')
+      return
+    }
+    setName('')
+    setEmail('')
+    setKind('rep')
+    setTitle('')
+    onCreated()
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleClose}
+      dismissible={!submitting}
+      title="Add Rep"
+      size="sm"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="add-rep-form"
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          >
+            {submitting ? 'Adding...' : 'Add Rep'}
+          </button>
+        </>
+      }
+    >
+      <form id="add-rep-form" onSubmit={handleSubmit} className="p-4 space-y-3">
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as SalesRepKind)}
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            <option value="rep">Sales Rep</option>
+            <option value="sales_manager">Sales Manager</option>
+            <option value="branch_manager">Branch Manager</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Title <span className="text-gray-400">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Sales Rep"
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -1580,35 +1653,7 @@ function SalesRepRow({ rep }: { rep: SalesRep }) {
 
 function SupplyCatalogSection({ items }: { items: SupplyCatalogRow[] }) {
   const router = useRouter()
-  const [adding, setAdding] = useState(false)
-  const [name, setName] = useState('')
-  const [unit, setUnit] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) return
-    setSubmitting(true)
-    setError(null)
-    // New items sort after the current max so they land at the end of the list.
-    const maxSort = items.reduce((m, i) => Math.max(m, i.sort_order), 0)
-    const res = await fetch('/api/supply-catalog', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), unit: unit.trim() || null, sort_order: maxSort + 10 }),
-    })
-    const data = await res.json().catch(() => ({}))
-    setSubmitting(false)
-    if (!res.ok) {
-      setError(data.error ?? 'Failed to add supply')
-      return
-    }
-    setName('')
-    setUnit('')
-    setAdding(false)
-    router.refresh()
-  }
+  const [modalOpen, setModalOpen] = useState(false)
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -1621,58 +1666,13 @@ function SupplyCatalogSection({ items }: { items: SupplyCatalogRow[] }) {
             Quick-pick consumables technicians choose from when requesting supplies. Inactive items are hidden from the request form.
           </p>
         </div>
-        {!adding && (
-          <button
-            onClick={() => { setAdding(true); setError(null) }}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
-          >
-            Add Supply
-          </button>
-        )}
+        <button
+          onClick={() => setModalOpen(true)}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
+        >
+          Add Supply
+        </button>
       </div>
-
-      {adding && (
-        <form onSubmit={handleAdd} className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[220px]">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. WD-40"
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Unit <span className="text-gray-400">(optional)</span></label>
-            <input
-              type="text"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="e.g. can, box, roll"
-              className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-3 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50"
-            >
-              {submitting ? 'Adding...' : 'Add'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAdding(false); setName(''); setUnit(''); setError(null) }}
-              className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-            >
-              Cancel
-            </button>
-          </div>
-          {error && <p className="basis-full text-sm text-red-600 dark:text-red-400">{error}</p>}
-        </form>
-      )}
 
       {items.length === 0 ? (
         <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -1698,7 +1698,121 @@ function SupplyCatalogSection({ items }: { items: SupplyCatalogRow[] }) {
           </table>
         </ScrollableTable>
       )}
+
+      <AddSupplyModal
+        open={modalOpen}
+        items={items}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => {
+          setModalOpen(false)
+          router.refresh()
+        }}
+      />
     </div>
+  )
+}
+
+function AddSupplyModal({
+  open,
+  items,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  items: SupplyCatalogRow[]
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [name, setName] = useState('')
+  const [unit, setUnit] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function handleClose() {
+    setName('')
+    setUnit('')
+    setError(null)
+    onClose()
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSubmitting(true)
+    setError(null)
+    // New items sort after the current max so they land at the end of the list.
+    const maxSort = items.reduce((m, i) => Math.max(m, i.sort_order), 0)
+    const res = await fetch('/api/supply-catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), unit: unit.trim() || null, sort_order: maxSort + 10 }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setSubmitting(false)
+    if (!res.ok) {
+      setError(data.error ?? 'Failed to add supply')
+      return
+    }
+    setName('')
+    setUnit('')
+    onCreated()
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleClose}
+      dismissible={!submitting}
+      title="Add Supply"
+      size="sm"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="add-supply-form"
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          >
+            {submitting ? 'Adding...' : 'Add Supply'}
+          </button>
+        </>
+      }
+    >
+      <form id="add-supply-form" onSubmit={handleSubmit} className="p-4 space-y-3">
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. WD-40"
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Unit <span className="text-gray-400">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            placeholder="e.g. can, box, roll"
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+      </form>
+    </Modal>
   )
 }
 

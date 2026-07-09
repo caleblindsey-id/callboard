@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import InlineError from '@/components/ui/InlineError'
 
 type RateType = 'standard' | 'industrial' | 'vacuum'
 
@@ -33,8 +34,10 @@ export default function SpecialLaborRatesInput({
     vacuum: initial(rates.vacuum),
   })
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleSave() {
+    setError(null)
     const payload: Record<string, number | null> = {}
     for (const { type } of ROWS) {
       const raw = values[type].trim()
@@ -44,7 +47,7 @@ export default function SpecialLaborRatesInput({
       }
       const parsed = parseFloat(raw)
       if (!Number.isFinite(parsed) || parsed < 0) {
-        alert(`Please enter a valid non-negative rate, or leave the ${type} field blank to use the global rate.`)
+        setError(`Please enter a valid non-negative rate, or leave the ${type} field blank to use the global rate.`)
         return
       }
       // 0 means "use global" — store null so the override is cleared.
@@ -60,13 +63,13 @@ export default function SpecialLaborRatesInput({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.error ?? 'Could not update special labor rates.')
+        setError(data.error ?? 'Could not update special labor rates.')
         return
       }
       router.refresh()
     } catch (err) {
       console.error('SpecialLaborRatesInput error:', err)
-      alert('Could not update special labor rates.')
+      setError('Could not update special labor rates.')
     } finally {
       setLoading(false)
     }
@@ -116,6 +119,8 @@ export default function SpecialLaborRatesInput({
           </div>
         ))}
       </div>
+
+      {error && <div className="mt-3"><InlineError message={error} /></div>}
     </div>
   )
 }

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquarePlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, MessageSquarePlus } from 'lucide-react'
+import Button from '@/components/Button'
+import InlineError from '@/components/ui/InlineError'
 
 interface NoteEntry {
   id: string
@@ -24,12 +26,19 @@ function timeAgo(dateStr: string): string {
   return date.toLocaleDateString()
 }
 
-export default function EquipmentNotes({ equipmentId }: { equipmentId: string }) {
+interface EquipmentNotesProps {
+  equipmentId: string
+  /** Round 8 de-bulk: collapsed by default alongside Service/Estimate History. */
+  collapsible?: boolean
+}
+
+export default function EquipmentNotes({ equipmentId, collapsible = false }: EquipmentNotesProps) {
   const [notes, setNotes] = useState<NoteEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [noteText, setNoteText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(!collapsible)
 
   const fetchNotes = useCallback(async () => {
     try {
@@ -76,58 +85,68 @@ export default function EquipmentNotes({ equipmentId }: { equipmentId: string })
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+      <div
+        className={`px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between ${collapsible ? 'cursor-pointer select-none' : ''}`}
+        onClick={collapsible ? () => setExpanded(!expanded) : undefined}
+      >
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
           Equipment Notes
         </h2>
+        {collapsible && (
+          expanded
+            ? <ChevronDown className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+            : <ChevronRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+        )}
       </div>
 
-      {/* Add note form */}
-      <form onSubmit={handleSubmit} className="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-        <textarea
-          value={noteText}
-          onChange={(e) => setNoteText(e.target.value)}
-          placeholder="Add a note (e.g. common part numbers, quirks, access instructions)..."
-          maxLength={2000}
-          rows={2}
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-        />
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-xs text-gray-400 dark:text-gray-500">{noteText.length}/2000</span>
-          <button
-            type="submit"
-            disabled={!noteText.trim() || submitting}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
-          >
-            <MessageSquarePlus className="h-4 w-4" />
-            {submitting ? 'Adding...' : 'Add Note'}
-          </button>
-        </div>
-      </form>
-
-      {error && (
-        <div className="px-5 py-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30">{error}</div>
-      )}
-
-      {/* Notes list */}
-      {loading ? (
-        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading notes...</div>
-      ) : notes.length === 0 ? (
-        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">No notes yet.</div>
-      ) : (
-        <div className="divide-y divide-gray-100 dark:divide-gray-700">
-          {notes.map((note) => (
-            <div key={note.id} className="px-5 py-3">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {note.users?.name ?? 'Unknown'}
-                </span>
-                <span className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(note.created_at)}</span>
-              </div>
-              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{note.note_text}</p>
+      {expanded && (
+        <>
+          {/* Add note form */}
+          <form onSubmit={handleSubmit} className="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Add a note (e.g. common part numbers, quirks, access instructions)..."
+              maxLength={2000}
+              rows={2}
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-gray-400 dark:text-gray-500">{noteText.length}/2000</span>
+              <Button type="submit" size="mobile" disabled={!noteText.trim() || submitting}>
+                <MessageSquarePlus className="h-4 w-4" />
+                {submitting ? 'Adding...' : 'Add Note'}
+              </Button>
             </div>
-          ))}
-        </div>
+          </form>
+
+          {error && (
+            <div className="px-5 py-3">
+              <InlineError message={error} />
+            </div>
+          )}
+
+          {/* Notes list */}
+          {loading ? (
+            <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading notes...</div>
+          ) : notes.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">No notes yet.</div>
+          ) : (
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {notes.map((note) => (
+                <div key={note.id} className="px-5 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {note.users?.name ?? 'Unknown'}
+                    </span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">{timeAgo(note.created_at)}</span>
+                  </div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{note.note_text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
