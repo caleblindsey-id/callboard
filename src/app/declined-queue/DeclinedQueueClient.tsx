@@ -8,6 +8,9 @@ import type { DeclinedQueueRow } from '@/lib/db/declined-queue'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
+
+type Tab = 'all' | 'no_reason'
 
 type DeclinedSortKey = 'customer' | 'equipment' | 'amount' | 'age'
 
@@ -36,20 +39,33 @@ function fmtMoney(amount: number | null): string {
 
 export default function DeclinedQueueClient({ rows }: { rows: DeclinedQueueRow[] }) {
   const router = useRouter()
+  const [tab, setTab] = useState<Tab>('all')
   const [query, setQuery] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Actionable backlog: declines with no reason on file — the office still
+  // needs to find out why before deciding to re-quote or let it go. Mirrors
+  // estimate-queue's "Needs First Contact" tab, using the one distinguishing
+  // field this queue's data actually has (queues-estimate-declined-1).
+  const noReasonCount = useMemo(
+    () => rows.filter((r) => !r.decline_reason).length,
+    [rows],
+  )
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((r) =>
-      r.customer_name.toLowerCase().includes(q) ||
-      r.equipment_label.toLowerCase().includes(q) ||
-      (r.serial_number ?? '').toLowerCase().includes(q) ||
-      String(r.work_order_number ?? '').includes(q)
-    )
-  }, [rows, query])
+    return rows.filter((r) => {
+      if (tab === 'no_reason' && r.decline_reason) return false
+      if (!q) return true
+      return (
+        r.customer_name.toLowerCase().includes(q) ||
+        r.equipment_label.toLowerCase().includes(q) ||
+        (r.serial_number ?? '').toLowerCase().includes(q) ||
+        String(r.work_order_number ?? '').includes(q)
+      )
+    })
+  }, [rows, tab, query])
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     DeclinedQueueRow,
@@ -73,9 +89,22 @@ export default function DeclinedQueueClient({ rows }: { rows: DeclinedQueueRow[]
     }
   }
 
+  const tabs: TabItem[] = [
+    { key: 'all', label: 'All Declined', count: rows.length },
+    { key: 'no_reason', label: 'No Reason Given', count: noReasonCount },
+  ]
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+      {/* Tabs + search */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <Tabs
+          ariaLabel="Filter declined estimates"
+          tabs={tabs}
+          active={tab}
+          onChange={(key) => setTab(key as Tab)}
+          className="w-fit"
+        />
         <input
           type="search"
           value={query}
@@ -94,7 +123,7 @@ export default function DeclinedQueueClient({ rows }: { rows: DeclinedQueueRow[]
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
           <FileX className="mx-auto h-8 w-8 text-gray-300 dark:text-gray-600 mb-2" />
-          No declined estimates to follow up.
+          {tab === 'no_reason' ? 'Every declined estimate has a reason logged.' : 'No declined estimates to follow up.'}
         </div>
       ) : (
         <>

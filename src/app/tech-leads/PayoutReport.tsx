@@ -402,7 +402,7 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
                     </td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       {l.lead_type === 'equipment_sale'
-                        ? `${tierLabel(l.sale_equipment_tier ?? l.proposed_equipment_tier)}${l.sale_synergy_order_number ? ` · Synergy #${l.sale_synergy_order_number}` : ''}`
+                        ? `${tierLabel(l.sale_equipment_tier ?? l.proposed_equipment_tier)}${l.sale_synergy_order_number ? ` · Synergy Order #${l.sale_synergy_order_number}` : ''}`
                         : l.equipment
                           ? [l.equipment.make, l.equipment.model].filter(Boolean).join(' ')
                           : l.equipment_description}

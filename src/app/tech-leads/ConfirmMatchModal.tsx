@@ -70,7 +70,7 @@ export default function ConfirmMatchModal({ candidate, proposedTier, onClose, on
     <Modal open onClose={onClose} dismissible={!submitting} sheet size="md" ariaLabelledBy="confirm-match-title">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
           <h3 id="confirm-match-title" className="text-base font-semibold text-gray-900 dark:text-white">
-            Confirm match · Synergy #{candidate.synergy_order_number}
+            Confirm match · Synergy Order #{candidate.synergy_order_number}
           </h3>
           <button
             type="button"
