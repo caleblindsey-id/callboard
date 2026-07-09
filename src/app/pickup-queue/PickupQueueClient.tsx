@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Phone, Mail, MapPin, PackageCheck, Send } from 'lucide-react'
+import { Phone, Mail, MapPin, PackageCheck, Send, ChevronRight } from 'lucide-react'
 import type { PickupQueueRow } from '@/lib/db/pickup-queue'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
@@ -272,8 +272,9 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
               <div key={r.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                    <Link href={`/service/${r.id}`} className="inline-flex items-center gap-1 rounded font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
                       {r.customer_name}
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
                     </Link>
                     {r.work_order_number != null && (
                       <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
@@ -440,8 +441,9 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                 return (
                   <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 align-top">
                     <td className="px-4 py-3">
-                      <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                      <Link href={`/service/${r.id}`} className="inline-flex items-center gap-1 rounded font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
                         {r.customer_name}
+                        <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
                       </Link>
                       {r.work_order_number != null && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>

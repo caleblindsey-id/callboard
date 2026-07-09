@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useDeferredValue, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import type { TechEquipmentItem } from './page'
 import { formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
 import FilterBar from '@/components/ui/FilterBar'
+import RowLink from '@/components/ui/RowLink'
 
 interface TechEquipmentListProps {
   equipment: TechEquipmentItem[]
@@ -73,7 +74,6 @@ function OverdueBadge() {
 }
 
 export default function TechEquipmentList({ equipment }: TechEquipmentListProps) {
-  const router = useRouter()
   const [search, setSearch] = useState('')
   const deferredSearch = useDeferredValue(search)
 
@@ -125,10 +125,10 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
               {filtered.map((e) => {
                 const next = classifyNextService(e.nextServiceDate)
                 return (
-                  <div
+                  <Link
                     key={e.id}
-                    className="px-4 py-3 min-h-[44px] cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
-                    onClick={() => router.push(`/equipment/${e.id}`)}
+                    href={`/equipment/${e.id}`}
+                    className="block px-4 py-3 min-h-[44px] active:bg-gray-50 dark:active:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-inset"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="flex items-center gap-2 min-w-0">
@@ -152,7 +152,7 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                       Last: {formatDate(e.lastServiceDate)} · Next:{' '}
                       <span className={next.className}>{next.text}</span>
                     </p>
-                  </div>
+                  </Link>
                 )
               })}
             </div>
@@ -168,22 +168,20 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Location</th>
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Last Service</th>
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Next Service</th>
+                    <th className="px-3 py-3 w-8" aria-label="Open equipment"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {filtered.map((e) => {
                     const next = classifyNextService(e.nextServiceDate)
                     return (
-                      <tr
-                        key={e.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                        onClick={() => router.push(`/equipment/${e.id}`)}
-                      >
+                      <tr key={e.id} className="relative hover:bg-gray-50 dark:hover:bg-gray-700">
                         <td className="px-5 py-3 text-gray-900 dark:text-white">
                           <div className="flex items-center gap-2">
                             <span>{e.customers?.name ?? '—'}</span>
                             {next.bucket === 'overdue' && <OverdueBadge />}
                           </div>
+                          <RowLink href={`/equipment/${e.id}`} label={`View equipment for ${e.customers?.name ?? 'this record'}`} />
                         </td>
                         <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                           {[e.make, e.model].filter(Boolean).join(' ') || '—'}
@@ -199,6 +197,9 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                         </td>
                         <td className="px-5 py-3">
                           <span className={next.className}>{next.text}</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                         </td>
                       </tr>
                     )

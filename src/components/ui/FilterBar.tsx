@@ -63,7 +63,8 @@ export default function FilterBar({ search, segmented, activeCount = 0, children
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
               <input
-                type="text"
+                type="search"
+                inputMode="search"
                 value={search.value}
                 onChange={(e) => search.onChange(e.target.value)}
                 placeholder={search.placeholder}

@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { ChevronRight, AlertTriangle } from 'lucide-react'
+import RowLink from '@/components/ui/RowLink'
 import { UserRow } from '@/types/database'
 import { ServiceTicketWithJoins, ServiceTicketStatus, ServicePriority, ServiceTicketType } from '@/types/service-tickets'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
@@ -174,7 +174,6 @@ interface ServiceTicketBoardProps {
 
 export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicketBoardProps) {
   const isTech = currentUser.role === 'technician'
-  const router = useRouter()
 
   // Filters live in the URL so the Back button restores the filtered view.
   const { filters, set, setMany } = useUrlFilters(initialFilters)
@@ -553,22 +552,21 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
               {visible.map((ticket) => (
                 <div
                   key={ticket.id}
-                  className={`px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700 ${
+                  className={`relative px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700 ${
                     ticket.priority === 'emergency'
                       ? 'border-l-4 border-red-500 bg-red-50/50 dark:bg-red-900/10'
                       : ''
                   }`}
-                  onClick={() => router.push(`/service/${ticket.id}`)}
                 >
+                  <RowLink href={`/service/${ticket.id}`} label={`Open service ticket${ticket.work_order_number ? ` WO-${ticket.work_order_number}` : ''}`} />
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {canManage && !deletedView && (
                         <input
                           type="checkbox"
                           checked={selected.has(ticket.id)}
-                          onClick={(e) => e.stopPropagation()}
                           onChange={() => toggleSelect(ticket.id)}
-                          className="h-5 w-5 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+                          className="relative z-10 h-5 w-5 rounded border-gray-300 dark:border-gray-600 accent-slate-600"
                           aria-label="Select ticket"
                         />
                       )}
@@ -654,21 +652,21 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                     <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Created" colKey="created" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <th className="px-3 py-3 w-8" aria-label="Open ticket"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {visible.map((ticket) => (
                     <tr
                       key={ticket.id}
-                      className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
+                      className={`relative hover:bg-gray-50 dark:hover:bg-gray-700 ${
                         ticket.priority === 'emergency'
                           ? 'bg-red-50/50 dark:bg-red-900/10'
                           : ''
                       }`}
-                      onClick={() => router.push(`/service/${ticket.id}`)}
                     >
                       {canManage && !deletedView && (
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="relative z-10 px-4 py-3">
                           <input
                             type="checkbox"
                             checked={selected.has(ticket.id)}
@@ -683,6 +681,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                         {ticket.synergy_validation_status === 'invalid' && (
                           <AlertTriangle className="inline h-3.5 w-3.5 text-red-500 ml-1" />
                         )}
+                        <RowLink href={`/service/${ticket.id}`} label={`Open service ticket${ticket.work_order_number ? ` WO-${ticket.work_order_number}` : ''}`} />
                       </td>
                       <td className="px-4 py-3">
                         <ServiceStatusBadge status={ticket.status} />
@@ -735,6 +734,9 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                           </td>
                         )
                       })()}
+                      <td className="px-3 py-3">
+                        <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

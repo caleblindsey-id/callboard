@@ -17,6 +17,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
 import FilterBar from '@/components/ui/FilterBar'
+import RowLink from '@/components/ui/RowLink'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { matchesSearch } from '@/lib/search'
 
@@ -121,7 +122,6 @@ function TicketList({
   onRestore,
   restoringId,
 }: TicketListProps) {
-  const router = useRouter()
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     TicketWithJoins,
     TicketSortKey
@@ -143,11 +143,11 @@ function TicketList({
           return (
             <div
               key={ticket.id}
-              className={`px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700 ${
+              className={`relative px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700 ${
                 showOverdueBadges ? 'border-l-4 border-red-400 dark:border-red-600' : ''
               } ${deletedMode ? 'opacity-60' : ''}`}
-              onClick={() => router.push(`/tickets/${ticket.id}`)}
             >
+              <RowLink href={`/tickets/${ticket.id}`} label={`Open ticket WO-${ticket.work_order_number}`} />
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -203,12 +203,9 @@ function TicketList({
               </p>
               {deletedMode && isManager && onRestore && (
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onRestore(ticket.id)
-                  }}
+                  onClick={() => onRestore(ticket.id)}
                   disabled={restoringId === ticket.id}
-                  className="mt-2 inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px]"
+                  className="relative z-10 mt-2 inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px]"
                 >
                   <RotateCcw className="h-4 w-4" />
                   {restoringId === ticket.id ? 'Restoring...' : 'Restore'}
@@ -243,6 +240,7 @@ function TicketList({
               {deletedMode && isManager && (
                 <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
               )}
+              <th className="px-3 py-3 w-8" aria-label="Open ticket"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -252,13 +250,12 @@ function TicketList({
               return (
                 <tr
                   key={ticket.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
+                  className={`relative hover:bg-gray-50 dark:hover:bg-gray-700 ${
                     showOverdueBadges ? 'border-l-4 border-red-400 dark:border-red-600' : ''
                   } ${deletedMode ? 'opacity-60' : ''}`}
-                  onClick={() => router.push(`/tickets/${ticket.id}`)}
                 >
                   {isManager && !deletedMode && (
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="relative z-10 px-4 py-3">
                       <input
                         type="checkbox"
                         checked={selected.has(ticket.id)}
@@ -269,6 +266,7 @@ function TicketList({
                   )}
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">
                     WO-{ticket.work_order_number}
+                    <RowLink href={`/tickets/${ticket.id}`} label={`Open ticket WO-${ticket.work_order_number}`} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col items-start gap-1">
@@ -319,7 +317,7 @@ function TicketList({
                     {ticket.users?.name ?? '—'}
                   </td>
                   {deletedMode && isManager && (
-                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td className="relative z-10 px-4 py-3 text-right">
                       <button
                         onClick={() => onRestore?.(ticket.id)}
                         disabled={restoringId === ticket.id}
@@ -330,6 +328,9 @@ function TicketList({
                       </button>
                     </td>
                   )}
+                  <td className="px-3 py-3">
+                    <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                  </td>
                 </tr>
               )
             })}

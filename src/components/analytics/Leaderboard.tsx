@@ -1,8 +1,10 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import type { TechRow } from '@/lib/db/analytics'
 import ScrollableTable from '@/components/ScrollableTable'
+import RowLink from '@/components/ui/RowLink'
 
 type SortMetric = 'revenue' | 'tickets' | 'profit' | 'efficiency'
 
@@ -64,7 +66,6 @@ function TargetBadge({ percent }: { percent: number | null }) {
 }
 
 export default function Leaderboard({ techRows, activeSort, onSortChange }: LeaderboardProps) {
-  const router = useRouter()
   const sorted = [...techRows].sort((a, b) => getSortValue(b, activeSort) - getSortValue(a, activeSort))
 
   return (
@@ -101,6 +102,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
               <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">$/Hour</th>
               <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Profit</th>
               <th className="px-5 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">vs Target</th>
+              <th className="px-3 py-2.5 w-8" aria-label="View profile"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
@@ -112,8 +114,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
               return (
                 <tr
                   key={row.id}
-                  onClick={() => router.push(`/analytics/${row.id}`)}
-                  className={`cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 ${belowTarget ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20' : ''}`}
+                  className={`relative transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 ${belowTarget ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20' : ''}`}
                 >
                   <td className="px-5 py-3">
                     <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
@@ -122,7 +123,10 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
                       {rank}
                     </span>
                   </td>
-                  <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{row.name}</td>
+                  <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
+                    {row.name}
+                    <RowLink href={`/analytics/${row.id}`} label={`View profile for ${row.name}`} />
+                  </td>
                   <td className="px-3 py-3 text-right text-gray-900 dark:text-white">{row.ticketsCompleted}</td>
                   <td className="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">
                     ${row.revenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}
@@ -137,12 +141,15 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
                   <td className="px-5 py-3 text-center">
                     <TargetBadge percent={targetPct} />
                   </td>
+                  <td className="px-3 py-3">
+                    <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                  </td>
                 </tr>
               )
             })}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={9} className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   No technician data available for this period.
                 </td>
               </tr>
@@ -162,10 +169,10 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
           const belowTarget = targetPct != null && targetPct < 70
 
           return (
-            <div
+            <Link
               key={row.id}
-              onClick={() => router.push(`/analytics/${row.id}`)}
-              className={`px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700 ${belowTarget ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
+              href={`/analytics/${row.id}`}
+              className={`block px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-inset ${belowTarget ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2.5">
@@ -176,7 +183,10 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
                   </span>
                   <span className="text-sm font-medium text-gray-900 dark:text-white">{row.name}</span>
                 </div>
-                <TargetBadge percent={targetPct} />
+                <div className="flex items-center gap-1">
+                  <TargetBadge percent={targetPct} />
+                  <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <div className="flex justify-between">
@@ -198,7 +208,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
                   </span>
                 </div>
               </div>
-            </div>
+            </Link>
           )
         })}
         {sorted.length === 0 && (
