@@ -1,7 +1,7 @@
 import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success'
 export type ButtonSize = 'mobile' | 'normal'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -19,6 +19,11 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     'bg-transparent hover:bg-gray-100 text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-600',
   danger:
     'bg-red-600 hover:bg-red-700 text-white dark:bg-red-700 dark:hover:bg-red-600 disabled:bg-red-300 dark:disabled:bg-red-900',
+  // Reserved for terminal completion actions only (Mark Complete, Confirm Pickup,
+  // customer-facing Approve decisions) per standard-draft dimension 3 — not a
+  // general-purpose "positive" primary. Everything else stays slate.
+  success:
+    'bg-green-600 hover:bg-green-700 text-white dark:bg-green-700 dark:hover:bg-green-600 disabled:bg-green-300 dark:disabled:bg-green-900',
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {

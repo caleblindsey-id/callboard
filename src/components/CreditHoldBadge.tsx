@@ -1,7 +1,9 @@
+import Badge from '@/components/ui/Badge'
+
+// Customer-level (sync-owned) credit_hold flag. Distinct from
+// CreditReviewBadge, which reflects per-order review state. Thin wrapper over
+// Badge + status-meta.ts (the 'creditHold' domain, a single static key since
+// there's no real enum backing this flag).
 export default function CreditHoldBadge() {
-  return (
-    <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
-      Credit Hold
-    </span>
-  )
+  return <Badge domain="creditHold" status="active" />
 }

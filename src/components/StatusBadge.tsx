@@ -1,35 +1,5 @@
 import { TicketStatus } from '@/types/database'
-
-const statusConfig: Record<TicketStatus, { label: string; classes: string }> = {
-  unassigned: {
-    label: 'Unassigned',
-    classes: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
-  },
-  assigned: {
-    label: 'Assigned',
-    classes: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  },
-  in_progress: {
-    label: 'In Progress',
-    classes: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
-  },
-  completed: {
-    label: 'Completed',
-    classes: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
-  },
-  billed: {
-    label: 'Billed',
-    classes: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  },
-  skipped: {
-    label: 'Skipped',
-    classes: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
-  },
-  skip_requested: {
-    label: 'Skip Requested',
-    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  },
-}
+import Badge from '@/components/ui/Badge'
 
 const badgeBase =
   'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium'
@@ -37,15 +7,15 @@ const badgeBase =
 const overdueClasses =
   'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
 
+// Thin wrapper over Badge + status-meta.ts (the 'pm' domain). Kept as a named
+// component (rather than inlining Badge at every call site) so PM ticket
+// status keeps one import to change if the domain key ever moves.
 export default function StatusBadge({ status }: { status: TicketStatus }) {
-  const config = statusConfig[status]
-  return (
-    <span className={`${badgeBase} ${config.classes}`}>
-      {config.label}
-    </span>
-  )
+  return <Badge domain="pm" status={status} />
 }
 
+// Not status-driven (no enum value backs "overdue" — it's a computed days-late
+// flag), so it stays a standalone pill rather than going through status-meta.
 export function OverdueBadge({ days }: { days: number }) {
   const suffix = days > 0 ? ` · ${days}d` : ''
   return (

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import LayoutShell from '@/components/LayoutShell'
 import { UserProvider } from '@/components/UserProvider'
+import { ToastProvider } from '@/components/ui/Toast'
 import { getCurrentUser } from '@/lib/auth'
 import { APP_NAME } from '@/lib/branding'
 
@@ -76,7 +77,9 @@ export default async function RootLayout({
           </div>
         )}
         <UserProvider user={userContext}>
-          <LayoutShell>{children}</LayoutShell>
+          <ToastProvider>
+            <LayoutShell>{children}</LayoutShell>
+          </ToastProvider>
         </UserProvider>
       </body>
     </html>

@@ -1,4 +1,5 @@
 import type { TechLeadStatus } from '@/types/database'
+import { STATUS_META } from '@/lib/status-meta'
 
 // Canonical labels for the tech-lead pipeline states surfaced on the manager
 // dashboard's "Tech Leads" card (PipelineAndMoney). DB status values stay the
@@ -19,11 +20,17 @@ import type { TechLeadStatus } from '@/types/database'
 // but awaiting payout — a different reading for a different audience).
 // Reconciling the two vocabularies is scoped to the terminology sweep round,
 // not this fix — see PLAN.md Round 4.
+//
+// Round 3 update: re-exported from status-meta.ts (the 'lead' domain), which
+// is now the single source of truth for these labels — this file exists only
+// so the dashboard-2 test and PipelineAndMoney's import keep working without
+// edits. Any future change to the pending/approved/match_pending wording
+// should happen in status-meta.ts, not here.
 export const TECH_LEAD_PIPELINE_LABEL: Record<
   Extract<TechLeadStatus, 'pending' | 'approved' | 'match_pending'>,
   string
 > = {
-  pending: 'Submitted',
-  approved: 'Approved',
-  match_pending: 'Match Pending',
+  pending: STATUS_META.lead.pending.label,
+  approved: STATUS_META.lead.approved.label,
+  match_pending: STATUS_META.lead.match_pending.label,
 }
