@@ -18,8 +18,6 @@ import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import AuditHistorySection from '@/components/AuditHistorySection'
 import AceLaborCard from '@/components/AceLaborCard'
-import WorkflowStatusCard from '@/components/WorkflowStatusCard'
-import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
 import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
@@ -174,9 +172,6 @@ export default async function TicketDetailPage({
           </p>
         </div>
       )}
-
-      {/* Workflow state — what state we're in, who's next, what's blocking. */}
-      {!isDeleted && <WorkflowStatusCard {...deriveWorkflowProps(ticket)} />}
 
       {/* Read-only info */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
@@ -360,12 +355,6 @@ export default async function TicketDetailPage({
               ) : (
                 'No'
               )}
-            </p>
-          </div>
-          <div>
-            <span className="text-gray-500 dark:text-gray-400">PO Number</span>
-            <p className="text-gray-900 dark:text-white font-medium">
-              {ticket.po_number || '—'}
             </p>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { SynergyNumberField } from './detail-ui'
+import NextStepShell from '@/components/ui/NextStepShell'
 import type { ServiceTicketDetail as ServiceTicketDetailType } from '@/types/service-tickets'
 
 interface NextStepBarProps {
@@ -68,11 +69,7 @@ export default function NextStepBar({
   onMarkBilled,
 }: NextStepBarProps) {
   return (
-    <div className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-gray-800 shadow-sm p-4 sm:p-5 space-y-3">
-      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-        Next Step
-      </p>
-
+    <NextStepShell label="Next Step">
       {/* Open + warranty/partial → skip the estimate, start work */}
       {isWarrantyOpen && (
         <button
@@ -262,6 +259,6 @@ export default function NextStepBar({
           </button>
         </div>
       )}
-    </div>
+    </NextStepShell>
   )
 }
