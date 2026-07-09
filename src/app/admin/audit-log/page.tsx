@@ -13,6 +13,9 @@ import {
   formatOccurredAt,
 } from '@/lib/audit/format'
 import ScrollableTable from '@/components/ScrollableTable'
+import PageHeader from '@/components/ui/PageHeader'
+import FilterBar from '@/components/ui/FilterBar'
+import Button from '@/components/Button'
 
 const PAGE_SIZE = 50
 
@@ -92,19 +95,19 @@ export default async function AuditLogPage({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = Boolean(entityType || changedBy || action || actorType || startDate || params.end || params.wo)
+  const activeFilterCount = [entityType, changedBy, action, actorType, startDate, params.end, params.wo].filter(Boolean).length
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Audit Log</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Every change to service tickets, PM tickets, equipment, schedules, customers, and users. Newest first.
-        </p>
-      </div>
+      <PageHeader
+        title="Audit Log"
+        subtitle="Every change to service tickets, PM tickets, equipment, schedules, customers, and users. Newest first."
+      />
 
+      <FilterBar activeCount={activeFilterCount}>
       <form
         method="GET"
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 w-full"
       >
         <label className="text-sm">
           <span className="block text-gray-500 dark:text-gray-400 mb-1">WO #</span>
@@ -219,15 +222,13 @@ export default async function AuditLogPage({
                 Reset
               </Link>
             )}
-            <button
-              type="submit"
-              className="text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-            >
+            <Button type="submit">
               Apply filters
-            </button>
+            </Button>
           </div>
         </div>
       </form>
+      </FilterBar>
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-900">
         <ScrollableTable>

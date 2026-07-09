@@ -75,10 +75,7 @@ export default function DeclinedQueueClient({ rows }: { rows: DeclinedQueueRow[]
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          {rows.length} declined estimate{rows.length === 1 ? '' : 's'} awaiting follow-up
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
         <input
           type="search"
           value={query}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, ChevronRight, PackageCheck } from 'lucide-react'
 import PartsStatusBadge from '@/components/PartsStatusBadge'
 import ScrollableTable from '@/components/ScrollableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 import { markPartCollected, ticketDeepLink } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
@@ -215,39 +216,16 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
         </div>
       )}
       {/* Status tabs — Ready for Pickup is the most actionable, so it leads. */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter parts by status">
-          {TABS.map((tab) => {
-            const isActive = active === tab.key
-            const count = byStatus[tab.key].length
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => set('tab', tab.key)}
-                className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
-                  isActive
-                    ? 'bg-slate-800 text-white'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {tab.label}
-                <span
-                  className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] text-xs font-semibold ${
-                    isActive
-                      ? 'bg-white/20 text-white'
-                      : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <Tabs
+        ariaLabel="Filter parts by status"
+        active={active}
+        onChange={(key) => set('tab', key)}
+        tabs={TABS.map((tab): TabItem => ({
+          key: tab.key,
+          label: tab.label,
+          count: byStatus[tab.key].length,
+        }))}
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         {visible.length === 0 ? (

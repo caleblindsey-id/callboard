@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useDeferredValue, useMemo } from 'react'
+import { useDeferredValue, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import type { EquipmentListItem } from './page'
-import AddEquipmentModal from './AddEquipmentModal'
 import { formatDate } from '@/lib/format'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
@@ -66,7 +66,6 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
   const { filters, set } = useUrlFilters(initialFilters)
   const search = filters.q
   const showActive = filters.active !== 'inactive'
-  const [modalOpen, setModalOpen] = useState(false)
 
   // useDeferredValue lets React keep the input snappy on every keystroke and
   // recompute the filtered list at lower priority — input stays responsive
@@ -94,45 +93,23 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
   return (
     <>
       {/* Controls */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="text"
-            placeholder="Search by customer or serial number..."
-            value={search}
-            onChange={(e) => set('q', e.target.value, { debounce: true })}
-            className="flex-1 min-w-[200px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => set('active', '')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                showActive
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-              }`}
-            >
-              Active
-            </button>
-            <button
-              onClick={() => set('active', 'inactive')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                !showActive
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-              }`}
-            >
-              Inactive
-            </button>
-          </div>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
-          >
-            Add Equipment
-          </button>
-        </div>
-      </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('q', v, { debounce: true }),
+          placeholder: 'Search by customer or serial number...',
+        }}
+        segmented={{
+          options: [
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ],
+          value: showActive ? 'active' : 'inactive',
+          onChange: (v) => set('active', v === 'inactive' ? 'inactive' : ''),
+          ariaLabel: 'Filter equipment by active status',
+        }}
+        activeCount={showActive ? 0 : 1}
+      />
 
       {/* Equipment list */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -245,15 +222,6 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
           </>
         )}
       </div>
-
-      <AddEquipmentModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreated={() => {
-          setModalOpen(false)
-          router.refresh()
-        }}
-      />
     </>
   )
 }

@@ -3,13 +3,15 @@
 import { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, Target } from 'lucide-react'
+import { Target } from 'lucide-react'
 import type { TechnicianAnalytics } from '@/lib/db/analytics'
 import KpiCard from '@/components/analytics/KpiCard'
 import ScrollableTable from '@/components/ScrollableTable'
 import RevenueBreakdown from '@/components/analytics/RevenueBreakdown'
 import PeriodComparison from '@/components/analytics/PeriodComparison'
 import TargetsForm from '@/components/analytics/TargetsForm'
+import PageHeader from '@/components/ui/PageHeader'
+import SegmentedControl from '@/components/ui/SegmentedControl'
 
 const TrendChart = dynamic(() => import('@/components/analytics/TrendChart'), {
   ssr: false,
@@ -72,47 +74,31 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div>
-        <Link href="/analytics" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 mb-3">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Analytics
-        </Link>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">{data.tech.name}</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Technician{data.tech.hourlyCost != null ? ` · Hourly cost: $${data.tech.hourlyCost.toFixed(2)}` : ''}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
+      <PageHeader
+        backHref="/analytics"
+        title={data.tech.name}
+        subtitle={`Technician${data.tech.hourlyCost != null ? ` · Hourly cost: $${data.tech.hourlyCost.toFixed(2)}` : ''}`}
+        actions={
+          <>
             <button
               onClick={() => setShowTargets(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
             >
               <Target className="h-3.5 w-3.5" />
               Set Targets
             </button>
-            <div className="flex border border-gray-200 rounded-md overflow-hidden">
-              <button
-                onClick={() => handlePeriodChange('weekly')}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                  periodType === 'weekly' ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                Weekly
-              </button>
-              <button
-                onClick={() => handlePeriodChange('monthly')}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                  periodType === 'monthly' ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                Monthly
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+            <SegmentedControl
+              ariaLabel="Analytics period"
+              options={[
+                { value: 'weekly', label: 'Weekly' },
+                { value: 'monthly', label: 'Monthly' },
+              ]}
+              value={periodType}
+              onChange={(v) => handlePeriodChange(v as PeriodType)}
+            />
+          </>
+        }
+      />
 
       {error && (
         <div className="flex items-center gap-3 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-800 dark:text-red-300">

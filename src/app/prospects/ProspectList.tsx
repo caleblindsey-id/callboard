@@ -6,6 +6,7 @@ import { InactiveEquipmentProspect } from '@/lib/db/equipment'
 import { Star, Trash2, Eye, EyeOff, ChevronRight, X } from 'lucide-react'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type ProspectSortKey =
@@ -104,13 +105,15 @@ export default function ProspectList({ prospects }: ProspectListProps) {
     <div className="space-y-4">
       {/* Toggle removed */}
       {removed.length > 0 && (
-        <button
-          onClick={() => setShowRemoved(!showRemoved)}
-          className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 transition-colors"
-        >
-          {showRemoved ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          {showRemoved ? 'Hide' : 'Show'} removed ({removed.length})
-        </button>
+        <FilterBar activeCount={showRemoved ? 1 : 0}>
+          <button
+            onClick={() => setShowRemoved(!showRemoved)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          >
+            {showRemoved ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showRemoved ? 'Hide' : 'Show'} removed ({removed.length})
+          </button>
+        </FilterBar>
       )}
 
       {/* Active prospects */}

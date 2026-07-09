@@ -1,6 +1,7 @@
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getOpenCreditReviews } from '@/lib/db/credit-reviews'
 import CreditReviewQueue from './CreditReviewQueue'
+import PageHeader from '@/components/ui/PageHeader'
 
 export default async function CreditReviewPage() {
   await requireRole(...MANAGER_ROLES)
@@ -10,13 +11,10 @@ export default async function CreditReviewPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Credit Review</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Orders gated pending AR credit approval. AR decides by email; managers can unblock blocked
-          orders with the release passcode.
-        </p>
-      </div>
+      <PageHeader
+        title="Credit Review"
+        subtitle="Orders gated pending AR credit approval. AR decides by email; managers can unblock blocked orders with the release passcode."
+      />
       <CreditReviewQueue pending={pending} blocked={blocked} />
     </div>
   )

@@ -24,6 +24,8 @@ import ScrollableTable from '@/components/ScrollableTable'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+import Tabs from '@/components/ui/Tabs'
+import FilterBar from '@/components/ui/FilterBar'
 
 type Tab = 'review' | 'to_pull' | 'to_order' | 'ordered' | 'received'
 type SortKey =
@@ -638,13 +640,18 @@ export default function PartsQueueClient({
   return (
     <div className="space-y-4">
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        <TabButton active={tab === 'review'} onClick={() => set('tab', 'review')} label="Review" count={tabCounts.review} />
-        <TabButton active={tab === 'to_pull'} onClick={() => set('tab', 'to_pull')} label="To Pull" count={tabCounts.toPull} />
-        <TabButton active={tab === 'to_order'} onClick={() => set('tab', 'to_order')} label="To Order" count={tabCounts.toOrder} />
-        <TabButton active={tab === 'ordered'} onClick={() => set('tab', 'ordered')} label="Ordered" count={tabCounts.ordered} />
-        <TabButton active={tab === 'received'} onClick={() => set('tab', 'received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
-      </div>
+      <Tabs
+        ariaLabel="Filter parts by workflow stage"
+        active={tab}
+        onChange={(key) => set('tab', key)}
+        tabs={[
+          { key: 'review', label: 'Review', count: tabCounts.review },
+          { key: 'to_pull', label: 'To Pull', count: tabCounts.toPull },
+          { key: 'to_order', label: 'To Order', count: tabCounts.toOrder },
+          { key: 'ordered', label: 'Ordered', count: tabCounts.ordered },
+          { key: 'received', label: `Received (${RECEIVED_WINDOW_DAYS}d)`, count: tabCounts.received },
+        ]}
+      />
 
       {/* Ticket prefilter chip — only present when the page was loaded via a
           deep-link from a source ticket (Round B). Clears back to the normal
@@ -669,34 +676,38 @@ export default function PartsQueueClient({
       )}
 
       {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={e => set('q', e.target.value, { debounce: true })}
-          placeholder="Search customer, WO #, part, PO #…"
-          className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <select
-          value={sourceFilter}
-          onChange={e => set('source', e.target.value)}
-          className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-        >
-          <option value="all">All sources</option>
-          <option value="pm">PM only</option>
-          <option value="service">Service only</option>
-        </select>
-        <select
-          value={vendorFilter}
-          onChange={e => set('vendor', e.target.value)}
-          className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-        >
-          <option value="">All vendors</option>
-          {vendorOptions.map(v => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </select>
-      </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('q', v, { debounce: true }),
+          placeholder: 'Search customer, WO #, part, PO #…',
+        }}
+        segmented={{
+          options: [
+            { value: 'all', label: 'All sources' },
+            { value: 'pm', label: 'PM only' },
+            { value: 'service', label: 'Service only' },
+          ],
+          value: sourceFilter,
+          onChange: (v) => set('source', v),
+          ariaLabel: 'Filter by source',
+        }}
+        activeCount={(sourceFilter !== 'all' ? 1 : 0) + (vendorFilter ? 1 : 0)}
+      >
+        <div className="w-full lg:w-auto">
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Vendor</label>
+          <select
+            value={vendorFilter}
+            onChange={e => set('vendor', e.target.value)}
+            className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            <option value="">All vendors</option>
+            {vendorOptions.map(v => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </div>
+      </FilterBar>
 
       {error && (
         <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300">
@@ -1634,31 +1645,6 @@ function ToPullTable({
         </table>
       </ScrollableTable>
     </div>
-  )
-}
-
-function TabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-        active
-          ? 'border-slate-700 text-slate-900 dark:border-white dark:text-white'
-          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-      }`}
-    >
-      {label}
-      <span
-        className={`inline-flex items-center justify-center rounded-full text-xs min-w-[1.5rem] px-1.5 py-0.5 ${
-          active
-            ? 'bg-slate-700 text-white dark:bg-white dark:text-slate-900'
-            : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-        }`}
-      >
-        {count}
-      </span>
-    </button>
   )
 }
 

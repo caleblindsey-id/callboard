@@ -6,6 +6,8 @@ import type { TeamAnalytics } from '@/lib/db/analytics'
 import KpiCard from '@/components/analytics/KpiCard'
 import Leaderboard from '@/components/analytics/Leaderboard'
 import TargetsForm from '@/components/analytics/TargetsForm'
+import PageHeader from '@/components/ui/PageHeader'
+import SegmentedControl from '@/components/ui/SegmentedControl'
 import { Target } from 'lucide-react'
 
 // Recharts is ~200KB; defer the chart so the page shell + KPIs render first.
@@ -63,39 +65,30 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Technician Analytics</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{data.period.label}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowTargets(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            <Target className="h-3.5 w-3.5" />
-            Team Targets
-          </button>
-          <div className="flex border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+      <PageHeader
+        title="Technician Analytics"
+        subtitle={data.period.label}
+        actions={
+          <>
             <button
-              onClick={() => handlePeriodChange('weekly')}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                periodType === 'weekly' ? 'bg-slate-800 text-white' : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
-              }`}
+              onClick={() => setShowTargets(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
             >
-              Weekly
+              <Target className="h-3.5 w-3.5" />
+              Team Targets
             </button>
-            <button
-              onClick={() => handlePeriodChange('monthly')}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                periodType === 'monthly' ? 'bg-slate-800 text-white' : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
-              }`}
-            >
-              Monthly
-            </button>
-          </div>
-        </div>
-      </div>
+            <SegmentedControl
+              ariaLabel="Analytics period"
+              options={[
+                { value: 'weekly', label: 'Weekly' },
+                { value: 'monthly', label: 'Monthly' },
+              ]}
+              value={periodType}
+              onChange={(v) => handlePeriodChange(v as PeriodType)}
+            />
+          </>
+        }
+      />
 
       {error && (
         <div className="flex items-center gap-3 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-800 dark:text-red-300">

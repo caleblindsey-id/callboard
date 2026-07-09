@@ -9,6 +9,7 @@ import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
 type Tab = 'all' | 'call'
 
@@ -223,7 +224,7 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     }
   }
 
-  const tabs: { key: Tab; label: string; count: number }[] = [
+  const tabs: TabItem[] = [
     { key: 'all', label: 'All Ready', count: rows.length },
     { key: 'call', label: 'Needs Call', count: callCount },
   ]
@@ -232,22 +233,13 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     <div className="space-y-4">
       {/* Tabs + search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                tab === t.key
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {t.label}
-              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">{t.count}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs
+          ariaLabel="Filter pickups"
+          tabs={tabs}
+          active={tab}
+          onChange={(key) => setTab(key as Tab)}
+          className="w-fit"
+        />
         <input
           type="search"
           value={query}

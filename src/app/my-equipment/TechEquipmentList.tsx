@@ -6,6 +6,7 @@ import { ChevronRight } from 'lucide-react'
 import type { TechEquipmentItem } from './page'
 import { formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
 
 interface TechEquipmentListProps {
   equipment: TechEquipmentItem[]
@@ -102,15 +103,13 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <input
-          type="text"
-          placeholder="Search by customer or serial..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full min-h-[44px] lg:min-h-0 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 lg:py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-      </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: 'Search by customer or serial...',
+        }}
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {filtered.length === 0 ? (

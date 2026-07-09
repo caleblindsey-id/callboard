@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 import { CUSTOMER_LIST_COLUMNS, CUSTOMER_LIST_LIMIT } from '@/lib/db/customer-list'
@@ -81,24 +82,24 @@ export default function CustomerList({ customers, initialTotal, initialSearch }:
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex items-center gap-3">
-        <input
-          type="text"
-          placeholder="Search by customer name or account number..."
-          value={search}
-          onChange={(e) => set('q', e.target.value, { debounce: true })}
-          className="w-full max-w-md rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        {searching && (
-          <span className="text-sm text-gray-400 dark:text-gray-500 shrink-0">Searching...</span>
-        )}
-        {!searching && truncated && (
-          <span className="text-sm text-amber-600 dark:text-amber-400 shrink-0">
-            Showing first {displayedCustomers.length} of {totalMatches.toLocaleString()}
-            {search.trim() ? ' matches — refine your search' : ' — search to find others'}
-          </span>
-        )}
-      </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('q', v, { debounce: true }),
+          placeholder: 'Search by customer name or account number...',
+        }}
+      />
+      {(searching || truncated) && (
+        <p className="text-sm">
+          {searching && <span className="text-gray-400 dark:text-gray-500">Searching...</span>}
+          {!searching && truncated && (
+            <span className="text-amber-600 dark:text-amber-400">
+              Showing first {displayedCustomers.length} of {totalMatches.toLocaleString()}
+              {search.trim() ? ' matches — refine your search' : ' — search to find others'}
+            </span>
+          )}
+        </p>
+      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {displayedCustomers.length === 0 ? (

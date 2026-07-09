@@ -5,6 +5,7 @@ import { sanitizeOrValue } from '@/lib/db/safe-or'
 import { formatDate } from '@/lib/format'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 
 type ProductSortKey = 'number' | 'description' | 'unit_price' | 'synced_at'
@@ -35,16 +36,13 @@ export default function ProductList() {
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <input
-          type="text"
-          inputMode="search"
-          placeholder="Search by product number or description..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full max-w-md min-h-[44px] rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-      </div>
+      <FilterBar
+        search={{
+          value: query,
+          onChange: setQuery,
+          placeholder: 'Search by product number or description...',
+        }}
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {!trimmed ? (

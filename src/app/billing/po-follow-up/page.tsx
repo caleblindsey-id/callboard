@@ -1,6 +1,7 @@
 import { getPoFollowUpQueue } from '@/lib/db/service-tickets'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import PoFollowUpWorklist from './PoFollowUpWorklist'
+import PageHeader from '@/components/ui/PageHeader'
 
 // PO-collection worklist: completed jobs for PO-required customers still missing
 // a customer PO. Manager-gated (mirrors /billing). Replaces the office's
@@ -13,12 +14,11 @@ export default async function PoFollowUpPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">PO Follow-Up</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Chase the customer POs that are holding up billing
-        </p>
-      </div>
+      <PageHeader
+        title="PO Follow-Up"
+        subtitle="Chase the customer POs that are holding up billing"
+        backHref="/billing"
+      />
       <PoFollowUpWorklist tickets={tickets} />
     </div>
   )

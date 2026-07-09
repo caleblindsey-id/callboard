@@ -1,6 +1,7 @@
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
+import PageHeader from '@/components/ui/PageHeader'
 import TechEquipmentList from './TechEquipmentList'
 
 export type TechEquipmentItem = {
@@ -43,12 +44,7 @@ export default async function MyEquipmentPage() {
   if (equipmentIds.length === 0) {
     return (
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Equipment</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Equipment you&apos;ve been assigned to
-          </p>
-        </div>
+        <PageHeader title="Equipment" subtitle="Equipment you've been assigned to" />
         <TechEquipmentList equipment={[]} />
       </div>
     )
@@ -152,12 +148,7 @@ export default async function MyEquipmentPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Equipment</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Equipment you&apos;ve been assigned to
-        </p>
-      </div>
+      <PageHeader title="Equipment" subtitle="Equipment you've been assigned to" />
       <TechEquipmentList equipment={enriched} />
     </div>
   )
