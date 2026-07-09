@@ -3,6 +3,7 @@ import { APP_NAME } from '@/lib/branding'
 import type { BillingTicket, PartLine } from '@/types/billing'
 import { partLabel } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
+import { PdfHeader, PdfFooter } from '@/lib/pdf/chrome'
 
 // ============================================================
 // Types
@@ -17,6 +18,10 @@ interface BillingDocumentProps {
   year: number
   exportedAt: string
   companyName?: string
+  // The only one of the six generated documents that previously shipped with
+  // no logo support at all (gap-generated-pdf-documents-1) — added so the PM
+  // Billing Summary matches the other five.
+  logoBase64?: string | null
 }
 
 // ============================================================
@@ -32,29 +37,6 @@ const styles = StyleSheet.create({
     paddingBottom: 50,
     paddingHorizontal: 48,
     backgroundColor: '#ffffff',
-  },
-  // Header
-  header: {
-    marginBottom: 20,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#111111',
-    paddingBottom: 10,
-  },
-  companyName: {
-    fontSize: 16,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111111',
-    letterSpacing: 0.3,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: '#444444',
-    marginTop: 3,
-  },
-  generated: {
-    fontSize: 7.5,
-    color: '#888888',
-    marginTop: 4,
   },
   // Section label
   sectionLabel: {
@@ -207,20 +189,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#cccccc',
     marginTop: 20,
     marginBottom: 4,
-  },
-  // Footer
-  footer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 48,
-    right: 48,
-    textAlign: 'center',
-    fontSize: 7,
-    color: '#aaaaaa',
-    fontStyle: 'italic',
-    borderTopWidth: 0.5,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 6,
   },
 })
 
@@ -496,7 +464,7 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
 // Main document component
 // ============================================================
 
-export function BillingDocument({ tickets, month, year, exportedAt, companyName }: BillingDocumentProps) {
+export function BillingDocument({ tickets, month, year, exportedAt, companyName, logoBase64 }: BillingDocumentProps) {
   const monthName = MONTHS[month - 1] ?? String(month)
 
   return (
@@ -504,20 +472,22 @@ export function BillingDocument({ tickets, month, year, exportedAt, companyName 
       {tickets.map((ticket, idx) => (
         <Page key={ticket.id} size="LETTER" style={styles.page} wrap>
           {/* Header — on every page but logically per-ticket page */}
-          <View style={styles.header} fixed>
-            <Text style={styles.companyName}>{companyName ?? APP_NAME} — Service Department</Text>
-            <Text style={styles.subtitle}>
-              PM Billing Summary — {monthName} {year}
-            </Text>
-            <Text style={styles.generated}>Generated: {exportedAt}</Text>
-          </View>
+          <PdfHeader
+            logoBase64={logoBase64}
+            companyName={companyName ?? APP_NAME}
+            title="PM Billing Summary"
+            subtitle={`${monthName} ${year}`}
+            rightLines={[{ text: `Generated: ${exportedAt}` }]}
+          />
 
           <TicketSection ticket={ticket} />
 
-          {/* Footer */}
-          <Text style={styles.footer} fixed>
-            For entry into SynergyERP — Reference document  |  {APP_NAME}  |  Generated {exportedAt}
-          </Text>
+          {/* Footer — right honors the companyName prop instead of the
+              hardcoded APP_NAME (gap-generated-pdf-documents-2). */}
+          <PdfFooter
+            left="For entry into SynergyERP — Reference document"
+            right={companyName ?? APP_NAME}
+          />
         </Page>
       ))}
     </Document>

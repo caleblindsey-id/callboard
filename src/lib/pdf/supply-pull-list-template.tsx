@@ -1,4 +1,5 @@
-import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
+import { PdfHeader, PdfFooter } from '@/lib/pdf/chrome'
 
 // One flattened line per requested item — the warehouse-relevant fields only.
 // The API route maps the pending supply queue → this shape.
@@ -25,18 +26,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 36,
     backgroundColor: '#ffffff',
   },
-  header: {
-    marginBottom: 14,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#111111',
-    paddingBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  logo: { width: 150, height: 46, objectFit: 'contain' as const },
-  title: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: '#111111' },
-  subtitle: { fontSize: 10, color: '#444444', marginTop: 2, textAlign: 'right' as const },
   tableHeaderRow: {
     flexDirection: 'row',
     backgroundColor: '#f0f0f0',
@@ -62,16 +51,6 @@ const styles = StyleSheet.create({
   colQty: { width: 40, textAlign: 'center' as const, color: '#111111' },
   colUnit: { width: 70, color: '#444444' },
   empty: { marginTop: 24, textAlign: 'center' as const, color: '#888888', fontSize: 10 },
-  footer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 36,
-    right: 36,
-    textAlign: 'center' as const,
-    fontSize: 7,
-    color: '#aaaaaa',
-    fontStyle: 'italic',
-  },
 })
 
 function dash(v: string | number | null | undefined): string {
@@ -85,17 +64,14 @@ export function SupplyPullListDocument({ rows, generatedDate, logoBase64 }: Supp
     <Document>
       <Page size="LETTER" style={styles.page} wrap>
         {/* Header (repeats on every page) */}
-        <View style={styles.header} fixed>
-          {logoBase64 ? <Image src={logoBase64} style={styles.logo} /> : <View />}
-          <View>
-            <Text style={styles.title}>Shop Supply Pull List</Text>
-            <Text style={styles.subtitle}>
-              {generatedDate}
-              {'  |  '}
-              {rows.length} {rows.length === 1 ? 'item' : 'items'}
-            </Text>
-          </View>
-        </View>
+        <PdfHeader
+          logoBase64={logoBase64}
+          title="Shop Supply Pull List"
+          rightLines={[
+            { text: generatedDate },
+            { text: `${rows.length} ${rows.length === 1 ? 'item' : 'items'}` },
+          ]}
+        />
 
         {/* Column headers (repeat on every page) */}
         <View style={styles.tableHeaderRow} fixed>
@@ -123,11 +99,7 @@ export function SupplyPullListDocument({ rows, generatedDate, logoBase64 }: Supp
           ))
         )}
 
-        <Text
-          style={styles.footer}
-          fixed
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-        />
+        <PdfFooter />
       </Page>
     </Document>
   )
