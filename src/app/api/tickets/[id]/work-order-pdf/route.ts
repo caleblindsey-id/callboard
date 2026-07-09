@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getCustomerLaborRate } from '@/lib/db/settings'
 import { taxRatePercent } from '@/lib/tax'
+import { APP_NAME } from '@/lib/branding'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -179,7 +180,7 @@ export async function POST(
       const t = v?.trim()
       return t && t.length > 0 ? t : null
     }
-    const companyName = trimOrNull(branding.company_name) ?? 'Imperial Dade'
+    const companyName = trimOrNull(branding.company_name) ?? APP_NAME
     const serviceEmail = trimOrNull(branding.service_email)
     const servicePhone = trimOrNull(branding.service_phone)
 

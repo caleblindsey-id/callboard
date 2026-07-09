@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Modal from '@/components/ui/Modal'
 import { X } from 'lucide-react'
 import type { BillingType, TechLeadFrequency } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
@@ -121,7 +122,6 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     serial: string | null
     hasActiveSchedule: boolean
   } | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
   // Prefill snapshot — dirty means the manager edited past it (audit FE-4).
   const initialRef = useRef<{
     make: string
@@ -178,8 +178,6 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
     setExistingEquipment(null)
     setSubmitting(false)
     setConfirmDiscardOpen(false)
-    // Focus dialog so onKeyDown captures Escape.
-    dialogRef.current?.focus()
   }, [lead])
 
   // Customer search (only when needed)
@@ -364,19 +362,8 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
   }
 
   return (
-    <div
-      ref={dialogRef}
-      tabIndex={-1}
-      className="fixed inset-0 z-50 flex items-center justify-center outline-none"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-equipment-from-lead-title"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape' && !submitting) requestClose()
-      }}
-    >
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={requestClose} />
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full max-w-2xl mx-4 max-h-[95vh] overflow-y-auto">
+    <>
+    <Modal open onClose={requestClose} dismissible={!submitting} size="xl" ariaLabelledBy="create-equipment-from-lead-title">
         <div className="sticky top-0 bg-white dark:bg-gray-800 px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div>
             <h3 id="create-equipment-from-lead-title" className="text-base font-semibold text-gray-900 dark:text-white">Create equipment from lead</h3>
@@ -719,7 +706,7 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
             {submitting ? 'Creating…' : 'Create equipment'}
           </button>
         </div>
-      </div>
+    </Modal>
       <ConfirmDialog
         open={confirmDiscardOpen}
         title="Discard changes?"
@@ -732,6 +719,6 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
         }}
         onCancel={() => setConfirmDiscardOpen(false)}
       />
-    </div>
+    </>
   )
 }

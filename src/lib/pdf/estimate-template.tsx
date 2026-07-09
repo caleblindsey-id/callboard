@@ -1,7 +1,8 @@
-import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 import { APP_NAME } from '@/lib/branding'
 import { partLabel } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
+import { PdfHeader, PdfFooter } from '@/lib/pdf/chrome'
 
 // ============================================================
 // Types
@@ -64,29 +65,6 @@ const styles = StyleSheet.create({
     paddingBottom: 70,
     paddingHorizontal: 48,
     backgroundColor: '#ffffff',
-  },
-  header: {
-    marginBottom: 20,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#111111',
-    paddingBottom: 10,
-  },
-  logo: {
-    width: 160,
-    height: 50,
-    objectFit: 'contain' as const,
-    marginBottom: 6,
-  },
-  title: {
-    fontSize: 16,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111111',
-    letterSpacing: 0.3,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: '#444444',
-    marginTop: 3,
   },
   sectionLabel: {
     fontSize: 7,
@@ -195,19 +173,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 1.4,
   },
-  footer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 48,
-    right: 48,
-    textAlign: 'center',
-    fontSize: 7,
-    color: '#aaaaaa',
-    fontStyle: 'italic',
-    borderTopWidth: 0.5,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 6,
-  },
 })
 
 // ============================================================
@@ -243,17 +208,13 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
     <Document>
       <Page size="LETTER" style={styles.page} wrap>
         {/* Header */}
-        <View style={styles.header} fixed>
-          {logoBase64 && (
-            <Image src={logoBase64} style={styles.logo} />
-          )}
-          <Text style={styles.title}>Service Estimate</Text>
-          <Text style={styles.subtitle}>
-            {estimate.workOrderNumber ? `WO-${estimate.workOrderNumber}` : 'Estimate'}
-            {'  |  '}
-            {estimate.createdDate}
-          </Text>
-        </View>
+        <PdfHeader
+          logoBase64={logoBase64}
+          companyName={companyName ?? APP_NAME}
+          title="Service Estimate"
+          documentNumber={estimate.workOrderNumber ? `WO-${estimate.workOrderNumber}` : undefined}
+          rightLines={[{ text: estimate.createdDate }]}
+        />
 
         {/* Customer */}
         <Text style={styles.sectionLabel}>Customer</Text>
@@ -432,9 +393,10 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
         </View>
 
         {/* Footer */}
-        <Text style={styles.footer} fixed>
-          Estimate — {companyName ?? APP_NAME} Service Department
-        </Text>
+        <PdfFooter
+          left={estimate.workOrderNumber ? `WO-${estimate.workOrderNumber}` : 'Estimate'}
+          right={`${companyName ?? APP_NAME} Service Department`}
+        />
       </Page>
     </Document>
   )

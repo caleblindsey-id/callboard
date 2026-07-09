@@ -1,5 +1,6 @@
 import { getCustomers } from '@/lib/db/customers'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
+import PageHeader from '@/components/ui/PageHeader'
 import CustomerList from './CustomerList'
 
 export default async function CustomersPage({
@@ -13,12 +14,7 @@ export default async function CustomersPage({
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Customers</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Synced from SynergyERP — read only
-        </p>
-      </div>
+      <PageHeader title="Customers" subtitle="Synced from SynergyERP — read only" />
       <CustomerList customers={customers} initialTotal={total} initialSearch={params.q ?? ''} />
     </div>
   )

@@ -1,12 +1,21 @@
 'use client'
 
-export default function TicketsError({ reset }: { reset: () => void }) {
-  return (
-    <div className="p-6">
-      <p className="text-sm text-red-600 dark:text-red-400 mb-3" role="alert">Failed to load tickets.</p>
-      <button onClick={reset} className="text-sm text-slate-700 dark:text-slate-300 underline">
-        Try again
-      </button>
-    </div>
-  )
+import { useEffect } from 'react'
+import ErrorScreen from '@/components/ErrorScreen'
+
+// Route-specific override of src/app/error.tsx. Previously a bare one-line
+// fallback with no "Back to dashboard" affordance; now renders the same
+// shared ErrorScreen so the two boundaries stop diverging.
+export default function TicketsError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  useEffect(() => {
+    console.error('tickets route error boundary:', error)
+  }, [error])
+
+  return <ErrorScreen reset={reset} />
 }

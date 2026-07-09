@@ -14,6 +14,7 @@ import PayoutReport from '../tech-leads/PayoutReport'
 import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
 import { formatMoney, formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
 type TabKey = 'pending' | 'pending_ace' | 'approved' | 'match' | 'earned' | 'paid' | 'closed' | 'payout'
 type TypeFilter = 'all' | TechLeadType
@@ -26,10 +27,15 @@ interface Props {
   currentUserId: string
 }
 
+// Tab wording kills the triple "pending" the old labels carried (Pending ACE,
+// Pending, and the DB status literally named "pending"): ACE's own queue is
+// "ACE Review", and the manager-approved-but-awaiting-payout state is
+// "Awaiting Match" rather than "Pending" now that it's spelled out consistently
+// with the STATUS_LABEL below.
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'pending',     label: 'Submitted Leads' },
-  { key: 'pending_ace', label: 'Pending ACE' },
-  { key: 'approved',    label: 'Pending' },
+  { key: 'pending_ace', label: 'ACE Review' },
+  { key: 'approved',    label: 'Awaiting Match' },
   { key: 'match',       label: 'Match Candidates' },
   { key: 'earned',      label: 'Earned (unpaid)' },
   { key: 'paid',        label: 'Paid' },
@@ -38,17 +44,18 @@ const TABS: { key: TabKey; label: string }[] = [
 ]
 
 // Display label for the per-row status badge. DB enum values stay the same;
-// this just renames the manager-approved-but-awaiting-payout state so
-// "approved" isn't mistaken for "ready to pay".
+// this aligns with status-meta.lead except 'approved', which the payout hub
+// deliberately shows as "Awaiting Match" (matching the tab above) rather than
+// "Approved" — the point of this whole hub is leads not yet matched/paid.
 const STATUS_LABEL: Record<TechLeadStatus, string> = {
-  pending:       'submitted',
-  approved:      'pending',
-  match_pending: 'match pending',
-  rejected:      'rejected',
-  cancelled:     'cancelled',
-  expired:       'expired',
-  earned:        'earned',
-  paid:          'paid',
+  pending:       'Submitted',
+  approved:      'Awaiting Match',
+  match_pending: 'Match Pending',
+  rejected:      'Rejected',
+  cancelled:     'Cancelled',
+  expired:       'Expired',
+  earned:        'Earned',
+  paid:          'Paid',
 }
 
 function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJoins[] {
@@ -250,33 +257,16 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
       )}
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
-        <div className="flex gap-4 min-w-max">
-          {TABS.map(t => {
-            const active = tab === t.key
-            const count = counts[t.key]
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={`pb-3 pt-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                  active
-                    ? 'border-slate-900 dark:border-slate-200 text-slate-900 dark:text-slate-100'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                {t.label}
-                {t.key !== 'payout' && count > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                    {count}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <Tabs
+        ariaLabel="Tech payouts sections"
+        active={tab}
+        onChange={(key) => setTab(key as TabKey)}
+        tabs={TABS.map((t): TabItem => ({
+          key: t.key,
+          label: t.label,
+          count: t.key === 'payout' || counts[t.key] === 0 ? undefined : counts[t.key],
+        }))}
+      />
 
       {tab === 'payout' ? (
         <PayoutReport leads={typeFiltered} aceEntries={aceEntries} />

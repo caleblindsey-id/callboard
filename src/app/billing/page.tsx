@@ -1,12 +1,15 @@
 import { getBillingTickets, getPmAwaitingInvoiceTickets } from '@/lib/db/tickets'
 import { getServiceBillingTickets, getServiceAwaitingInvoiceTickets } from '@/lib/db/service-tickets'
+import { getInvoicedRows } from '@/lib/db/invoiced'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import BillingExport from './BillingExport'
 import PmAwaitingInvoice from './PmAwaitingInvoice'
 import ServiceBillingExport from './ServiceBillingExport'
 import ServiceAwaitingInvoice from './ServiceAwaitingInvoice'
 import ServiceTypeFilter from './ServiceTypeFilter'
+import InvoicedArchive from './InvoicedArchive'
 import BillingTabs from './BillingTabs'
+import PageHeader from '@/components/ui/PageHeader'
 
 export default async function BillingPage({
   searchParams,
@@ -27,11 +30,14 @@ export default async function BillingPage({
   const month = hasFilter ? parsedMonth : undefined
   const year = hasFilter ? parsedYear : undefined
 
-  const [pmTickets, pmAwaitingInvoice, serviceTickets, serviceAwaitingInvoice] = await Promise.all([
+  const [pmTickets, pmAwaitingInvoice, serviceTickets, serviceAwaitingInvoice, invoicedRows] = await Promise.all([
     getBillingTickets(month, year),
     getPmAwaitingInvoiceTickets(month, year),
     getServiceBillingTickets(month, year),
     getServiceAwaitingInvoiceTickets(month, year),
+    // Invoiced archive narrows on billed_at (not completed_at) with the same
+    // month/year param — only rendered on its own tab, so the shared param is fine.
+    getInvoicedRows(month, year),
   ])
 
   // Inside/outside narrowing for the Service tab so a manager can work one group
@@ -50,15 +56,14 @@ export default async function BillingPage({
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Billing</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Completed tickets ready to bill into Synergy
-        </p>
-      </div>
+      <PageHeader
+        title="Billing"
+        subtitle="Completed tickets ready to bill into Synergy"
+      />
       <BillingTabs
         pmCount={pmTickets.length}
         serviceCount={serviceTickets.length + serviceAwaitingInvoice.length}
+        invoicedCount={invoicedRows.length}
         initialTab={params.tab ?? ''}
         pmContent={
           <div className="space-y-6">
@@ -72,6 +77,9 @@ export default async function BillingPage({
             <ServiceBillingExport tickets={filteredServiceTickets} selectedMonth={month} selectedYear={year} />
             <ServiceAwaitingInvoice tickets={filteredServiceAwaitingInvoice} />
           </div>
+        }
+        invoicedContent={
+          <InvoicedArchive rows={invoicedRows} selectedMonth={month} selectedYear={year} />
         }
       />
     </div>

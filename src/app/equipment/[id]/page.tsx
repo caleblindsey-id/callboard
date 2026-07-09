@@ -108,11 +108,13 @@ export default async function EquipmentDetailPage({
         <DefaultProductsReadOnly products={equipment.default_products ?? []} />
       )}
 
-      <ServiceHistory items={allHistory} showBilling={showBilling} />
+      {/* Round 8 de-bulk: core cards above stay always-visible; history/notes
+          collapse by default so the page reads shorter without losing data. */}
+      <ServiceHistory items={allHistory} showBilling={showBilling} collapsible />
 
-      <EstimateHistory items={estimateHistory} />
+      <EstimateHistory items={estimateHistory} collapsible />
 
-      <EquipmentNotes equipmentId={equipment.id} />
+      <EquipmentNotes equipmentId={equipment.id} collapsible />
 
       <AuditHistorySection entityType="equipment" entityId={equipment.id} />
     </div>

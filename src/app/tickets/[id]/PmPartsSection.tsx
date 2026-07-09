@@ -8,6 +8,8 @@ import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { formatDate } from '@/lib/format'
+import { getStatusMeta } from '@/lib/status-meta'
+import InlineError from '@/components/ui/InlineError'
 
 interface PmPartsSectionProps {
   ticketId: string
@@ -35,15 +37,6 @@ const STATUS_TEXT: Record<PartRequest['status'], string> = {
   ordered:   'text-blue-600 dark:text-blue-400',
   received:  'text-green-600 dark:text-green-400',
   from_stock: 'text-teal-600 dark:text-teal-400',
-}
-
-// Display label for the per-part status chip (the raw enum has underscores).
-const STATUS_LABEL: Record<PartRequest['status'], string> = {
-  pending_review: 'In Review',
-  requested: 'Requested',
-  ordered:   'Ordered',
-  received:  'Received',
-  from_stock: 'From Stock',
 }
 
 export default function PmPartsSection({
@@ -322,7 +315,7 @@ export default function PmPartsSection({
                       <span className="text-xs font-medium uppercase text-red-600 dark:text-red-400">Cancelled</span>
                     ) : (
                       <span className={`text-xs font-medium uppercase ${STATUS_TEXT[part.status]}`}>
-                        {STATUS_LABEL[part.status]}
+                        {getStatusMeta('parts', part.status).label}
                       </span>
                     )}
                     {!part.cancelled && (part.status === 'pending_review' || part.status === 'requested') && (
@@ -469,9 +462,7 @@ export default function PmPartsSection({
           </div>
         )}
 
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
+        {error && <InlineError message={error} />}
       </div>
     </div>
   )

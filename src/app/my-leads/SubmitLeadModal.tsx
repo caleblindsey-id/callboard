@@ -14,6 +14,7 @@ import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import SignaturePad from '@/components/SignaturePad'
 import PartsEntryList, { emptyPart, partsFromSaved, toServicePartUsed, type PartEntry } from '@/components/service/PartsEntryList'
+import Modal from '@/components/ui/Modal'
 
 const DRAFT_KEY = 'draft-submit-lead'
 
@@ -649,16 +650,12 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
     }
   }
 
-  if (!open) return null
-
   const selectedFreq = FREQUENCIES.find(f => f.value === frequency)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
-      <div className="relative bg-white dark:bg-gray-800 sm:rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full sm:max-w-lg sm:mx-4 rounded-t-xl max-h-[95vh] overflow-y-auto">
+    <Modal open={open} onClose={onClose} dismissible={!submitting} sheet size="lg" ariaLabelledBy="submit-lead-title">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{isEdit ? 'Edit lead' : 'Submit a lead'}</h3>
+          <h3 id="submit-lead-title" className="text-base font-semibold text-gray-900 dark:text-white">{isEdit ? 'Edit lead' : 'Submit a lead'}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -1245,7 +1242,6 @@ export default function SubmitLeadModal({ open, onClose, lead = null }: SubmitLe
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

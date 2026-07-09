@@ -4,6 +4,7 @@ import { getEntriesByStatus } from '@/lib/db/ace-labor'
 import { getPendingCandidatesForLeads } from '@/lib/db/equipment-sale-candidates'
 import { getActiveSalesReps } from '@/lib/db/sales-reps'
 import TechPayoutsClient from './TechPayoutsClient'
+import PageHeader from '@/components/ui/PageHeader'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,12 +23,10 @@ export default async function TechPayoutsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Tech Payouts</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Review tech-submitted leads and ACE labor entries, confirm Synergy sale matches, and run monthly payouts. Both lead bonuses and ACE labor roll into the same monthly report.
-        </p>
-      </div>
+      <PageHeader
+        title="Tech Payouts"
+        subtitle="Review tech-submitted leads and ACE labor entries, confirm Synergy sale matches, and run monthly payouts. Both lead bonuses and ACE labor roll into the same monthly report."
+      />
       <TechPayoutsClient
         leads={leads}
         candidatesByLead={candidatesByLead}

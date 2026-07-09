@@ -86,11 +86,18 @@ export type ServiceTicketRow = {
   // Synergy invoice # can be keyed. Stays status='completed' while exported.
   billing_exported: boolean
   billing_exported_at: string | null
+  // When the ticket was marked billed / invoiced (migration 141). Powers the
+  // Invoiced archive; stamped at the status->billed transition.
+  billed_at: string | null
   diagnostic_charge: number | null
   // Customer PO # for this job (migration 108), mirrors pm_tickets.po_number.
   // Distinct from the per-line po_number in parts_requested (the vendor PO used
   // when the office orders a part) and from synergy_po_number.
   po_number: string | null
+  // Denormalized recency of the last PO-collection outreach (migration 140),
+  // maintained by the po-follow-ups POST route. Drives the Waiting-on-PO worklist.
+  po_last_contacted_at: string | null
+  po_last_method: string | null
   // Trip charge = trip_charge_qty × the settings 'trip_charge_amount' rate
   // (mirrors labor: hours × rate). trip_charge_qty is the number of trips
   // (migration 107); NULL = ticket-type default (field=1, bench 'inside'=0).

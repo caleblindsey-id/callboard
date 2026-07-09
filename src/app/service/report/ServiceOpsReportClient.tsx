@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { BarChart3 } from 'lucide-react'
 import KpiCard from '@/components/analytics/KpiCard'
+import Tabs from '@/components/ui/Tabs'
 import type { ServiceOpsReport } from '@/lib/db/service-reports'
 
 const RANGES: { key: string; label: string }[] = [
@@ -73,21 +74,13 @@ export default function ServiceOpsReportClient({
   return (
     <div className="space-y-6">
       {/* Range selector */}
-      <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            onClick={() => router.push(`/service/report?range=${r.key}`)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              range === r.key
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="Report date range"
+        active={range}
+        onChange={(key) => router.push(`/service/report?range=${key}`)}
+        tabs={RANGES.map((r) => ({ key: r.key, label: r.label }))}
+        className="w-fit"
+      />
 
       {isEmpty ? (
         <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 py-16 text-center">

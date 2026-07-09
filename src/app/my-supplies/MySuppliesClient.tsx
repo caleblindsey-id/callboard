@@ -3,7 +3,10 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Minus, X, Check, Trash2, SprayCan } from 'lucide-react'
-import type { SupplyCatalogRow, SupplyRequestRow, SupplyRequestStatus } from '@/types/database'
+import type { SupplyCatalogRow, SupplyRequestRow } from '@/types/database'
+import InlineError from '@/components/ui/InlineError'
+import EmptyState, { emptyCopy } from '@/components/ui/EmptyState'
+import Badge from '@/components/ui/Badge'
 
 type Props = {
   catalog: SupplyCatalogRow[]
@@ -16,13 +19,6 @@ type CartLine = {
   unit: string | null
   quantity: number
   catalog_id: string | null
-}
-
-const STATUS_BADGE: Record<SupplyRequestStatus, { label: string; classes: string }> = {
-  pending: { label: 'Pending', classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
-  ready: { label: 'Ready for pickup', classes: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
-  picked_up: { label: 'Picked up', classes: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
-  denied: { label: 'Denied', classes: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
 }
 
 function fmtDate(iso: string | null): string {
@@ -220,11 +216,7 @@ export default function MySuppliesClient({ catalog, requests }: Props) {
           </div>
         )}
 
-        {error && (
-          <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300">
-            {error}
-          </div>
-        )}
+        {error && <InlineError message={error} />}
 
         <button
           type="button"
@@ -241,14 +233,10 @@ export default function MySuppliesClient({ catalog, requests }: Props) {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white">My requests</h2>
         {requests.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 py-10 text-center">
-            <SprayCan className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">No supply requests yet.</p>
-          </div>
+          <EmptyState icon={SprayCan} message={emptyCopy('supply requests', false)} />
         ) : (
           <ul className="space-y-3">
             {requests.map((r) => {
-              const badge = STATUS_BADGE[r.status]
               return (
                 <li
                   key={r.id}
@@ -256,9 +244,7 @@ export default function MySuppliesClient({ catalog, requests }: Props) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${badge.classes}`}>
-                        {badge.label}
-                      </span>
+                      <Badge domain="supply" status={r.status} />
                       <span className="ml-2 text-xs text-gray-400">{fmtDate(r.created_at)}</span>
                     </div>
                     {r.status === 'pending' && (

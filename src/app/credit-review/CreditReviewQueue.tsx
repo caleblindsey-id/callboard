@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Mail, ChevronRight } from 'lucide-react'
 import type { CreditReviewQueueItem } from '@/lib/db/credit-reviews'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
+import { getStatusMeta } from '@/lib/status-meta'
 
 const STALE_MS = 48 * 60 * 60 * 1000
 
@@ -159,7 +160,7 @@ export default function CreditReviewQueue({
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-amber-50 dark:bg-amber-950/20">
           <h2 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-            Pending AR review ({pending.length})
+            {getStatusMeta('creditReview', 'pending').label} ({pending.length})
           </h2>
           <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
             Awaiting AR&apos;s release/block decision. Oldest first.
@@ -175,7 +176,7 @@ export default function CreditReviewQueue({
       <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-red-50 dark:bg-red-950/20">
           <h2 className="text-sm font-semibold text-red-800 dark:text-red-300">
-            Blocked by AR ({blocked.length})
+            {getStatusMeta('creditReview', 'blocked').label} ({blocked.length})
           </h2>
           <p className="text-xs text-red-700/80 dark:text-red-400/80 mt-0.5">
             Work is locked until a manager unblocks with the release passcode.

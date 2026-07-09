@@ -2,7 +2,9 @@ import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import SyncStatusBanner from '@/components/SyncStatusBanner'
+import DeniedBanner from '@/components/DeniedBanner'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
+import ZoneErrorBoundary from '@/components/dashboard/ZoneErrorBoundary'
 import TechKpiSection from '@/components/dashboard/sections/TechKpiSection'
 import TechWorkSection from '@/components/dashboard/sections/TechWorkSection'
 import KpiSection from '@/components/dashboard/sections/KpiSection'
@@ -25,7 +27,7 @@ import {
   PartsSkeleton,
   MoneySkeleton,
   ScheduleSkeleton,
-  ReadyToBillSkeleton,
+  QueueStatCardSkeleton,
   TechKpiSkeleton,
   TechWorkSkeleton,
 } from '@/components/dashboard/sections/skeletons'
@@ -33,12 +35,15 @@ import {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ tab?: string; error?: string }>
 }) {
   const now = new Date()
   const month = now.getMonth() + 1
   const year = now.getFullYear()
   const monthName = now.toLocaleString('default', { month: 'long' })
+
+  const params = await searchParams
+  const showDenied = params.error === 'denied'
 
   const user = await getCurrentUser()
   // Defense in depth: an authenticated session with no profile row should never
@@ -49,7 +54,6 @@ export default async function DashboardPage({
 
   // ---- Tech view: static shell paints immediately, data streams in ----
   if (isTech && user) {
-    const params = await searchParams
     return (
       <div className="p-6 space-y-6">
         <div>
@@ -59,19 +63,25 @@ export default async function DashboardPage({
           </p>
         </div>
 
-        <Suspense fallback={<TechKpiSkeleton />}>
-          <TechKpiSection userId={user.id} />
-        </Suspense>
+        {showDenied && <DeniedBanner />}
 
-        <Suspense fallback={<TechWorkSkeleton />}>
-          <TechWorkSection
-            userId={user.id}
-            month={month}
-            year={year}
-            monthName={monthName}
-            initialTab={params.tab ?? ''}
-          />
-        </Suspense>
+        <ZoneErrorBoundary>
+          <Suspense fallback={<TechKpiSkeleton />}>
+            <TechKpiSection userId={user.id} />
+          </Suspense>
+        </ZoneErrorBoundary>
+
+        <ZoneErrorBoundary>
+          <Suspense fallback={<TechWorkSkeleton />}>
+            <TechWorkSection
+              userId={user.id}
+              month={month}
+              year={year}
+              monthName={monthName}
+              initialTab={params.tab ?? ''}
+            />
+          </Suspense>
+        </ZoneErrorBoundary>
       </div>
     )
   }
@@ -86,69 +96,104 @@ export default async function DashboardPage({
         </p>
       </div>
 
-      <Suspense fallback={<KpiSkeleton />}>
-        <KpiSection />
-      </Suspense>
+      {showDenied && <DeniedBanner />}
 
-      <Suspense fallback={<AlertsSkeleton />}>
-        <AlertsSection />
-      </Suspense>
+      <ZoneErrorBoundary>
+        <Suspense fallback={<KpiSkeleton />}>
+          <KpiSection />
+        </Suspense>
+      </ZoneErrorBoundary>
 
-      <Suspense fallback={<StatusGridSkeleton />}>
-        <PmStatusSection month={month} year={year} monthName={monthName} />
-      </Suspense>
+      <ZoneErrorBoundary>
+        <Suspense fallback={<AlertsSkeleton />}>
+          <AlertsSection />
+        </Suspense>
+      </ZoneErrorBoundary>
 
-      <Suspense fallback={<StatusGridSkeleton />}>
-        <ServiceStatusSection />
-      </Suspense>
+      <ZoneErrorBoundary>
+        <Suspense fallback={<StatusGridSkeleton />}>
+          <PmStatusSection month={month} year={year} monthName={monthName} />
+        </Suspense>
+      </ZoneErrorBoundary>
 
-      <Suspense fallback={<PartsSkeleton />}>
-        <PartsPipelineSection />
-      </Suspense>
+      <ZoneErrorBoundary>
+        <Suspense fallback={<StatusGridSkeleton />}>
+          <ServiceStatusSection />
+        </Suspense>
+      </ZoneErrorBoundary>
 
-      <Suspense fallback={<ReadyToBillSkeleton />}>
-        <EstimateFollowUpSection />
-      </Suspense>
+      <ZoneErrorBoundary>
+        <Suspense fallback={<PartsSkeleton />}>
+          <PartsPipelineSection />
+        </Suspense>
+      </ZoneErrorBoundary>
 
-      <Suspense fallback={<ReadyToBillSkeleton />}>
-        <DeclinedEstimatesSection />
-      </Suspense>
+      <section>
+        <ZoneHeader label="Queues" />
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <EstimateFollowUpSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <Suspense fallback={<ReadyToBillSkeleton />}>
-        <WarrantyClaimsSection />
-      </Suspense>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <DeclinedEstimatesSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <Suspense fallback={<ReadyToBillSkeleton />}>
-        <PoNeededSection />
-      </Suspense>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <WarrantyClaimsSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <Suspense fallback={<ReadyToBillSkeleton />}>
-        <ReadyToBillSection />
-      </Suspense>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <PoNeededSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <Suspense fallback={<ReadyToBillSkeleton />}>
-        <ReadyForPickupSection />
-      </Suspense>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <ReadyToBillSection />
+            </Suspense>
+          </ZoneErrorBoundary>
 
-      <Suspense fallback={<MoneySkeleton />}>
-        <MoneySection />
-      </Suspense>
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <ReadyForPickupSection />
+            </Suspense>
+          </ZoneErrorBoundary>
+        </div>
+      </section>
 
-      <Suspense fallback={<ScheduleSkeleton />}>
-        <ScheduleSection month={month} year={year} monthName={monthName} />
-      </Suspense>
+      <ZoneErrorBoundary>
+        <Suspense fallback={<MoneySkeleton />}>
+          <MoneySection />
+        </Suspense>
+      </ZoneErrorBoundary>
+
+      <ZoneErrorBoundary>
+        <Suspense fallback={<ScheduleSkeleton />}>
+          <ScheduleSection month={month} year={year} monthName={monthName} />
+        </Suspense>
+      </ZoneErrorBoundary>
 
       <section>
         <ZoneHeader label="Sync Status" />
-        <Suspense
-          fallback={
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-              <div className="h-5 w-40 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
-            </div>
-          }
-        >
-          <SyncStatusBanner />
-        </Suspense>
+        <ZoneErrorBoundary>
+          <Suspense
+            fallback={
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+                <div className="h-5 w-40 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
+              </div>
+            }
+          >
+            <SyncStatusBanner />
+          </Suspense>
+        </ZoneErrorBoundary>
       </section>
     </div>
   )

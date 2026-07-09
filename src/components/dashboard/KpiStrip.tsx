@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 
 type Tone = 'blue' | 'red' | 'amber' | 'purple' | 'emerald'
 
@@ -38,8 +39,11 @@ function KpiCard({ label, value, subtitle, tone, href }: KpiCardProps) {
   const inner = (
     <>
       <div className={`text-xs uppercase tracking-wide font-medium ${t.label}`}>{label}</div>
-      <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
-        {value}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
+          {value}
+        </div>
+        {href && <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />}
       </div>
       {subtitle && (
         <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{subtitle}</div>

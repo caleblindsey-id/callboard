@@ -151,6 +151,7 @@ export async function proxy(request: NextRequest) {
       }
       const url = request.nextUrl.clone()
       url.pathname = '/'
+      url.searchParams.set('error', 'denied')
       return NextResponse.redirect(url)
     }
   }

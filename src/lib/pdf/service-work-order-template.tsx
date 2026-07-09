@@ -2,6 +2,7 @@ import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/render
 import { APP_NAME } from '@/lib/branding'
 import { partLabel } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
+import { PdfHeader, PdfFooter, type PdfHeaderLine } from '@/lib/pdf/chrome'
 
 // ============================================================
 // Types
@@ -79,15 +80,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     backgroundColor: '#ffffff',
   },
-  header: {
-    marginBottom: 20,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#111111',
-    paddingBottom: 10,
-  },
-  logo: { width: 160, height: 50, objectFit: 'contain' as const, marginBottom: 6 },
-  title: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: '#111111', letterSpacing: 0.3 },
-  subtitle: { fontSize: 11, color: '#444444', marginTop: 3 },
   sectionLabel: {
     fontSize: 7,
     fontFamily: 'Helvetica-Bold',
@@ -158,19 +150,6 @@ const styles = StyleSheet.create({
   signatureCaption: { fontSize: 7.5, color: '#888888', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 1 },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   photoImage: { width: 164, height: 110, objectFit: 'cover' as const, borderWidth: 0.5, borderColor: '#e5e5e5', margin: 3 },
-  footer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 48,
-    right: 48,
-    textAlign: 'center',
-    fontSize: 7,
-    color: '#aaaaaa',
-    fontStyle: 'italic',
-    borderTopWidth: 0.5,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 6,
-  },
 })
 
 // ============================================================
@@ -207,17 +186,17 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
     <Document>
       <Page size="LETTER" style={styles.page} wrap>
         {/* Header */}
-        <View style={styles.header} fixed>
-          {logoBase64 && <Image src={logoBase64} style={styles.logo} />}
-          <Text style={styles.title}>Service Work Order</Text>
-          <Text style={styles.subtitle}>
-            {workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : 'Work Order'}
-            {workOrder.synergyOrderNumber ? `  |  Synergy #${workOrder.synergyOrderNumber}` : ''}
-            {workOrder.poNumber ? `  |  PO #${workOrder.poNumber}` : ''}
-            {'  |  '}
-            {workOrder.completedDate}
-          </Text>
-        </View>
+        <PdfHeader
+          logoBase64={logoBase64}
+          companyName={companyName ?? APP_NAME}
+          title="Service Work Order"
+          documentNumber={workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : undefined}
+          rightLines={[
+            workOrder.synergyOrderNumber ? { text: `Synergy Order #: ${workOrder.synergyOrderNumber}` } : null,
+            workOrder.poNumber ? { text: `PO: ${workOrder.poNumber}` } : null,
+            { text: workOrder.completedDate },
+          ].filter((line): line is PdfHeaderLine => line !== null)}
+        />
 
         {/* Customer */}
         <Text style={styles.sectionLabel}>Customer</Text>
@@ -424,9 +403,10 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
         )}
 
         {/* Footer */}
-        <Text style={styles.footer} fixed>
-          Work Order — {companyName ?? APP_NAME} Service Department
-        </Text>
+        <PdfFooter
+          left={workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : 'Work Order'}
+          right={`${companyName ?? APP_NAME} Service Department`}
+        />
       </Page>
     </Document>
   )

@@ -1,14 +1,24 @@
 'use client'
 
-import { useState, useDeferredValue, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import { ChevronRight } from 'lucide-react'
+import { useDeferredValue, useMemo } from 'react'
+import Link from 'next/link'
+import { ChevronRight, Wrench } from 'lucide-react'
 import type { TechEquipmentItem } from './page'
 import { formatDate } from '@/lib/format'
+import { daysOverdue } from '@/lib/overdue'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
+import RowLink from '@/components/ui/RowLink'
+import EmptyState, { emptyCopy } from '@/components/ui/EmptyState'
+import { OverdueBadge } from '@/components/StatusBadge'
+import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 interface TechEquipmentListProps {
   equipment: TechEquipmentItem[]
+  // Seeded server-side from searchParams (mirrors EquipmentList.tsx / MyPartsClient)
+  // so the URL is the source of truth on mount — a client useSearchParams() here
+  // would trip the Suspense/CSR-bailout build error.
+  initialSearch: string
 }
 
 type ServiceBucket = 'overdue' | 'due' | 'future' | 'none'
@@ -17,9 +27,13 @@ function classifyNextService(dateStr: string | null): {
   text: string
   className: string
   bucket: ServiceBucket
+  // Days past due — 0 unless bucket is 'overdue'. Feeds the shared
+  // OverdueBadge (src/components/StatusBadge.tsx), which owns the label/
+  // day-count rendering; this function only decides whether it's overdue.
+  days: number
 } {
   if (!dateStr) {
-    return { text: '—', className: 'text-gray-400 dark:text-gray-600', bucket: 'none' }
+    return { text: '—', className: 'text-gray-400 dark:text-gray-600', bucket: 'none', days: 0 }
   }
 
   const [yearStr, monthStr] = dateStr.split('-')
@@ -40,6 +54,7 @@ function classifyNextService(dateStr: string | null): {
       text: label,
       className: 'text-red-600 dark:text-red-400 font-medium',
       bucket: 'overdue',
+      days: daysOverdue({ month, year }),
     }
   }
   if (year === currentYear && month === currentMonth) {
@@ -47,12 +62,14 @@ function classifyNextService(dateStr: string | null): {
       text: label,
       className: 'text-amber-600 dark:text-amber-400 font-medium',
       bucket: 'due',
+      days: 0,
     }
   }
   return {
     text: label,
     className: 'text-gray-600 dark:text-gray-400',
     bucket: 'future',
+    days: 0,
   }
 }
 
@@ -63,17 +80,11 @@ const BUCKET_ORDER: Record<ServiceBucket, number> = {
   none: 3,
 }
 
-function OverdueBadge() {
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
-      Overdue
-    </span>
-  )
-}
-
-export default function TechEquipmentList({ equipment }: TechEquipmentListProps) {
-  const router = useRouter()
-  const [search, setSearch] = useState('')
+export default function TechEquipmentList({ equipment, initialSearch }: TechEquipmentListProps) {
+  // Search lives in the URL so drill-in-then-Back restores the typed search
+  // (mirrors EquipmentList.tsx / MyPartsClient's tab sync).
+  const { filters, set } = useUrlFilters({ q: initialSearch })
+  const search = filters.q
   const deferredSearch = useDeferredValue(search)
 
   const filtered = useMemo(() => {
@@ -102,23 +113,24 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <input
-          type="text"
-          placeholder="Search by customer or serial..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full min-h-[44px] lg:min-h-0 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 lg:py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-      </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('q', v, { debounce: true }),
+          placeholder: 'Search by customer or serial...',
+        }}
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            {equipment.length === 0
-              ? "No equipment yet — once you're assigned to a PM or service ticket, the equipment will appear here."
-              : 'No equipment matches that search.'}
-          </div>
+          <EmptyState
+            icon={Wrench}
+            message={
+              equipment.length === 0
+                ? "No equipment yet — once you're assigned to a PM or service ticket, the equipment will appear here."
+                : emptyCopy('equipment', true)
+            }
+          />
         ) : (
           <>
             {/* Mobile cards */}
@@ -126,17 +138,17 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
               {filtered.map((e) => {
                 const next = classifyNextService(e.nextServiceDate)
                 return (
-                  <div
+                  <Link
                     key={e.id}
-                    className="px-4 py-3 min-h-[44px] cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
-                    onClick={() => router.push(`/equipment/${e.id}`)}
+                    href={`/equipment/${e.id}`}
+                    className="block px-4 py-3 min-h-[44px] active:bg-gray-50 dark:active:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-inset"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
                           {e.customers?.name ?? '—'}
                         </span>
-                        {next.bucket === 'overdue' && <OverdueBadge />}
+                        {next.bucket === 'overdue' && <OverdueBadge days={next.days} />}
                       </div>
                       <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
                     </div>
@@ -153,7 +165,7 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                       Last: {formatDate(e.lastServiceDate)} · Next:{' '}
                       <span className={next.className}>{next.text}</span>
                     </p>
-                  </div>
+                  </Link>
                 )
               })}
             </div>
@@ -169,22 +181,20 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Location</th>
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Last Service</th>
                     <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Next Service</th>
+                    <th className="px-3 py-3 w-8" aria-label="Open equipment"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {filtered.map((e) => {
                     const next = classifyNextService(e.nextServiceDate)
                     return (
-                      <tr
-                        key={e.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                        onClick={() => router.push(`/equipment/${e.id}`)}
-                      >
+                      <tr key={e.id} className="relative hover:bg-gray-50 dark:hover:bg-gray-700">
                         <td className="px-5 py-3 text-gray-900 dark:text-white">
                           <div className="flex items-center gap-2">
                             <span>{e.customers?.name ?? '—'}</span>
-                            {next.bucket === 'overdue' && <OverdueBadge />}
+                            {next.bucket === 'overdue' && <OverdueBadge days={next.days} />}
                           </div>
+                          <RowLink href={`/equipment/${e.id}`} label={`View equipment for ${e.customers?.name ?? 'this record'}`} />
                         </td>
                         <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
                           {[e.make, e.model].filter(Boolean).join(' ') || '—'}
@@ -200,6 +210,9 @@ export default function TechEquipmentList({ equipment }: TechEquipmentListProps)
                         </td>
                         <td className="px-5 py-3">
                           <span className={next.className}>{next.text}</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                         </td>
                       </tr>
                     )

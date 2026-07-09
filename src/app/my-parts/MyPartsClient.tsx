@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Check, ChevronRight, PackageCheck } from 'lucide-react'
 import PartsStatusBadge from '@/components/PartsStatusBadge'
 import ScrollableTable from '@/components/ScrollableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
+import RowLink from '@/components/ui/RowLink'
+import InlineError from '@/components/ui/InlineError'
+import EmptyState from '@/components/ui/EmptyState'
 import { markPartCollected, ticketDeepLink } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
@@ -17,12 +21,16 @@ type Props = {
 
 const VALID_TABS: MyPartStatus[] = ['received', 'from_stock', 'ordered', 'requested', 'pending_review']
 
+// Tab wording matches status-meta's canonical parts vocabulary except
+// 'received', which keeps its tech-facing "Ready for Pickup" name — that's an
+// action state techs rely on, not the raw status word. Per-part badges below
+// (PartsStatusBadge) render the canonical label regardless of which tab they're in.
 const TABS: { key: MyPartStatus; label: string }[] = [
   { key: 'received', label: 'Ready for Pickup' },
   { key: 'from_stock', label: 'From Stock' },
-  { key: 'ordered', label: 'On Order' },
-  { key: 'requested', label: 'Awaiting Order' },
-  { key: 'pending_review', label: 'Pending Review' },
+  { key: 'ordered', label: 'Ordered' },
+  { key: 'requested', label: 'Requested' },
+  { key: 'pending_review', label: 'In Review' },
 ]
 
 const EMPTY_COPY: Record<MyPartStatus, string> = {
@@ -172,10 +180,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
     return (
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          handleCollect(row)
-        }}
+        onClick={() => handleCollect(row)}
         disabled={isPending}
         className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50 min-h-[36px]"
       >
@@ -205,52 +210,22 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
 
   return (
     <div className="space-y-6">
-      {actionError && (
-        <div className="rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300">
-          {actionError}
-        </div>
-      )}
+      {actionError && <InlineError message={actionError} />}
       {/* Status tabs — Ready for Pickup is the most actionable, so it leads. */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter parts by status">
-          {TABS.map((tab) => {
-            const isActive = active === tab.key
-            const count = byStatus[tab.key].length
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => set('tab', tab.key)}
-                className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
-                  isActive
-                    ? 'bg-slate-800 text-white'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {tab.label}
-                <span
-                  className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] text-xs font-semibold ${
-                    isActive
-                      ? 'bg-white/20 text-white'
-                      : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <Tabs
+        ariaLabel="Filter parts by status"
+        active={active}
+        onChange={(key) => set('tab', key)}
+        tabs={TABS.map((tab): TabItem => ({
+          key: tab.key,
+          label: tab.label,
+          count: byStatus[tab.key].length,
+        }))}
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         {visible.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 p-10 text-center">
-            <PackageCheck className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">{EMPTY_COPY[active]}</p>
-          </div>
+          <EmptyState icon={PackageCheck} message={EMPTY_COPY[active]} />
         ) : (
           <>
             {/* Mobile: stacked cards */}
@@ -258,19 +233,9 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
               {visible.map((row) => (
                 <div
                   key={rowKey(row)}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => router.push(ticketDeepLink(row.source, row.ticket_id))}
-                  onKeyDown={(e) => {
-                    // Ignore key events bubbling up from the Mark Picked Up button.
-                    if (e.target !== e.currentTarget) return
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      router.push(ticketDeepLink(row.source, row.ticket_id))
-                    }
-                  }}
-                  className="px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
+                  className="relative px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700"
                 >
+                  <RowLink href={ticketDeepLink(row.source, row.ticket_id)} label={`Open ticket for ${partLabel(row) || 'this part'}`} />
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {partLabel(row) || '—'}
@@ -300,7 +265,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                   {displayStatus(row) === 'received' && (
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <span>{renderAging(row)}</span>
-                      {renderPickup(row)}
+                      <span className="relative z-10">{renderPickup(row)}</span>
                     </div>
                   )}
                 </div>
@@ -326,13 +291,10 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {visible.map((row) => (
-                    <tr
-                      key={rowKey(row)}
-                      onClick={() => router.push(ticketDeepLink(row.source, row.ticket_id))}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                    >
+                    <tr key={rowKey(row)} className="relative hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
                         {partLabel(row) || '—'}
+                        <RowLink href={ticketDeepLink(row.source, row.ticket_id)} label={`Open ticket for ${partLabel(row) || 'this part'}`} />
                       </td>
                       <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                         {machineLabel(row) || '—'}
@@ -361,7 +323,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         {displayStatus(row) === 'received' && (
-                          <span className="mr-2 align-middle">{renderPickup(row)}</span>
+                          <span className="relative z-10 mr-2 align-middle">{renderPickup(row)}</span>
                         )}
                         <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 inline align-middle" />
                       </td>

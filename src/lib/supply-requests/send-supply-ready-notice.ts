@@ -14,7 +14,7 @@ import type { SupplyRequestItem } from '@/types/database'
 export type SupplyReadyResult =
   | { sent: true; messageId: string }
   | { sent: true; messageId: null }            // push/in-app went out, email skipped (no tech email)
-  | { sent: false; reason: 'not_found' | 'no_tech' | 'already_notified' }
+  | { sent: false; reason: 'not_found' | 'no_tech' | 'already_notified' | 'all_denied' }
 
 const SETTING_KEYS = ['company_name', 'service_phone', 'pickup_address', 'pickup_hours', 'email_from_address'] as const
 
@@ -37,11 +37,20 @@ export async function sendSupplyReadyNotice(
   const techId = req.requested_by as string | null
   if (!techId) return { sent: false, reason: 'no_tech' }
 
-  const items = ((req.items ?? []) as SupplyRequestItem[]).map((it) => ({
-    name: it.name,
-    quantity: Number(it.quantity) || 1,
-    unit: it.unit ?? null,
-  }))
+  // Exclude lines the office denied via the line-edit path (feedback #65) —
+  // matches the filter exportPullList/exportPullListPdf and MySuppliesClient
+  // already apply so the tech isn't told a denied item is ready.
+  const items = ((req.items ?? []) as SupplyRequestItem[])
+    .filter((it) => !it.denied)
+    .map((it) => ({
+      name: it.name,
+      quantity: Number(it.quantity) || 1,
+      unit: it.unit ?? null,
+    }))
+
+  // Every requested line was denied — nothing is actually ready, so don't send
+  // a "ready for pickup" notice at all.
+  if (items.length === 0) return { sent: false, reason: 'all_denied' }
 
   // --- Channel 1: Web Push (instant, best-effort) ---
   const pushBody = items.length === 1 ? items[0].name : `${items.length} items`

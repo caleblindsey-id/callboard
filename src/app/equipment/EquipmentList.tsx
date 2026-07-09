@@ -1,14 +1,12 @@
 'use client'
 
-import { useState, useDeferredValue, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import { ChevronRight } from 'lucide-react'
+import { useDeferredValue, useMemo } from 'react'
+import { Wrench } from 'lucide-react'
 import type { EquipmentListItem } from './page'
-import AddEquipmentModal from './AddEquipmentModal'
 import { formatDate } from '@/lib/format'
-import SortHeader from '@/components/SortHeader'
-import ScrollableTable from '@/components/ScrollableTable'
-import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import FilterBar from '@/components/ui/FilterBar'
+import DataTable, { type DataTableColumn } from '@/components/ui/DataTable'
+import EmptyState, { emptyCopy } from '@/components/ui/EmptyState'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 
 interface EquipmentListProps {
@@ -16,23 +14,12 @@ interface EquipmentListProps {
   initialFilters: { q: string; active: string }
 }
 
-type EquipmentSortKey =
-  | 'customer'
-  | 'makeModel'
-  | 'serial'
-  | 'location'
-  | 'lastService'
-  | 'nextService'
-  | 'status'
+function makeModelRaw(e: EquipmentListItem): string | null {
+  return [e.make, e.model].filter(Boolean).join(' ') || null
+}
 
-const EQUIPMENT_SORT_ACCESSORS: SortAccessors<EquipmentListItem, EquipmentSortKey> = {
-  customer: e => e.customers?.name,
-  makeModel: e => [e.make, e.model].filter(Boolean).join(' ') || null,
-  serial: e => e.serial_number,
-  location: e => e.location_on_site,
-  lastService: e => e.lastServiceDate,
-  nextService: e => e.nextServiceDate,
-  status: e => (e.active ? 0 : 1),
+function makeModel(e: EquipmentListItem): string {
+  return makeModelRaw(e) ?? '—'
 }
 
 function formatNextService(dateStr: string | null): { text: string; className: string } {
@@ -60,13 +47,74 @@ function formatNextService(dateStr: string | null): { text: string; className: s
   return { text: label, className: 'text-gray-600 dark:text-gray-400' }
 }
 
+const EQUIPMENT_COLUMNS: DataTableColumn<EquipmentListItem>[] = [
+  {
+    key: 'customer',
+    header: 'Customer',
+    sortValue: (e) => e.customers?.name,
+    cardPrimary: true,
+    className: 'text-gray-900 dark:text-white',
+    render: (e) => e.customers?.name ?? '—',
+  },
+  {
+    key: 'makeModel',
+    header: 'Make / Model',
+    sortValue: (e) => makeModelRaw(e),
+    cardLabel: '',
+    render: (e) => makeModel(e),
+  },
+  {
+    key: 'serial',
+    header: 'Serial Number',
+    sortValue: (e) => e.serial_number,
+    cardLabel: 'S/N',
+    render: (e) => e.serial_number ?? '—',
+  },
+  {
+    key: 'location',
+    header: 'Location',
+    sortValue: (e) => e.location_on_site,
+    render: (e) => e.location_on_site ?? '—',
+  },
+  {
+    key: 'lastService',
+    header: 'Last Service',
+    sortValue: (e) => e.lastServiceDate,
+    render: (e) => formatDate(e.lastServiceDate),
+  },
+  {
+    key: 'nextService',
+    header: 'Next Service',
+    sortValue: (e) => e.nextServiceDate,
+    render: (e) => {
+      const next = formatNextService(e.nextServiceDate)
+      return <span className={next.className}>{next.text}</span>
+    },
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    sortValue: (e) => (e.active ? 0 : 1),
+    cardLabel: '',
+    render: (e) => (
+      <span
+        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+          e.active
+            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+        }`}
+      >
+        {e.active ? 'Active' : 'Inactive'}
+      </span>
+    ),
+  },
+]
+
 export default function EquipmentList({ equipment, initialFilters }: EquipmentListProps) {
-  const router = useRouter()
   // Filters live in the URL so the Back button restores the filtered view.
   const { filters, set } = useUrlFilters(initialFilters)
   const search = filters.q
   const showActive = filters.active !== 'inactive'
-  const [modalOpen, setModalOpen] = useState(false)
 
   // useDeferredValue lets React keep the input snappy on every keystroke and
   // recompute the filtered list at lower priority — input stays responsive
@@ -86,173 +134,39 @@ export default function EquipmentList({ equipment, initialFilters }: EquipmentLi
     })
   }, [equipment, showActive, deferredSearch])
 
-  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
-    EquipmentListItem,
-    EquipmentSortKey
-  >(filtered, EQUIPMENT_SORT_ACCESSORS)
-
   return (
     <>
       {/* Controls */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="text"
-            placeholder="Search by customer or serial number..."
-            value={search}
-            onChange={(e) => set('q', e.target.value, { debounce: true })}
-            className="flex-1 min-w-[200px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => set('active', '')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                showActive
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-              }`}
-            >
-              Active
-            </button>
-            <button
-              onClick={() => set('active', 'inactive')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                !showActive
-                  ? 'bg-slate-800 text-white'
-                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-              }`}
-            >
-              Inactive
-            </button>
-          </div>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors"
-          >
-            Add Equipment
-          </button>
-        </div>
-      </div>
-
-      {/* Equipment list */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {filtered.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            No equipment found.
-          </div>
-        ) : (
-          <>
-            {/* Mobile cards — hidden on desktop */}
-            <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {sorted.map((e) => {
-                const next = formatNextService(e.nextServiceDate)
-                return (
-                  <div
-                    key={e.id}
-                    className="px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700"
-                    onClick={() => router.push(`/equipment/${e.id}`)}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {e.customers?.name ?? '—'}
-                      </span>
-                      <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {[e.make, e.model].filter(Boolean).join(' ') || '—'}
-                      {e.serial_number ? ` · S/N: ${e.serial_number}` : ''}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {e.location_on_site && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{e.location_on_site}</span>
-                      )}
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          e.active
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {e.active ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Last: {formatDate(e.lastServiceDate)} · Next: <span className={next.className}>{next.text}</span>
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Desktop table — hidden on mobile */}
-            <ScrollableTable className="hidden lg:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                    <SortHeader label="Make / Model" colKey="makeModel" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                    <SortHeader label="Serial Number" colKey="serial" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                    <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                    <SortHeader label="Last Service" colKey="lastService" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                    <SortHeader label="Next Service" colKey="nextService" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                    <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="px-5 py-3 font-medium text-gray-600 dark:text-gray-400" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {sorted.map((e) => {
-                    const next = formatNextService(e.nextServiceDate)
-                    return (
-                      <tr
-                        key={e.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                        onClick={() => router.push(`/equipment/${e.id}`)}
-                      >
-                        <td className="px-5 py-3 text-gray-900 dark:text-white">
-                          {e.customers?.name ?? '—'}
-                        </td>
-                        <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
-                          {[e.make, e.model].filter(Boolean).join(' ') || '—'}
-                        </td>
-                        <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
-                          {e.serial_number ?? '—'}
-                        </td>
-                        <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
-                          {e.location_on_site ?? '—'}
-                        </td>
-                        <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
-                          {formatDate(e.lastServiceDate)}
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className={next.className}>{next.text}</span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              e.active
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-                                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                            }`}
-                          >
-                            {e.active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </ScrollableTable>
-          </>
-        )}
-      </div>
-
-      <AddEquipmentModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreated={() => {
-          setModalOpen(false)
-          router.refresh()
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('q', v, { debounce: true }),
+          placeholder: 'Search by customer or serial number...',
         }}
+        segmented={{
+          options: [
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ],
+          value: showActive ? 'active' : 'inactive',
+          onChange: (v) => set('active', v === 'inactive' ? 'inactive' : ''),
+          ariaLabel: 'Filter equipment by active status',
+        }}
+        activeCount={showActive ? 0 : 1}
+      />
+
+      <DataTable
+        rows={filtered}
+        columns={EQUIPMENT_COLUMNS}
+        rowKey={(e) => e.id}
+        rowHref={(e) => `/equipment/${e.id}`}
+        rowAriaLabel={(e) => `View ${e.customers?.name ?? 'equipment'}`}
+        empty={
+          <EmptyState
+            icon={Wrench}
+            message={emptyCopy('equipment', Boolean(search.trim()) || !showActive)}
+          />
+        }
       />
     </>
   )

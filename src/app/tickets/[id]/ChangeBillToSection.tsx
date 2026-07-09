@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, X, Search, AlertCircle, Check, Lock } from 'lucide-react'
+import { Building2, Search, AlertCircle, Check, Lock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
+import Modal from '@/components/ui/Modal'
 
 type CustomerOption = {
   id: number
@@ -142,7 +143,7 @@ export default function ChangeBillToSection({
       )}
 
       {view === 'pick' && (
-        <SheetShell title="Change Bill-To Account" onClose={close}>
+        <Modal open onClose={close} title="Change Bill-To Account" sheet size="lg">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
               Currently billing: <span className="font-medium text-gray-700 dark:text-gray-300">{currentLabel}</span>
@@ -185,11 +186,27 @@ export default function ChangeBillToSection({
                 ))}
             </ul>
           </div>
-        </SheetShell>
+        </Modal>
       )}
 
       {view === 'confirm' && selected && (
-        <SheetShell title="Confirm Bill-To Change" onClose={close} onBack={() => setView('pick')}>
+        <Modal
+          open
+          onClose={close}
+          title="Confirm Bill-To Change"
+          headerLeft={
+            <button
+              type="button"
+              onClick={() => setView('pick')}
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1"
+            >
+              Back
+            </button>
+          }
+          sheet
+          size="lg"
+          dismissible={!submitting}
+        >
           <div className="p-4 space-y-4">
             <p className="text-sm text-gray-700 dark:text-gray-300">
               This repoints who the work order bills to. The current ship-to is cleared if it
@@ -225,51 +242,8 @@ export default function ChangeBillToSection({
               {submitting ? 'Saving...' : 'Change Bill-To'}
             </button>
           </div>
-        </SheetShell>
+        </Modal>
       )}
     </>
-  )
-}
-
-function SheetShell({
-  title,
-  onClose,
-  onBack,
-  children,
-}: {
-  title: string
-  onClose: () => void
-  onBack?: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-white dark:bg-gray-800 sm:rounded-lg rounded-t-2xl shadow-lg border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
-          <div className="flex items-center gap-2">
-            {onBack && (
-              <button
-                type="button"
-                onClick={onBack}
-                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1"
-              >
-                Back
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 -m-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-        {children}
-      </div>
-    </div>
   )
 }

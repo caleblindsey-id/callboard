@@ -9,6 +9,7 @@ import { formatPhoneNumber } from '@/lib/phone'
 import { normalizeSerial, serialsMatch, serialsNearMatch } from '@/lib/equipment'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Modal from '@/components/ui/Modal'
 import { X, Plus, Minus, Trash2 } from 'lucide-react'
 
 type DuplicateMatch = {
@@ -423,11 +424,10 @@ export default function AddEquipmentModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={handleClose} />
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <>
+      <Modal open={open} onClose={handleClose} size="xl" dismissible={!loading} ariaLabelledBy="add-equipment-title" className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+          <h3 id="add-equipment-title" className="text-base font-semibold text-gray-900 dark:text-white">
             Add Equipment
           </h3>
           <button
@@ -817,7 +817,7 @@ export default function AddEquipmentModal({
             </button>
           </div>
         </form>
-      </div>
+      </Modal>
       <ConfirmDialog
         open={confirmDiscardOpen}
         title="Discard changes?"
@@ -827,6 +827,6 @@ export default function AddEquipmentModal({
         onConfirm={discardAndClose}
         onCancel={() => setConfirmDiscardOpen(false)}
       />
-    </div>
+    </>
   )
 }

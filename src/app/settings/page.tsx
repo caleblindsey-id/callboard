@@ -7,8 +7,16 @@ import { getAllSupplyCatalog } from '@/lib/db/supply-requests'
 import { SyncLogRow } from '@/types/database'
 import SettingsContent from './SettingsContent'
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  // Next 15+ delivers searchParams as a Promise — reading properties without
+  // awaiting silently yields undefined (see parts-queue/page.tsx).
+  searchParams?: Promise<{ tab?: string | string[] }>
+}) {
   await requireRole('super_admin')
+  const params = (await searchParams) ?? {}
+  const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab
   const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, warrantyReminderEmail, pickupAddress, pickupHours, passcodeHash, salesReps, supplyCatalog] = await Promise.all([
     getUsers(),
     getSyncLog(),
@@ -33,7 +41,7 @@ export default async function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Settings</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Manage users and view sync history
+          Rates, documents, notifications, people, catalog, and system settings
         </p>
       </div>
       <SettingsContent
@@ -53,6 +61,7 @@ export default async function SettingsPage() {
         passcodeConfigured={Boolean(passcodeHash && passcodeHash.length > 0)}
         salesReps={salesReps}
         supplyCatalog={supplyCatalog}
+        initialTab={rawTab ?? ''}
       />
     </div>
   )

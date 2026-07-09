@@ -60,7 +60,8 @@ export function PartsSkeleton() {
   return (
     <section>
       <ZoneSkeleton />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <Card />
         <Card />
         <Card />
         <Card />
@@ -82,12 +83,19 @@ export function MoneySkeleton() {
   )
 }
 
-export function ReadyToBillSkeleton() {
+// Matches QueueStatCard's row layout (icon+title/subtitle left, count+chevron
+// right) so the six queue-grid cells don't reflow when data streams in.
+export function QueueStatCardSkeleton() {
   return (
-    <section>
-      <ZoneSkeleton />
-      <Card className="h-20" />
-    </section>
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <Box className="h-4 w-32 mb-2" />
+          <Box className="h-3 w-24" />
+        </div>
+        <Box className="h-7 w-10 shrink-0" />
+      </div>
+    </div>
   )
 }
 

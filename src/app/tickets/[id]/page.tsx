@@ -18,13 +18,12 @@ import ServiceHistory from '@/components/ServiceHistory'
 import EquipmentNotes from '@/components/EquipmentNotes'
 import AuditHistorySection from '@/components/AuditHistorySection'
 import AceLaborCard from '@/components/AceLaborCard'
-import WorkflowStatusCard from '@/components/WorkflowStatusCard'
-import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { pmTicketToHistoryItem } from '@/types/service-tickets'
 import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
 import { getEntryByTicket } from '@/lib/db/ace-labor'
 import { describeSchedule, formatMonthYear } from '@/lib/utils/schedule'
+import { getStatusMeta } from '@/lib/status-meta'
 
 export default async function TicketDetailPage({
   params,
@@ -106,7 +105,7 @@ export default async function TicketDetailPage({
           <BackButton fallbackHref="/tickets" />
           <div className="flex-1 min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
-              Ticket Detail
+              PM Ticket
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">
               WO-{ticket.work_order_number} — {ticket.customers?.name ?? 'Unknown Customer'} — {equipmentLabel}
@@ -154,7 +153,7 @@ export default async function TicketDetailPage({
         ) : (
           <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 rounded-lg p-4">
             <p className="text-sm text-red-800 dark:text-red-300 font-semibold">
-              Blocked by AR — manager release required.
+              {getStatusMeta('creditReview', 'blocked').label} — manager release required.
             </p>
             <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
               AR blocked this order. A manager must enter the release passcode before work can proceed.
@@ -173,9 +172,6 @@ export default async function TicketDetailPage({
           </p>
         </div>
       )}
-
-      {/* Workflow state — what state we're in, who's next, what's blocking. */}
-      {!isDeleted && <WorkflowStatusCard {...deriveWorkflowProps(ticket)} />}
 
       {/* Read-only info */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
@@ -359,12 +355,6 @@ export default async function TicketDetailPage({
               ) : (
                 'No'
               )}
-            </p>
-          </div>
-          <div>
-            <span className="text-gray-500 dark:text-gray-400">PO Number</span>
-            <p className="text-gray-900 dark:text-white font-medium">
-              {ticket.po_number || '—'}
             </p>
           </div>
         </div>

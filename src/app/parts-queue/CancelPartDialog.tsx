@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import Modal from '@/components/ui/Modal'
 
 interface CancelPartDialogProps {
   open: boolean
@@ -27,16 +28,6 @@ export default function CancelPartDialog({ open, description, onCancel, onConfir
     }
   }
 
-  // Escape-to-dismiss — accessibility (WCAG 2.1.2).
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onCancel()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, submitting, onCancel])
-
   async function handleConfirm() {
     if (!reason.trim()) {
       setError('Please enter a reason.')
@@ -52,19 +43,8 @@ export default function CancelPartDialog({ open, description, onCancel, onConfir
     }
   }
 
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cancel-part-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onCancel()
-      }}
-    >
-      <div className="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700">
+    <Modal open={open} onClose={onCancel} dismissible={!submitting} size="md" ariaLabelledBy="cancel-part-title">
         <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 id="cancel-part-title" className="text-base font-semibold text-gray-900 dark:text-white">Cancel part request</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{description}</p>
@@ -103,7 +83,6 @@ export default function CancelPartDialog({ open, description, onCancel, onConfir
             {submitting ? 'Cancelling…' : 'Cancel request'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

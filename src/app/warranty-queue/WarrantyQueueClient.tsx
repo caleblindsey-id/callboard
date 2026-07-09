@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck } from 'lucide-react'
 import type { WarrantyQueueRow, WarrantyBucket } from '@/lib/db/warranty-queue'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import QueueActionCard from '@/components/ui/QueueActionCard'
 
 // Aging tightens the longer a claim sits — an unfiled claim or an uncredited one
 // is parts cost the branch is carrying. Same escalation feel as the other queues.
@@ -79,9 +81,7 @@ export default function WarrantyQueueClient({ rows }: { rows: WarrantyQueueRow[]
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 -mt-2">{b.blurb}</p>
             {byBucket[b.key].length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                Nothing here.
-              </div>
+              <p className="text-sm text-gray-400 dark:text-gray-500">{b.title}: none</p>
             ) : (
               <div className="space-y-2">
                 {byBucket[b.key].map((r) => (
@@ -101,6 +101,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmingUndo, setConfirmingUndo] = useState(false)
 
   const [vendor, setVendor] = useState(row.warranty_vendor ?? '')
   const [claimNumber, setClaimNumber] = useState(row.warranty_claim_number ?? '')
@@ -140,15 +141,18 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
   const agingLabel = row.bucket === 'awaiting_credit' ? 'Filed' : row.bucket === 'received' ? 'Completed' : 'Completed'
 
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      <div className="flex flex-wrap items-start gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <Link
-            href={`/service/${row.id}`}
-            className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400"
-          >
-            {row.customer_name}
-          </Link>
+    <>
+    <QueueActionCard
+      title={
+        <Link
+          href={`/service/${row.id}`}
+          className="hover:text-indigo-600 dark:hover:text-indigo-400"
+        >
+          {row.customer_name}
+        </Link>
+      }
+      sub={
+        <>
           <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
             {row.work_order_number != null && <span>WO-{row.work_order_number}</span>}
             <span>{row.equipment_label}{row.serial_number ? ` · S/N ${row.serial_number}` : ''}</span>
@@ -165,12 +169,15 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
             {row.warranty_credit_expected != null && <span>Expected credit {fmtMoney(row.warranty_credit_expected)}</span>}
             {row.warranty_credit_amount != null && <span>Credit received {fmtMoney(row.warranty_credit_amount)}</span>}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
-            {agingLabel} {aging.label}
-          </span>
+        </>
+      }
+      badge={
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
+          {agingLabel} {aging.label}
+        </span>
+      }
+      actions={
+        <>
           {row.bucket === 'to_file' && (
             <button
               onClick={() => setOpen((v) => !v)}
@@ -189,74 +196,90 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
           )}
           {row.bucket === 'received' && (
             <button
-              onClick={() => post({ action: 'reset' }, 'Failed to undo')}
+              onClick={() => setConfirmingUndo(true)}
               disabled={busy}
               className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
             >
               Undo credit
             </button>
           )}
-        </div>
-      </div>
-
-      {open && (row.bucket === 'to_file' || row.bucket === 'awaiting_credit') && (
-        <div className="border-t border-gray-100 dark:border-gray-800 p-4 space-y-3">
-          {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
-              {error}
+        </>
+      }
+      expanded={
+        open && (row.bucket === 'to_file' || row.bucket === 'awaiting_credit') ? (
+          <>
+            {error && (
+              <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Vendor">
+                <input value={vendor} onChange={(e) => setVendor(e.target.value)} className={inputCls} placeholder="Manufacturer" />
+              </Field>
+              <Field label="Claim / RMA #">
+                <input value={claimNumber} onChange={(e) => setClaimNumber(e.target.value)} className={inputCls} placeholder="Vendor reference" />
+              </Field>
+              {row.bucket === 'to_file' ? (
+                <Field label="Expected credit">
+                  <input type="number" step="0.01" min="0" value={creditExpected} onChange={(e) => setCreditExpected(e.target.value)} className={inputCls} placeholder="0.00" />
+                </Field>
+              ) : (
+                <Field label="Credit received">
+                  <input type="number" step="0.01" min="0" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} className={inputCls} placeholder="0.00" />
+                </Field>
+              )}
             </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Vendor">
-              <input value={vendor} onChange={(e) => setVendor(e.target.value)} className={inputCls} placeholder="Manufacturer" />
-            </Field>
-            <Field label="Claim / RMA #">
-              <input value={claimNumber} onChange={(e) => setClaimNumber(e.target.value)} className={inputCls} placeholder="Vendor reference" />
-            </Field>
-            {row.bucket === 'to_file' ? (
-              <Field label="Expected credit">
-                <input type="number" step="0.01" min="0" value={creditExpected} onChange={(e) => setCreditExpected(e.target.value)} className={inputCls} placeholder="0.00" />
-              </Field>
-            ) : (
-              <Field label="Credit received">
-                <input type="number" step="0.01" min="0" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} className={inputCls} placeholder="0.00" />
-              </Field>
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setOpen(false)}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            {row.bucket === 'to_file' ? (
+            <div className="flex justify-end gap-2">
               <button
-                onClick={() => post(
-                  { action: 'file', vendor, claim_number: claimNumber, credit_expected: creditExpected || null },
-                  'Failed to file the claim',
-                )}
-                disabled={busy}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                onClick={() => setOpen(false)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
               >
-                {busy ? 'Saving…' : 'Mark filed'}
+                Cancel
               </button>
-            ) : (
-              <button
-                onClick={() => post(
-                  { action: 'credit', vendor, claim_number: claimNumber, credit_amount: creditAmount || null },
-                  'Failed to log the credit',
-                )}
-                disabled={busy}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
-              >
-                {busy ? 'Saving…' : 'Mark credit received'}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+              {row.bucket === 'to_file' ? (
+                <button
+                  onClick={() => post(
+                    { action: 'file', vendor, claim_number: claimNumber, credit_expected: creditExpected || null },
+                    'Failed to file the claim',
+                  )}
+                  disabled={busy}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {busy ? 'Saving…' : 'Mark filed'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => post(
+                    { action: 'credit', vendor, claim_number: claimNumber, credit_amount: creditAmount || null },
+                    'Failed to log the credit',
+                  )}
+                  disabled={busy}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
+                >
+                  {busy ? 'Saving…' : 'Mark credit received'}
+                </button>
+              )}
+            </div>
+          </>
+        ) : null
+      }
+    />
+
+    <ConfirmDialog
+      open={confirmingUndo}
+      title="Undo credit received"
+      message={`Reverse the vendor credit${row.warranty_credit_amount != null ? ` of ${fmtMoney(row.warranty_credit_amount)}` : ''} logged for ${row.customer_name}${row.work_order_number != null ? ` (WO-${row.work_order_number})` : ''}${row.warranty_claim_number ? `, claim #${row.warranty_claim_number}` : ''}? The claim moves back to "Awaiting credit."`}
+      confirmLabel="Undo credit"
+      confirmVariant="danger"
+      loading={busy}
+      onConfirm={() => {
+        setConfirmingUndo(false)
+        post({ action: 'reset' }, 'Failed to undo')
+      }}
+      onCancel={() => setConfirmingUndo(false)}
+    />
+    </>
   )
 }
 

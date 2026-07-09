@@ -2,7 +2,9 @@ import { getEquipment } from '@/lib/db/equipment'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
+import PageHeader from '@/components/ui/PageHeader'
 import EquipmentList from './EquipmentList'
+import EquipmentActions from './EquipmentActions'
 
 export type EquipmentListItem = Awaited<ReturnType<typeof getEquipment>>[number] & {
   lastServiceDate: string | null
@@ -82,12 +84,11 @@ export default async function EquipmentPage({
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Equipment</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Manage customer equipment and PM schedules
-        </p>
-      </div>
+      <PageHeader
+        title="Equipment"
+        subtitle="Manage customer equipment and PM schedules"
+        actions={<EquipmentActions />}
+      />
       <EquipmentList
         equipment={enriched}
         initialFilters={{ q: params.q ?? '', active: params.active === 'inactive' ? 'inactive' : '' }}

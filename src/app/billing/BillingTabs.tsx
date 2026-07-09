@@ -2,82 +2,48 @@
 
 import { ReactNode } from 'react'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
 interface BillingTabsProps {
   pmCount: number
   serviceCount: number
+  invoicedCount: number
   pmContent: ReactNode
   serviceContent: ReactNode
+  invoicedContent: ReactNode
   initialTab: string
 }
 
 export default function BillingTabs({
   pmCount,
   serviceCount,
+  invoicedCount,
   pmContent,
   serviceContent,
+  invoicedContent,
   initialTab,
 }: BillingTabsProps) {
   // Tab lives in the URL (preserving the month/year params BillingExport owns)
   // so it survives Back and dashboard deep links.
   const { filters, set } = useUrlFilters({ tab: initialTab })
-  const active: 'pm' | 'service' = filters.tab === 'service' ? 'service' : 'pm'
+  const active: 'pm' | 'service' | 'invoiced' =
+    filters.tab === 'service' ? 'service' : filters.tab === 'invoiced' ? 'invoiced' : 'pm'
+
+  const tabs: TabItem[] = [
+    { key: 'pm', label: 'PM Tickets', count: pmCount },
+    { key: 'service', label: 'Service Tickets', count: serviceCount },
+    { key: 'invoiced', label: 'Invoiced', count: invoicedCount },
+  ]
 
   return (
     <div className="space-y-4">
-      <div className="border-b border-gray-200 dark:border-gray-700">
-        <nav className="-mb-px flex gap-4" aria-label="Billing tabs">
-          <TabButton
-            label="PM Tickets"
-            count={pmCount}
-            active={active === 'pm'}
-            onClick={() => set('tab', '')}
-          />
-          <TabButton
-            label="Service Tickets"
-            count={serviceCount}
-            active={active === 'service'}
-            onClick={() => set('tab', 'service')}
-          />
-        </nav>
-      </div>
-      <div>{active === 'pm' ? pmContent : serviceContent}</div>
+      <Tabs
+        ariaLabel="Billing tabs"
+        tabs={tabs}
+        active={active}
+        onChange={(key) => set('tab', key === 'pm' ? '' : key)}
+      />
+      <div>{active === 'pm' ? pmContent : active === 'service' ? serviceContent : invoicedContent}</div>
     </div>
-  )
-}
-
-function TabButton({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string
-  count: number
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`-mb-px border-b-2 px-1 pb-2 text-sm font-medium transition-colors min-h-[44px] flex items-center gap-2 ${
-        active
-          ? 'border-slate-700 text-slate-900 dark:border-slate-300 dark:text-white'
-          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
-      }`}
-      aria-current={active ? 'page' : undefined}
-    >
-      <span>{label}</span>
-      <span
-        className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${
-          active
-            ? 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
-            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-        }`}
-      >
-        {count}
-      </span>
-    </button>
   )
 }

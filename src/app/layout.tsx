@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import LayoutShell from '@/components/LayoutShell'
 import { UserProvider } from '@/components/UserProvider'
+import { ToastProvider } from '@/components/ui/Toast'
 import { getCurrentUser } from '@/lib/auth'
 import { APP_NAME } from '@/lib/branding'
 
@@ -48,7 +49,17 @@ export default async function RootLayout({
   // Cookie refresh is handled by the proxy on cookie-miss (src/proxy.ts) — no
   // need to duplicate the role + must-change-pw cookie set on every page load.
   // getCurrentUser() is cached per-request, so layout + page share one fetch.
-  const dbUser = await getCurrentUser()
+  // Guarded here even though getCurrentUser() already catches internally —
+  // the root layout is the one place a thrown error skips every branded
+  // fallback (only global-error.tsx would catch it), so a transient DB error
+  // must fall back to a null user, not crash the shell. The proxy still
+  // handles real auth gating.
+  let dbUser
+  try {
+    dbUser = await getCurrentUser()
+  } catch {
+    dbUser = null
+  }
 
   const userContext = dbUser?.role
     ? { id: dbUser.id, role: dbUser.role, name: dbUser.name }
@@ -66,7 +77,9 @@ export default async function RootLayout({
           </div>
         )}
         <UserProvider user={userContext}>
-          <LayoutShell>{children}</LayoutShell>
+          <ToastProvider>
+            <LayoutShell>{children}</LayoutShell>
+          </ToastProvider>
         </UserProvider>
       </body>
     </html>

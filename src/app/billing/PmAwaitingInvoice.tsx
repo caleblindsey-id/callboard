@@ -6,6 +6,8 @@ import { TicketWithJoins } from '@/lib/db/tickets'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import InlineEditCell from './InlineEditCell'
 
 // PM tickets that have been exported to a billing PDF but are NOT yet billed.
 // They become 'billed' only once a manager keys the SynergyERP invoice number
@@ -63,25 +65,24 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [marking, setMarking] = useState(false)
+  const [confirmingMarkBilled, setConfirmingMarkBilled] = useState(false)
   const [unexportingId, setUnexportingId] = useState<string | null>(null)
-  // Inline confirm naming the WO# so a single un-export can't be misread as a
+  // Confirm naming the WO# so a single un-export can't be misread as a
   // bulk action — mirrors ServiceAwaitingInvoice (feedback #40).
   const [confirmingUnexportId, setConfirmingUnexportId] = useState<string | null>(null)
+  // Rows with an inline editor (invoice # or Synergy order #) open — kept out
+  // of the "blocked" dim treatment below so a coordinator isn't typing into a
+  // grayed-out row.
+  const [editingRowIds, setEditingRowIds] = useState<Set<string>>(new Set())
 
-  // Inline Synergy invoice # editing — mirrors the PO editor on the PM
-  // Ready-to-Export list.
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editingValue, setEditingValue] = useState('')
-  const [savingValue, setSavingValue] = useState(false)
-
-  // Inline Synergy order # editing — the reference coordinators key while billing
-  // so they can find the matching invoice in Synergy, then enter it above
-  // (feedback #37). Optional: unlike the invoice #, a missing Synergy # never
-  // blocks Mark Billed. Writes the same synergy_order_number column the
-  // parts-ordering flow uses.
-  const [synergyEditingId, setSynergyEditingId] = useState<string | null>(null)
-  const [synergyEditingValue, setSynergyEditingValue] = useState('')
-  const [synergySaving, setSynergySaving] = useState(false)
+  function setRowEditing(ticketId: string, editing: boolean) {
+    setEditingRowIds((prev) => {
+      const next = new Set(prev)
+      if (editing) next.add(ticketId)
+      else next.delete(ticketId)
+      return next
+    })
+  }
 
   const missingCount = tickets.filter(needsInvoice).length
 
@@ -108,81 +109,44 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     }
   }
 
-  function startEdit(ticketId: string, current: string | null) {
-    setEditingId(ticketId)
-    setEditingValue(current ?? '')
-  }
-
-  function cancelEdit() {
-    setEditingId(null)
-    setEditingValue('')
-  }
-
-  async function handleSaveInvoice() {
-    if (!editingId || savingValue) return
-    const trimmed = editingValue.trim()
-    if (!trimmed) return
-
-    setSavingValue(true)
+  // Shared onSave callbacks for the InlineEditCell instances below — same
+  // PATCH endpoint, same error handling (toast + rethrow so the cell can show
+  // its own fail tick and stay open) as before the extraction.
+  async function saveInvoice(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/tickets/${editingId}`, {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ synergy_invoice_number: trimmed }),
+        body: JSON.stringify({ synergy_invoice_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setEditingId(null)
-      setEditingValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save Synergy invoice #.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSavingValue(false)
+      throw err
     }
   }
 
-  function startSynergyEdit(ticketId: string, current: string | null) {
-    setSynergyEditingId(ticketId)
-    setSynergyEditingValue(current ?? '')
-  }
-
-  function cancelSynergyEdit() {
-    setSynergyEditingId(null)
-    setSynergyEditingValue('')
-  }
-
-  async function handleSaveSynergy() {
-    if (!synergyEditingId || synergySaving) return
-    const trimmed = synergyEditingValue.trim()
-    if (!trimmed) return
-
-    setSynergySaving(true)
+  async function saveSynergyOrder(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/tickets/${synergyEditingId}`, {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ synergy_order_number: trimmed }),
+        body: JSON.stringify({ synergy_order_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setSynergyEditingId(null)
-      setSynergyEditingValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save Synergy Order #.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSynergySaving(false)
+      throw err
     }
   }
 
@@ -266,139 +230,36 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const selectableCount = tickets.filter((t) => !needsInvoice(t)).length
 
   function renderInvoiceStatus(t: TicketWithJoins) {
-    if (editingId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={editingValue}
-            onChange={(e) => setEditingValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveInvoice()
-              if (e.key === 'Escape') cancelEdit()
-            }}
-            placeholder="Synergy Invoice #"
-            autoFocus
-            disabled={savingValue}
-            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSaveInvoice}
-            disabled={savingValue || !editingValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {savingValue ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelEdit}
-            disabled={savingValue}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
-    if (t.synergy_invoice_number) {
-      return (
-        <button
-          onClick={(e) => { e.stopPropagation(); startEdit(t.id, t.synergy_invoice_number) }}
-          title={`${t.synergy_invoice_number} — click to edit`}
-          className="text-green-700 dark:text-green-400 truncate max-w-[140px] inline-block align-bottom hover:underline"
-        >
-          {t.synergy_invoice_number}
-        </button>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startEdit(t.id, null) }}
-        className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-      >
-        Synergy Invoice # Needed
-      </button>
+      <InlineEditCell
+        value={t.synergy_invoice_number}
+        placeholder="Synergy Invoice #"
+        onSave={(v) => saveInvoice(t.id, v)}
+        emptyVariant="pill"
+        emptyText="Synergy Invoice # Needed"
+        valueClassName="text-green-700 dark:text-green-400"
+        onEditingChange={(editing) => setRowEditing(t.id, editing)}
+      />
     )
   }
 
   function renderSynergyCell(t: TicketWithJoins) {
-    if (synergyEditingId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={synergyEditingValue}
-            onChange={(e) => setSynergyEditingValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveSynergy()
-              if (e.key === 'Escape') cancelSynergyEdit()
-            }}
-            placeholder="Synergy Order #"
-            autoFocus
-            disabled={synergySaving}
-            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSaveSynergy}
-            disabled={synergySaving || !synergyEditingValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {synergySaving ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelSynergyEdit}
-            disabled={synergySaving}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
-    if (t.synergy_order_number) {
-      return (
-        <button
-          onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, t.synergy_order_number) }}
-          title={`${t.synergy_order_number} — click to edit`}
-          className="text-gray-700 dark:text-gray-300 truncate max-w-[140px] inline-block align-bottom hover:underline"
-        >
-          {t.synergy_order_number}
-        </button>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, null) }}
-        className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:underline"
-      >
-        + Synergy Order #
-      </button>
+      <InlineEditCell
+        value={t.synergy_order_number}
+        placeholder="Synergy Order #"
+        onSave={(v) => saveSynergyOrder(t.id, v)}
+        emptyVariant="ghost"
+        emptyText="+ Synergy Order #"
+        valueClassName="text-gray-700 dark:text-gray-300"
+        onEditingChange={(editing) => setRowEditing(t.id, editing)}
+      />
     )
   }
 
   function renderUnexportButton(t: TicketWithJoins) {
     if (unexportingId === t.id) {
       return <span className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Sending back…</span>
-    }
-    if (confirmingUnexportId === t.id) {
-      const label = t.work_order_number != null ? `WO#${t.work_order_number}` : 'this ticket'
-      return (
-        <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Send {label} back?</span>
-          <button
-            onClick={() => handleUnexport(t.id)}
-            className="text-xs font-medium px-2 py-1 rounded-md text-white bg-slate-700 hover:bg-slate-600 transition-colors"
-            title="Send only this one ticket back to Ready to Export (clears its invoice #)"
-          >
-            Just this one
-          </button>
-          <button
-            onClick={() => setConfirmingUnexportId(null)}
-            className="text-xs px-1.5 py-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </span>
-      )
     }
     return (
       <button
@@ -431,7 +292,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
               </span>
             )}
             <button
-              onClick={handleMarkBilled}
+              onClick={() => setConfirmingMarkBilled(true)}
               disabled={selected.size === 0 || marking}
               className="w-full lg:w-auto px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
             >
@@ -476,7 +337,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                 return (
                   <div
                     key={t.id}
-                    className={`px-4 py-3 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}
+                    className={`px-4 py-3 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}
                     onClick={() => toggleSelect(t.id)}
                   >
                     <div className="flex items-start gap-3">
@@ -559,7 +420,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                   {sorted.map((t) => {
                     const blocked = needsInvoice(t)
                     return (
-                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && editingId !== t.id && synergyEditingId !== t.id ? 'opacity-60' : ''}`}>
+                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
@@ -616,6 +477,32 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmingUnexportId !== null}
+        title="Un-export ticket"
+        message={`Send ${confirmingUnexportId ? woLabel(confirmingUnexportId) : 'this ticket'} back to Ready to Export? This clears its Synergy invoice #.`}
+        confirmLabel="Un-export"
+        confirmVariant="danger"
+        loading={unexportingId !== null}
+        onConfirm={() => {
+          if (confirmingUnexportId) handleUnexport(confirmingUnexportId)
+        }}
+        onCancel={() => setConfirmingUnexportId(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmingMarkBilled}
+        title="Mark tickets billed"
+        message={`Mark ${selected.size} ticket${selected.size === 1 ? '' : 's'} billed for a total of $${selectedTotal.toFixed(2)}?`}
+        confirmLabel="Mark Billed"
+        loading={marking}
+        onConfirm={() => {
+          setConfirmingMarkBilled(false)
+          handleMarkBilled()
+        }}
+        onCancel={() => setConfirmingMarkBilled(false)}
+      />
     </div>
   )
 }
