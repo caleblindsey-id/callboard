@@ -4,10 +4,10 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 30
 summary: Approve, decline, or send a service estimate back to the tech.
-last_verified: 2026-05-28
+last_verified: 2026-07-09
 ---
 
-When a tech submits a service estimate of $100 or more, it waits for a decision. (Estimates under $100 auto-approve on submit.) You make that decision from the service ticket's detail page while it's in the **Estimated** state.
+When a tech submits a service estimate of $100 or more, it waits for a decision. (Estimates under $100 auto-approve on submit.) You make that decision from the service ticket's detail page while it's in the **Awaiting Approval** state.
 
 ## The three actions
 

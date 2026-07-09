@@ -168,7 +168,13 @@ export function changeSummary(event: AuditEvent): string {
   const head = entries.slice(0, 2).map(([key, val]) => {
     const label = columnLabel(event.entity_type, key)
     if (isDiffPair(val)) {
+      if (isComplexValue(val.old) || isComplexValue(val.new)) {
+        return `${label}: ${summarizeComplexDiff(key, val.old, val.new).headline}`
+      }
       return `${label}: ${renderValue(val.old)} → ${renderValue(val.new)}`
+    }
+    if (isComplexValue(val)) {
+      return `${label}: ${summarizeComplexValue(key, val).headline}`
     }
     return `${label}: ${renderValue(val)}`
   })

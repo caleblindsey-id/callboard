@@ -1984,6 +1984,40 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     showCompletionForm &&
     !needsEquipmentVerify
 
+  // ── Assignment card (single save — service-detail-4) ──
+  // Locked once completed/billed: the bill is already computed by then, so
+  // changing labor type here would no longer do anything (feedback #68).
+  const laborTypeLocked =
+    ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
+  const assignmentDirty = {
+    tech: assignedTechId !== (ticket.assigned_technician_id ?? ''),
+    billing: billingType !== ticket.billing_type,
+    ticketType: ticketType !== ticket.ticket_type,
+    labor: !laborTypeLocked && laborRateType !== (ticket.labor_rate_type ?? 'standard'),
+  }
+  const assignmentIsDirty =
+    assignmentDirty.tech || assignmentDirty.billing || assignmentDirty.ticketType || assignmentDirty.labor
+
+  async function handleSaveAssignment() {
+    await apiAction(async () => {
+      const batch: Record<string, unknown> = {}
+      if (assignmentDirty.tech) batch.assigned_technician_id = assignedTechId || null
+      if (assignmentDirty.billing) batch.billing_type = billingType
+      if (assignmentDirty.ticketType) batch.ticket_type = ticketType
+      if (Object.keys(batch).length > 0) {
+        await patchTicket(batch)
+      }
+      // labor_rate_type triggers the server's estimate recompute, which reads
+      // the ticket's STORED billing_type rather than this same request's value
+      // — sent as its own PATCH, after the batch above commits, so a same-save
+      // billing_type change is already persisted before the recompute runs.
+      if (assignmentDirty.labor) {
+        await patchTicket({ labor_rate_type: laborRateType })
+      }
+      setSuccessMsg('Assignment updated')
+    })
+  }
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
@@ -2046,8 +2080,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           this is the UI for assigning after creation or reassigning later. */}
       {isStaff && (
         <Card title="Assignment">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <div className="flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
                 Assigned Technician
               </label>
@@ -2063,25 +2097,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 ))}
               </select>
             </div>
-            <button
-              onClick={() =>
-                apiAction(async () => {
-                  await patchTicket({ assigned_technician_id: assignedTechId || null })
-                  setSuccessMsg('Technician updated')
-                })
-              }
-              disabled={loading || assignedTechId === (ticket.assigned_technician_id ?? '')}
-              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-            >
-              {loading ? 'Saving...' : 'Save'}
-            </button>
-          </div>
 
-          {/* Billing type — correct a mis-keyed warranty/non-warranty ticket.
-              Warranty bills the customer $0 and routes the ticket through the
-              vendor-credit worklist before it can be billed. */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-            <div className="flex-1">
+            {/* Billing type — correct a mis-keyed warranty/non-warranty ticket.
+                Warranty bills the customer $0 and routes the ticket through the
+                vendor-credit worklist before it can be billed. */}
+            <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
                 Billing Type
               </label>
@@ -2096,26 +2116,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 <option value="partial_warranty">Partial Warranty</option>
               </select>
             </div>
-            <button
-              onClick={() =>
-                apiAction(async () => {
-                  await patchTicket({ billing_type: billingType })
-                  setSuccessMsg('Billing type updated')
-                })
-              }
-              disabled={loading || billingType === ticket.billing_type}
-              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-            >
-              {loading ? 'Saving...' : 'Save'}
-            </button>
-          </div>
 
-          {/* Ticket type — correct a mis-keyed inside/outside ticket. Switching
-              to Outside turns on the service-address fields and the customer
-              signature requirement; switching to Inside makes it eligible for
-              the pickup queue. */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-            <div className="flex-1">
+            {/* Ticket type — correct a mis-keyed inside/outside ticket. Switching
+                to Outside turns on the service-address fields and the customer
+                signature requirement; switching to Inside makes it eligible for
+                the pickup queue. */}
+            <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
                 Ticket Type
               </label>
@@ -2132,64 +2138,42 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 Inside = bench/shop repair. Outside = field service (adds address + signature).
               </p>
             </div>
+
+            {/* Labor type — correct a mis-keyed labor rate before the job is
+                marked complete. Locked once completed/billed: the bill is
+                already computed by then, so changing it here would no longer
+                do anything (feedback #68). */}
+            <div>
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Labor Type
+              </label>
+              <select
+                value={laborRateType}
+                onChange={(e) => setLaborRateType(e.target.value)}
+                disabled={loading || laborTypeLocked}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+              >
+                <option value="standard">Standard</option>
+                <option value="industrial">Industrial</option>
+                <option value="vacuum">Vacuum</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {laborTypeLocked
+                  ? 'Locked once the ticket is completed/billed.'
+                  : 'Drives the labor rate used on the estimate and final bill.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
             <button
-              onClick={() =>
-                apiAction(async () => {
-                  await patchTicket({ ticket_type: ticketType })
-                  setSuccessMsg('Ticket type updated')
-                })
-              }
-              disabled={loading || ticketType === ticket.ticket_type}
+              onClick={handleSaveAssignment}
+              disabled={loading || !assignmentIsDirty}
               className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               {loading ? 'Saving...' : 'Save'}
             </button>
           </div>
-
-          {/* Labor type — correct a mis-keyed labor rate before the job is
-              marked complete. Locked once completed/billed: the bill is
-              already computed by then, so changing it here would no longer
-              do anything (feedback #68). */}
-          {(() => {
-            const laborTypeLocked =
-              ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
-            return (
-              <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                <div className="flex-1">
-                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
-                    Labor Type
-                  </label>
-                  <select
-                    value={laborRateType}
-                    onChange={(e) => setLaborRateType(e.target.value)}
-                    disabled={loading || laborTypeLocked}
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="industrial">Industrial</option>
-                    <option value="vacuum">Vacuum</option>
-                  </select>
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    {laborTypeLocked
-                      ? 'Locked once the ticket is completed/billed.'
-                      : 'Drives the labor rate used on the estimate and final bill.'}
-                  </p>
-                </div>
-                <button
-                  onClick={() =>
-                    apiAction(async () => {
-                      await patchTicket({ labor_rate_type: laborRateType })
-                      setSuccessMsg('Labor type updated')
-                    })
-                  }
-                  disabled={loading || laborTypeLocked || laborRateType === (ticket.labor_rate_type ?? 'standard')}
-                  className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-                >
-                  {loading ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            )
-          })()}
         </Card>
       )}
 

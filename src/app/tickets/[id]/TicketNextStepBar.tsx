@@ -2,6 +2,7 @@
 
 import { TicketDetail } from '@/lib/db/tickets'
 import StatusBadge from '@/components/StatusBadge'
+import StuckIndicator from '@/components/StuckIndicator'
 import NextStepShell from '@/components/ui/NextStepShell'
 import { deriveWorkflowProps } from '@/lib/workflow-status'
 
@@ -34,7 +35,7 @@ export default function TicketNextStepBar({
   onStartWork,
   onOpenSkipRequest,
 }: TicketNextStepBarProps) {
-  const { nextActor, blocker } = deriveWorkflowProps(ticket)
+  const { nextActor, blocker, enteredAt } = deriveWorkflowProps(ticket)
 
   return (
     <NextStepShell
@@ -43,6 +44,7 @@ export default function TicketNextStepBar({
     >
       <div className="flex items-center gap-3">
         <StatusBadge status={ticket.status} />
+        <StuckIndicator enteredAt={enteredAt} state={ticket.status} />
 
         {(ticket.status === 'unassigned' || ticket.status === 'assigned') && (
           <button

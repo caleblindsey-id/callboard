@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
@@ -50,6 +50,145 @@ interface CustomerOption {
   account_number: string | null
   credit_hold: boolean
   provisional?: boolean
+}
+
+// Progressive-disclosure step keys, in display order (Service Address only
+// appears for outside tickets — see visibleStepKeys below). See service-new-2.
+type StepKey = 'customer' | 'equipment' | 'details' | 'contact' | 'address' | 'assignment'
+
+interface StepCardProps {
+  number: number
+  total: number
+  title: string
+  isOpen: boolean
+  isComplete: boolean
+  summary: string
+  onOpen: () => void
+  children: React.ReactNode
+}
+
+// Module-level so it isn't redefined (and its children remounted/losing focus)
+// on every parent re-render — see wiki/feedback/no-inner-components.md.
+function StepCard({ number, total, title, isOpen, isComplete, summary, onOpen, children }: StepCardProps) {
+  return (
+    <div className="p-4 sm:p-6 space-y-4">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full flex items-center justify-between gap-3 text-left"
+      >
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white truncate">
+          {number}. {title}
+          {!isOpen && isComplete && summary && (
+            <span className="font-normal text-gray-500 dark:text-gray-400"> — {summary}</span>
+          )}
+        </h2>
+        <span className="flex items-center gap-3 shrink-0">
+          {!isOpen && isComplete && (
+            <span className="text-xs text-slate-600 dark:text-slate-300 underline underline-offset-2">
+              Edit
+            </span>
+          )}
+          <span className="text-xs text-gray-400 dark:text-gray-500">{number} of {total}</span>
+          <ChevronDown
+            className={`h-4 w-4 text-gray-400 dark:text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </button>
+      {isOpen && <div className="space-y-4">{children}</div>}
+    </div>
+  )
+}
+
+interface ProvisionalRecordFormProps {
+  helperText: React.ReactNode
+  codeValue: string
+  onCodeChange: (value: string) => void
+  codePlaceholder: string
+  nameValue: string
+  onNameChange: (value: string) => void
+  namePlaceholder: string
+  extraField?: {
+    value: string
+    onChange: (value: string) => void
+    placeholder: string
+  }
+  error: string
+  saving: boolean
+  saveLabel: string
+  savingLabel: string
+  onSave: () => void
+  onCancel: () => void
+  inputClass: string
+}
+
+// Shared shell for the two "add it with its Synergy code" same-day provisional
+// mini-forms (customer, ship-to) — near-duplicates per service-new-5. Parameterized
+// by which entity it captures. Module-level per wiki/feedback/no-inner-components.md.
+function ProvisionalRecordForm({
+  helperText,
+  codeValue,
+  onCodeChange,
+  codePlaceholder,
+  nameValue,
+  onNameChange,
+  namePlaceholder,
+  extraField,
+  error,
+  saving,
+  saveLabel,
+  savingLabel,
+  onSave,
+  onCancel,
+  inputClass,
+}: ProvisionalRecordFormProps) {
+  return (
+    <div className="mt-2 rounded-md border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800/50 p-3 space-y-2">
+      <p className="text-xs text-gray-600 dark:text-gray-400">{helperText}</p>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={codeValue}
+        onChange={(e) => onCodeChange(e.target.value)}
+        placeholder={codePlaceholder}
+        className={inputClass}
+      />
+      <input
+        type="text"
+        value={nameValue}
+        onChange={(e) => onNameChange(e.target.value)}
+        placeholder={namePlaceholder}
+        className={inputClass}
+      />
+      {extraField && (
+        <input
+          type="text"
+          value={extraField.value}
+          onChange={(e) => extraField.onChange(e.target.value)}
+          placeholder={extraField.placeholder}
+          className={inputClass}
+        />
+      )}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="text-sm rounded-md bg-slate-700 text-white px-3 py-1.5 disabled:opacity-50"
+        >
+          {saving ? savingLabel : saveLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export function CreateServiceTicketForm({
@@ -142,6 +281,9 @@ export function CreateServiceTicketForm({
   const [technicianId, setTechnicianId] = useState(() =>
     isTech ? currentUser.id : ''
   )
+
+  // --- Step navigation (progressive disclosure — service-new-2) ---
+  const [openStep, setOpenStep] = useState<StepKey>('customer')
 
   // --- Submission ---
   const [loading, setLoading] = useState(false)
@@ -690,6 +832,69 @@ export function CreateServiceTicketForm({
   const noEquipment = customerSelected && equipmentLoaded && equipment.length === 0
   const totalSteps = ticketType === 'outside' ? 6 : 5
 
+  // Step order/numbering — Service Address only exists for outside tickets.
+  const visibleStepKeys = useMemo<StepKey[]>(() => {
+    const keys: StepKey[] = ['customer', 'equipment', 'details', 'contact']
+    if (ticketType === 'outside') keys.push('address')
+    keys.push('assignment')
+    return keys
+  }, [ticketType])
+  const stepNumber = (key: StepKey) => visibleStepKeys.indexOf(key) + 1
+
+  // Flipping Ticket Type to inside can remove the Service Address step out from
+  // under an open panel — fall back to the previous step rather than leaving
+  // nothing expanded.
+  useEffect(() => {
+    if (openStep === 'address' && ticketType !== 'outside') {
+      setOpenStep('contact')
+    }
+  }, [ticketType, openStep])
+
+  const selectedEquipment = equipment.find((e) => e.id === equipmentId)
+  const equipmentDone =
+    customerSelected &&
+    (!!equipmentId ||
+      unknownEquipment ||
+      (noEquipment && (eqMake.trim() !== '' || eqModel.trim() !== '')))
+  const selectedTechnicianName = technicians.find((t) => t.id === technicianId)?.name
+
+  // Completion + one-line summary per step, driving the collapsed-vs-expanded
+  // progressive disclosure (service-new-2): completed steps collapse to a
+  // summary, the open step is expanded, future steps stay collapsed until tapped.
+  const stepComplete: Record<StepKey, boolean> = {
+    customer: !!customerId,
+    equipment: equipmentDone,
+    details: problemDescription.trim() !== '' && laborRateType !== '',
+    contact: contactName.trim() !== '' && (contactEmail.trim() !== '' || contactPhone.trim() !== ''),
+    address: serviceAddress.trim() !== '',
+    // No required field here — office defaults to Unassigned, techs self-assign.
+    assignment: true,
+  }
+  const stepSummary: Record<StepKey, string> = {
+    customer: customerId
+      ? `${selectedCustomerName}${selectedShipTo ? ` — ${selectedShipTo.name}` : ''}`
+      : '',
+    equipment: equipmentId
+      ? [selectedEquipment?.make, selectedEquipment?.model].filter(Boolean).join(' ') || 'Equipment selected'
+      : unknownEquipment
+        ? 'Unknown Equipment'
+        : noEquipment && (eqMake.trim() || eqModel.trim())
+          ? `New equipment: ${[eqMake, eqModel].filter(Boolean).join(' ')}`
+          : '',
+    details: problemDescription.trim()
+      ? problemDescription.trim().length > 60
+        ? `${problemDescription.trim().slice(0, 60)}…`
+        : problemDescription.trim()
+      : '',
+    contact: contactName.trim()
+      ? [contactName.trim(), contactEmail.trim() || contactPhone.trim()].filter(Boolean).join(' · ')
+      : '',
+    address: serviceAddress.trim()
+      ? [serviceAddress, serviceCity, serviceState].filter(Boolean).join(', ')
+      : '',
+    assignment: isTech ? 'Assigned to you' : technicianId ? selectedTechnicianName ?? 'Assigned' : 'Unassigned',
+  }
+
   // --- Shared input classes ---
   const inputClass =
     'w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500'
@@ -725,11 +930,15 @@ export function CreateServiceTicketForm({
       <form onSubmit={handleSubmit}>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
           {/* --- Customer --- */}
-          <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Customer</h2>
-              <span className="text-xs text-gray-400 dark:text-gray-500">1 of {totalSteps}</span>
-            </div>
+          <StepCard
+            number={stepNumber('customer')}
+            total={totalSteps}
+            title="Customer"
+            isOpen={openStep === 'customer'}
+            isComplete={stepComplete.customer}
+            summary={stepSummary.customer}
+            onOpen={() => setOpenStep('customer')}
+          >
             <div ref={comboRef} className="relative">
               <label className={labelClass}>
                 Customer <span className="text-red-500">*</span>
@@ -804,50 +1013,30 @@ export function CreateServiceTicketForm({
                 </button>
               )}
               {isOfficeStaff && provCustOpen && !customerSelected && (
-                <div className="mt-2 rounded-md border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800/50 p-3 space-y-2">
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    Add a customer created in Synergy today. Enter the Synergy customer code so
-                    tonight&apos;s sync matches and confirms it automatically.
-                  </p>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={provCustCode}
-                    onChange={(e) => setProvCustCode(e.target.value)}
-                    placeholder="Synergy customer code (e.g. 123456)"
-                    className={inputClass}
-                  />
-                  <input
-                    type="text"
-                    value={provCustName}
-                    onChange={(e) => setProvCustName(e.target.value)}
-                    placeholder="Customer name"
-                    className={inputClass}
-                  />
-                  {provCustError && (
-                    <p className="text-xs text-red-600 dark:text-red-400">{provCustError}</p>
-                  )}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={createProvisionalCustomer}
-                      disabled={provCustSaving}
-                      className="text-sm rounded-md bg-slate-700 text-white px-3 py-1.5 disabled:opacity-50"
-                    >
-                      {provCustSaving ? 'Adding...' : 'Add customer'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProvCustOpen(false)
-                        setProvCustError('')
-                      }}
-                      className="text-sm rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+                <ProvisionalRecordForm
+                  helperText={
+                    <>
+                      Add a customer created in Synergy today. Enter the Synergy customer code so
+                      tonight&apos;s sync matches and confirms it automatically.
+                    </>
+                  }
+                  codeValue={provCustCode}
+                  onCodeChange={setProvCustCode}
+                  codePlaceholder="Synergy customer code (e.g. 123456)"
+                  nameValue={provCustName}
+                  onNameChange={setProvCustName}
+                  namePlaceholder="Customer name"
+                  error={provCustError}
+                  saving={provCustSaving}
+                  saveLabel="Add customer"
+                  savingLabel="Adding..."
+                  onSave={createProvisionalCustomer}
+                  onCancel={() => {
+                    setProvCustOpen(false)
+                    setProvCustError('')
+                  }}
+                  inputClass={inputClass}
+                />
               )}
 
               {customerSelected && !selectedCustomerCreditHold && (
@@ -947,68 +1136,50 @@ export function CreateServiceTicketForm({
                   </button>
                 )}
                 {isOfficeStaff && provShipOpen && (
-                  <div className="mt-2 rounded-md border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800/50 p-3 space-y-2">
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      Add a ship-to created in Synergy today. Enter the Synergy ship-to (shiplist)
-                      code so tonight&apos;s sync matches and confirms it automatically.
-                    </p>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={provShipCode}
-                      onChange={(e) => setProvShipCode(e.target.value)}
-                      placeholder="Synergy ship-to code (e.g. 12)"
-                      className={inputClass}
-                    />
-                    <input
-                      type="text"
-                      value={provShipName}
-                      onChange={(e) => setProvShipName(e.target.value)}
-                      placeholder="Location name"
-                      className={inputClass}
-                    />
-                    <input
-                      type="text"
-                      value={provShipAddress}
-                      onChange={(e) => setProvShipAddress(e.target.value)}
-                      placeholder="Address (optional)"
-                      className={inputClass}
-                    />
-                    {provShipError && (
-                      <p className="text-xs text-red-600 dark:text-red-400">{provShipError}</p>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={createProvisionalShipTo}
-                        disabled={provShipSaving}
-                        className="text-sm rounded-md bg-slate-700 text-white px-3 py-1.5 disabled:opacity-50"
-                      >
-                        {provShipSaving ? 'Adding...' : 'Add location'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProvShipOpen(false)
-                          setProvShipError('')
-                        }}
-                        className="text-sm rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+                  <ProvisionalRecordForm
+                    helperText={
+                      <>
+                        Add a ship-to created in Synergy today. Enter the Synergy ship-to (shiplist)
+                        code so tonight&apos;s sync matches and confirms it automatically.
+                      </>
+                    }
+                    codeValue={provShipCode}
+                    onCodeChange={setProvShipCode}
+                    codePlaceholder="Synergy ship-to code (e.g. 12)"
+                    nameValue={provShipName}
+                    onNameChange={setProvShipName}
+                    namePlaceholder="Location name"
+                    extraField={{
+                      value: provShipAddress,
+                      onChange: setProvShipAddress,
+                      placeholder: 'Address (optional)',
+                    }}
+                    error={provShipError}
+                    saving={provShipSaving}
+                    saveLabel="Add location"
+                    savingLabel="Adding..."
+                    onSave={createProvisionalShipTo}
+                    onCancel={() => {
+                      setProvShipOpen(false)
+                      setProvShipError('')
+                    }}
+                    inputClass={inputClass}
+                  />
                 )}
               </div>
             )}
-          </div>
+          </StepCard>
 
           {/* --- Equipment --- */}
-          <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Equipment</h2>
-              <span className="text-xs text-gray-400 dark:text-gray-500">2 of {totalSteps}</span>
-            </div>
+          <StepCard
+            number={stepNumber('equipment')}
+            total={totalSteps}
+            title="Equipment"
+            isOpen={openStep === 'equipment'}
+            isComplete={stepComplete.equipment}
+            summary={stepSummary.equipment}
+            onOpen={() => setOpenStep('equipment')}
+          >
             <div>
               <label className={labelClass}>Equipment</label>
               {noEquipment ? (
@@ -1114,14 +1285,18 @@ export function CreateServiceTicketForm({
                 )}
               </div>
             )}
-          </div>
+          </StepCard>
 
           {/* --- Ticket Details --- */}
-          <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Ticket Details</h2>
-              <span className="text-xs text-gray-400 dark:text-gray-500">3 of {totalSteps}</span>
-            </div>
+          <StepCard
+            number={stepNumber('details')}
+            total={totalSteps}
+            title="Ticket Details"
+            isOpen={openStep === 'details'}
+            isComplete={stepComplete.details}
+            summary={stepSummary.details}
+            onOpen={() => setOpenStep('details')}
+          >
 
             {/* Ticket Type — radio buttons (office). Techs are locked to Outside. */}
             {isTech ? (
@@ -1257,14 +1432,18 @@ export function CreateServiceTicketForm({
                 </div>
               </div>
             </div>
-          </div>
+          </StepCard>
 
           {/* --- Contact --- */}
-          <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Contact</h2>
-              <span className="text-xs text-gray-400 dark:text-gray-500">4 of {totalSteps}</span>
-            </div>
+          <StepCard
+            number={stepNumber('contact')}
+            total={totalSteps}
+            title="Contact"
+            isOpen={openStep === 'contact'}
+            isComplete={stepComplete.contact}
+            summary={stepSummary.contact}
+            onOpen={() => setOpenStep('contact')}
+          >
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className={labelClass}>
@@ -1302,15 +1481,19 @@ export function CreateServiceTicketForm({
             <p className="text-xs text-gray-400 dark:text-gray-500">
               At least an email or phone number is required.
             </p>
-          </div>
+          </StepCard>
 
           {/* --- Service Address (outside only) --- */}
           {ticketType === 'outside' && (
-            <div className="p-4 sm:p-6 space-y-4">
-              <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Service Address</h2>
-              <span className="text-xs text-gray-400 dark:text-gray-500">5 of {totalSteps}</span>
-            </div>
+            <StepCard
+              number={stepNumber('address')}
+              total={totalSteps}
+              title="Service Address"
+              isOpen={openStep === 'address'}
+              isComplete={stepComplete.address}
+              summary={stepSummary.address}
+              onOpen={() => setOpenStep('address')}
+            >
               <div className="space-y-3">
                 <div>
                   <label className={labelClass}>Address</label>
@@ -1357,15 +1540,19 @@ export function CreateServiceTicketForm({
                   </div>
                 </div>
               </div>
-            </div>
+            </StepCard>
           )}
 
           {/* --- Assigned Technician --- */}
-          <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Assignment</h2>
-              <span className="text-xs text-gray-400 dark:text-gray-500">{totalSteps} of {totalSteps}</span>
-            </div>
+          <StepCard
+            number={stepNumber('assignment')}
+            total={totalSteps}
+            title="Assignment"
+            isOpen={openStep === 'assignment'}
+            isComplete={stepComplete.assignment}
+            summary={stepSummary.assignment}
+            onOpen={() => setOpenStep('assignment')}
+          >
             <div>
               <label className={labelClass}>Assigned Technician</label>
               {isTech ? (
@@ -1388,7 +1575,7 @@ export function CreateServiceTicketForm({
                 </select>
               )}
             </div>
-          </div>
+          </StepCard>
         </div>
 
         {/* Submit */}
