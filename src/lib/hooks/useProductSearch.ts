@@ -40,6 +40,8 @@ export interface UseProductSearchReturn {
   comboOpen: boolean
   /** Manually open/close the combobox dropdown (e.g. on input focus). */
   setComboOpen: (open: boolean) => void
+  /** True when the most recent fetch failed. Cleared on the next successful fetch. */
+  error: boolean
   /** Reset the input + results + dropdown state. Call after picking a product. */
   clear: () => void
 }
@@ -63,12 +65,14 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
   const [results, setResults] = useState<ProductSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [comboOpen, setComboOpen] = useState(false)
+  const [error, setError] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!shouldSearchProducts(query)) {
       setResults([])
       setComboOpen(false)
+      setError(false)
       return
     }
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -77,7 +81,7 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
       const supabase = createClient()
       // Sanitize before splicing into .or() — see lib/db/safe-or.
       const q = sanitizeOrValue(query.trim())
-      const { data } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('products')
         .select('id, synergy_id, number, description, unit_price, synced_at, vendor_code, vendor, vendor_item_code')
         .or(safeOrRaw([
@@ -88,6 +92,7 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
         .limit(limit)
         .returns<ProductSearchResult[]>()
       setResults(data ?? [])
+      setError(!!fetchError)
       setDebouncedQuery(q)
       setComboOpen(true)
       setLoading(false)
@@ -98,6 +103,7 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
     setQuery('')
     setResults([])
     setComboOpen(false)
+    setError(false)
   }
 
   return {
@@ -108,6 +114,7 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
     loading,
     comboOpen,
     setComboOpen,
+    error,
     clear,
   }
 }

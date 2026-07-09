@@ -39,6 +39,7 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
   const [data, setData] = useState<TechnicianAnalytics>(initialData)
   const [periodType, setPeriodType] = useState<PeriodType>(initialData.period.type)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('revenue')
   const [showTargets, setShowTargets] = useState(false)
 
@@ -47,10 +48,15 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
     try {
       const today = new Date().toISOString().split('T')[0]
       const res = await fetch(`/api/analytics/technician/${data.tech.id}?period=${period}&date=${today}`)
-      if (res.ok) {
-        const newData = await res.json()
-        setData(newData)
+      if (!res.ok) {
+        setError(true)
+        return
       }
+      const newData = await res.json()
+      setData(newData)
+      setError(false)
+    } catch {
+      setError(true)
     } finally {
       setLoading(false)
     }
@@ -107,6 +113,19 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-3 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-800 dark:text-red-300">
+          <p className="flex-1">Failed to load this period. The data below may be stale.</p>
+          <button
+            type="button"
+            onClick={() => fetchData(periodType)}
+            className="shrink-0 font-medium underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Content — fades during loading */}
       <div className={`space-y-6 transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>

@@ -257,14 +257,17 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const isTech = user?.role === 'technician'
 
   // Office groups; super_admin gets the full Admin group (Settings + Audit Log),
-  // managers get an Admin group with just the Audit Log. Memoized so the array
-  // isn't rebuilt on every UserProvider re-render.
+  // managers get an Admin group with just the Audit Log. A null user (session
+  // still resolving, or an unauthenticated visitor on a public route) gets no
+  // groups at all — falling through to officeGroups here would render the
+  // full manager nav on any future public route. Memoized so the array isn't
+  // rebuilt on every UserProvider re-render.
   const groups = useMemo(() => {
-    if (isTech) return []
-    if (user?.role === 'super_admin') return [...officeGroups, adminGroup]
-    if (user?.role === 'manager') return [...officeGroups, managerAdminGroup]
+    if (!user || isTech) return []
+    if (user.role === 'super_admin') return [...officeGroups, adminGroup]
+    if (user.role === 'manager') return [...officeGroups, managerAdminGroup]
     return officeGroups
-  }, [isTech, user?.role])
+  }, [isTech, user])
 
   // Persisted open/closed prefs, layered over the first-load defaults. Server
   // snapshot is null → defaults render on the server and first client paint,
@@ -327,7 +330,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
         </div>
         <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-1">
-          {isTech ? (
+          {!user ? null : isTech ? (
             techNavItems.map((item) => (
               <NavLink key={item.route} item={item} pathname={pathname} onClose={onClose} />
             ))

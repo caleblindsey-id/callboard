@@ -54,6 +54,7 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<Notification[]>([])
   const [unread, setUnread] = useState(0)
+  const [loadError, setLoadError] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   const isTech = user?.role === 'technician'
@@ -61,12 +62,17 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications', { cache: 'no-store' })
-      if (!res.ok) return
+      if (!res.ok) {
+        setLoadError(true)
+        return
+      }
       const data = await res.json()
       setItems(Array.isArray(data.notifications) ? data.notifications : [])
       setUnread(typeof data.unreadCount === 'number' ? data.unreadCount : 0)
+      setLoadError(false)
     } catch {
-      /* transient — next poll retries */
+      /* transient — next poll retries, but show the retry affordance now */
+      setLoadError(true)
     }
   }, [])
 
@@ -124,24 +130,32 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  async function markRead(body: { id: string } | { all: true }) {
+  async function markRead(body: { id: string } | { all: true }): Promise<boolean> {
     try {
-      await fetch('/api/notifications/mark-read', {
+      const res = await fetch('/api/notifications/mark-read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
+      return res.ok
     } catch {
-      /* non-fatal — optimistic UI already updated */
+      return false
     }
   }
 
   function handleOpenItem(n: Notification) {
-    // Optimistic: clear the dot + decrement the badge immediately.
+    // Optimistic: clear the dot + decrement the badge immediately, then roll
+    // both back if the write actually failed — otherwise the item looks read
+    // when the server still has it unread.
     if (!n.read_at) {
       setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, read_at: new Date().toISOString() } : i)))
       setUnread((u) => Math.max(0, u - 1))
-      markRead({ id: n.id })
+      markRead({ id: n.id }).then((ok) => {
+        if (!ok) {
+          setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, read_at: null } : i)))
+          setUnread((u) => u + 1)
+        }
+      })
     }
     setOpen(false)
     if (n.url) router.push(n.url)
@@ -149,10 +163,16 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
 
   function handleMarkAll() {
     if (unread === 0) return
+    const previouslyUnread = items.filter((i) => !i.read_at).map((i) => i.id)
     const now = new Date().toISOString()
     setItems((prev) => prev.map((i) => (i.read_at ? i : { ...i, read_at: now })))
     setUnread(0)
-    markRead({ all: true })
+    markRead({ all: true }).then((ok) => {
+      if (!ok) {
+        setItems((prev) => prev.map((i) => (previouslyUnread.includes(i.id) ? { ...i, read_at: null } : i)))
+        setUnread(previouslyUnread.length)
+      }
+    })
   }
 
   if (!isTech) return null
@@ -190,7 +210,18 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
           </div>
 
           <div className="max-h-[60vh] overflow-y-auto">
-            {items.length === 0 ? (
+            {loadError ? (
+              <div className="flex items-center justify-between gap-2 px-3 py-6 text-sm text-gray-500 dark:text-gray-400">
+                <span>Couldn&apos;t load notifications.</span>
+                <button
+                  type="button"
+                  onClick={load}
+                  className="shrink-0 font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : items.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                 You&apos;re all caught up.
               </p>

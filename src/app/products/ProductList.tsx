@@ -22,7 +22,7 @@ function formatCurrency(value: number | null): string {
 }
 
 export default function ProductList() {
-  const { query, setQuery, debouncedQuery, results, loading } = useProductSearch({ limit: 50 })
+  const { query, setQuery, debouncedQuery, results, loading, error } = useProductSearch({ limit: 50 })
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ProductSearchResult,
     ProductSortKey
@@ -54,6 +54,10 @@ export default function ProductList() {
         ) : !settled ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             Searching…
+          </div>
+        ) : error ? (
+          <div className="p-8 text-center text-sm text-red-600 dark:text-red-400">
+            Search failed. Check your connection and try again.
           </div>
         ) : results.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">

@@ -23,6 +23,7 @@ const metricFields = [
 export default function TargetsForm({ techId, techName, currentTargets, periodType, onClose }: TargetsFormProps) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(false)
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
     for (const field of metricFields) {
@@ -34,24 +35,32 @@ export default function TargetsForm({ techId, techName, currentTargets, periodTy
 
   async function handleSave() {
     setSaving(true)
+    setError(false)
     try {
-      const promises = metricFields
-        .filter((f) => values[f.key] !== '')
-        .map((f) =>
-          fetch('/api/analytics/targets', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              technicianId: techId,
-              metric: f.key,
-              value: parseFloat(values[f.key]),
-              periodType,
-            }),
-          })
-        )
-      await Promise.all(promises)
+      const responses = await Promise.all(
+        metricFields
+          .filter((f) => values[f.key] !== '')
+          .map((f) =>
+            fetch('/api/analytics/targets', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                technicianId: techId,
+                metric: f.key,
+                value: parseFloat(values[f.key]),
+                periodType,
+              }),
+            })
+          )
+      )
+      if (responses.some((res) => !res.ok)) {
+        setError(true)
+        return
+      }
       router.refresh()
       onClose()
+    } catch {
+      setError(true)
     } finally {
       setSaving(false)
     }
@@ -93,6 +102,12 @@ export default function TargetsForm({ techId, techName, currentTargets, periodTy
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
           Leave blank to keep current target. New targets take effect immediately.
         </p>
+
+        {error && (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+            Some targets failed to save. Try again.
+          </p>
+        )}
 
         <div className="flex justify-end gap-3 pt-4">
           <button
