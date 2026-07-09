@@ -16,8 +16,14 @@ export type TechEquipmentItem = {
   nextServiceDate: string | null
 }
 
-export default async function MyEquipmentPage() {
+export default async function MyEquipmentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
   const user = await requireRole('technician', ...MANAGER_ROLES)
+  const params = await searchParams
+  const initialSearch = params.q ?? ''
   const supabase = await createClient()
 
   // Distinct equipment IDs the user has been assigned to a ticket on (PM + service).
@@ -45,7 +51,7 @@ export default async function MyEquipmentPage() {
     return (
       <div className="p-6 space-y-6">
         <PageHeader title="Equipment" subtitle="Equipment you've been assigned to" />
-        <TechEquipmentList equipment={[]} />
+        <TechEquipmentList equipment={[]} initialSearch={initialSearch} />
       </div>
     )
   }
@@ -149,7 +155,7 @@ export default async function MyEquipmentPage() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader title="Equipment" subtitle="Equipment you've been assigned to" />
-      <TechEquipmentList equipment={enriched} />
+      <TechEquipmentList equipment={enriched} initialSearch={initialSearch} />
     </div>
   )
 }

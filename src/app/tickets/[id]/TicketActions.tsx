@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { TicketDetail } from '@/lib/db/tickets'
 import { PartRequest, PartUsed, TicketPhoto, UserRole, TicketStatus } from '@/types/database'
@@ -21,6 +21,8 @@ import { partLabel, partsOnOrder } from '@/lib/parts'
 import { calcNextServiceMonth, formatMonthYear } from '@/lib/utils/schedule'
 import { skipReasonLabel, isStopReason } from '@/lib/skip-reasons'
 import { ACTIONS } from '@/lib/labels'
+import { useFormDraft } from '@/lib/hooks/useFormDraft'
+import InlineError from '@/components/ui/InlineError'
 
 export interface ProductResult {
   id: number
@@ -50,6 +52,29 @@ export interface PartEntry {
   requiresDetail?: boolean
   // Free-text "what were the supplies". Optional.
   detail?: string
+}
+
+// Local (localStorage) safety net for the in_progress completion form — the
+// 3s server autosave (saveProgress below) is still authoritative; this is
+// what survives an offline/airplane-mode session between saves. Deliberately
+// excludes photos and the signature (large/binary, mirrors the "photos
+// aren't saved in drafts" convention in SubmitLeadModal).
+interface PmCompletionDraft {
+  completedDate: string
+  hoursWorked: string
+  machineHours: string
+  dateCode: string
+  completionNotes: string
+  pmParts: PartEntry[]
+  additionalParts: PartEntry[]
+  additionalHoursWorked: string
+  tripChargeQty: string
+  billingContactName: string
+  billingContactEmail: string
+  billingContactPhone: string
+  aceLaborOpen: boolean
+  aceHours: string
+  aceReason: string
 }
 
 interface TicketActionsProps {
@@ -462,6 +487,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       }
       router.push(pathname)
       setCompleted(true)
+      clearLocalDraft()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -499,6 +525,80 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Local draft — offline safety net for the completion form. The 3s server
+  // autosave above is still authoritative; this only exists so a tech who
+  // loses signal mid-completion doesn't lose the form on refresh. Keyed by
+  // ticket id so switching tickets never cross-restores another WO's draft.
+  const pmCompletionDraftState = useMemo<PmCompletionDraft>(() => ({
+    completedDate, hoursWorked, machineHours, dateCode, completionNotes,
+    pmParts, additionalParts, additionalHoursWorked, tripChargeQty,
+    billingContactName, billingContactEmail, billingContactPhone,
+    aceLaborOpen, aceHours, aceReason,
+  }), [
+    completedDate, hoursWorked, machineHours, dateCode, completionNotes,
+    pmParts, additionalParts, additionalHoursWorked, tripChargeQty,
+    billingContactName, billingContactEmail, billingContactPhone,
+    aceLaborOpen, aceHours, aceReason,
+  ])
+
+  const { clearDraft: clearLocalDraft, lastPersistedAt: localDraftPersistedAt } = useFormDraft<PmCompletionDraft>({
+    key: `pm-completion-${ticket.id}`,
+    state: pmCompletionDraftState,
+    enabled: ticket.status === 'in_progress',
+    isMeaningful: (s) =>
+      Boolean(
+        s.hoursWorked.trim() ||
+        s.machineHours.trim() ||
+        s.dateCode.trim() ||
+        s.completionNotes.trim() ||
+        s.pmParts.length > 0 ||
+        s.additionalParts.length > 0 ||
+        s.additionalHoursWorked.trim() ||
+        (parseFloat(s.tripChargeQty) || 0) > 0 ||
+        s.billingContactName.trim() ||
+        s.billingContactEmail.trim() ||
+        s.billingContactPhone.trim() ||
+        s.aceLaborOpen
+      ),
+    onRestore: (draft, lastEditedAt) => {
+      // Server autosave (or a completed save from another session) may already
+      // be newer than this device's local draft — never regress a fresher
+      // server value with a stale local one.
+      const serverLastSaved = new Date(ticket.updated_at).getTime()
+      if (!Number.isFinite(lastEditedAt) || lastEditedAt <= serverLastSaved) return
+      setCompletedDate(draft.completedDate || completedDate)
+      setHoursWorked(draft.hoursWorked ?? '')
+      setMachineHours(draft.machineHours ?? '')
+      setDateCode(draft.dateCode ?? '')
+      setCompletionNotes(draft.completionNotes ?? '')
+      if (draft.pmParts) {
+        setPmParts(draft.pmParts.map((p) => ({ ...p, searchOpen: false, searching: false })))
+      }
+      if (draft.additionalParts) {
+        setAdditionalParts(draft.additionalParts.map((p) => ({ ...p, searchOpen: false, searching: false })))
+      }
+      setAdditionalHoursWorked(draft.additionalHoursWorked ?? '')
+      setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
+      setBillingContactName(draft.billingContactName ?? '')
+      setBillingContactEmail(draft.billingContactEmail ?? '')
+      setBillingContactPhone(draft.billingContactPhone ?? '')
+      setAceLaborOpen(Boolean(draft.aceLaborOpen))
+      setAceHours(draft.aceHours ?? '')
+      setAceReason(draft.aceReason ?? '')
+    },
+  })
+
+  // "Saved on this device" — driven by the local write succeeding, distinct
+  // from `saveSuccess` (server PATCH landed). Server indicator wins when both
+  // are true; see the render below.
+  const [localSavedVisible, setLocalSavedVisible] = useState(false)
+  useEffect(() => {
+    if (localDraftPersistedAt == null) return
+    setLocalSavedVisible(true)
+    const t = setTimeout(() => setLocalSavedVisible(false), 3000)
+    return () => clearTimeout(t)
+  }, [localDraftPersistedAt])
 
   async function saveProgress(opts?: { keepalive?: boolean }) {
     // Send only fields that changed in THIS instance vs. the last server-known
@@ -551,6 +651,9 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       if (dirty.completion_seeded_at !== undefined) seedSentRef.current = true
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+      // The server round-trip landed — the local draft's job (surviving a
+      // save the server never saw) is done. Server stays authoritative.
+      clearLocalDraft()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -911,7 +1014,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
           Actions
         </h2>
-        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+        {error && <InlineError message={error} className="mb-3" />}
         <div className="flex flex-wrap gap-2">
           <button
             onClick={handleStart}
@@ -958,7 +1061,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
             Complete PM Ticket
           </h2>
-          {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+          {error && <InlineError message={error} className="mb-3" />}
           {equipmentToVerify ? (
             <VerifyEquipmentPanel
               equipmentId={equipmentToVerify.id}
@@ -1354,9 +1457,11 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
                   Request Skip
                 </button>
               )}
-              {saveSuccess && (
+              {saveSuccess ? (
                 <span className="text-sm text-green-600">Saved</span>
-              )}
+              ) : localSavedVisible ? (
+                <span className="text-sm text-gray-500 dark:text-gray-400">Saved on this device</span>
+              ) : null}
             </div>
 
             {/* Skip request form — tech only, in_progress */}

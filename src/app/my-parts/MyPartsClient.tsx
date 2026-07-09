@@ -7,6 +7,8 @@ import PartsStatusBadge from '@/components/PartsStatusBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import Tabs, { type TabItem } from '@/components/ui/Tabs'
 import RowLink from '@/components/ui/RowLink'
+import InlineError from '@/components/ui/InlineError'
+import EmptyState from '@/components/ui/EmptyState'
 import { markPartCollected, ticketDeepLink } from '@/lib/parts-queue'
 import { partLabel } from '@/lib/parts'
 import type { MyPartRow, MyPartStatus } from '@/lib/db/parts-queue'
@@ -208,11 +210,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
 
   return (
     <div className="space-y-6">
-      {actionError && (
-        <div className="rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300">
-          {actionError}
-        </div>
-      )}
+      {actionError && <InlineError message={actionError} />}
       {/* Status tabs — Ready for Pickup is the most actionable, so it leads. */}
       <Tabs
         ariaLabel="Filter parts by status"
@@ -227,10 +225,7 @@ export default function MyPartsClient({ rows, initialTab }: Props) {
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         {visible.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 p-10 text-center">
-            <PackageCheck className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">{EMPTY_COPY[active]}</p>
-          </div>
+          <EmptyState icon={PackageCheck} message={EMPTY_COPY[active]} />
         ) : (
           <>
             {/* Mobile: stacked cards */}

@@ -27,8 +27,15 @@ export interface UseFormDraftOptions<T> {
   key: string
   /** Current form state — hook reads this for the debounced write. */
   state: T
-  /** Called once on mount if a meaningful draft is found. */
-  onRestore: (draft: T) => void
+  /**
+   * Called once on mount if a meaningful draft is found. Receives the restored
+   * state and the wall-clock ms the draft was last edited (`lastEditedAt`), so
+   * a caller that also has a server-side "last saved" timestamp can gate the
+   * restore itself (e.g. skip if the draft is older than the server value —
+   * the hook always fires this callback when a meaningful draft exists, it
+   * does not know about your server timestamp).
+   */
+  onRestore: (draft: T, lastEditedAt: number) => void
   /**
    * Returns true if `state` is non-trivial enough to bother persisting/restoring.
    * Defaults to "always true". Use this to skip toast-on-empty.
@@ -51,6 +58,13 @@ export interface UseFormDraftResult {
    * caller is still responsible for resetting form state.
    */
   discardDraft: () => void
+  /**
+   * Wall-clock ms of the most recent successful debounced write to
+   * localStorage; null until the first write. Bumps on every write (not just
+   * the first), so a caller can drive a transient "Saved on this device"
+   * indicator the same way `saveSuccess` drives a server-save indicator.
+   */
+  lastPersistedAt: number | null
 }
 
 interface PersistedDraft<T> {
@@ -68,6 +82,7 @@ export function useFormDraft<T>({
   enabled = true,
 }: UseFormDraftOptions<T>): UseFormDraftResult {
   const [restoredAt, setRestoredAt] = useState<number | null>(null)
+  const [lastPersistedAt, setLastPersistedAt] = useState<number | null>(null)
   const stateRef = useRef(state)
   const keyRef = useRef(key)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -121,7 +136,7 @@ export function useFormDraft<T>({
       if (typeof parsed.lastEditedAt !== 'number') return
       const check = isMeaningfulRef.current
       if (check && !check(parsed.state)) return
-      onRestoreRef.current(parsed.state)
+      onRestoreRef.current(parsed.state, parsed.lastEditedAt)
       setRestoredAt(parsed.lastEditedAt)
     } catch {
       // Corrupt JSON or other access error — just skip.
@@ -150,11 +165,13 @@ export function useFormDraft<T>({
           window.localStorage.removeItem(keyRef.current)
           return
         }
+        const now = Date.now()
         const payload: PersistedDraft<T> = {
           state: current,
-          lastEditedAt: Date.now(),
+          lastEditedAt: now,
         }
         window.localStorage.setItem(keyRef.current, JSON.stringify(payload))
+        setLastPersistedAt(now)
       } catch {
         // Quota exceeded, private-mode disabled storage, etc.
       }
@@ -172,6 +189,7 @@ export function useFormDraft<T>({
       clearTimeout(debounceRef.current)
       debounceRef.current = null
     }
+    setLastPersistedAt(null)
     if (typeof window === 'undefined') return
     try {
       window.localStorage.removeItem(keyRef.current)
@@ -189,7 +207,7 @@ export function useFormDraft<T>({
     setRestoredAt(null)
   }, [clearDraft])
 
-  return { restoredAt, dismissRestoredToast, clearDraft, discardDraft }
+  return { restoredAt, dismissRestoredToast, clearDraft, discardDraft, lastPersistedAt }
 }
 
 /**

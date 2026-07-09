@@ -9,6 +9,7 @@ import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { formatDate } from '@/lib/format'
 import { getStatusMeta } from '@/lib/status-meta'
+import InlineError from '@/components/ui/InlineError'
 
 interface PmPartsSectionProps {
   ticketId: string
@@ -461,9 +462,7 @@ export default function PmPartsSection({
           </div>
         )}
 
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
+        {error && <InlineError message={error} />}
       </div>
     </div>
   )

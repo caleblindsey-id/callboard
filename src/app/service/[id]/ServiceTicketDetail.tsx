@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import { PartEntry, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
+import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
@@ -14,6 +15,7 @@ import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import Modal from '@/components/ui/Modal'
+import InlineError from '@/components/ui/InlineError'
 import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { getStatusMeta } from '@/lib/status-meta'
@@ -58,6 +60,25 @@ interface ServiceTicketDetailProps {
   // per-tech create-service-tickets flag is on. Gates the Email Estimate button;
   // the server (send-estimate route) remains the source of truth.
   canEmailEstimate?: boolean
+}
+
+// Local (localStorage) safety net for the in-progress completion form — the
+// 3s server autosave (saveProgress) is still authoritative; this is what
+// survives an offline/airplane-mode session between saves. Deliberately
+// excludes photos and the signature (large/binary, mirrors the "photos
+// aren't saved in drafts" convention in SubmitLeadModal). Estimate-phase
+// fields are out of scope (Round 9 targets the completion form only).
+interface ServiceCompletionDraft {
+  billingType: ServiceBillingType
+  hoursWorked: string
+  tripChargeQty: string
+  machineHours: string
+  dateCode: string
+  completionNotes: string
+  completionParts: PartEntry[]
+  aceLaborOpen: boolean
+  aceHours: string
+  aceReason: string
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -1132,6 +1153,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       savedFieldsRef.current = fields
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+      // The server round-trip landed for the completion phase — the local
+      // draft's job (surviving a save the server never saw) is done. Server
+      // stays authoritative; the estimate phase never touches this draft.
+      if (autoSavePhase === 'completion') clearLocalDraft()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -1191,6 +1216,65 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [])
+
+  // Local draft — offline safety net for the completion form only (mirrors
+  // src/app/tickets/[id]/TicketActions.tsx). The 3s server autosave above is
+  // still authoritative; this only exists so a tech who loses signal
+  // mid-completion doesn't lose the form on refresh. Keyed by ticket id, and
+  // only enabled during the completion phase (not the estimate builder).
+  const serviceCompletionDraftState = useMemo<ServiceCompletionDraft>(() => ({
+    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
+  }), [
+    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
+  ])
+
+  const { clearDraft: clearLocalDraft, lastPersistedAt: localDraftPersistedAt } = useFormDraft<ServiceCompletionDraft>({
+    key: `service-completion-${ticket.id}`,
+    state: serviceCompletionDraftState,
+    enabled: completionPhaseActive,
+    isMeaningful: (s) =>
+      Boolean(
+        s.hoursWorked.trim() ||
+        (parseFloat(s.tripChargeQty) || 0) > 0 ||
+        s.machineHours.trim() ||
+        s.dateCode.trim() ||
+        s.completionNotes.trim() ||
+        s.completionParts.length > 0 ||
+        s.aceLaborOpen
+      ),
+    onRestore: (draft, lastEditedAt) => {
+      // Server autosave (or a completed save from another session) may already
+      // be newer than this device's local draft — never regress a fresher
+      // server value with a stale local one.
+      const serverLastSaved = new Date(ticket.updated_at).getTime()
+      if (!Number.isFinite(lastEditedAt) || lastEditedAt <= serverLastSaved) return
+      if (draft.billingType) setBillingType(draft.billingType)
+      setHoursWorked(draft.hoursWorked ?? '')
+      setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
+      setMachineHours(draft.machineHours ?? '')
+      setDateCode(draft.dateCode ?? '')
+      setCompletionNotes(draft.completionNotes ?? '')
+      if (draft.completionParts) {
+        setCompletionParts(draft.completionParts.map((p) => ({ ...p, searchOpen: false, searching: false })))
+      }
+      setAceLaborOpen(Boolean(draft.aceLaborOpen))
+      setAceHours(draft.aceHours ?? '')
+      setAceReason(draft.aceReason ?? '')
+    },
+  })
+
+  // "Saved on this device" — driven by the local write succeeding, distinct
+  // from `saveSuccess` (server PATCH landed). Server indicator wins when both
+  // are true; see CompletionSection's saveSuccess prop below.
+  const [localSavedVisible, setLocalSavedVisible] = useState(false)
+  useEffect(() => {
+    if (localDraftPersistedAt == null) return
+    setLocalSavedVisible(true)
+    const t = setTimeout(() => setLocalSavedVisible(false), 3000)
+    return () => clearTimeout(t)
+  }, [localDraftPersistedAt])
 
   async function handleRequestEstimatePart(index: number) {
     const entry = estimateParts[index]
@@ -1599,6 +1683,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         throw new Error(data.error || 'Failed to complete ticket')
       }
       setCompleted(true)
+      clearLocalDraft()
     })
   }
 
@@ -2140,8 +2225,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* Error / Success messages */}
       {error && (
-        <div ref={errorBannerRef} role="alert" className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3 scroll-mt-20">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+        <div ref={errorBannerRef} className="scroll-mt-20">
+          <InlineError message={error} />
         </div>
       )}
       {successMsg && (
@@ -2735,6 +2820,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           loading={loading}
           saving={saving}
           saveSuccess={saveSuccess}
+          localSavedVisible={localSavedVisible}
           taxRatePercent={taxRatePercent}
           laborRate={laborRate}
           tripChargeRate={tripChargeRate}

@@ -17,6 +17,11 @@ interface CompletionSectionProps {
   loading: boolean
   saving: boolean
   saveSuccess: boolean
+  // "Saved on this device" — the local draft's debounced write landed, but the
+  // server round-trip hasn't (or the draft has fields the server autosave
+  // doesn't cover, e.g. machine hours / date code). saveSuccess takes
+  // precedence when both are true.
+  localSavedVisible: boolean
   taxRatePercent: number
   laborRate: number
   tripChargeRate: number
@@ -83,6 +88,7 @@ export default function CompletionSection({
   loading,
   saving,
   saveSuccess,
+  localSavedVisible,
   taxRatePercent,
   laborRate,
   tripChargeRate,
@@ -442,6 +448,9 @@ export default function CompletionSection({
           )}
           {saveSuccess && !saving && (
             <span className="text-sm text-green-600">Saved</span>
+          )}
+          {!saving && !saveSuccess && localSavedVisible && (
+            <span className="text-sm text-gray-500 dark:text-gray-400">Saved on this device</span>
           )}
         </div>
       </form>
