@@ -14,6 +14,8 @@ import { getStatusMeta } from '@/lib/status-meta'
 import { createClient } from '@/lib/supabase/client'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
+import FilterBar from '@/components/ui/FilterBar'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 import { matchesSearch } from '@/lib/search'
@@ -225,8 +227,6 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
 
   // Bulk assign (managers + office staff). Technicians never see these controls.
   const canManage = !isTech
-  // Techs can create a service ticket only when granted the per-tech permission.
-  const canCreateTickets = !isTech || currentUser.can_create_service_tickets
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [assignTo, setAssignTo] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -393,174 +393,101 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
     <div className="space-y-6">
       {/* Techs are the assignment-notification targets — nudge them to enable push. */}
       {isTech && <PushPrompt />}
-      {/* Status tabs — primary way to scan/follow up by stage. Horizontal-scrolls on mobile. */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-2">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Filter tickets by status">
-          {STATUS_TABS.map((tab) => {
-            const active = !deletedView && statusFilter === tab.value
-            const count = counts ? counts[tab.countKey] ?? 0 : undefined
-            return (
-              <button
-                key={tab.countKey}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setMany({ deleted: '', status: tab.value })}
-                className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
-                  active
-                    ? 'bg-slate-800 text-white'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {tab.label}
-                {count !== undefined && (
-                  <span
-                    className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] text-xs font-semibold ${
-                      active
-                        ? 'bg-white/20 text-white'
-                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-          {/* Manager-only Deleted view. Restore happens from the ticket detail. */}
-          {!isTech && (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={deletedView}
-              onClick={() => setMany({ deleted: '1', status: '' })}
-              className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] lg:min-h-0 ${
-                deletedView
-                  ? 'bg-slate-800 text-white'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              Deleted
-              {counts?.deleted !== undefined && (
-                <span
-                  className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] text-xs font-semibold ${
-                    deletedView
-                      ? 'bg-white/20 text-white'
-                      : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
-                  }`}
-                >
-                  {counts.deleted}
-                </span>
-              )}
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Status tabs — primary way to scan/follow up by stage. Pipeline-stage tabs render
+          ABOVE FilterBar, not inside it (red-team amendment to standard-draft dimension 6). */}
+      <Tabs
+        ariaLabel="Filter tickets by status"
+        active={deletedView ? 'deleted' : statusFilter || 'all'}
+        onChange={(key) => {
+          if (key === 'deleted') setMany({ deleted: '1', status: '' })
+          else setMany({ deleted: '', status: key === 'all' ? '' : key })
+        }}
+        tabs={[
+          ...STATUS_TABS.map((tab): TabItem => ({
+            key: tab.countKey,
+            label: tab.label,
+            count: counts ? counts[tab.countKey] ?? 0 : undefined,
+          })),
+          // Manager-only Deleted view. Restore happens from the ticket detail.
+          ...(!isTech ? [{ key: 'deleted', label: 'Deleted', count: counts?.deleted }] : []),
+        ]}
+      />
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
-          <div className="w-full lg:w-64">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Search</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => set('search', e.target.value, { debounce: true })}
-                placeholder="WO#, customer, equipment, address, tech"
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 pr-8 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => set('search', '')}
-                  aria-label="Clear search"
-                  className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="w-full lg:w-auto">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
-            <select
-              value={priorityFilter}
-              onChange={(e) => set('priority', e.target.value)}
-              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              {PRIORITY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-full lg:w-auto">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Type</label>
-            <select
-              value={typeFilter}
-              onChange={(e) => set('type', e.target.value)}
-              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            >
-              {TYPE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {!isTech && (
-            <div className="w-full lg:w-auto">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Technician</label>
-              <select
-                value={techFilter}
-                onChange={(e) => set('tech', e.target.value)}
-                className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                <option value="">All Technicians</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="w-full lg:w-auto flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer py-1.5">
-              <input
-                type="checkbox"
-                checked={waitingOnParts}
-                onChange={(e) => set('waitingOnParts', e.target.checked ? '1' : '')}
-                className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-300">Waiting on Parts</span>
-            </label>
-          </div>
-
-          <div className="w-full lg:w-auto flex items-end">
-            <label className="flex items-center gap-2 cursor-pointer py-1.5">
-              <input
-                type="checkbox"
-                checked={poNeeded}
-                onChange={(e) => set('poNeeded', e.target.checked ? '1' : '')}
-                className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-300">PO Needed</span>
-            </label>
-          </div>
-
-          {canCreateTickets && (
-            <div className="w-full lg:w-auto lg:ml-auto">
-              <button
-                onClick={() => router.push('/service/new')}
-                className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors min-h-[44px] lg:min-h-0"
-              >
-                New Service Ticket
-              </button>
-            </div>
-          )}
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('search', v, { debounce: true }),
+          placeholder: 'WO#, customer, equipment, address, tech',
+        }}
+        activeCount={[priorityFilter, typeFilter, techFilter].filter(Boolean).length + (waitingOnParts ? 1 : 0) + (poNeeded ? 1 : 0)}
+      >
+        <div className="w-full lg:w-auto">
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
+          <select
+            value={priorityFilter}
+            onChange={(e) => set('priority', e.target.value)}
+            className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            {PRIORITY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
-      </div>
+
+        <div className="w-full lg:w-auto">
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Type</label>
+          <select
+            value={typeFilter}
+            onChange={(e) => set('type', e.target.value)}
+            className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            {TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {!isTech && (
+          <div className="w-full lg:w-auto">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Technician</label>
+            <select
+              value={techFilter}
+              onChange={(e) => set('tech', e.target.value)}
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              <option value="">All Technicians</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="w-full lg:w-auto flex items-end">
+          <label className="flex items-center gap-2 cursor-pointer py-1.5">
+            <input
+              type="checkbox"
+              checked={waitingOnParts}
+              onChange={(e) => set('waitingOnParts', e.target.checked ? '1' : '')}
+              className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+            />
+            <span className="text-sm text-gray-700 dark:text-gray-300">Waiting on Parts</span>
+          </label>
+        </div>
+
+        <div className="w-full lg:w-auto flex items-end">
+          <label className="flex items-center gap-2 cursor-pointer py-1.5">
+            <input
+              type="checkbox"
+              checked={poNeeded}
+              onChange={(e) => set('poNeeded', e.target.checked ? '1' : '')}
+              className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
+            />
+            <span className="text-sm text-gray-700 dark:text-gray-300">PO Needed</span>
+          </label>
+        </div>
+      </FilterBar>
 
       {/* Error display */}
       {error && (
