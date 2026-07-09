@@ -107,6 +107,15 @@ function formatDay(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString()
 }
 
+// A from_stock part that's been pulled is fulfilled — same lifecycle end
+// point as an ordered part being received — but it carries no 'received'
+// status of its own (it stays 'from_stock' with pulled_at set), so it never
+// matched any of the five tab filters and effectively vanished from the
+// queue once fulfilled. Folded into the Received tab below.
+function isPulledStock(row: Pick<PartsQueueRow, 'status' | 'pulled_at'>): boolean {
+  return row.status === 'from_stock' && !!row.pulled_at
+}
+
 function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): PartsQueueRow[] {
   const mult = dir === 'asc' ? 1 : -1
   return [...rows].sort((a, b) => {
@@ -267,6 +276,8 @@ export default function PartsQueueClient({
       else if (r.status === 'ordered') ordered++
       else if (r.status === 'received' && r.received_at && new Date(r.received_at).getTime() >= receivedCutoffMs)
         received++
+      else if (isPulledStock(r) && new Date(r.pulled_at as string).getTime() >= receivedCutoffMs)
+        received++
     }
     return { review, toPull, toOrder, ordered, received }
   }, [rows, receivedCutoffMs])
@@ -282,9 +293,11 @@ export default function PartsQueueClient({
     if (tab === 'to_order' && r.status !== 'requested') return false
     if (tab === 'ordered' && r.status !== 'ordered') return false
     if (tab === 'received') {
-      if (r.status !== 'received') return false
-      if (!r.received_at) return false
-      if (new Date(r.received_at).getTime() < receivedCutoffMs) return false
+      const pulledStock = isPulledStock(r)
+      if (r.status !== 'received' && !pulledStock) return false
+      const fulfilledAt = pulledStock ? r.pulled_at : r.received_at
+      if (!fulfilledAt) return false
+      if (new Date(fulfilledAt).getTime() < receivedCutoffMs) return false
     }
     // Ticket prefilter (Round B deep-link from /service/<id>) — takes
     // precedence over the source dropdown so a deep-link still shows the
@@ -777,7 +790,11 @@ export default function PartsQueueClient({
                   </p>
                 )}
                 {tab === 'received' && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Received {formatDateTime(row.received_at)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {isPulledStock(row)
+                      ? `Pulled ${formatDateTime(row.pulled_at)}`
+                      : `Received ${formatDateTime(row.received_at)}`}
+                  </p>
                 )}
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
@@ -877,7 +894,7 @@ export default function PartsQueueClient({
                       <Undo2 className="h-5 w-5" />
                     </button>
                   )}
-                  {!row.cancelled && row.status !== 'received' && (
+                  {!row.cancelled && row.status !== 'received' && !isPulledStock(row) && (
                     <button
                       type="button"
                       disabled={isPending}
@@ -1066,7 +1083,14 @@ export default function PartsQueueClient({
                     )}
                     {tab === 'received' && (
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                        {formatDateTime(row.received_at)}
+                        {isPulledStock(row) ? (
+                          <>
+                            <span className="text-xs text-gray-400 dark:text-gray-500">Pulled </span>
+                            {formatDateTime(row.pulled_at)}
+                          </>
+                        ) : (
+                          formatDateTime(row.received_at)
+                        )}
                       </td>
                     )}
                     <td className="px-3 py-2 whitespace-nowrap text-right">
@@ -1114,8 +1138,10 @@ export default function PartsQueueClient({
                           </button>
                         )}
                         {/* Cancel is gated on row status (not just tab) so a
-                            received row never shows an enabled cancel button. */}
-                        {!row.cancelled && row.status !== 'received' && (
+                            received row — or a pulled from_stock row, which
+                            reads the same tab now — never shows an enabled
+                            cancel button. */}
+                        {!row.cancelled && row.status !== 'received' && !isPulledStock(row) && (
                           <button
                             type="button"
                             disabled={isPending}

@@ -99,7 +99,12 @@ export default function SupplyReportClient({ report, range }: { report: SupplyRe
             <KpiCard label="Requests" value={kpis.totalRequests} format="number" />
             <KpiCard label="Items requested" value={kpis.totalItems} format="number" />
             <KpiCard label="Techs requesting" value={kpis.activeTechs} format="number" />
-            <KpiCard label="Denied" value={kpis.deniedCount} format="number" subtitle={`${kpis.fulfilledCount} picked up`} />
+            <KpiCard
+              label="Denied"
+              value={kpis.deniedCount}
+              format="number"
+              subtitle={`${kpis.deniedItemsCount} line item${kpis.deniedItemsCount === 1 ? '' : 's'} denied · ${kpis.fulfilledCount} picked up`}
+            />
           </div>
 
           {/* Trend */}

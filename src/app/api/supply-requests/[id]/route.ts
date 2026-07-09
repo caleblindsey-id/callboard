@@ -5,7 +5,7 @@ import { sendSupplyReadyNotice } from '@/lib/supply-requests/send-supply-ready-n
 import { sendPushToUser } from '@/lib/push/send-push'
 import { createNotification } from '@/lib/notifications/create-notification'
 import { normalizeSupplyItems } from '@/lib/supply-requests/normalize-items'
-import type { SupplyRequestUpdate, SupplyRequestStatus } from '@/types/database'
+import type { SupplyRequestUpdate, SupplyRequestStatus, SupplyRequestItem } from '@/types/database'
 
 // PATCH /api/supply-requests/[id] — office staff move a request through its
 // lifecycle, and edit its line items (quantities + per-line deny, feedback #65).
@@ -50,7 +50,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: readErr } = await supabase
       .from('supply_requests')
-      .select('status, requested_by')
+      .select('status, requested_by, items')
       .eq('id', id)
       .single()
     if (readErr || !current) {
@@ -65,6 +65,10 @@ export async function PATCH(
 
     const now = new Date().toISOString()
     let update: SupplyRequestUpdate
+    // Names newly denied by THIS update_items write (i.e. not already denied on
+    // the request) — used below to notify the tech only on new denials, not on
+    // every edit (feedback: office edits happen repeatedly while pulling).
+    let newlyDeniedNames: string[] = []
 
     switch (action) {
       case 'mark_ready':
@@ -88,6 +92,13 @@ export async function PATCH(
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 })
         }
+        // LineEditor round-trips the request's items array 1:1 by index, so a
+        // positional compare against the prior items tells us which lines are
+        // NEWLY denied by this save (vs. already-denied lines just being re-saved).
+        const priorItems = (current.items ?? []) as SupplyRequestItem[]
+        newlyDeniedNames = result.items
+          .filter((it, i) => it.denied && !priorItems[i]?.denied)
+          .map((it) => it.name)
         update = { items: result.items }
         break
       }
@@ -138,6 +149,35 @@ export async function PATCH(
         })
       } catch (err) {
         console.error('supply-denied in-app notification failed:', err)
+      }
+    } else if (action === 'update_items' && techId && newlyDeniedNames.length > 0) {
+      // Per-line deny via the office's Edit flow gets the same notification the
+      // whole-request "deny" action already sends — only fires on NEW denials so
+      // re-saving an already-denied line doesn't re-notify.
+      const itemsLabel =
+        newlyDeniedNames.length === 1 ? newlyDeniedNames[0] : `${newlyDeniedNames.length} items`
+      const body = `${itemsLabel} denied from your supply request`
+      try {
+        await sendPushToUser(techId, {
+          title: 'Part of your supply request was denied',
+          body,
+          url: '/my-supplies',
+          tag: `supply-denied-${id}`,
+        })
+      } catch (err) {
+        console.error('supply-line-denied push failed:', err)
+      }
+      try {
+        await createNotification(techId, {
+          type: 'supply_request_denied',
+          title: 'Part of your supply request was denied',
+          body,
+          url: '/my-supplies',
+          entityType: 'supply_request',
+          entityId: id,
+        })
+      } catch (err) {
+        console.error('supply-line-denied in-app notification failed:', err)
       }
     }
 

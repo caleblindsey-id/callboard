@@ -133,7 +133,17 @@ export type SupplyReportPeriodPoint = { label: string; count: number }
 export type SupplyReport = {
   rangeLabel: string
   granularity: 'week' | 'month'
-  kpis: { totalRequests: number; totalItems: number; activeTechs: number; deniedCount: number; fulfilledCount: number }
+  kpis: {
+    totalRequests: number
+    totalItems: number
+    activeTechs: number
+    deniedCount: number
+    // Per-line denials (feedback/office Edit flow) — deniedCount above only
+    // counts whole-request denials, which undercounts real denial activity
+    // that happened via a partial line-edit deny instead.
+    deniedItemsCount: number
+    fulfilledCount: number
+  }
   byItem: SupplyReportItemRow[]
   byTech: SupplyReportTechRow[]
   byPeriod: SupplyReportPeriodPoint[]
@@ -188,6 +198,7 @@ export async function getSupplyRequestReport(sinceDays: number | null): Promise<
   const techIds = new Set<string>()
   let totalItems = 0
   let deniedCount = 0
+  let deniedItemsCount = 0
   let fulfilledCount = 0
 
   // Aggregators
@@ -201,8 +212,14 @@ export async function getSupplyRequestReport(sinceDays: number | null): Promise<
     if (r.status === 'picked_up') fulfilledCount++
 
     const items = r.items ?? []
+    // Denied lines aren't fulfilled — exclude them from volume aggregates the
+    // same way the warehouse pull-list export does, and count them toward the
+    // Denied KPI instead of silently vanishing.
+    const activeItems = items.filter((it) => !it.denied)
+    deniedItemsCount += items.length - activeItems.length
+
     const seenInThisRequest = new Set<string>()
-    for (const it of items) {
+    for (const it of activeItems) {
       const qty = Number(it.quantity) || 0
       totalItems += qty
       const key = it.name.trim().toLowerCase()
@@ -227,7 +244,7 @@ export async function getSupplyRequestReport(sinceDays: number | null): Promise<
       techMap.set(r.requested_by, t)
     }
     t.requests++
-    t.items += items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
+    t.items += activeItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
     if (r.created_at > t.lastRequestedAt) t.lastRequestedAt = r.created_at
 
     // Period bucket
@@ -267,6 +284,7 @@ export async function getSupplyRequestReport(sinceDays: number | null): Promise<
       totalItems,
       activeTechs: techIds.size,
       deniedCount,
+      deniedItemsCount,
       fulfilledCount,
     },
     byItem,

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck } from 'lucide-react'
 import type { WarrantyQueueRow, WarrantyBucket } from '@/lib/db/warranty-queue'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 // Aging tightens the longer a claim sits — an unfiled claim or an uncredited one
 // is parts cost the branch is carrying. Same escalation feel as the other queues.
@@ -101,6 +102,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmingUndo, setConfirmingUndo] = useState(false)
 
   const [vendor, setVendor] = useState(row.warranty_vendor ?? '')
   const [claimNumber, setClaimNumber] = useState(row.warranty_claim_number ?? '')
@@ -189,7 +191,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
           )}
           {row.bucket === 'received' && (
             <button
-              onClick={() => post({ action: 'reset' }, 'Failed to undo')}
+              onClick={() => setConfirmingUndo(true)}
               disabled={busy}
               className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
             >
@@ -256,6 +258,20 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmingUndo}
+        title="Undo credit received"
+        message={`Reverse the vendor credit${row.warranty_credit_amount != null ? ` of ${fmtMoney(row.warranty_credit_amount)}` : ''} logged for ${row.customer_name}${row.work_order_number != null ? ` (WO-${row.work_order_number})` : ''}${row.warranty_claim_number ? `, claim #${row.warranty_claim_number}` : ''}? The claim moves back to "Awaiting credit."`}
+        confirmLabel="Undo credit"
+        confirmVariant="danger"
+        loading={busy}
+        onConfirm={() => {
+          setConfirmingUndo(false)
+          post({ action: 'reset' }, 'Failed to undo')
+        }}
+        onCancel={() => setConfirmingUndo(false)}
+      />
     </div>
   )
 }

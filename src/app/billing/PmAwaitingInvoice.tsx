@@ -6,6 +6,7 @@ import { TicketWithJoins } from '@/lib/db/tickets'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 // PM tickets that have been exported to a billing PDF but are NOT yet billed.
 // They become 'billed' only once a manager keys the SynergyERP invoice number
@@ -63,8 +64,9 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [marking, setMarking] = useState(false)
+  const [confirmingMarkBilled, setConfirmingMarkBilled] = useState(false)
   const [unexportingId, setUnexportingId] = useState<string | null>(null)
-  // Inline confirm naming the WO# so a single un-export can't be misread as a
+  // Confirm naming the WO# so a single un-export can't be misread as a
   // bulk action — mirrors ServiceAwaitingInvoice (feedback #40).
   const [confirmingUnexportId, setConfirmingUnexportId] = useState<string | null>(null)
 
@@ -379,27 +381,6 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     if (unexportingId === t.id) {
       return <span className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1">Sending back…</span>
     }
-    if (confirmingUnexportId === t.id) {
-      const label = t.work_order_number != null ? `WO#${t.work_order_number}` : 'this ticket'
-      return (
-        <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <span className="text-xs text-gray-600 dark:text-gray-400">Send {label} back?</span>
-          <button
-            onClick={() => handleUnexport(t.id)}
-            className="text-xs font-medium px-2 py-1 rounded-md text-white bg-slate-700 hover:bg-slate-600 transition-colors"
-            title="Send only this one ticket back to Ready to Export (clears its invoice #)"
-          >
-            Just this one
-          </button>
-          <button
-            onClick={() => setConfirmingUnexportId(null)}
-            className="text-xs px-1.5 py-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </span>
-      )
-    }
     return (
       <button
         onClick={(e) => { e.stopPropagation(); setConfirmingUnexportId(t.id) }}
@@ -431,7 +412,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
               </span>
             )}
             <button
-              onClick={handleMarkBilled}
+              onClick={() => setConfirmingMarkBilled(true)}
               disabled={selected.size === 0 || marking}
               className="w-full lg:w-auto px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
             >
@@ -616,6 +597,32 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmingUnexportId !== null}
+        title="Un-export ticket"
+        message={`Send ${confirmingUnexportId ? woLabel(confirmingUnexportId) : 'this ticket'} back to Ready to Export? This clears its Synergy invoice #.`}
+        confirmLabel="Un-export"
+        confirmVariant="danger"
+        loading={unexportingId !== null}
+        onConfirm={() => {
+          if (confirmingUnexportId) handleUnexport(confirmingUnexportId)
+        }}
+        onCancel={() => setConfirmingUnexportId(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmingMarkBilled}
+        title="Mark tickets billed"
+        message={`Mark ${selected.size} ticket${selected.size === 1 ? '' : 's'} billed for a total of $${selectedTotal.toFixed(2)}?`}
+        confirmLabel="Mark Billed"
+        loading={marking}
+        onConfirm={() => {
+          setConfirmingMarkBilled(false)
+          handleMarkBilled()
+        }}
+        onCancel={() => setConfirmingMarkBilled(false)}
+      />
     </div>
   )
 }
