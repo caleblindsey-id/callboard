@@ -20,6 +20,7 @@ import { X } from 'lucide-react'
 import EnablePushButton from '@/components/push/EnablePushButton'
 import ScrollableTable from '@/components/ScrollableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Modal from '@/components/ui/Modal'
 
 interface SettingsContentProps {
   users: UserRow[]
@@ -1102,17 +1103,15 @@ function AddUserModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" onClick={handleClose} />
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 max-w-md w-full mx-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Add User</h3>
-          <button onClick={handleClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Modal open={open} onClose={handleClose} dismissible={!loading} ariaLabelledBy="add-user-title" className="p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 id="add-user-title" className="text-base font-semibold text-gray-900 dark:text-white">Add User</h3>
+        <button onClick={handleClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-600">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-        {createdEmail ? (
+      {createdEmail ? (
           <div className="space-y-4">
             <p className="text-sm text-green-700 dark:text-green-400 font-medium">User created successfully.</p>
             {inviteSent ? (
@@ -1227,8 +1226,7 @@ function AddUserModal({
             </form>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }
 

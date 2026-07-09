@@ -13,6 +13,7 @@ import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProdu
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Modal from '@/components/ui/Modal'
 import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { getStatusMeta } from '@/lib/status-meta'
@@ -170,65 +171,52 @@ function RequestInfoModal({ open, initialDraft, busy, onSubmit, onCancel }: Requ
   // needs to seed state once. Avoids setState-in-effect cascading renders.
   const [note, setNote] = useState(initialDraft ?? '')
 
-  if (!open) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Request more info"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Request More Info
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            This sends the estimate back to the tech and shows your note when they reopen the ticket.
-          </p>
-        </div>
-        <div className="p-5">
-          <label htmlFor="request-info-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            What do you need from the tech? <span className="text-red-600">*</span>
-          </label>
-          <textarea
-            id="request-info-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={5}
-            maxLength={2000}
-            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-            {note.length} / 2000
-          </p>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(note.trim())}
-            disabled={busy || note.trim().length < 2}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            {busy ? 'Sending...' : 'Send Back to Tech'}
-          </button>
-        </div>
+    <Modal open={open} onClose={onCancel} dismissible={!busy} size="lg" ariaLabelledBy="request-info-title">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 id="request-info-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Request More Info
+        </h3>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          This sends the estimate back to the tech and shows your note when they reopen the ticket.
+        </p>
       </div>
-    </div>
+      <div className="p-5">
+        <label htmlFor="request-info-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          What do you need from the tech? <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          id="request-info-note"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={5}
+          maxLength={2000}
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {note.length} / 2000
+        </p>
+      </div>
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(note.trim())}
+          disabled={busy || note.trim().length < 2}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          {busy ? 'Sending...' : 'Send Back to Tech'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -245,66 +233,53 @@ function BypassEstimateModal({ open, busy, onSubmit, onCancel }: BypassEstimateM
   // Parent remounts via `key={open}` so the field starts empty each time.
   const [note, setNote] = useState('')
 
-  if (!open) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Start work without an estimate"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Start work — no estimate
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Skips the estimate and starts the repair now. Use only when work is already authorized.
-          </p>
-        </div>
-        <div className="p-5">
-          <label htmlFor="bypass-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Who authorized starting work? <span className="text-red-600">*</span>
-          </label>
-          <textarea
-            id="bypass-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={4}
-            maxLength={2000}
-            placeholder="e.g. Approved by Jane Doe on site 6/12 — repair pre-authorized on PO 4471"
-            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-            {note.length} / 2000
-          </p>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(note.trim())}
-            disabled={busy || note.trim().length < 2}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            {busy ? 'Starting...' : 'Start Work'}
-          </button>
-        </div>
+    <Modal open={open} onClose={onCancel} dismissible={!busy} size="lg" ariaLabelledBy="bypass-estimate-title">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 id="bypass-estimate-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Start work — no estimate
+        </h3>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Skips the estimate and starts the repair now. Use only when work is already authorized.
+        </p>
       </div>
-    </div>
+      <div className="p-5">
+        <label htmlFor="bypass-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Who authorized starting work? <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          id="bypass-note"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={4}
+          maxLength={2000}
+          placeholder="e.g. Approved by Jane Doe on site 6/12 — repair pre-authorized on PO 4471"
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {note.length} / 2000
+        </p>
+      </div>
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(note.trim())}
+          disabled={busy || note.trim().length < 2}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          {busy ? 'Starting...' : 'Start Work'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -323,75 +298,62 @@ function MarginOverrideModal({ violations, onSubmit, onCancel }: MarginOverrideM
   // Parent remounts via `key` so the field starts empty each time it opens.
   const [note, setNote] = useState('')
 
-  if (!violations) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Approve below-floor price"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Approve below-floor price
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            One or more parts are priced below the 15% margin floor. As a manager you can approve
-            this down to loaded cost (never below cost). A reason is required for the record.
-          </p>
-        </div>
-        <div className="p-5">
-          <ul className="mb-4 space-y-1 text-sm text-gray-700 dark:text-gray-300">
-            {violations.map((v) => (
-              <li key={v.index} className="flex justify-between gap-3">
-                <span className="truncate">{v.description}</span>
-                <span className="whitespace-nowrap">
-                  ${v.unitPrice.toFixed(2)}{' '}
-                  <span className="text-gray-400 dark:text-gray-500">(floor ${v.minPrice.toFixed(2)})</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <label htmlFor="margin-override-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Reason for the below-floor price <span className="text-red-600">*</span>
-          </label>
-          <textarea
-            id="margin-override-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            maxLength={2000}
-            placeholder="e.g. Price-matched competitor quote for ABC Corp — approved by Caleb"
-            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{note.length} / 2000</p>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(note.trim())}
-            disabled={note.trim().length < 2}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Approve &amp; Save
-          </button>
-        </div>
+    <Modal open={violations !== null} onClose={onCancel} size="lg" ariaLabelledBy="margin-override-title">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 id="margin-override-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Approve below-floor price
+        </h3>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          One or more parts are priced below the 15% margin floor. As a manager you can approve
+          this down to loaded cost (never below cost). A reason is required for the record.
+        </p>
       </div>
-    </div>
+      <div className="p-5">
+        <ul className="mb-4 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+          {(violations ?? []).map((v) => (
+            <li key={v.index} className="flex justify-between gap-3">
+              <span className="truncate">{v.description}</span>
+              <span className="whitespace-nowrap">
+                ${v.unitPrice.toFixed(2)}{' '}
+                <span className="text-gray-400 dark:text-gray-500">(floor ${v.minPrice.toFixed(2)})</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <label htmlFor="margin-override-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Reason for the below-floor price <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          id="margin-override-note"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          placeholder="e.g. Price-matched competitor quote for ABC Corp — approved by Caleb"
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{note.length} / 2000</p>
+      </div>
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(note.trim())}
+          disabled={note.trim().length < 2}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Approve &amp; Save
+        </button>
+      </div>
+    </Modal>
   )
 }
 
