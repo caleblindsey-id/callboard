@@ -15,6 +15,7 @@ import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
+import { getStatusMeta } from '@/lib/status-meta'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import type { LineViolation } from '@/lib/margin'
@@ -77,18 +78,6 @@ const ticketTypeConfig: Record<string, { label: string; classes: string }> = {
 // extracted section components import them directly. ──
 
 // ── Workflow card helpers ───────────────────────────────────────────────────
-// User-facing labels for each status. Mirrors page.tsx STEP_LABELS but
-// includes the off-rail states (declined/canceled) too.
-const STATUS_LABELS: Record<string, string> = {
-  open: 'Open',
-  estimated: 'Awaiting Approval',
-  approved: 'Approved',
-  in_progress: 'In Progress',
-  completed: 'Completed',
-  billed: 'Billed',
-  declined: 'Declined',
-  canceled: 'Canceled',
-}
 
 interface WorkflowComputeArgs {
   status: ServiceTicketStatus
@@ -118,7 +107,7 @@ function computeWorkflowProps({
   requestInfoNote,
   estimateApproved,
 }: WorkflowComputeArgs): { state: string; nextActor?: string; blocker?: string } {
-  const label = STATUS_LABELS[status] ?? status
+  const label = getStatusMeta('service', status).label
   let nextActor: string | undefined
   let blocker: string | undefined
 
@@ -2242,7 +2231,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         ) : (
           <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 px-4 py-3">
             <p className="text-sm text-red-800 dark:text-red-300 font-semibold">
-              Blocked by AR — manager release required.
+              {getStatusMeta('creditReview', 'blocked').label} — manager release required.
             </p>
             <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
               AR blocked this order. A manager must enter the release passcode before work can proceed.

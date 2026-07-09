@@ -10,6 +10,7 @@ import TicketTypeBadge from '@/components/TicketTypeBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
+import { getStatusMeta } from '@/lib/status-meta'
 import { createClient } from '@/lib/supabase/client'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
@@ -86,7 +87,7 @@ export type ServiceBoardInitialFilters = {
 const STATUS_TABS: { value: '' | ServiceTicketStatus; label: string; countKey: string }[] = [
   { value: '', label: 'All', countKey: 'all' },
   { value: 'open', label: 'Open', countKey: 'open' },
-  { value: 'estimated', label: 'Estimated', countKey: 'estimated' },
+  { value: 'estimated', label: getStatusMeta('service', 'estimated').label, countKey: 'estimated' },
   { value: 'approved', label: 'Approved', countKey: 'approved' },
   { value: 'in_progress', label: 'In Progress', countKey: 'in_progress' },
   { value: 'completed', label: 'Completed', countKey: 'completed' },

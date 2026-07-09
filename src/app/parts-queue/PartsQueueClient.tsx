@@ -1475,7 +1475,7 @@ function ToPullTable({
       <div className="lg:hidden space-y-3">
         {rows.length === 0 ? (
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            Nothing waiting to be pulled from stock.
+            Nothing waiting to be pulled.
           </div>
         ) : (
           rows.map(row => {
@@ -1570,7 +1570,7 @@ function ToPullTable({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                  Nothing waiting to be pulled from stock.
+                  Nothing waiting to be pulled.
                 </td>
               </tr>
             ) : (

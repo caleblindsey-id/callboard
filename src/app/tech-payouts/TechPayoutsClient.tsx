@@ -26,10 +26,15 @@ interface Props {
   currentUserId: string
 }
 
+// Tab wording kills the triple "pending" the old labels carried (Pending ACE,
+// Pending, and the DB status literally named "pending"): ACE's own queue is
+// "ACE Review", and the manager-approved-but-awaiting-payout state is
+// "Awaiting Match" rather than "Pending" now that it's spelled out consistently
+// with the STATUS_LABEL below.
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'pending',     label: 'Submitted Leads' },
-  { key: 'pending_ace', label: 'Pending ACE' },
-  { key: 'approved',    label: 'Pending' },
+  { key: 'pending_ace', label: 'ACE Review' },
+  { key: 'approved',    label: 'Awaiting Match' },
   { key: 'match',       label: 'Match Candidates' },
   { key: 'earned',      label: 'Earned (unpaid)' },
   { key: 'paid',        label: 'Paid' },
@@ -38,17 +43,18 @@ const TABS: { key: TabKey; label: string }[] = [
 ]
 
 // Display label for the per-row status badge. DB enum values stay the same;
-// this just renames the manager-approved-but-awaiting-payout state so
-// "approved" isn't mistaken for "ready to pay".
+// this aligns with status-meta.lead except 'approved', which the payout hub
+// deliberately shows as "Awaiting Match" (matching the tab above) rather than
+// "Approved" — the point of this whole hub is leads not yet matched/paid.
 const STATUS_LABEL: Record<TechLeadStatus, string> = {
-  pending:       'submitted',
-  approved:      'pending',
-  match_pending: 'match pending',
-  rejected:      'rejected',
-  cancelled:     'cancelled',
-  expired:       'expired',
-  earned:        'earned',
-  paid:          'paid',
+  pending:       'Submitted',
+  approved:      'Awaiting Match',
+  match_pending: 'Match Pending',
+  rejected:      'Rejected',
+  cancelled:     'Cancelled',
+  expired:       'Expired',
+  earned:        'Earned',
+  paid:          'Paid',
 }
 
 function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJoins[] {

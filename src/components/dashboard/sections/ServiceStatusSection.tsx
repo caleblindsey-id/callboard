@@ -2,10 +2,11 @@ import Link from 'next/link'
 import { Headset } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
 import { getServiceTicketCounts } from '@/lib/db/service-tickets'
+import { getStatusMeta } from '@/lib/status-meta'
 
 const serviceStatusCards: { key: string; label: string; color: string }[] = [
   { key: 'open', label: 'Open', color: 'text-green-500' },
-  { key: 'estimated', label: 'Estimated', color: 'text-yellow-500' },
+  { key: 'estimated', label: getStatusMeta('service', 'estimated').label, color: 'text-yellow-500' },
   { key: 'approved', label: 'Approved', color: 'text-purple-500' },
   { key: 'in_progress', label: 'In Progress', color: 'text-blue-500' },
   { key: 'completed', label: 'Completed', color: 'text-emerald-500' },

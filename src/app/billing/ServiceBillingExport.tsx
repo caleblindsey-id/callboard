@@ -9,6 +9,7 @@ import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { FIELDS } from '@/lib/labels'
 
 // "Ready to Export" — completed service tickets not yet exported. Export is the
 // first half of the export-first billing flow (mirrors the PM Ready-to-Export
@@ -532,7 +533,7 @@ export default function ServiceBillingExport({
                       {renderPoStatus(t)}
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                      <span>Synergy #:</span>
+                      <span>{FIELDS.synergyOrder}:</span>
                       {renderSynergyCell(t)}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
@@ -557,7 +558,7 @@ export default function ServiceBillingExport({
                     <SortHeader label="Service Type" colKey="ticketType" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Synergy #</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">{FIELDS.synergyOrder}</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
                   </tr>
                 </thead>

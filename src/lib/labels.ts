@@ -14,6 +14,10 @@
 export const ENTITY = {
   pm: 'Preventive Maintenance',
   pmShort: 'PM',
+  // The PM entity's own record/detail name — distinct from `pm` (the program/
+  // nav concept) so PM-specific surfaces can say "PM Ticket" instead of a bare
+  // "Ticket" that reads as the Service Ticket entity everywhere else.
+  pmTicket: 'PM Ticket',
   // "Ticket" is only correct alone inside an already-service context (a
   // service detail page, a service-scoped list) — everywhere else use `service`.
   service: 'Service Ticket',

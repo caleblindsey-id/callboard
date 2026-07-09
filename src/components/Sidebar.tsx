@@ -108,7 +108,7 @@ const managerAdminGroup: NavGroup = {
 // Technicians keep a flat menu — it's already short.
 const techNavItems: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/' },
-  { label: 'My PMs', icon: ClipboardList, route: '/tickets' },
+  { label: 'My PM Tickets', icon: ClipboardList, route: '/tickets' },
   { label: 'Service Tickets', icon: Headset, route: '/service' },
   { label: 'My Parts', icon: PackageCheck, route: '/my-parts' },
   { label: 'Request Supplies', icon: SprayCan, route: '/my-supplies' },

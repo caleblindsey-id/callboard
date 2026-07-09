@@ -20,6 +20,7 @@ import { renderPartsSection } from './renderPartsSection'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { calcNextServiceMonth, formatMonthYear } from '@/lib/utils/schedule'
 import { skipReasonLabel, isStopReason } from '@/lib/skip-reasons'
+import { ACTIONS } from '@/lib/labels'
 
 export interface ProductResult {
   id: number
@@ -886,7 +887,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         disabled={loading}
         className="px-4 py-2 text-xs font-medium text-red-700 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
       >
-        {loading ? 'Deleting...' : 'Delete Ticket'}
+        {loading ? 'Deleting...' : 'Delete PM Ticket'}
       </button>
       <ConfirmDialog
         open={deleteConfirmOpen}
@@ -955,7 +956,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       <>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
-            Complete Ticket
+            Complete PM Ticket
           </h2>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           {equipmentToVerify ? (
@@ -1372,23 +1373,23 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           )}
           {(userRole === 'super_admin' || userRole === 'manager') && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reset ticket status</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reopen ticket status</p>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setPendingConfirm({ title: 'Reset to Assigned?', message: 'Reset this ticket to Assigned? Draft work will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('assigned') })}
+                  onClick={() => setPendingConfirm({ title: 'Reopen to Assigned?', message: 'Reopen this ticket to Assigned? Draft work will be cleared.', confirmLabel: ACTIONS.reopen, action: () => handleReopen('assigned') })}
                   disabled={loading}
                   className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
                 >
-                  Reset to Assigned
+                  Reopen to Assigned
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPendingConfirm({ title: 'Reset to Unassigned?', message: 'Reset this ticket to Unassigned? Draft work and technician assignment will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('unassigned') })}
+                  onClick={() => setPendingConfirm({ title: 'Reopen to Unassigned?', message: 'Reopen this ticket to Unassigned? Draft work and technician assignment will be cleared.', confirmLabel: ACTIONS.reopen, action: () => handleReopen('unassigned') })}
                   disabled={loading}
                   className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
                 >
-                  Reset to Unassigned
+                  Reopen to Unassigned
                 </button>
               </div>
             </div>
@@ -1516,7 +1517,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4">
-          Ticket Skipped
+          PM Ticket Skipped
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">This ticket was skipped and no work was performed.</p>
         {!isTech && (
@@ -1733,36 +1734,36 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       )}
       {ticket.status === 'billed' && (userRole === 'super_admin' || userRole === 'manager') && (
         <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reset ticket status</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Manager: Reopen ticket status</p>
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setPendingConfirm({ title: 'Back to Completed?', message: 'Move back to Completed? Billing export flag will be cleared.', confirmLabel: 'Move Back', action: () => handleReopen('completed') })}
+              onClick={() => setPendingConfirm({ title: 'Reopen to Completed?', message: 'Reopen this ticket to Completed? Billing export flag will be cleared.', confirmLabel: ACTIONS.reopen, action: () => handleReopen('completed') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
-              Back to Completed
+              Reopen to Completed
             </button>
             <button
-              onClick={() => setPendingConfirm({ title: 'Back to In Progress?', message: 'Reset to In Progress? All completion data will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('in_progress') })}
+              onClick={() => setPendingConfirm({ title: 'Reopen to In Progress?', message: 'Reopen this ticket to In Progress? All completion data will be cleared.', confirmLabel: ACTIONS.reopen, action: () => handleReopen('in_progress') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
-              Back to In Progress
+              Reopen to In Progress
             </button>
             <button
-              onClick={() => setPendingConfirm({ title: 'Back to Assigned?', message: 'Reset to Assigned? All completion data will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('assigned') })}
+              onClick={() => setPendingConfirm({ title: 'Reopen to Assigned?', message: 'Reopen this ticket to Assigned? All completion data will be cleared.', confirmLabel: ACTIONS.reopen, action: () => handleReopen('assigned') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
-              Back to Assigned
+              Reopen to Assigned
             </button>
             <button
-              onClick={() => setPendingConfirm({ title: 'Back to Unassigned?', message: 'Reset to Unassigned? All data including technician assignment will be cleared.', confirmLabel: 'Reset', action: () => handleReopen('unassigned') })}
+              onClick={() => setPendingConfirm({ title: 'Reopen to Unassigned?', message: 'Reopen this ticket to Unassigned? All data including technician assignment will be cleared.', confirmLabel: ACTIONS.reopen, action: () => handleReopen('unassigned') })}
               disabled={loading}
               className="px-3 py-2 text-xs font-medium text-orange-700 dark:text-orange-400 bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 transition-colors"
             >
-              Back to Unassigned
+              Reopen to Unassigned
             </button>
           </div>
         </div>

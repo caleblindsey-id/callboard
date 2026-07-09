@@ -17,12 +17,16 @@ type Props = {
 
 const VALID_TABS: MyPartStatus[] = ['received', 'from_stock', 'ordered', 'requested', 'pending_review']
 
+// Tab wording matches status-meta's canonical parts vocabulary except
+// 'received', which keeps its tech-facing "Ready for Pickup" name — that's an
+// action state techs rely on, not the raw status word. Per-part badges below
+// (PartsStatusBadge) render the canonical label regardless of which tab they're in.
 const TABS: { key: MyPartStatus; label: string }[] = [
   { key: 'received', label: 'Ready for Pickup' },
   { key: 'from_stock', label: 'From Stock' },
-  { key: 'ordered', label: 'On Order' },
-  { key: 'requested', label: 'Awaiting Order' },
-  { key: 'pending_review', label: 'Pending Review' },
+  { key: 'ordered', label: 'Ordered' },
+  { key: 'requested', label: 'Requested' },
+  { key: 'pending_review', label: 'In Review' },
 ]
 
 const EMPTY_COPY: Record<MyPartStatus, string> = {

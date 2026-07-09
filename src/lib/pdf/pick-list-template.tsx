@@ -104,7 +104,7 @@ export function PickListDocument({ rows, generatedDate, logoBase64 }: PickListDo
         </View>
 
         {rows.length === 0 ? (
-          <Text style={styles.empty}>Nothing waiting to be pulled from stock.</Text>
+          <Text style={styles.empty}>Nothing waiting to be pulled.</Text>
         ) : (
           rows.map((r, i) => (
             <View key={i} style={styles.tableRow} wrap={false}>

@@ -6,6 +6,7 @@ import type {
   TechLeadBonusRow,
 } from '@/lib/db/dashboard-metrics'
 import { TECH_LEAD_PIPELINE_LABEL } from '@/lib/tech-leads/status-labels'
+import { ACTIONS } from '@/lib/labels'
 
 function fmtMoney(n: number): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -37,7 +38,7 @@ export default function PipelineAndMoney({ techLeads, bonusLeaderboard, estimate
         >
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Tech Leads</div>
-            <span className="text-xs text-blue-600 dark:text-blue-400">View all →</span>
+            <span className="text-xs text-blue-600 dark:text-blue-400">{ACTIONS.viewAll} →</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-md p-2.5">
@@ -65,7 +66,7 @@ export default function PipelineAndMoney({ techLeads, bonusLeaderboard, estimate
               Tech Lead Bonus — MTD
             </div>
             <Link href="/tech-leads" className="text-xs text-blue-600 dark:text-blue-400">
-              Details →
+              {ACTIONS.viewAll} →
             </Link>
           </div>
           {bonusLeaderboard.length === 0 ? (
@@ -99,7 +100,7 @@ export default function PipelineAndMoney({ techLeads, bonusLeaderboard, estimate
         >
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Estimates Pipeline</div>
-            <span className="text-xs text-blue-600 dark:text-blue-400">View →</span>
+            <span className="text-xs text-blue-600 dark:text-blue-400">{ACTIONS.viewAll} →</span>
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="flex justify-between items-baseline">

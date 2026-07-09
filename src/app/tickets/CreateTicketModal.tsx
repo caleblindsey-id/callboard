@@ -9,6 +9,7 @@ import { X } from 'lucide-react'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
+import { ENTITY, newEntityLabel, createEntityLabel } from '@/lib/labels'
 
 const DRAFT_KEY = 'draft-create-pm-ticket'
 
@@ -274,7 +275,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
       <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={handleClose} />
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 max-w-lg w-full mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">New Ticket</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{newEntityLabel(ENTITY.pmTicket)}</h3>
           <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400">
             <X className="h-5 w-5" />
           </button>
@@ -466,7 +467,7 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
                 disabled={loading}
                 className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
               >
-                {loading ? 'Creating...' : 'Create Ticket'}
+                {loading ? 'Creating...' : createEntityLabel(ENTITY.pmTicket)}
               </button>
             </div>
           </div>

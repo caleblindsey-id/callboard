@@ -19,6 +19,7 @@ import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { matchesSearch } from '@/lib/search'
+import { ENTITY, newEntityLabel } from '@/lib/labels'
 
 type TicketSortKey =
   | 'work_order_number'
@@ -683,7 +684,7 @@ export default function TicketBoard({
                   onClick={() => setCreateOpen(true)}
                   className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors min-h-[44px] lg:min-h-0"
                 >
-                  New Ticket
+                  {newEntityLabel(ENTITY.pmTicket)}
                 </button>
                 <button
                   onClick={() => setGenerateOpen(true)}

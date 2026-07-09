@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import ZoneHeader from './ZoneHeader'
+import { ACTIONS } from '@/lib/labels'
 
 type Props = {
   remaining: number
@@ -26,7 +27,7 @@ export default function ScheduleSummary({ remaining, monthName, month, year }: P
             href={`/tickets?month=${month}&year=${year}`}
             className="text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline"
           >
-            Open list →
+            {ACTIONS.viewAll} →
           </Link>
         </div>
       </div>
