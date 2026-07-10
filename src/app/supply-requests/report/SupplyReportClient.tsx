@@ -7,6 +7,7 @@ import KpiCard from '@/components/analytics/KpiCard'
 import ScrollableTable from '@/components/ScrollableTable'
 import { formatDate } from '@/lib/format'
 import type { SupplyReport } from '@/lib/db/supply-requests'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
 // recharts is heavy + SSR-unfriendly — load it client-only, like AnalyticsOverview.
 const SupplyTrendChart = dynamic(() => import('./SupplyTrendChart'), {
@@ -69,21 +70,13 @@ export default function SupplyReportClient({ report, range }: { report: SupplyRe
     <div className="space-y-6">
       {/* Range selector */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              onClick={() => router.push(`/supply-requests/report?range=${r.key}`)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                range === r.key
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          ariaLabel="Report date range"
+          tabs={RANGES.map((r): TabItem => ({ key: r.key, label: r.label }))}
+          active={range}
+          onChange={(key) => router.push(`/supply-requests/report?range=${key}`)}
+          className="w-fit"
+        />
         <span className="text-sm text-gray-500 dark:text-gray-400">{report.rangeLabel}</span>
       </div>
 
@@ -99,7 +92,12 @@ export default function SupplyReportClient({ report, range }: { report: SupplyRe
             <KpiCard label="Requests" value={kpis.totalRequests} format="number" />
             <KpiCard label="Items requested" value={kpis.totalItems} format="number" />
             <KpiCard label="Techs requesting" value={kpis.activeTechs} format="number" />
-            <KpiCard label="Denied" value={kpis.deniedCount} format="number" subtitle={`${kpis.fulfilledCount} picked up`} />
+            <KpiCard
+              label="Denied"
+              value={kpis.deniedCount}
+              format="number"
+              subtitle={`${kpis.deniedItemsCount} line item${kpis.deniedItemsCount === 1 ? '' : 's'} denied · ${kpis.fulfilledCount} picked up`}
+            />
           </div>
 
           {/* Trend */}

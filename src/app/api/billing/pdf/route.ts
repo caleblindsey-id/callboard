@@ -14,6 +14,8 @@ import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
 import { MONTHS } from '@/lib/pm-schedule-options'
 import { APP_NAME } from '@/lib/branding'
+import * as fs from 'fs'
+import * as path from 'path'
 
 // ============================================================
 // Types
@@ -402,12 +404,25 @@ export async function POST(request: NextRequest) {
       minute: '2-digit',
     })
 
+    // Load logo — matches the pattern used by every other PDF-producing route
+    // (this route was previously the only one of six that skipped it, per
+    // gap-generated-pdf-documents-1).
+    let logoBase64: string | null = null
+    try {
+      const logoPath = path.join(process.cwd(), 'public', 'imperial-dade-logo.png')
+      const logoBuffer = fs.readFileSync(logoPath)
+      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
+    } catch {
+      // Logo not found — will render without it
+    }
+
     const element = React.createElement(BillingDocument, {
       tickets,
       month: monthNum,
       year: yearNum,
       exportedAt,
       companyName: companyName || APP_NAME,
+      logoBase64,
     } as Parameters<typeof BillingDocument>[0])
 
     let buffer: Buffer

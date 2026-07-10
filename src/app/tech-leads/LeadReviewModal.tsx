@@ -7,6 +7,7 @@ import type { TicketPhoto, SalesRep, SalesRepKind } from '@/types/database'
 import { tierLabel, EQUIPMENT_SALE_TIERS } from '@/lib/tech-leads/bonus-tiers'
 import { createClient } from '@/lib/supabase/client'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Modal from '@/components/ui/Modal'
 
 interface Props {
   lead: TechLeadWithJoins | null
@@ -110,20 +111,6 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
       cancelled = true
     }
   }, [lead])
-
-  // Escape-to-dismiss (dirty-guarded). While the discard confirm is up, its
-  // own Escape handling wins — this listener stands down so the same
-  // keystroke can't re-open the confirm it just dismissed.
-  useEffect(() => {
-    if (!lead) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || submitting || confirmDiscardOpen) return
-      if (isDirty) setConfirmDiscardOpen(true)
-      else onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [lead, submitting, onClose, isDirty, confirmDiscardOpen])
 
   if (!lead) return null
 
@@ -267,17 +254,8 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
     : null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="lead-review-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) requestClose()
-      }}
-    >
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={requestClose} />
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 w-full max-w-lg mx-4 max-h-[95vh] overflow-y-auto">
+    <>
+    <Modal open onClose={requestClose} dismissible={!submitting} size="lg" ariaLabelledBy="lead-review-title">
         <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h3 id="lead-review-title" className="text-base font-semibold text-gray-900 dark:text-white">
             Review tech lead
@@ -641,7 +619,7 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
             </div>
           </div>
         )}
-      </div>
+    </Modal>
       <ConfirmDialog
         open={confirmDiscardOpen}
         title="Discard changes?"
@@ -654,7 +632,7 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
         }}
         onCancel={() => setConfirmDiscardOpen(false)}
       />
-    </div>
+    </>
   )
 }
 

@@ -3,12 +3,14 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Phone, Mail, MapPin, PackageCheck, Send } from 'lucide-react'
+import { Phone, Mail, MapPin, PackageCheck, Send, ChevronRight } from 'lucide-react'
 import type { PickupQueueRow } from '@/lib/db/pickup-queue'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
+import QueueActionCard from '@/components/ui/QueueActionCard'
 
 type Tab = 'all' | 'call'
 
@@ -223,7 +225,7 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     }
   }
 
-  const tabs: { key: Tab; label: string; count: number }[] = [
+  const tabs: TabItem[] = [
     { key: 'all', label: 'All Ready', count: rows.length },
     { key: 'call', label: 'Needs Call', count: callCount },
   ]
@@ -232,22 +234,13 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
     <div className="space-y-4">
       {/* Tabs + search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                tab === t.key
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {t.label}
-              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">{t.count}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs
+          ariaLabel="Filter pickups"
+          tabs={tabs}
+          active={tab}
+          onChange={(key) => setTab(key as Tab)}
+          className="w-fit"
+        />
         <input
           type="search"
           value={query}
@@ -276,21 +269,48 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
             const aging = agingBadge(r.days_ready)
             const contact = contactBadge(r)
             const noEmail = r.resolved_email == null
+            const isBusy = busyId === r.id
             return (
-              <div key={r.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
-                      {r.customer_name}
-                    </Link>
-                    {r.work_order_number != null && (
-                      <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
-                    )}
-                  </div>
+              <QueueActionCard
+                key={r.id}
+                title={
+                  <Link href={`/service/${r.id}`} className="inline-flex items-center gap-1 rounded hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
+                    {r.customer_name}
+                    <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
+                  </Link>
+                }
+                sub={
+                  r.work_order_number != null ? (
+                    <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
+                  ) : undefined
+                }
+                badge={
                   <span className={`shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
                     {aging.label}
                   </span>
-                </div>
+                }
+                footer={
+                  <PickupRowActions
+                    row={r}
+                    variant="card"
+                    busy={isBusy}
+                    confirming={confirmingId === r.id}
+                    calling={callingId === r.id}
+                    pickedUpName={pickedUpName}
+                    callNotes={callNotes}
+                    onPickedUpNameChange={setPickedUpName}
+                    onCallNotesChange={setCallNotes}
+                    onStartConfirm={() => { setConfirmingId(r.id); setPickedUpName(''); setCallingId(null); setError(null) }}
+                    onCancelConfirm={() => { setConfirmingId(null); setPickedUpName('') }}
+                    onConfirm={() => confirmPickup(r.id)}
+                    onStartCall={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
+                    onCancelCall={() => { setCallingId(null); setCallNotes('') }}
+                    onLogCall={() => markCalled(r.id)}
+                    onSendNotice={() => sendNotice(r.id)}
+                    onAbandonClick={() => setPendingAbandonId(r.id)}
+                  />
+                }
+              >
                 <div className="text-sm text-gray-900 dark:text-gray-100">
                   {r.equipment_label}
                   {r.serial_number && <span className="text-xs text-gray-400 dark:text-gray-500"> · S/N {r.serial_number}</span>}
@@ -314,8 +334,8 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                         placeholder="Shelf / bin"
                         className="w-24 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                       />
-                      <button onClick={() => saveLocation(r.id)} disabled={busyId === r.id} className="text-xs font-medium text-blue-600 dark:text-blue-400 disabled:opacity-50">
-                        {busyId === r.id ? '…' : 'Save'}
+                      <button onClick={() => saveLocation(r.id)} disabled={isBusy} className="text-xs font-medium text-blue-600 dark:text-blue-400 disabled:opacity-50">
+                        {isBusy ? '…' : 'Save'}
                       </button>
                     </div>
                   ) : (
@@ -348,81 +368,7 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                     Abandonment notice sent {fmtDate(r.abandonment_notice_sent_at)}
                   </div>
                 )}
-
-                {confirmingId === r.id ? (
-                  <div className="space-y-2 pt-1">
-                    <input
-                      autoFocus
-                      value={pickedUpName}
-                      onChange={(e) => setPickedUpName(e.target.value)}
-                      placeholder="Picked up by (optional)"
-                      className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                    <div className="flex gap-2">
-                      <button onClick={() => confirmPickup(r.id)} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">
-                        {busyId === r.id ? 'Saving…' : 'Confirm'}
-                      </button>
-                      <button onClick={() => { setConfirmingId(null); setPickedUpName('') }} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : callingId === r.id ? (
-                  <div className="space-y-2 pt-1">
-                    <input
-                      autoFocus
-                      value={callNotes}
-                      onChange={(e) => setCallNotes(e.target.value)}
-                      placeholder="Call notes (optional)"
-                      className="w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                    <div className="flex gap-2">
-                      <button onClick={() => markCalled(r.id)} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50">
-                        {busyId === r.id ? 'Saving…' : 'Log call'}
-                      </button>
-                      <button onClick={() => { setCallingId(null); setCallNotes('') }} disabled={busyId === r.id} className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <button
-                      onClick={() => { setConfirmingId(r.id); setPickedUpName(''); setCallingId(null); setError(null) }}
-                      className="flex-1 min-h-[44px] px-3 text-sm font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
-                    >
-                      Confirm Pickup
-                    </button>
-                    {r.contact_status === 'has_contact' && (
-                      <button
-                        onClick={() => sendNotice(r.id)}
-                        disabled={busyId === r.id}
-                        className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-1 px-3 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50"
-                      >
-                        <Send className="h-3 w-3" />
-                        {busyId === r.id ? 'Sending…' : 'Send notice'}
-                      </button>
-                    )}
-                    {noEmail && (
-                      <button
-                        onClick={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
-                        className="flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        {r.pickup_called_at ? 'Log follow-up call' : 'Mark Called'}
-                      </button>
-                    )}
-                    {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
-                      <button
-                        onClick={() => setPendingAbandonId(r.id)}
-                        disabled={busyId === r.id}
-                        className="flex-1 min-h-[44px] px-3 text-sm font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
-                      >
-                        {busyId === r.id ? 'Sending…' : r.abandonment_notice_sent_at ? 'Resend Abandonment' : 'Abandonment Notice'}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+              </QueueActionCard>
             )
           })}
         </div>
@@ -448,8 +394,9 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                 return (
                   <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 align-top">
                     <td className="px-4 py-3">
-                      <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                      <Link href={`/service/${r.id}`} className="inline-flex items-center gap-1 rounded font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
                         {r.customer_name}
+                        <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
                       </Link>
                       {r.work_order_number != null && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
@@ -531,96 +478,25 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {confirmingId === r.id ? (
-                        <div className="inline-flex flex-col items-end gap-1.5">
-                          <input
-                            autoFocus
-                            value={pickedUpName}
-                            onChange={(e) => setPickedUpName(e.target.value)}
-                            placeholder="Picked up by (optional)"
-                            className="w-44 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                          />
-                          <div className="flex gap-1.5">
-                            <button
-                              onClick={() => confirmPickup(r.id)}
-                              disabled={busyId === r.id}
-                              className="px-2.5 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50"
-                            >
-                              {busyId === r.id ? 'Saving…' : 'Confirm'}
-                            </button>
-                            <button
-                              onClick={() => { setConfirmingId(null); setPickedUpName('') }}
-                              disabled={busyId === r.id}
-                              className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : callingId === r.id ? (
-                        <div className="inline-flex flex-col items-end gap-1.5">
-                          <input
-                            autoFocus
-                            value={callNotes}
-                            onChange={(e) => setCallNotes(e.target.value)}
-                            placeholder="Call notes (optional)"
-                            className="w-52 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                          />
-                          <div className="flex gap-1.5">
-                            <button
-                              onClick={() => markCalled(r.id)}
-                              disabled={busyId === r.id}
-                              className="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                              {busyId === r.id ? 'Saving…' : 'Log call'}
-                            </button>
-                            <button
-                              onClick={() => { setCallingId(null); setCallNotes('') }}
-                              disabled={busyId === r.id}
-                              className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="inline-flex flex-col items-end gap-1.5">
-                          <button
-                            onClick={() => { setConfirmingId(r.id); setPickedUpName(''); setCallingId(null); setError(null) }}
-                            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
-                          >
-                            Confirm Pickup
-                          </button>
-                          {r.contact_status === 'has_contact' && (
-                            <button
-                              onClick={() => sendNotice(r.id)}
-                              disabled={busyId === r.id}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50"
-                              title="Email the customer that their equipment is ready for pickup"
-                            >
-                              <Send className="h-3 w-3" />
-                              {busyId === r.id ? 'Sending…' : 'Send pickup notice'}
-                            </button>
-                          )}
-                          {noEmail && (
-                            <button
-                              onClick={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
-                              className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-                            >
-                              {r.pickup_called_at ? 'Log follow-up call' : 'Mark Called'}
-                            </button>
-                          )}
-                          {!noEmail && r.days_ready != null && r.days_ready >= ABANDON_DAYS && (
-                            <button
-                              onClick={() => setPendingAbandonId(r.id)}
-                              disabled={busyId === r.id}
-                              className="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50"
-                            >
-                              {busyId === r.id ? 'Sending…' : r.abandonment_notice_sent_at ? 'Resend Abandonment Notice' : 'Send Abandonment Notice'}
-                            </button>
-                          )}
-                        </div>
-                      )}
+                      <PickupRowActions
+                        row={r}
+                        variant="row"
+                        busy={busyId === r.id}
+                        confirming={confirmingId === r.id}
+                        calling={callingId === r.id}
+                        pickedUpName={pickedUpName}
+                        callNotes={callNotes}
+                        onPickedUpNameChange={setPickedUpName}
+                        onCallNotesChange={setCallNotes}
+                        onStartConfirm={() => { setConfirmingId(r.id); setPickedUpName(''); setCallingId(null); setError(null) }}
+                        onCancelConfirm={() => { setConfirmingId(null); setPickedUpName('') }}
+                        onConfirm={() => confirmPickup(r.id)}
+                        onStartCall={() => { setCallingId(r.id); setCallNotes(''); setConfirmingId(null); setError(null) }}
+                        onCancelCall={() => { setCallingId(null); setCallNotes('') }}
+                        onLogCall={() => markCalled(r.id)}
+                        onSendNotice={() => sendNotice(r.id)}
+                        onAbandonClick={() => setPendingAbandonId(r.id)}
+                      />
                     </td>
                   </tr>
                 )
@@ -644,6 +520,196 @@ export default function PickupQueueClient({ rows }: { rows: PickupQueueRow[] }) 
         }}
         onCancel={() => setPendingAbandonId(null)}
       />
+    </div>
+  )
+}
+
+// The confirm-pickup / log-call / default-actions cluster, shared between the
+// mobile card and the desktop table row (queues-pickup-warranty-6 — this used
+// to be hand-duplicated in both places). `variant` only changes sizing/copy
+// (full-width stacked buttons + longer button text on mobile vs. compact
+// right-aligned buttons on desktop); the state machine and handlers are owned
+// by the parent and passed in.
+function PickupRowActions({
+  row,
+  variant,
+  busy,
+  confirming,
+  calling,
+  pickedUpName,
+  callNotes,
+  onPickedUpNameChange,
+  onCallNotesChange,
+  onStartConfirm,
+  onCancelConfirm,
+  onConfirm,
+  onStartCall,
+  onCancelCall,
+  onLogCall,
+  onSendNotice,
+  onAbandonClick,
+}: {
+  row: PickupQueueRow
+  variant: 'card' | 'row'
+  busy: boolean
+  confirming: boolean
+  calling: boolean
+  pickedUpName: string
+  callNotes: string
+  onPickedUpNameChange: (v: string) => void
+  onCallNotesChange: (v: string) => void
+  onStartConfirm: () => void
+  onCancelConfirm: () => void
+  onConfirm: () => void
+  onStartCall: () => void
+  onCancelCall: () => void
+  onLogCall: () => void
+  onSendNotice: () => void
+  onAbandonClick: () => void
+}) {
+  const noEmail = row.resolved_email == null
+  const isCard = variant === 'card'
+
+  if (confirming) {
+    return (
+      <div className={isCard ? 'space-y-2 pt-1' : 'inline-flex flex-col items-end gap-1.5'}>
+        <input
+          autoFocus
+          value={pickedUpName}
+          onChange={(e) => onPickedUpNameChange(e.target.value)}
+          placeholder="Picked up by (optional)"
+          className={
+            isCard
+              ? 'w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white'
+              : 'w-44 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white'
+          }
+        />
+        <div className={isCard ? 'flex gap-2' : 'flex gap-1.5'}>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className={
+              isCard
+                ? 'flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50'
+                : 'px-2.5 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50'
+            }
+          >
+            {busy ? 'Saving…' : 'Confirm'}
+          </button>
+          <button
+            onClick={onCancelConfirm}
+            disabled={busy}
+            className={
+              isCard
+                ? 'flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded'
+                : 'px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600'
+            }
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (calling) {
+    return (
+      <div className={isCard ? 'space-y-2 pt-1' : 'inline-flex flex-col items-end gap-1.5'}>
+        <input
+          autoFocus
+          value={callNotes}
+          onChange={(e) => onCallNotesChange(e.target.value)}
+          placeholder="Call notes (optional)"
+          className={
+            isCard
+              ? 'w-full px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white'
+              : 'w-52 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white'
+          }
+        />
+        <div className={isCard ? 'flex gap-2' : 'flex gap-1.5'}>
+          <button
+            onClick={onLogCall}
+            disabled={busy}
+            className={
+              isCard
+                ? 'flex-1 min-h-[44px] px-3 text-sm font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50'
+                : 'px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50'
+            }
+          >
+            {busy ? 'Saving…' : 'Log call'}
+          </button>
+          <button
+            onClick={onCancelCall}
+            disabled={busy}
+            className={
+              isCard
+                ? 'flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded'
+                : 'px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600'
+            }
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={isCard ? 'flex flex-wrap gap-2 pt-1' : 'inline-flex flex-col items-end gap-1.5'}>
+      <button
+        onClick={onStartConfirm}
+        className={
+          isCard
+            ? 'flex-1 min-h-[44px] px-3 text-sm font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+            : 'px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+        }
+      >
+        Confirm Pickup
+      </button>
+      {row.contact_status === 'has_contact' && (
+        <button
+          onClick={onSendNotice}
+          disabled={busy}
+          title={isCard ? undefined : 'Email the customer that their equipment is ready for pickup'}
+          className={
+            isCard
+              ? 'flex-1 min-h-[44px] inline-flex items-center justify-center gap-1 px-3 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50'
+              : 'inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50'
+          }
+        >
+          <Send className="h-3 w-3" />
+          {busy ? 'Sending…' : isCard ? 'Send notice' : 'Send pickup notice'}
+        </button>
+      )}
+      {noEmail && (
+        <button
+          onClick={onStartCall}
+          className={
+            isCard
+              ? 'flex-1 min-h-[44px] px-3 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700'
+              : 'px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700'
+          }
+        >
+          {row.pickup_called_at ? 'Log follow-up call' : 'Mark Called'}
+        </button>
+      )}
+      {!noEmail && row.days_ready != null && row.days_ready >= ABANDON_DAYS && (
+        <button
+          onClick={onAbandonClick}
+          disabled={busy}
+          className={
+            isCard
+              ? 'flex-1 min-h-[44px] px-3 text-sm font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50'
+              : 'px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-50'
+          }
+        >
+          {busy
+            ? 'Sending…'
+            : row.abandonment_notice_sent_at
+              ? (isCard ? 'Resend Abandonment' : 'Resend Abandonment Notice')
+              : (isCard ? 'Abandonment Notice' : 'Send Abandonment Notice')}
+        </button>
+      )}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { partLabel } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
+import { PdfHeader, PdfFooter, type PdfHeaderLine } from '@/lib/pdf/chrome'
 
 // ============================================================
 // Types
@@ -81,69 +82,6 @@ const styles = StyleSheet.create({
     paddingBottom: 50,
     paddingHorizontal: 48,
     backgroundColor: '#ffffff',
-  },
-  header: {
-    marginBottom: 20,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#111111',
-    paddingBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  headerLeft: {
-    flexDirection: 'column',
-  },
-  headerRight: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    maxWidth: 240,
-  },
-  headerContactLine: {
-    fontSize: 9,
-    color: '#444444',
-    marginTop: 2,
-  },
-  headerTechLine: {
-    fontSize: 9,
-    color: '#111111',
-    fontFamily: 'Helvetica-Bold',
-    marginTop: 4,
-  },
-  headerWoNumber: {
-    fontSize: 13,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111111',
-    letterSpacing: 0.3,
-  },
-  headerPoLine: {
-    fontSize: 8.5,
-    color: '#444444',
-    marginTop: 1,
-    marginBottom: 6,
-  },
-  headerRightDivider: {
-    width: 180,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#d4d4d4',
-    marginVertical: 4,
-  },
-  logo: {
-    width: 160,
-    height: 50,
-    objectFit: 'contain' as const,
-    marginBottom: 6,
-  },
-  companyName: {
-    fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111111',
-    letterSpacing: 0.3,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: '#444444',
-    marginTop: 3,
   },
   sectionLabel: {
     fontSize: 8.5,
@@ -255,18 +193,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     marginRight: 8,
     marginBottom: 8,
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 48,
-    right: 48,
-    textAlign: 'center',
-    fontSize: 7.5,
-    color: '#888888',
-    borderTopWidth: 0.5,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 6,
   },
   // ── Pricing Summary ──
   pricingTable: {
@@ -496,37 +422,21 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
     <Document>
       <Page size="LETTER" style={styles.page} wrap>
         {/* Header */}
-        <View style={styles.header} fixed>
-          <View style={styles.headerLeft}>
-            {logoBase64 ? (
-              <Image src={logoBase64} style={styles.logo} />
-            ) : (
-              <Text style={styles.companyName}>{ticket.companyName}</Text>
-            )}
-            <Text style={styles.subtitle}>Service Work Order</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <Text style={styles.headerWoNumber}>WO-{ticket.workOrderNumber}</Text>
-            {ticket.synergyOrderNumber && (
-              <Text style={styles.headerPoLine}>Synergy #: {ticket.synergyOrderNumber}</Text>
-            )}
-            {ticket.poNumber && (
-              <Text style={styles.headerPoLine}>PO: {ticket.poNumber}</Text>
-            )}
-            {(ticket.serviceEmail || ticket.servicePhone || (ticket.technicianName && ticket.technicianName !== '—')) && (
-              <View style={styles.headerRightDivider} />
-            )}
-            {ticket.serviceEmail && (
-              <Text style={styles.headerContactLine}>{ticket.serviceEmail}</Text>
-            )}
-            {ticket.servicePhone && (
-              <Text style={styles.headerContactLine}>{ticket.servicePhone}</Text>
-            )}
-            {ticket.technicianName && ticket.technicianName !== '—' && (
-              <Text style={styles.headerTechLine}>Technician: {ticket.technicianName}</Text>
-            )}
-          </View>
-        </View>
+        <PdfHeader
+          logoBase64={logoBase64}
+          companyName={ticket.companyName}
+          subtitle="Service Work Order"
+          documentNumber={`WO-${ticket.workOrderNumber}`}
+          rightLines={[
+            ticket.synergyOrderNumber ? { text: `Synergy Order #: ${ticket.synergyOrderNumber}` } : null,
+            ticket.poNumber ? { text: `PO: ${ticket.poNumber}` } : null,
+            ticket.serviceEmail ? { text: ticket.serviceEmail } : null,
+            ticket.servicePhone ? { text: ticket.servicePhone } : null,
+            ticket.technicianName && ticket.technicianName !== '—'
+              ? { text: `Technician: ${ticket.technicianName}`, bold: true }
+              : null,
+          ].filter((line): line is PdfHeaderLine => line !== null)}
+        />
 
         {/* Customer */}
         <Text style={styles.sectionLabel}>Customer</Text>
@@ -696,16 +606,7 @@ export function CustomerWorkOrderDocument({ ticket, logoBase64 }: WorkOrderDocum
         )}
 
         {/* Footer */}
-        <Text
-          style={styles.footer}
-          fixed
-          render={({ pageNumber, totalPages }) => {
-            const left = `WO-${ticket.workOrderNumber}`
-            const center = `Page ${pageNumber} of ${totalPages}`
-            const right = ticket.serviceEmail ?? ticket.companyName
-            return `${left}   ·   ${center}   ·   ${right}`
-          }}
-        />
+        <PdfFooter left={`WO-${ticket.workOrderNumber}`} right={ticket.serviceEmail ?? ticket.companyName} />
       </Page>
     </Document>
   )

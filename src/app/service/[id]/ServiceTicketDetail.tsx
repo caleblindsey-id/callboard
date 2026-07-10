@@ -1,20 +1,24 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import { PartEntry, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
+import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
 import CompletionSuccessDialog from '@/components/CompletionSuccessDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Modal from '@/components/ui/Modal'
+import InlineError from '@/components/ui/InlineError'
 import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
+import { getStatusMeta } from '@/lib/status-meta'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import type { LineViolation } from '@/lib/margin'
@@ -58,6 +62,25 @@ interface ServiceTicketDetailProps {
   canEmailEstimate?: boolean
 }
 
+// Local (localStorage) safety net for the in-progress completion form — the
+// 3s server autosave (saveProgress) is still authoritative; this is what
+// survives an offline/airplane-mode session between saves. Deliberately
+// excludes photos and the signature (large/binary, mirrors the "photos
+// aren't saved in drafts" convention in SubmitLeadModal). Estimate-phase
+// fields are out of scope (Round 9 targets the completion form only).
+interface ServiceCompletionDraft {
+  billingType: ServiceBillingType
+  hoursWorked: string
+  tripChargeQty: string
+  machineHours: string
+  dateCode: string
+  completionNotes: string
+  completionParts: PartEntry[]
+  aceLaborOpen: boolean
+  aceHours: string
+  aceReason: string
+}
+
 const priorityConfig: Record<string, { label: string; classes: string }> = {
   emergency: { label: 'Emergency', classes: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
   standard: { label: 'Standard', classes: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' },
@@ -77,18 +100,6 @@ const ticketTypeConfig: Record<string, { label: string; classes: string }> = {
 // extracted section components import them directly. ──
 
 // ── Workflow card helpers ───────────────────────────────────────────────────
-// User-facing labels for each status. Mirrors page.tsx STEP_LABELS but
-// includes the off-rail states (declined/canceled) too.
-const STATUS_LABELS: Record<string, string> = {
-  open: 'Open',
-  estimated: 'Awaiting Approval',
-  approved: 'Approved',
-  in_progress: 'In Progress',
-  completed: 'Completed',
-  billed: 'Billed',
-  declined: 'Declined',
-  canceled: 'Canceled',
-}
 
 interface WorkflowComputeArgs {
   status: ServiceTicketStatus
@@ -118,7 +129,7 @@ function computeWorkflowProps({
   requestInfoNote,
   estimateApproved,
 }: WorkflowComputeArgs): { state: string; nextActor?: string; blocker?: string } {
-  const label = STATUS_LABELS[status] ?? status
+  const label = getStatusMeta('service', status).label
   let nextActor: string | undefined
   let blocker: string | undefined
 
@@ -181,65 +192,52 @@ function RequestInfoModal({ open, initialDraft, busy, onSubmit, onCancel }: Requ
   // needs to seed state once. Avoids setState-in-effect cascading renders.
   const [note, setNote] = useState(initialDraft ?? '')
 
-  if (!open) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Request more info"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Request More Info
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            This sends the estimate back to the tech and shows your note when they reopen the ticket.
-          </p>
-        </div>
-        <div className="p-5">
-          <label htmlFor="request-info-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            What do you need from the tech? <span className="text-red-600">*</span>
-          </label>
-          <textarea
-            id="request-info-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={5}
-            maxLength={2000}
-            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-            {note.length} / 2000
-          </p>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(note.trim())}
-            disabled={busy || note.trim().length < 2}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            {busy ? 'Sending...' : 'Send Back to Tech'}
-          </button>
-        </div>
+    <Modal open={open} onClose={onCancel} dismissible={!busy} size="lg" ariaLabelledBy="request-info-title">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 id="request-info-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Request More Info
+        </h3>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          This sends the estimate back to the tech and shows your note when they reopen the ticket.
+        </p>
       </div>
-    </div>
+      <div className="p-5">
+        <label htmlFor="request-info-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          What do you need from the tech? <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          id="request-info-note"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={5}
+          maxLength={2000}
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {note.length} / 2000
+        </p>
+      </div>
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(note.trim())}
+          disabled={busy || note.trim().length < 2}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          {busy ? 'Sending...' : 'Send Back to Tech'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -256,66 +254,53 @@ function BypassEstimateModal({ open, busy, onSubmit, onCancel }: BypassEstimateM
   // Parent remounts via `key={open}` so the field starts empty each time.
   const [note, setNote] = useState('')
 
-  if (!open) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Start work without an estimate"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Start work — no estimate
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Skips the estimate and starts the repair now. Use only when work is already authorized.
-          </p>
-        </div>
-        <div className="p-5">
-          <label htmlFor="bypass-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Who authorized starting work? <span className="text-red-600">*</span>
-          </label>
-          <textarea
-            id="bypass-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={4}
-            maxLength={2000}
-            placeholder="e.g. Approved by Jane Doe on site 6/12 — repair pre-authorized on PO 4471"
-            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-            {note.length} / 2000
-          </p>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(note.trim())}
-            disabled={busy || note.trim().length < 2}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            {busy ? 'Starting...' : 'Start Work'}
-          </button>
-        </div>
+    <Modal open={open} onClose={onCancel} dismissible={!busy} size="lg" ariaLabelledBy="bypass-estimate-title">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 id="bypass-estimate-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Start work — no estimate
+        </h3>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Skips the estimate and starts the repair now. Use only when work is already authorized.
+        </p>
       </div>
-    </div>
+      <div className="p-5">
+        <label htmlFor="bypass-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Who authorized starting work? <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          id="bypass-note"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={4}
+          maxLength={2000}
+          placeholder="e.g. Approved by Jane Doe on site 6/12 — repair pre-authorized on PO 4471"
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {note.length} / 2000
+        </p>
+      </div>
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(note.trim())}
+          disabled={busy || note.trim().length < 2}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          {busy ? 'Starting...' : 'Start Work'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -334,75 +319,62 @@ function MarginOverrideModal({ violations, onSubmit, onCancel }: MarginOverrideM
   // Parent remounts via `key` so the field starts empty each time it opens.
   const [note, setNote] = useState('')
 
-  if (!violations) return null
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Approve below-floor price"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Approve below-floor price
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            One or more parts are priced below the 15% margin floor. As a manager you can approve
-            this down to loaded cost (never below cost). A reason is required for the record.
-          </p>
-        </div>
-        <div className="p-5">
-          <ul className="mb-4 space-y-1 text-sm text-gray-700 dark:text-gray-300">
-            {violations.map((v) => (
-              <li key={v.index} className="flex justify-between gap-3">
-                <span className="truncate">{v.description}</span>
-                <span className="whitespace-nowrap">
-                  ${v.unitPrice.toFixed(2)}{' '}
-                  <span className="text-gray-400 dark:text-gray-500">(floor ${v.minPrice.toFixed(2)})</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <label htmlFor="margin-override-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Reason for the below-floor price <span className="text-red-600">*</span>
-          </label>
-          <textarea
-            id="margin-override-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            maxLength={2000}
-            placeholder="e.g. Price-matched competitor quote for ABC Corp — approved by Caleb"
-            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{note.length} / 2000</p>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSubmit(note.trim())}
-            disabled={note.trim().length < 2}
-            className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
-          >
-            Approve &amp; Save
-          </button>
-        </div>
+    <Modal open={violations !== null} onClose={onCancel} size="lg" ariaLabelledBy="margin-override-title">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 id="margin-override-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Approve below-floor price
+        </h3>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          One or more parts are priced below the 15% margin floor. As a manager you can approve
+          this down to loaded cost (never below cost). A reason is required for the record.
+        </p>
       </div>
-    </div>
+      <div className="p-5">
+        <ul className="mb-4 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+          {(violations ?? []).map((v) => (
+            <li key={v.index} className="flex justify-between gap-3">
+              <span className="truncate">{v.description}</span>
+              <span className="whitespace-nowrap">
+                ${v.unitPrice.toFixed(2)}{' '}
+                <span className="text-gray-400 dark:text-gray-500">(floor ${v.minPrice.toFixed(2)})</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <label htmlFor="margin-override-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Reason for the below-floor price <span className="text-red-600">*</span>
+        </label>
+        <textarea
+          id="margin-override-note"
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          placeholder="e.g. Price-matched competitor quote for ABC Corp — approved by Caleb"
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{note.length} / 2000</p>
+      </div>
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSubmit(note.trim())}
+          disabled={note.trim().length < 2}
+          className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Approve &amp; Save
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -1181,6 +1153,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       savedFieldsRef.current = fields
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
+      // The server round-trip landed for the completion phase — the local
+      // draft's job (surviving a save the server never saw) is done. Server
+      // stays authoritative; the estimate phase never touches this draft.
+      if (autoSavePhase === 'completion') clearLocalDraft()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -1240,6 +1216,65 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [])
+
+  // Local draft — offline safety net for the completion form only (mirrors
+  // src/app/tickets/[id]/TicketActions.tsx). The 3s server autosave above is
+  // still authoritative; this only exists so a tech who loses signal
+  // mid-completion doesn't lose the form on refresh. Keyed by ticket id, and
+  // only enabled during the completion phase (not the estimate builder).
+  const serviceCompletionDraftState = useMemo<ServiceCompletionDraft>(() => ({
+    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
+  }), [
+    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
+  ])
+
+  const { clearDraft: clearLocalDraft, lastPersistedAt: localDraftPersistedAt } = useFormDraft<ServiceCompletionDraft>({
+    key: `service-completion-${ticket.id}`,
+    state: serviceCompletionDraftState,
+    enabled: completionPhaseActive,
+    isMeaningful: (s) =>
+      Boolean(
+        s.hoursWorked.trim() ||
+        (parseFloat(s.tripChargeQty) || 0) > 0 ||
+        s.machineHours.trim() ||
+        s.dateCode.trim() ||
+        s.completionNotes.trim() ||
+        s.completionParts.length > 0 ||
+        s.aceLaborOpen
+      ),
+    onRestore: (draft, lastEditedAt) => {
+      // Server autosave (or a completed save from another session) may already
+      // be newer than this device's local draft — never regress a fresher
+      // server value with a stale local one.
+      const serverLastSaved = new Date(ticket.updated_at).getTime()
+      if (!Number.isFinite(lastEditedAt) || lastEditedAt <= serverLastSaved) return
+      if (draft.billingType) setBillingType(draft.billingType)
+      setHoursWorked(draft.hoursWorked ?? '')
+      setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
+      setMachineHours(draft.machineHours ?? '')
+      setDateCode(draft.dateCode ?? '')
+      setCompletionNotes(draft.completionNotes ?? '')
+      if (draft.completionParts) {
+        setCompletionParts(draft.completionParts.map((p) => ({ ...p, searchOpen: false, searching: false })))
+      }
+      setAceLaborOpen(Boolean(draft.aceLaborOpen))
+      setAceHours(draft.aceHours ?? '')
+      setAceReason(draft.aceReason ?? '')
+    },
+  })
+
+  // "Saved on this device" — driven by the local write succeeding, distinct
+  // from `saveSuccess` (server PATCH landed). Server indicator wins when both
+  // are true; see CompletionSection's saveSuccess prop below.
+  const [localSavedVisible, setLocalSavedVisible] = useState(false)
+  useEffect(() => {
+    if (localDraftPersistedAt == null) return
+    setLocalSavedVisible(true)
+    const t = setTimeout(() => setLocalSavedVisible(false), 3000)
+    return () => clearTimeout(t)
+  }, [localDraftPersistedAt])
 
   async function handleRequestEstimatePart(index: number) {
     const entry = estimateParts[index]
@@ -1648,6 +1683,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         throw new Error(data.error || 'Failed to complete ticket')
       }
       setCompleted(true)
+      clearLocalDraft()
     })
   }
 
@@ -1948,6 +1984,40 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     showCompletionForm &&
     !needsEquipmentVerify
 
+  // ── Assignment card (single save — service-detail-4) ──
+  // Locked once completed/billed: the bill is already computed by then, so
+  // changing labor type here would no longer do anything (feedback #68).
+  const laborTypeLocked =
+    ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
+  const assignmentDirty = {
+    tech: assignedTechId !== (ticket.assigned_technician_id ?? ''),
+    billing: billingType !== ticket.billing_type,
+    ticketType: ticketType !== ticket.ticket_type,
+    labor: !laborTypeLocked && laborRateType !== (ticket.labor_rate_type ?? 'standard'),
+  }
+  const assignmentIsDirty =
+    assignmentDirty.tech || assignmentDirty.billing || assignmentDirty.ticketType || assignmentDirty.labor
+
+  async function handleSaveAssignment() {
+    await apiAction(async () => {
+      const batch: Record<string, unknown> = {}
+      if (assignmentDirty.tech) batch.assigned_technician_id = assignedTechId || null
+      if (assignmentDirty.billing) batch.billing_type = billingType
+      if (assignmentDirty.ticketType) batch.ticket_type = ticketType
+      if (Object.keys(batch).length > 0) {
+        await patchTicket(batch)
+      }
+      // labor_rate_type triggers the server's estimate recompute, which reads
+      // the ticket's STORED billing_type rather than this same request's value
+      // — sent as its own PATCH, after the batch above commits, so a same-save
+      // billing_type change is already persisted before the recompute runs.
+      if (assignmentDirty.labor) {
+        await patchTicket({ labor_rate_type: laborRateType })
+      }
+      setSuccessMsg('Assignment updated')
+    })
+  }
+
   // ══════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════
@@ -2010,8 +2080,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           this is the UI for assigning after creation or reassigning later. */}
       {isStaff && (
         <Card title="Assignment">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <div className="flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
                 Assigned Technician
               </label>
@@ -2027,25 +2097,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 ))}
               </select>
             </div>
-            <button
-              onClick={() =>
-                apiAction(async () => {
-                  await patchTicket({ assigned_technician_id: assignedTechId || null })
-                  setSuccessMsg('Technician updated')
-                })
-              }
-              disabled={loading || assignedTechId === (ticket.assigned_technician_id ?? '')}
-              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-            >
-              {loading ? 'Saving...' : 'Save'}
-            </button>
-          </div>
 
-          {/* Billing type — correct a mis-keyed warranty/non-warranty ticket.
-              Warranty bills the customer $0 and routes the ticket through the
-              vendor-credit worklist before it can be billed. */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-            <div className="flex-1">
+            {/* Billing type — correct a mis-keyed warranty/non-warranty ticket.
+                Warranty bills the customer $0 and routes the ticket through the
+                vendor-credit worklist before it can be billed. */}
+            <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
                 Billing Type
               </label>
@@ -2060,26 +2116,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 <option value="partial_warranty">Partial Warranty</option>
               </select>
             </div>
-            <button
-              onClick={() =>
-                apiAction(async () => {
-                  await patchTicket({ billing_type: billingType })
-                  setSuccessMsg('Billing type updated')
-                })
-              }
-              disabled={loading || billingType === ticket.billing_type}
-              className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-            >
-              {loading ? 'Saving...' : 'Save'}
-            </button>
-          </div>
 
-          {/* Ticket type — correct a mis-keyed inside/outside ticket. Switching
-              to Outside turns on the service-address fields and the customer
-              signature requirement; switching to Inside makes it eligible for
-              the pickup queue. */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-            <div className="flex-1">
+            {/* Ticket type — correct a mis-keyed inside/outside ticket. Switching
+                to Outside turns on the service-address fields and the customer
+                signature requirement; switching to Inside makes it eligible for
+                the pickup queue. */}
+            <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
                 Ticket Type
               </label>
@@ -2096,64 +2138,42 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 Inside = bench/shop repair. Outside = field service (adds address + signature).
               </p>
             </div>
+
+            {/* Labor type — correct a mis-keyed labor rate before the job is
+                marked complete. Locked once completed/billed: the bill is
+                already computed by then, so changing it here would no longer
+                do anything (feedback #68). */}
+            <div>
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Labor Type
+              </label>
+              <select
+                value={laborRateType}
+                onChange={(e) => setLaborRateType(e.target.value)}
+                disabled={loading || laborTypeLocked}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
+              >
+                <option value="standard">Standard</option>
+                <option value="industrial">Industrial</option>
+                <option value="vacuum">Vacuum</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {laborTypeLocked
+                  ? 'Locked once the ticket is completed/billed.'
+                  : 'Drives the labor rate used on the estimate and final bill.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
             <button
-              onClick={() =>
-                apiAction(async () => {
-                  await patchTicket({ ticket_type: ticketType })
-                  setSuccessMsg('Ticket type updated')
-                })
-              }
-              disabled={loading || ticketType === ticket.ticket_type}
+              onClick={handleSaveAssignment}
+              disabled={loading || !assignmentIsDirty}
               className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               {loading ? 'Saving...' : 'Save'}
             </button>
           </div>
-
-          {/* Labor type — correct a mis-keyed labor rate before the job is
-              marked complete. Locked once completed/billed: the bill is
-              already computed by then, so changing it here would no longer
-              do anything (feedback #68). */}
-          {(() => {
-            const laborTypeLocked =
-              ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
-            return (
-              <div className="flex flex-col sm:flex-row sm:items-end gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                <div className="flex-1">
-                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
-                    Labor Type
-                  </label>
-                  <select
-                    value={laborRateType}
-                    onChange={(e) => setLaborRateType(e.target.value)}
-                    disabled={loading || laborTypeLocked}
-                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="industrial">Industrial</option>
-                    <option value="vacuum">Vacuum</option>
-                  </select>
-                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    {laborTypeLocked
-                      ? 'Locked once the ticket is completed/billed.'
-                      : 'Drives the labor rate used on the estimate and final bill.'}
-                  </p>
-                </div>
-                <button
-                  onClick={() =>
-                    apiAction(async () => {
-                      await patchTicket({ labor_rate_type: laborRateType })
-                      setSuccessMsg('Labor type updated')
-                    })
-                  }
-                  disabled={loading || laborTypeLocked || laborRateType === (ticket.labor_rate_type ?? 'standard')}
-                  className="px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
-                >
-                  {loading ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            )
-          })()}
         </Card>
       )}
 
@@ -2189,8 +2209,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
       {/* Error / Success messages */}
       {error && (
-        <div ref={errorBannerRef} role="alert" className="rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-4 py-3 scroll-mt-20">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+        <div ref={errorBannerRef} className="scroll-mt-20">
+          <InlineError message={error} />
         </div>
       )}
       {successMsg && (
@@ -2242,7 +2262,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         ) : (
           <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 px-4 py-3">
             <p className="text-sm text-red-800 dark:text-red-300 font-semibold">
-              Blocked by AR — manager release required.
+              {getStatusMeta('creditReview', 'blocked').label} — manager release required.
             </p>
             <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
               AR blocked this order. A manager must enter the release passcode before work can proceed.
@@ -2784,6 +2804,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           loading={loading}
           saving={saving}
           saveSuccess={saveSuccess}
+          localSavedVisible={localSavedVisible}
           taxRatePercent={taxRatePercent}
           laborRate={laborRate}
           tripChargeRate={tripChargeRate}

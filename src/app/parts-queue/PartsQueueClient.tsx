@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Check, Download, ExternalLink, FileText, PackageCheck, RefreshCw, Undo2, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, Download, ExternalLink, FileText, PackageCheck, RefreshCw, Undo2, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
 import {
   cancelPart,
@@ -24,6 +24,8 @@ import ScrollableTable from '@/components/ScrollableTable'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { suggestVendor } from '@/lib/parts-vendor-suggestions'
 import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
+import Tabs from '@/components/ui/Tabs'
+import FilterBar from '@/components/ui/FilterBar'
 
 type Tab = 'review' | 'to_pull' | 'to_order' | 'ordered' | 'received'
 type SortKey =
@@ -46,6 +48,14 @@ type SortKey =
 
 const RECEIVED_WINDOW_DAYS = 14
 const RECEIVED_WINDOW_MS = RECEIVED_WINDOW_DAYS * 24 * 60 * 60 * 1000
+
+// Shared desktop-table header/cell classes (parts-queue-2) — the ordering
+// table, ReviewTable, and ToPullTable each hand-wrote these identical strings
+// on every <thead>/<th>; one constant keeps a future spacing/casing tweak from
+// having to land in three places.
+const THEAD_CLS = 'bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400'
+const TH_CLS = 'px-3 py-2 text-left font-semibold'
+const TH_RIGHT_CLS = 'px-3 py-2 text-right'
 
 function rowKey(r: Pick<PartsQueueRow, 'source' | 'ticket_id' | 'part_index'>): string {
   return `${r.source}:${r.ticket_id}:${r.part_index}`
@@ -107,11 +117,30 @@ function formatDay(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString()
 }
 
+// A from_stock part that's been pulled is fulfilled — same lifecycle end
+// point as an ordered part being received — but it carries no 'received'
+// status of its own (it stays 'from_stock' with pulled_at set), so it never
+// matched any of the five tab filters and effectively vanished from the
+// queue once fulfilled. Folded into the Received tab below.
+function isPulledStock(row: Pick<PartsQueueRow, 'status' | 'pulled_at'>): boolean {
+  return row.status === 'from_stock' && !!row.pulled_at
+}
+
+// A pulled from_stock row (Round 2) has no received_at of its own — it stays
+// 'from_stock' with only pulled_at set — so sorting by the Received column's
+// underlying key always pushed it to the bottom (nulls sort last below). Fall
+// back to pulled_at for that one key so a pulled row sorts by when it actually
+// finished, not last every time (Round 2 follow-up, item 3d).
+function sortValue(row: PartsQueueRow, key: SortKey): unknown {
+  if (key === 'received_at') return row.received_at ?? row.pulled_at
+  return row[key]
+}
+
 function sortRows(rows: PartsQueueRow[], key: SortKey, dir: 'asc' | 'desc'): PartsQueueRow[] {
   const mult = dir === 'asc' ? 1 : -1
   return [...rows].sort((a, b) => {
-    const av = a[key] as unknown
-    const bv = b[key] as unknown
+    const av = sortValue(a, key)
+    const bv = sortValue(b, key)
     if (av == null && bv == null) return 0
     if (av == null) return 1
     if (bv == null) return -1
@@ -238,6 +267,17 @@ export default function PartsQueueClient({
   const ticketFilter = filters.ticket
   const [pendingRow, setPendingRow] = useState<string | null>(null)
   const [flashedRow, setFlashedRow] = useState<string | null>(null)
+  // Which ordering-table rows have their secondary-field detail panel open
+  // (item 3a — the columns dropped from the default view live here instead).
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const toggleExpanded = useCallback((key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const [cancelTarget, setCancelTarget] = useState<PartsQueueRow | null>(null)
   const [orderJustifyTarget, setOrderJustifyTarget] = useState<PartsQueueRow | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -267,6 +307,8 @@ export default function PartsQueueClient({
       else if (r.status === 'ordered') ordered++
       else if (r.status === 'received' && r.received_at && new Date(r.received_at).getTime() >= receivedCutoffMs)
         received++
+      else if (isPulledStock(r) && new Date(r.pulled_at as string).getTime() >= receivedCutoffMs)
+        received++
     }
     return { review, toPull, toOrder, ordered, received }
   }, [rows, receivedCutoffMs])
@@ -282,9 +324,11 @@ export default function PartsQueueClient({
     if (tab === 'to_order' && r.status !== 'requested') return false
     if (tab === 'ordered' && r.status !== 'ordered') return false
     if (tab === 'received') {
-      if (r.status !== 'received') return false
-      if (!r.received_at) return false
-      if (new Date(r.received_at).getTime() < receivedCutoffMs) return false
+      const pulledStock = isPulledStock(r)
+      if (r.status !== 'received' && !pulledStock) return false
+      const fulfilledAt = pulledStock ? r.pulled_at : r.received_at
+      if (!fulfilledAt) return false
+      if (new Date(fulfilledAt).getTime() < receivedCutoffMs) return false
     }
     // Ticket prefilter (Round B deep-link from /service/<id>) — takes
     // precedence over the source dropdown so a deep-link still shows the
@@ -622,16 +666,28 @@ export default function PartsQueueClient({
   // canCancel is now derived per-row inline (status-aware) instead of tab-driven —
   // see the row-render block.
 
+  // The ordering table's single "date" column adapts to whichever date is
+  // most relevant on the active tab, instead of carrying Ordered + Est.
+  // Arrival as two permanent columns (parts-queue-1). Est. Arrival moves into
+  // the row detail panel.
+  const dateColKey: SortKey = tab === 'to_order' ? 'requested_at' : tab === 'ordered' ? 'ordered_at' : 'received_at'
+  const dateColLabel = tab === 'to_order' ? 'Requested' : tab === 'ordered' ? 'Ordered' : 'Received'
+
   return (
     <div className="space-y-4">
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        <TabButton active={tab === 'review'} onClick={() => set('tab', 'review')} label="Review" count={tabCounts.review} />
-        <TabButton active={tab === 'to_pull'} onClick={() => set('tab', 'to_pull')} label="To Pull" count={tabCounts.toPull} />
-        <TabButton active={tab === 'to_order'} onClick={() => set('tab', 'to_order')} label="To Order" count={tabCounts.toOrder} />
-        <TabButton active={tab === 'ordered'} onClick={() => set('tab', 'ordered')} label="Ordered" count={tabCounts.ordered} />
-        <TabButton active={tab === 'received'} onClick={() => set('tab', 'received')} label={`Received (${RECEIVED_WINDOW_DAYS}d)`} count={tabCounts.received} />
-      </div>
+      <Tabs
+        ariaLabel="Filter parts by workflow stage"
+        active={tab}
+        onChange={(key) => set('tab', key)}
+        tabs={[
+          { key: 'review', label: 'Review', count: tabCounts.review },
+          { key: 'to_pull', label: 'To Pull', count: tabCounts.toPull },
+          { key: 'to_order', label: 'To Order', count: tabCounts.toOrder },
+          { key: 'ordered', label: 'Ordered', count: tabCounts.ordered },
+          { key: 'received', label: `Received (${RECEIVED_WINDOW_DAYS}d)`, count: tabCounts.received },
+        ]}
+      />
 
       {/* Ticket prefilter chip — only present when the page was loaded via a
           deep-link from a source ticket (Round B). Clears back to the normal
@@ -656,34 +712,38 @@ export default function PartsQueueClient({
       )}
 
       {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={e => set('q', e.target.value, { debounce: true })}
-          placeholder="Search customer, WO #, part, PO #…"
-          className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-        />
-        <select
-          value={sourceFilter}
-          onChange={e => set('source', e.target.value)}
-          className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-        >
-          <option value="all">All sources</option>
-          <option value="pm">PM only</option>
-          <option value="service">Service only</option>
-        </select>
-        <select
-          value={vendorFilter}
-          onChange={e => set('vendor', e.target.value)}
-          className="rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
-        >
-          <option value="">All vendors</option>
-          {vendorOptions.map(v => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </select>
-      </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: (v) => set('q', v, { debounce: true }),
+          placeholder: 'Search customer, WO #, part, PO #…',
+        }}
+        segmented={{
+          options: [
+            { value: 'all', label: 'All sources' },
+            { value: 'pm', label: 'PM only' },
+            { value: 'service', label: 'Service only' },
+          ],
+          value: sourceFilter,
+          onChange: (v) => set('source', v),
+          ariaLabel: 'Filter by source',
+        }}
+        activeCount={(sourceFilter !== 'all' ? 1 : 0) + (vendorFilter ? 1 : 0)}
+      >
+        <div className="w-full lg:w-auto">
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Vendor</label>
+          <select
+            value={vendorFilter}
+            onChange={e => set('vendor', e.target.value)}
+            className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            <option value="">All vendors</option>
+            {vendorOptions.map(v => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </div>
+      </FilterBar>
 
       {error && (
         <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300">
@@ -740,21 +800,10 @@ export default function PartsQueueClient({
                   isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'bg-white dark:bg-gray-800'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
-                      {partLabel(row) || '—'}
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
-                      {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
-                      {row.customer_name ?? '—'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <SourceBadge source={row.source} />
-                    {row.covered_by_agreement !== null && <CoverageBadge covered={row.covered_by_agreement} />}
-                  </div>
-                </div>
+                <PartCardHeader
+                  row={row}
+                  extra={row.covered_by_agreement !== null ? <CoverageBadge covered={row.covered_by_agreement} /> : undefined}
+                />
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                   <ValidationBadge
                     state={deriveValidationState(row)}
@@ -777,7 +826,11 @@ export default function PartsQueueClient({
                   </p>
                 )}
                 {tab === 'received' && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Received {formatDateTime(row.received_at)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {isPulledStock(row)
+                      ? `Pulled ${formatDateTime(row.pulled_at)}`
+                      : `Received ${formatDateTime(row.received_at)}`}
+                  </p>
                 )}
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
@@ -794,7 +847,7 @@ export default function PartsQueueClient({
                     <span className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Synergy Order #</span>
                     <InlineText
                       value={row.synergy_order_number ?? ''}
-                      placeholder="SO #"
+                      placeholder="Synergy Order #"
                       disabled={!canEditFields}
                       onBlurCommit={v => handleSynergyOrderCommit(row, v)}
                       widthClass="w-full"
@@ -877,7 +930,7 @@ export default function PartsQueueClient({
                       <Undo2 className="h-5 w-5" />
                     </button>
                   )}
-                  {!row.cancelled && row.status !== 'received' && (
+                  {!row.cancelled && row.status !== 'received' && !isPulledStock(row) && (
                     <button
                       type="button"
                       disabled={isPending}
@@ -903,53 +956,31 @@ export default function PartsQueueClient({
         )}
       </div>
 
-      {/* Desktop table */}
+      {/* Desktop table — column diet (parts-queue-1): the 19-column table
+          collapsed to the working set office staff need with no expansion;
+          everything else (machine, price, suggested vendor, vendor item #,
+          requested by, +secondary date) lives behind the row's chevron. */}
       <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <thead className={THEAD_CLS}>
             <tr>
-              <SortHeader label="Requested" colKey="requested_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Source" colKey="source" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Status</th>
-              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <th scope="col" className="w-8 px-2 py-2"><span className="sr-only">Expand</span></th>
               <SortHeader label="Part" colKey="description" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <th scope="col" className="px-3 py-2 text-left font-semibold" title="PM only: whether the customer is charged (Billable) or it's included in the PM agreement (Covered).">Billing</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
+              <th scope="col" className={TH_CLS}>Ticket</th>
+              <SortHeader label="Customer" colKey="customer_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <th scope="col" className={TH_CLS}>Status</th>
               <SortHeader label="Qty" colKey="quantity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Price" colKey="unit_price" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <th
-                scope="col"
-                className="px-3 py-2 text-left font-semibold"
-                title="Hint based on part description — not auto-applied. Pick the actual vendor in the Vendor column."
-              >
-                Suggested
-              </th>
-              <SortHeader label="Synergy Item #" colKey="product_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Vendor Item #" colKey="vendor_item_code" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeader label="Requested by" colKey="assigned_technician_name" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              {tab === 'ordered' && (
-                <SortHeader label="Ordered" colKey="ordered_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              )}
-              {tab === 'ordered' && (
-                <SortHeader label="Est. Arrival" colKey="po_due_date" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              )}
-              {tab === 'received' && (
-                <SortHeader label="Received" colKey="received_at" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              )}
-              <th scope="col" className="px-3 py-2 text-right">Actions</th>
+              <SortHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Synergy Order #" colKey="synergy_order_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label="Synergy PO #" colKey="po_number" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeader label={dateColLabel} colKey={dateColKey} sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <th scope="col" className={TH_RIGHT_CLS}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {filteredRows.length === 0 ? (
               <tr>
-                <td
-                  colSpan={17 + (tab === 'ordered' ? 2 : tab === 'received' ? 1 : 0)}
-                  className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
-                >
+                <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   {tab === 'to_order' && "No parts waiting to be ordered — you're caught up."}
                   {tab === 'ordered' && 'Nothing on order right now.'}
                   {tab === 'received' && `No parts received in the last ${RECEIVED_WINDOW_DAYS} days.`}
@@ -960,20 +991,48 @@ export default function PartsQueueClient({
                 const key = rowKey(row)
                 const isPending = pendingRow === key
                 const isFlashed = flashedRow === key
+                const isExpanded = expandedRows.has(key)
+                const rowBg = isFlashed ? 'bg-green-50 dark:bg-green-900/20' : ''
                 return (
+                  <Fragment key={key}>
                   <tr
-                    key={key}
                     className={`transition-colors ${
                       isFlashed
                         ? 'bg-green-50 dark:bg-green-900/20'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'
                     }`}
                   >
-                    <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                      {formatDay(row.requested_at)}
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(key)}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
+                        className="p-1 text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 rounded transition-colors"
+                      >
+                        <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </button>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 max-w-[220px]">
+                      <div className="text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
+                        {partLabel(row) || '—'}
+                      </div>
+                      <InlineText
+                        value={row.product_number ?? ''}
+                        placeholder="Synergy Item #"
+                        disabled={!canEditFields}
+                        onBlurCommit={v => handleFieldBlur(row, 'product_number', v)}
+                        widthClass="w-28"
+                      />
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        {row.work_order_number != null ? `WO-${row.work_order_number}` : '—'}
+                      </div>
                       <SourceBadge source={row.source} />
+                    </td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[160px] truncate" title={row.customer_name ?? ''}>
+                      {row.customer_name ?? '—'}
                     </td>
                     <td className="px-3 py-2">
                       <ValidationBadge
@@ -981,6 +1040,26 @@ export default function PartsQueueClient({
                         synergyOrderNumber={row.synergy_order_number}
                         onRevalidate={() => handleRevalidate(row)}
                         disabled={isPending}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
+                    <td className="px-3 py-2">
+                      <VendorPicker
+                        vendor={row.vendor}
+                        vendorCode={row.vendor_code}
+                        disabled={!canEditFields || isPending}
+                        onChange={picked =>
+                          handleFieldsCommit(row, { vendor: picked.vendor, vendor_code: picked.vendor_code })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <InlineText
+                        value={row.synergy_order_number ?? ''}
+                        placeholder="Order #"
+                        disabled={!canEditFields}
+                        onBlurCommit={v => handleSynergyOrderCommit(row, v)}
+                        widthClass="w-24"
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -992,83 +1071,20 @@ export default function PartsQueueClient({
                         widthClass="w-24"
                       />
                     </td>
-                    <td className="px-3 py-2">
-                      <InlineText
-                        value={row.synergy_order_number ?? ''}
-                        placeholder="SO #"
-                        disabled={!canEditFields}
-                        onBlurCommit={v => handleSynergyOrderCommit(row, v)}
-                        widthClass="w-24"
-                      />
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                      {tab === 'to_order' && formatDay(row.requested_at)}
+                      {tab === 'ordered' && formatDateTime(row.ordered_at)}
+                      {tab === 'received' && (
+                        isPulledStock(row) ? (
+                          <>
+                            <span className="text-xs text-gray-400 dark:text-gray-500">Pulled </span>
+                            {formatDateTime(row.pulled_at)}
+                          </>
+                        ) : (
+                          formatDateTime(row.received_at)
+                        )
+                      )}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">
-                      {row.work_order_number ?? '—'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <VendorPicker
-                        vendor={row.vendor}
-                        vendorCode={row.vendor_code}
-                        disabled={!canEditFields || isPending}
-                        onChange={picked =>
-                          handleFieldsCommit(row, { vendor: picked.vendor, vendor_code: picked.vendor_code })
-                        }
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[200px] truncate" title={row.customer_name ?? ''}>
-                      {row.customer_name ?? '—'}
-                    </td>
-                    <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>
-                      {partLabel(row) || '—'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <CoverageBadge covered={row.covered_by_agreement} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
-                    </td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">
-                      {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                      <SuggestedVendor description={row.description} pickedVendor={row.vendor} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <InlineText
-                        value={row.product_number ?? ''}
-                        placeholder="Synergy Item #"
-                        disabled={!canEditFields}
-                        onBlurCommit={v => handleFieldBlur(row, 'product_number', v)}
-                        widthClass="w-28"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <InlineText
-                        value={row.vendor_item_code ?? ''}
-                        placeholder="Vendor Item #"
-                        disabled={!canEditFields}
-                        onBlurCommit={v => handleFieldBlur(row, 'vendor_item_code', v)}
-                        widthClass="w-28"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">
-                      {row.assigned_technician_name ?? '—'}
-                    </td>
-                    {tab === 'ordered' && (
-                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                        {formatDateTime(row.ordered_at)}
-                      </td>
-                    )}
-                    {tab === 'ordered' && (
-                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                        {formatDate(row.po_due_date)}
-                      </td>
-                    )}
-                    {tab === 'received' && (
-                      <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                        {formatDateTime(row.received_at)}
-                      </td>
-                    )}
                     <td className="px-3 py-2 whitespace-nowrap text-right">
                       <div className="flex items-center gap-1 justify-end">
                         {canMarkOrdered && (
@@ -1114,8 +1130,10 @@ export default function PartsQueueClient({
                           </button>
                         )}
                         {/* Cancel is gated on row status (not just tab) so a
-                            received row never shows an enabled cancel button. */}
-                        {!row.cancelled && row.status !== 'received' && (
+                            received row — or a pulled from_stock row, which
+                            reads the same tab now — never shows an enabled
+                            cancel button. */}
+                        {!row.cancelled && row.status !== 'received' && !isPulledStock(row) && (
                           <button
                             type="button"
                             disabled={isPending}
@@ -1141,6 +1159,45 @@ export default function PartsQueueClient({
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className={rowBg}>
+                      <td colSpan={11} className="px-4 py-3 bg-gray-50/60 dark:bg-gray-900/30">
+                        <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3">
+                          {tab !== 'to_order' && (
+                            <DetailField label="Requested">{formatDay(row.requested_at)}</DetailField>
+                          )}
+                          {tab === 'ordered' && (
+                            <DetailField label="Est. Arrival">{formatDate(row.po_due_date)}</DetailField>
+                          )}
+                          <DetailField label="Billing">
+                            <CoverageBadge covered={row.covered_by_agreement} />
+                          </DetailField>
+                          <DetailField label="Machine">
+                            <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
+                          </DetailField>
+                          <DetailField label="Price">
+                            {row.unit_price == null ? '—' : `$${row.unit_price.toFixed(2)}`}
+                          </DetailField>
+                          <DetailField label="Suggested Vendor">
+                            <SuggestedVendor description={row.description} pickedVendor={row.vendor} />
+                          </DetailField>
+                          <DetailField label="Vendor Item #">
+                            <InlineText
+                              value={row.vendor_item_code ?? ''}
+                              placeholder="Vendor Item #"
+                              disabled={!canEditFields}
+                              onBlurCommit={v => handleFieldBlur(row, 'vendor_item_code', v)}
+                              widthClass="w-28"
+                            />
+                          </DetailField>
+                          <DetailField label="Requested by">
+                            {row.assigned_technician_name ?? '—'}
+                          </DetailField>
+                        </dl>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })
             )}
@@ -1185,6 +1242,51 @@ function StockBadge({ value, tone }: { value: number | null; tone: 'hand' | 'po'
   )
 }
 
+// Shared mobile-card identity block (part label + WO#/customer + source badge)
+// — was hand-duplicated near-verbatim across the ordering table, ReviewTable,
+// and ToPullTable mobile cards (parts-queue-2). `leading` renders content above
+// the part label (ToPullTable's Bin line); `extra` renders a second badge next
+// to the source badge (the ordering table's Covered/Billable chip).
+function PartCardHeader({
+  row,
+  leading,
+  extra,
+}: {
+  row: PartsQueueRow
+  leading?: React.ReactNode
+  extra?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0">
+        {leading}
+        <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
+          {partLabel(row) || '—'}
+        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
+          {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
+          {row.customer_name ?? '—'}
+        </p>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <SourceBadge source={row.source} />
+        {extra}
+      </div>
+    </div>
+  )
+}
+
+// One label/value pair in the ordering table's expandable row detail (item 3a
+// — the columns dropped from the default view move here instead of disappearing).
+function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-0.5">{label}</dt>
+      <dd className="text-gray-700 dark:text-gray-300">{children}</dd>
+    </div>
+  )
+}
+
 // Dedicated triage table for the Review tab. Surfaces On-Hand / On-PO so the
 // office can decide "pull from stock" vs "order" per part. Intentionally separate
 // from the ordering table (whose 17 PO/vendor/validation columns don't apply yet).
@@ -1223,18 +1325,7 @@ function ReviewTable({
                 isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'bg-white dark:bg-gray-800'
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
-                    {partLabel(row) || '—'}
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
-                    {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
-                    {row.customer_name ?? '—'}
-                  </p>
-                </div>
-                <SourceBadge source={row.source} />
-              </div>
+              <PartCardHeader row={row} />
               {(row.machine_make || row.machine_model || row.machine_serial) && (
                 <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
               )}
@@ -1295,19 +1386,19 @@ function ReviewTable({
     {/* Desktop table */}
     <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       <table className="min-w-full text-sm">
-        <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <thead className={THEAD_CLS}>
           <tr>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Requested</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Source</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">WO #</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Customer</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Part</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Qty</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units on hand in the service warehouse (Whse 4).">On Hand</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold" title="Units inbound on an open purchase order.">On PO</th>
-            <th scope="col" className="px-3 py-2 text-left font-semibold">Requested by</th>
-            <th scope="col" className="px-3 py-2 text-right">Decision</th>
+            <th scope="col" className={TH_CLS}>Requested</th>
+            <th scope="col" className={TH_CLS}>Source</th>
+            <th scope="col" className={TH_CLS}>WO #</th>
+            <th scope="col" className={TH_CLS}>Customer</th>
+            <th scope="col" className={TH_CLS}>Part</th>
+            <th scope="col" className={TH_CLS}>Machine</th>
+            <th scope="col" className={TH_CLS}>Qty</th>
+            <th scope="col" className={TH_CLS} title="Units on hand in the service warehouse (Whse 4).">On Hand</th>
+            <th scope="col" className={TH_CLS} title="Units inbound on an open purchase order.">On PO</th>
+            <th scope="col" className={TH_CLS}>Requested by</th>
+            <th scope="col" className={TH_RIGHT_CLS}>Decision</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -1449,7 +1540,7 @@ function ToPullTable({
       <div className="lg:hidden space-y-3">
         {rows.length === 0 ? (
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            Nothing waiting to be pulled from stock.
+            Nothing waiting to be pulled.
           </div>
         ) : (
           rows.map(row => {
@@ -1463,21 +1554,14 @@ function ToPullTable({
                   isFlashed ? 'bg-green-50 dark:bg-green-900/20' : 'bg-white dark:bg-gray-800'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
+                <PartCardHeader
+                  row={row}
+                  leading={
                     <p className="font-semibold text-gray-900 dark:text-white" title="Whse 4 bin/shelf location(s)">
                       Bin {row.bin_location ?? '—'}
                     </p>
-                    <p className="font-medium text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
-                      {partLabel(row) || '—'}
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 truncate" title={row.customer_name ?? ''}>
-                      {row.work_order_number != null ? `WO-${row.work_order_number} · ` : ''}
-                      {row.customer_name ?? '—'}
-                    </p>
-                  </div>
-                  <SourceBadge source={row.source} />
-                </div>
+                  }
+                />
                 {(row.machine_make || row.machine_model || row.machine_serial) && (
                   <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
                 )}
@@ -1525,26 +1609,26 @@ function ToPullTable({
       {/* Desktop table */}
       <ScrollableTable className="hidden lg:block rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-900/40 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <thead className={THEAD_CLS}>
             <tr>
-              <th scope="col" className="px-3 py-2 text-left font-semibold" title="Whse 4 bin/shelf location(s)">Bin</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Decided</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Source</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">WO #</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Customer</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Part</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Synergy Item #</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Machine</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Qty</th>
-              <th scope="col" className="px-3 py-2 text-left font-semibold">Requested by</th>
-              <th scope="col" className="px-3 py-2 text-right">Actions</th>
+              <th scope="col" className={TH_CLS} title="Whse 4 bin/shelf location(s)">Bin</th>
+              <th scope="col" className={TH_CLS}>Decided</th>
+              <th scope="col" className={TH_CLS}>Source</th>
+              <th scope="col" className={TH_CLS}>WO #</th>
+              <th scope="col" className={TH_CLS}>Customer</th>
+              <th scope="col" className={TH_CLS}>Part</th>
+              <th scope="col" className={TH_CLS}>Synergy Item #</th>
+              <th scope="col" className={TH_CLS}>Machine</th>
+              <th scope="col" className={TH_CLS}>Qty</th>
+              <th scope="col" className={TH_CLS}>Requested by</th>
+              <th scope="col" className={TH_RIGHT_CLS}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                  Nothing waiting to be pulled from stock.
+                  Nothing waiting to be pulled.
                 </td>
               </tr>
             ) : (
@@ -1611,31 +1695,6 @@ function ToPullTable({
   )
 }
 
-function TabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-        active
-          ? 'border-slate-700 text-slate-900 dark:border-white dark:text-white'
-          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-      }`}
-    >
-      {label}
-      <span
-        className={`inline-flex items-center justify-center rounded-full text-xs min-w-[1.5rem] px-1.5 py-0.5 ${
-          active
-            ? 'bg-slate-700 text-white dark:bg-white dark:text-slate-900'
-            : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-        }`}
-      >
-        {count}
-      </span>
-    </button>
-  )
-}
-
 function SortHeader({
   label,
   colKey,
@@ -1652,7 +1711,7 @@ function SortHeader({
   const active = sortKey === colKey
   const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
   return (
-    <th scope="col" className="px-3 py-2 text-left font-semibold">
+    <th scope="col" className={TH_CLS}>
       <button
         type="button"
         onClick={() => onClick(colKey)}

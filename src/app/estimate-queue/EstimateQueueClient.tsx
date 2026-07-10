@@ -3,12 +3,13 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Phone, Mail, FileText } from 'lucide-react'
+import { Phone, Mail, FileText, ChevronRight } from 'lucide-react'
 import type { EstimateQueueRow } from '@/lib/db/estimate-queue'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
 type Tab = 'all' | 'needs_contact'
 
@@ -139,7 +140,7 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
     }
   }
 
-  const tabs: { key: Tab; label: string; count: number }[] = [
+  const tabs: TabItem[] = [
     { key: 'all', label: 'All Estimates', count: rows.length },
     { key: 'needs_contact', label: 'Needs First Contact', count: needsContactCount },
   ]
@@ -148,22 +149,13 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
     <div className="space-y-4">
       {/* Tabs + search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                tab === t.key
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {t.label}
-              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">{t.count}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs
+          ariaLabel="Filter estimates"
+          tabs={tabs}
+          active={tab}
+          onChange={(key) => setTab(key as Tab)}
+          className="w-fit"
+        />
         <input
           type="search"
           value={query}
@@ -196,8 +188,9 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
               <div key={r.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                    <Link href={`/service/${r.id}`} className="inline-flex items-center gap-1 rounded font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
                       {r.customer_name}
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
                     </Link>
                     {r.work_order_number != null && (
                       <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>
@@ -303,8 +296,9 @@ export default function EstimateQueueClient({ rows }: { rows: EstimateQueueRow[]
                 return (
                   <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 align-top">
                     <td className="px-4 py-3">
-                      <Link href={`/service/${r.id}`} className="font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400">
+                      <Link href={`/service/${r.id}`} className="inline-flex items-center gap-1 rounded font-medium text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">
                         {r.customer_name}
+                        <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
                       </Link>
                       {r.work_order_number != null && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">WO-{r.work_order_number}</div>

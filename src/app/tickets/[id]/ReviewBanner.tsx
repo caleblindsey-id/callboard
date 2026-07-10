@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Flag } from 'lucide-react'
+import Modal from '@/components/ui/Modal'
 
 interface Props {
   ticketId: string
@@ -72,36 +73,38 @@ export default function ReviewBanner({ ticketId, reviewReason }: Props) {
         </div>
       </div>
 
-      {confirmingSkip && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 max-w-md w-full">
-            <div className="p-5 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                Skip this PM?
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                This ticket will be marked as skipped. The prior open PM remains untouched.
-              </p>
-            </div>
-            <div className="p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-              <button
-                onClick={() => setConfirmingSkip(false)}
-                disabled={submitting}
-                className="px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px] sm:min-h-0"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => submit('skip')}
-                disabled={submitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 min-h-[44px] sm:min-h-0"
-              >
-                {submitting ? 'Skipping…' : 'Skip PM'}
-              </button>
-            </div>
+      <Modal
+        open={confirmingSkip}
+        onClose={() => setConfirmingSkip(false)}
+        dismissible={!submitting}
+        size="md"
+        ariaLabelledBy="skip-pm-title"
+      >
+          <div className="p-5 border-b border-gray-200 dark:border-gray-700">
+            <h3 id="skip-pm-title" className="text-base font-semibold text-gray-900 dark:text-white">
+              Skip this PM?
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              This ticket will be marked as skipped. The prior open PM remains untouched.
+            </p>
           </div>
-        </div>
-      )}
+          <div className="p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <button
+              onClick={() => setConfirmingSkip(false)}
+              disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => submit('skip')}
+              disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+            >
+              {submitting ? 'Skipping…' : 'Skip PM'}
+            </button>
+          </div>
+      </Modal>
     </>
   )
 }

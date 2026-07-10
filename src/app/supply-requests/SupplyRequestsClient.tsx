@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { PackageCheck, Download, FileText, BarChart3, Pencil, Ban, RotateCcw } from 'lucide-react'
+import { PackageCheck, Download, FileText, Pencil, Ban, RotateCcw } from 'lucide-react'
 import type { SupplyRequestQueueRow } from '@/lib/db/supply-requests'
 import type { SupplyRequestItem } from '@/types/database'
+import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
 // CSV cell escaper — quote when the value contains a comma, quote, or newline.
 function csvCell(value: unknown): string {
@@ -163,37 +163,24 @@ export default function SupplyRequestsClient({ rows }: { rows: SupplyRequestQueu
     }
   }
 
-  const tabs: Tab[] = ['pending', 'ready', 'done']
+  const tabs: TabItem[] = (['pending', 'ready', 'done'] as Tab[]).map((t) => ({
+    key: t,
+    label: TAB_LABEL[t],
+    count: buckets[t].length,
+  }))
 
   return (
     <div className="space-y-4">
       {/* Tabs + pull-list export */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1 w-fit">
-          {tabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                tab === t
-                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {TAB_LABEL[t]}
-              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">{buckets[t].length}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs
+          ariaLabel="Filter supply requests"
+          tabs={tabs}
+          active={tab}
+          onChange={(key) => setTab(key as Tab)}
+          className="w-fit"
+        />
         <div className="flex items-center gap-2">
-          <Link
-            href="/supply-requests/report"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 w-fit"
-            title="See what techs are requesting and how often"
-          >
-            <BarChart3 className="h-4 w-4" />
-            Reports
-          </Link>
           {buckets.pending.length > 0 && (
             <>
               <button

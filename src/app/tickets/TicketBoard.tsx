@@ -12,11 +12,12 @@ import StuckIndicator from '@/components/StuckIndicator'
 import { daysOverdue } from '@/lib/overdue'
 import { deriveWorkflowProps } from '@/lib/workflow-status'
 import { resolveTicketShipTo, formatShipToLines } from '@/lib/utils/shipTo'
-import CreateTicketModal from './CreateTicketModal'
-import GeneratePmModal from './GeneratePmModal'
 import SkipDialog from './SkipDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import SortHeader from '@/components/SortHeader'
 import ScrollableTable from '@/components/ScrollableTable'
+import FilterBar from '@/components/ui/FilterBar'
+import RowLink from '@/components/ui/RowLink'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { matchesSearch } from '@/lib/search'
 
@@ -121,7 +122,6 @@ function TicketList({
   onRestore,
   restoringId,
 }: TicketListProps) {
-  const router = useRouter()
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     TicketWithJoins,
     TicketSortKey
@@ -143,11 +143,11 @@ function TicketList({
           return (
             <div
               key={ticket.id}
-              className={`px-4 py-3 cursor-pointer active:bg-gray-50 dark:active:bg-gray-700 ${
+              className={`relative px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700 ${
                 showOverdueBadges ? 'border-l-4 border-red-400 dark:border-red-600' : ''
               } ${deletedMode ? 'opacity-60' : ''}`}
-              onClick={() => router.push(`/tickets/${ticket.id}`)}
             >
+              <RowLink href={`/tickets/${ticket.id}`} label={`Open ticket WO-${ticket.work_order_number}`} />
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -203,12 +203,9 @@ function TicketList({
               </p>
               {deletedMode && isManager && onRestore && (
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onRestore(ticket.id)
-                  }}
+                  onClick={() => onRestore(ticket.id)}
                   disabled={restoringId === ticket.id}
-                  className="mt-2 inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px]"
+                  className="relative z-10 mt-2 inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px]"
                 >
                   <RotateCcw className="h-4 w-4" />
                   {restoringId === ticket.id ? 'Restoring...' : 'Restore'}
@@ -243,6 +240,7 @@ function TicketList({
               {deletedMode && isManager && (
                 <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
               )}
+              <th className="px-3 py-3 w-8" aria-label="Open ticket"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -252,13 +250,12 @@ function TicketList({
               return (
                 <tr
                   key={ticket.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
+                  className={`relative hover:bg-gray-50 dark:hover:bg-gray-700 ${
                     showOverdueBadges ? 'border-l-4 border-red-400 dark:border-red-600' : ''
                   } ${deletedMode ? 'opacity-60' : ''}`}
-                  onClick={() => router.push(`/tickets/${ticket.id}`)}
                 >
                   {isManager && !deletedMode && (
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="relative z-10 px-4 py-3">
                       <input
                         type="checkbox"
                         checked={selected.has(ticket.id)}
@@ -269,6 +266,7 @@ function TicketList({
                   )}
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400 font-medium">
                     WO-{ticket.work_order_number}
+                    <RowLink href={`/tickets/${ticket.id}`} label={`Open ticket WO-${ticket.work_order_number}`} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col items-start gap-1">
@@ -319,7 +317,7 @@ function TicketList({
                     {ticket.users?.name ?? '—'}
                   </td>
                   {deletedMode && isManager && (
-                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td className="relative z-10 px-4 py-3 text-right">
                       <button
                         onClick={() => onRestore?.(ticket.id)}
                         disabled={restoringId === ticket.id}
@@ -330,6 +328,9 @@ function TicketList({
                       </button>
                     </td>
                   )}
+                  <td className="px-3 py-3">
+                    <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                  </td>
                 </tr>
               )
             })}
@@ -365,13 +366,16 @@ export default function TicketBoard({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [overdueSelected, setOverdueSelected] = useState<Set<string>>(new Set())
   // Managers, coordinators, and super admins start with the overdue section
-  // collapsed so it isn't a wall of red on every visit; techs keep it expanded
-  // for immediate visibility of their backlog.
-  const [overdueExpanded, setOverdueExpanded] = useState(overdueTickets.length > 0 && !isManager)
+  // collapsed so it isn't a wall of red on every visit — UNLESS the current
+  // month's list is empty, in which case a collapsed panel would show what
+  // looks like an all-clear board while overdue work is hiding underneath
+  // (the misleading-empty-state fix). Techs keep it expanded for immediate
+  // visibility of their backlog regardless of the month list.
+  const [overdueExpanded, setOverdueExpanded] = useState(
+    overdueTickets.length > 0 && (!isManager || tickets.length === 0)
+  )
   const [assignTo, setAssignTo] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
-  const [generateOpen, setGenerateOpen] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
   const [skipOpen, setSkipOpen] = useState(false)
   const [skipSource, setSkipSource] = useState<'month' | 'overdue'>('month')
   const [error, setError] = useState<string | null>(null)
@@ -526,11 +530,6 @@ export default function TicketBoard({
     router.refresh()
   }
 
-  function handleGenerated() {
-    setGenerateOpen(false)
-    router.push(`/tickets?month=${month}&year=${year}`)
-  }
-
   return (
     <>
       {overdueMode && (
@@ -596,113 +595,80 @@ export default function TicketBoard({
 
       {/* Filters — hidden when viewing overdue-only, skip-requested-only, or needs-review-only */}
       {!overdueMode && !skipRequestedMode && !needsReviewMode && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
-            <div className="w-full lg:w-64">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Search</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="WO#, customer, equipment, address, tech"
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 pr-8 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    aria-label="Clear search"
-                    className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="w-full lg:w-auto">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Month</label>
-              <select
-                value={month}
-                onChange={(e) => setMonth(parseInt(e.target.value))}
-                className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                {MONTHS.map((m, i) => (
-                  <option key={i} value={i + 1}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <div className="w-full lg:w-auto">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Year</label>
-              <select
-                value={year}
-                onChange={(e) => setYear(parseInt(e.target.value))}
-                className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-            {isManager && (
-              <div className="w-full lg:w-auto">
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Technician</label>
-                <select
-                  value={techFilter}
-                  onChange={(e) => setTechFilter(e.target.value)}
-                  className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                >
-                  <option value="">All Technicians</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="w-full lg:w-auto">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                {STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={applyFilters}
-              className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors min-h-[44px] lg:min-h-0"
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: 'WO#, customer, equipment, address, tech' }}
+          activeCount={[techFilter, statusFilter].filter(Boolean).length}
+        >
+          <div className="w-full lg:w-auto">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Month</label>
+            <select
+              value={month}
+              onChange={(e) => setMonth(parseInt(e.target.value))}
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
-              Apply
-            </button>
-            {isManager && !deletedMode && (
-              <div className="w-full lg:w-auto lg:ml-auto flex gap-2">
-                <button
-                  onClick={() => setCreateOpen(true)}
-                  className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors min-h-[44px] lg:min-h-0"
-                >
-                  New Ticket
-                </button>
-                <button
-                  onClick={() => setGenerateOpen(true)}
-                  className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 transition-colors min-h-[44px] lg:min-h-0"
-                >
-                  Generate {MONTHS[month - 1]} PMs
-                </button>
-                <button
-                  onClick={() => router.push(`/tickets?month=${month}&year=${year}&deleted=1`)}
-                  title="View tickets that were deleted in this month"
-                  className="w-full lg:w-auto px-3 py-2.5 lg:py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors min-h-[44px] lg:min-h-0 inline-flex items-center justify-center gap-1"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Deleted
-                </button>
-              </div>
-            )}
+              {MONTHS.map((m, i) => (
+                <option key={i} value={i + 1}>{m}</option>
+              ))}
+            </select>
           </div>
-        </div>
+          <div className="w-full lg:w-auto">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Year</label>
+            <select
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value))}
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          {isManager && (
+            <div className="w-full lg:w-auto">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Technician</label>
+              <select
+                value={techFilter}
+                onChange={(e) => setTechFilter(e.target.value)}
+                className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              >
+                <option value="">All Technicians</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="w-full lg:w-auto">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={applyFilters}
+            className="w-full lg:w-auto px-4 py-2.5 lg:py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 transition-colors min-h-[44px] lg:min-h-0"
+          >
+            Apply
+          </button>
+          {isManager && !deletedMode && (
+            <div className="w-full lg:w-auto lg:ml-auto">
+              <button
+                onClick={() => router.push(`/tickets?month=${month}&year=${year}&deleted=1`)}
+                title="View tickets that were deleted in this month"
+                className="w-full lg:w-auto px-3 py-2.5 lg:py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors min-h-[44px] lg:min-h-0 inline-flex items-center justify-center gap-1"
+              >
+                <Trash2 className="h-4 w-4" />
+                Deleted
+              </button>
+            </div>
+          )}
+        </FilterBar>
       )}
 
       {error && (
@@ -819,20 +785,6 @@ export default function TicketBoard({
         </div>
       )}
 
-      <GeneratePmModal
-        open={generateOpen}
-        month={month}
-        year={year}
-        monthLabel={MONTHS[month - 1]}
-        onClose={() => setGenerateOpen(false)}
-        onGenerated={handleGenerated}
-      />
-
-      <CreateTicketModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-      />
-
       {skipOpen && (
         <SkipDialog
           tickets={activeList.filter((t) => activeSelected.has(t.id))}
@@ -841,43 +793,16 @@ export default function TicketBoard({
         />
       )}
 
-      {bulkDeleteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 max-w-md w-full">
-            <div className="p-5 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-start gap-3">
-                <div className="shrink-0 h-10 w-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                  <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                    Delete {activeSelected.size} ticket{activeSelected.size === 1 ? '' : 's'}?
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    They&apos;ll be hidden from boards, billing, and PDFs, and won&apos;t be regenerated. You can restore them later from the Deleted view.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-              <button
-                onClick={() => setBulkDeleteOpen(false)}
-                disabled={bulkDeleting}
-                className="px-4 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-gray-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-gray-600 disabled:opacity-50 min-h-[44px] sm:min-h-0"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmBulkDelete}
-                disabled={bulkDeleting}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 min-h-[44px] sm:min-h-0"
-              >
-                {bulkDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${activeSelected.size} ticket${activeSelected.size === 1 ? '' : 's'}?`}
+        message="They'll be hidden from boards, billing, and PDFs, and won't be regenerated. You can restore them later from the Deleted view."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setBulkDeleteOpen(false)}
+        loading={bulkDeleting}
+      />
     </>
   )
 }

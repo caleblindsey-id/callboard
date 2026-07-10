@@ -5,10 +5,13 @@ import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
 import BillingNotesDrawer from './BillingNotesDrawer'
+import InlineEditCell from './InlineEditCell'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { formatDateShort } from '@/lib/format'
+import { FIELDS } from '@/lib/labels'
 
 // "Ready to Export" — completed service tickets not yet exported. Export is the
 // first half of the export-first billing flow (mirrors the PM Ready-to-Export
@@ -105,21 +108,6 @@ export default function ServiceBillingExport({
   const [exportingId, setExportingId] = useState<string | null>(null)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
 
-  // Inline Synergy order # editing — lets the coordinator key the parts-order #
-  // BEFORE exporting so it prints on the work order PDF, making it easy to match
-  // the exported WO back to its Synergy record when entering the invoice # later
-  // (feedback #48). Writes the same synergy_order_number column the parts-ordering
-  // and Awaiting Invoice flows use. Optional — never blocks export.
-  const [synergyEditingId, setSynergyEditingId] = useState<string | null>(null)
-  const [synergyEditingValue, setSynergyEditingValue] = useState('')
-  const [synergySaving, setSynergySaving] = useState(false)
-
-  // Inline PO editing — for PO-required customers a PO must be on the ticket
-  // before it can be exported (mirrors the PM Ready-to-Export gate).
-  const [editingPoId, setEditingPoId] = useState<string | null>(null)
-  const [editingPoValue, setEditingPoValue] = useState('')
-  const [savingPo, setSavingPo] = useState(false)
-
   const poMissingCount = tickets.filter(needsPo).length
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
@@ -213,189 +201,74 @@ export default function ServiceBillingExport({
     )
   }
 
-  function startEditPo(ticketId: string) {
-    setEditingPoId(ticketId)
-    setEditingPoValue('')
-  }
-
-  function cancelEditPo() {
-    setEditingPoId(null)
-    setEditingPoValue('')
-  }
-
-  async function handleSavePo() {
-    if (!editingPoId || savingPo) return
-    const trimmed = editingPoValue.trim()
-    if (!trimmed) return
-
-    setSavingPo(true)
+  // Shared onSave callbacks for the InlineEditCell instances below — same
+  // PATCH endpoint, same error handling (toast + rethrow so the cell can show
+  // its own fail tick and stay open) as before the extraction.
+  async function savePo(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/service-tickets/${editingPoId}`, {
+      const res = await fetch(`/api/service-tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ po_number: trimmed }),
+        body: JSON.stringify({ po_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setEditingPoId(null)
-      setEditingPoValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save PO number.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSavingPo(false)
+      throw err
     }
   }
 
   function renderPoStatus(t: ServiceBillingTicket) {
     if (!t.customers?.po_required) return <span className="text-gray-400 dark:text-gray-600">—</span>
-    if (t.po_number) {
-      return (
-        <span className="text-green-700 dark:text-green-400 truncate max-w-[120px] inline-block align-bottom" title={t.po_number}>
-          {t.po_number}
-        </span>
-      )
-    }
-    // PO required but missing
-    if (editingPoId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={editingPoValue}
-            onChange={(e) => setEditingPoValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSavePo()
-              if (e.key === 'Escape') cancelEditPo()
-            }}
-            placeholder="PO #"
-            autoFocus
-            disabled={savingPo}
-            className="w-24 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSavePo}
-            disabled={savingPo || !editingPoValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {savingPo ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelEditPo}
-            disabled={savingPo}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startEditPo(t.id) }}
-        className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-      >
-        PO Needed
-      </button>
+      <InlineEditCell
+        value={t.po_number}
+        placeholder="PO #"
+        onSave={(v) => savePo(t.id, v)}
+        emptyVariant="pill"
+        emptyText="PO Needed"
+        valueClassName="text-green-700 dark:text-green-400"
+        inputWidthClassName="w-24"
+        valueMaxWidthClassName="max-w-[120px]"
+        readOnlyWhenSet
+      />
     )
   }
 
-  function startSynergyEdit(ticketId: string, current: string | null) {
-    setSynergyEditingId(ticketId)
-    setSynergyEditingValue(current ?? '')
-  }
-
-  function cancelSynergyEdit() {
-    setSynergyEditingId(null)
-    setSynergyEditingValue('')
-  }
-
-  async function handleSaveSynergy() {
-    if (!synergyEditingId || synergySaving) return
-    const trimmed = synergyEditingValue.trim()
-    if (!trimmed) return
-
-    setSynergySaving(true)
+  async function saveSynergyOrder(ticketId: string, value: string) {
     try {
-      const res = await fetch(`/api/service-tickets/${synergyEditingId}`, {
+      const res = await fetch(`/api/service-tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ synergy_order_number: trimmed }),
+        body: JSON.stringify({ synergy_order_number: value }),
       })
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errData.error ?? `Server error ${res.status}`)
       }
-
-      setSynergyEditingId(null)
-      setSynergyEditingValue('')
       router.refresh()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save Synergy Order #.'
       setToast({ message, type: 'error' })
-    } finally {
-      setSynergySaving(false)
+      throw err
     }
   }
 
   function renderSynergyCell(t: ServiceBillingTicket) {
-    if (synergyEditingId === t.id) {
-      return (
-        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
-            value={synergyEditingValue}
-            onChange={(e) => setSynergyEditingValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveSynergy()
-              if (e.key === 'Escape') cancelSynergyEdit()
-            }}
-            placeholder="Synergy Order #"
-            autoFocus
-            disabled={synergySaving}
-            className="w-28 rounded border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSaveSynergy}
-            disabled={synergySaving || !synergyEditingValue.trim()}
-            className="px-1.5 py-0.5 text-xs font-medium text-white bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50"
-          >
-            {synergySaving ? '...' : 'Save'}
-          </button>
-          <button
-            onClick={cancelSynergyEdit}
-            disabled={synergySaving}
-            className="px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            Cancel
-          </button>
-        </div>
-      )
-    }
-    if (t.synergy_order_number) {
-      return (
-        <button
-          onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, t.synergy_order_number) }}
-          title={`${t.synergy_order_number} — click to edit`}
-          className="text-gray-700 dark:text-gray-300 truncate max-w-[140px] inline-block align-bottom hover:underline"
-        >
-          {t.synergy_order_number}
-        </button>
-      )
-    }
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); startSynergyEdit(t.id, null) }}
-        className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:underline"
-      >
-        + Synergy Order #
-      </button>
+      <InlineEditCell
+        value={t.synergy_order_number}
+        placeholder="Synergy Order #"
+        onSave={(v) => saveSynergyOrder(t.id, v)}
+        emptyVariant="ghost"
+        emptyText="+ Synergy Order #"
+        valueClassName="text-gray-700 dark:text-gray-300"
+      />
     )
   }
 
@@ -523,16 +396,14 @@ export default function ServiceBillingExport({
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Completed:{' '}
-                      {t.completed_at
-                        ? new Date(t.completed_at).toLocaleDateString()
-                        : '—'}
+                      {formatDateShort(t.completed_at)}
                     </p>
                     <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                       <span>PO:</span>
                       {renderPoStatus(t)}
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                      <span>Synergy #:</span>
+                      <span>{FIELDS.synergyOrder}:</span>
                       {renderSynergyCell(t)}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
@@ -557,7 +428,7 @@ export default function ServiceBillingExport({
                     <SortHeader label="Service Type" colKey="ticketType" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Type" colKey="type" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Completed" colKey="completed" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Synergy #</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-400">{FIELDS.synergyOrder}</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Action</th>
                   </tr>
                 </thead>
@@ -598,9 +469,7 @@ export default function ServiceBillingExport({
                         {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {t.completed_at
-                          ? new Date(t.completed_at).toLocaleDateString()
-                          : '—'}
+                        {formatDateShort(t.completed_at)}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {renderSynergyCell(t)}

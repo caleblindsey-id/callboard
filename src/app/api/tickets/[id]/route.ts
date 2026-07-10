@@ -5,14 +5,17 @@ import { updateAnchorMonth, deactivateSchedule } from '@/lib/db/schedules'
 import { isSkipReasonCategory, isStopReason } from '@/lib/skip-reasons'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/database'
-import { VALID_TRANSITIONS, EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
+import { EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
+import {
+  canTransition,
+  isReopenTransition,
+  isResetTransition,
+  technicianForbiddenTarget,
+  isCreditGatedTarget,
+} from '@/lib/transitions/pm'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
-
-// Status transitions that count as "performing work" — blocked while a credit
-// review is pending/blocked.
-const CREDIT_GATED_PM_TARGETS: TicketStatus[] = ['in_progress', 'completed', 'billed']
 
 // Only allow these fields to be updated via PATCH. `skip_previous_status` is
 // intentionally excluded — it's set server-side inside the skip-request branch
@@ -219,12 +222,11 @@ export async function PATCH(
       }
 
       // Techs can never set status to billed (managers only — billing is a back-office action).
-      if (isTechnician(user.role) && nextStatus === 'billed') {
+      if (isTechnician(user.role) && technicianForbiddenTarget(nextStatus)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      const allowed = VALID_TRANSITIONS[currentStatus] ?? []
-      if (!allowed.includes(nextStatus)) {
+      if (!canTransition(currentStatus, nextStatus)) {
         return NextResponse.json(
           { error: `Invalid status transition: ${currentStatus} → ${nextStatus}` },
           { status: 409 }
@@ -241,7 +243,7 @@ export async function PATCH(
 
       // Credit-hold gate: block advancement into "work" states while AR review
       // is pending/blocked.
-      if (CREDIT_GATED_PM_TARGETS.includes(nextStatus)) {
+      if (isCreditGatedTarget(nextStatus)) {
         const creditGate = await isTicketCreditGated('pm', id)
         if (creditGate) {
           return NextResponse.json(
@@ -257,9 +259,7 @@ export async function PATCH(
       }
 
       // Reopening tickets: only managers/coordinators
-      const isReopen =
-        (currentStatus === 'completed' && nextStatus === 'in_progress') ||
-        (currentStatus === 'skipped' && nextStatus === 'unassigned')
+      const isReopen = isReopenTransition(currentStatus, nextStatus)
       if (isReopen) {
         if (isTechnician(user.role)) {
           return NextResponse.json({ error: 'Only managers can reopen tickets' }, { status: 403 })
@@ -371,9 +371,7 @@ export async function PATCH(
       }
 
       // Manager-only status resets (backwards transitions)
-      const isReset =
-        (currentStatus === 'in_progress' && (nextStatus === 'assigned' || nextStatus === 'unassigned')) ||
-        (currentStatus === 'billed')
+      const isReset = isResetTransition(currentStatus, nextStatus)
       if (isReset) {
         if (!RESET_ROLES.includes(user.role)) {
           return NextResponse.json({ error: 'Only managers can reset ticket status' }, { status: 403 })

@@ -6,9 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { EquipmentRow, UserRow } from '@/types/database'
 import { X } from 'lucide-react'
+import Modal from '@/components/ui/Modal'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
+import { ENTITY, newEntityLabel, createEntityLabel } from '@/lib/labels'
 
 const DRAFT_KEY = 'draft-create-pm-ticket'
 
@@ -270,208 +272,205 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   const noEquipment = customerSelected && equipmentLoaded && equipment.length === 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={handleClose} />
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-6 max-w-lg w-full mx-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">New Ticket</h3>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400">
-            <X className="h-5 w-5" />
-          </button>
+    <Modal open={open} onClose={handleClose} size="lg" dismissible={!loading} ariaLabelledBy="create-ticket-title" className="p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 id="create-ticket-title" className="text-base font-semibold text-gray-900 dark:text-white">{newEntityLabel(ENTITY.pmTicket)}</h3>
+        <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      {restoredAt !== null && (
+        <div className="mb-3">
+          <DraftRestoredToast lastEditedAt={restoredAt} onDismiss={dismissRestoredToast} />
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Customer combobox */}
+        <div ref={comboRef} className="relative">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Customer <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={customerSearch}
+            onChange={(e) => {
+              setCustomerSearch(e.target.value)
+              setCustomerId('')
+              setSelectedCustomerName('')
+            }}
+            onFocus={() => { if (customerResults.length > 0) setComboOpen(true) }}
+            placeholder="Search by name or account number..."
+            autoComplete="off"
+            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+          {searching && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Searching...</p>
+          )}
+          {comboOpen && customerResults.length > 0 && (
+            <ul className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-56 overflow-auto text-sm">
+              {customerResults.map((c) => (
+                <li
+                  key={c.id}
+                  onMouseDown={() => selectCustomer(c)}
+                  className="px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-700 flex justify-between items-center gap-2"
+                >
+                  <span className="text-gray-900 dark:text-white flex items-center gap-2 min-w-0">
+                    <span className="truncate">{c.name}</span>
+                    {c.credit_hold && <CreditHoldBadge />}
+                  </span>
+                  {c.account_number && (
+                    <span className="text-gray-400 dark:text-gray-500 text-xs ml-2 shrink-0">{c.account_number}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {comboOpen && !searching && customerSearch.trim() && customerResults.length === 0 && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">No customers found.</p>
+          )}
+          {customerSelected && selectedCustomerCreditHold && (
+            <div className="mt-2 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 rounded-md px-3 py-2 flex items-start gap-2">
+              <CreditHoldBadge />
+              <span className="text-sm text-amber-800 dark:text-amber-300">
+                <strong>{selectedCustomerName}</strong> is on credit hold. Creating this ticket
+                will send it to AR for credit approval — work stays gated until AR releases it.
+              </span>
+            </div>
+          )}
         </div>
 
-        {restoredAt !== null && (
-          <div className="mb-3">
-            <DraftRestoredToast lastEditedAt={restoredAt} onDismiss={dismissRestoredToast} />
-          </div>
-        )}
-
-        {error && <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>}
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {/* Customer combobox */}
-          <div ref={comboRef} className="relative">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Customer <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={customerSearch}
-              onChange={(e) => {
-                setCustomerSearch(e.target.value)
-                setCustomerId('')
-                setSelectedCustomerName('')
-              }}
-              onFocus={() => { if (customerResults.length > 0) setComboOpen(true) }}
-              placeholder="Search by name or account number..."
-              autoComplete="off"
-              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-            {searching && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Searching...</p>
-            )}
-            {comboOpen && customerResults.length > 0 && (
-              <ul className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-56 overflow-auto text-sm">
-                {customerResults.map((c) => (
-                  <li
-                    key={c.id}
-                    onMouseDown={() => selectCustomer(c)}
-                    className="px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-700 flex justify-between items-center gap-2"
-                  >
-                    <span className="text-gray-900 dark:text-white flex items-center gap-2 min-w-0">
-                      <span className="truncate">{c.name}</span>
-                      {c.credit_hold && <CreditHoldBadge />}
-                    </span>
-                    {c.account_number && (
-                      <span className="text-gray-400 dark:text-gray-500 text-xs ml-2 shrink-0">{c.account_number}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {comboOpen && !searching && customerSearch.trim() && customerResults.length === 0 && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">No customers found.</p>
-            )}
-            {customerSelected && selectedCustomerCreditHold && (
-              <div className="mt-2 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-800 rounded-md px-3 py-2 flex items-start gap-2">
-                <CreditHoldBadge />
-                <span className="text-sm text-amber-800 dark:text-amber-300">
-                  <strong>{selectedCustomerName}</strong> is on credit hold. Creating this ticket
-                  will send it to AR for credit approval — work stays gated until AR releases it.
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Equipment */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Equipment
-            </label>
-            {noEquipment ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic py-2">No equipment on file for this customer.</p>
-            ) : (
-              <select
-                value={equipmentId}
-                onChange={(e) => setEquipmentId(e.target.value)}
-                disabled={!customerSelected}
-                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
-              >
-                <option value="">
-                  {!customerSelected
-                    ? 'Select a customer first'
-                    : !equipmentLoaded
-                    ? 'Loading equipment...'
-                    : 'Select equipment...'}
-                </option>
-                {equipment.map((eq) => (
-                  <option key={eq.id} value={eq.id}>
-                    {[eq.make, eq.model].filter(Boolean).join(' ') || eq.id}
-                    {eq.serial_number ? ` — SN: ${eq.serial_number}` : ''}
-                    {eq.location_on_site ? ` (${eq.location_on_site})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Month <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={month}
-                onChange={(e) => setMonth(parseInt(e.target.value))}
-                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                {MONTHS.map((m, i) => (
-                  <option key={i} value={i + 1}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Year <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={year}
-                onChange={(e) => setYear(parseInt(e.target.value))}
-                className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Technician</label>
+        {/* Equipment */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Equipment
+          </label>
+          {noEquipment ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500 italic py-2">No equipment on file for this customer.</p>
+          ) : (
             <select
-              value={technicianId}
-              onChange={(e) => setTechnicianId(e.target.value)}
+              value={equipmentId}
+              onChange={(e) => setEquipmentId(e.target.value)}
+              disabled={!customerSelected}
+              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+            >
+              <option value="">
+                {!customerSelected
+                  ? 'Select a customer first'
+                  : !equipmentLoaded
+                  ? 'Loading equipment...'
+                  : 'Select equipment...'}
+              </option>
+              {equipment.map((eq) => (
+                <option key={eq.id} value={eq.id}>
+                  {[eq.make, eq.model].filter(Boolean).join(' ') || eq.id}
+                  {eq.serial_number ? ` — SN: ${eq.serial_number}` : ''}
+                  {eq.location_on_site ? ` (${eq.location_on_site})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Month <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={month}
+              onChange={(e) => setMonth(parseInt(e.target.value))}
               className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
-              <option value="">Unassigned</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
+              {MONTHS.map((m, i) => (
+                <option key={i} value={i + 1}>{m}</option>
               ))}
             </select>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Date</label>
-            <input
-              type="date"
-              value={scheduledDate}
-              onChange={(e) => setScheduledDate(e.target.value)}
-              className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
-            />
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Labor Rate
+              Year <span className="text-red-500">*</span>
             </label>
             <select
-              value={laborRateType}
-              onChange={(e) => setLaborRateType(e.target.value)}
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value))}
               className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
             >
-              <option value="standard">Standard</option>
-              <option value="industrial">Industrial</option>
-              <option value="vacuum">Vacuum</option>
+              {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
             </select>
           </div>
+        </div>
 
-          <div className="flex items-center justify-between gap-3 pt-2">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Technician</label>
+          <select
+            value={technicianId}
+            onChange={(e) => setTechnicianId(e.target.value)}
+            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            <option value="">Unassigned</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scheduled Date</label>
+          <input
+            type="date"
+            value={scheduledDate}
+            onChange={(e) => setScheduledDate(e.target.value)}
+            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Labor Rate
+          </label>
+          <select
+            value={laborRateType}
+            onChange={(e) => setLaborRateType(e.target.value)}
+            className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            <option value="standard">Standard</option>
+            <option value="industrial">Industrial</option>
+            <option value="vacuum">Vacuum</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2"
+          >
+            Discard draft
+          </button>
+          <div className="flex gap-3">
             <button
               type="button"
-              onClick={handleDiscardDraft}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2"
+              onClick={handleClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
             >
-              Discard draft
+              Cancel
             </button>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-              >
-                {loading ? 'Creating...' : 'Create Ticket'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? 'Creating...' : createEntityLabel(ENTITY.pmTicket)}
+            </button>
           </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      </form>
+    </Modal>
   )
 }

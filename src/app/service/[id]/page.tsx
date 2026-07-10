@@ -12,16 +12,9 @@ import AuditHistorySection from '@/components/AuditHistorySection'
 import AceLaborCard from '@/components/AceLaborCard'
 import { getEntryByTicket } from '@/lib/db/ace-labor'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
+import { getStatusMeta } from '@/lib/status-meta'
 
 const WORKFLOW_STEPS: ServiceTicketStatus[] = ['open', 'estimated', 'approved', 'in_progress', 'completed', 'billed']
-const STEP_LABELS: Record<string, string> = {
-  open: 'Open',
-  estimated: 'Estimated',
-  approved: 'Approved',
-  in_progress: 'In Progress',
-  completed: 'Completed',
-  billed: 'Billed',
-}
 
 export default async function ServiceTicketPage({
   params,
@@ -139,7 +132,7 @@ export default async function ServiceTicketPage({
                         : 'text-gray-400 dark:text-gray-600'
                     }`}
                   >
-                    {STEP_LABELS[step]}
+                    {getStatusMeta('service', step).label}
                   </span>
                 </div>
                 {i < WORKFLOW_STEPS.length - 1 && (

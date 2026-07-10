@@ -1,8 +1,10 @@
 import { getTickets } from '@/lib/db/tickets'
 import { getUsers } from '@/lib/db/users'
-import { getCurrentUser, isTechnician } from '@/lib/auth'
+import { getCurrentUser, isTechnician, MANAGER_ROLES } from '@/lib/auth'
 import { TicketStatus } from '@/types/database'
+import PageHeader from '@/components/ui/PageHeader'
 import TicketBoard from './TicketBoard'
+import TicketBoardActions from './TicketBoardActions'
 
 export default async function TicketsPage({
   searchParams,
@@ -20,6 +22,7 @@ export default async function TicketsPage({
 
   const user = await getCurrentUser()
   const isTech = isTechnician(user?.role ?? null)
+  const isManager = !!user?.role && MANAGER_ROLES.includes(user.role)
 
   const monthFilters: Parameters<typeof getTickets>[0] = { month, year }
   if (isTech && user) {
@@ -86,12 +89,11 @@ export default async function TicketsPage({
           Unable to load tickets. Check your connection and refresh the page.
         </div>
       )}
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Preventive Maintenance</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Monthly PM ticket board
-        </p>
-      </div>
+      <PageHeader
+        title="Preventive Maintenance"
+        subtitle="Monthly PM ticket board"
+        actions={isManager && !deletedMode ? <TicketBoardActions month={month} year={year} /> : undefined}
+      />
       <TicketBoard
         tickets={monthTickets}
         overdueTickets={overdueTickets}

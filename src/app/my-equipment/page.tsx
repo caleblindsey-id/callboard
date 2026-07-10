@@ -1,6 +1,7 @@
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
+import PageHeader from '@/components/ui/PageHeader'
 import TechEquipmentList from './TechEquipmentList'
 
 export type TechEquipmentItem = {
@@ -15,8 +16,14 @@ export type TechEquipmentItem = {
   nextServiceDate: string | null
 }
 
-export default async function MyEquipmentPage() {
+export default async function MyEquipmentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
   const user = await requireRole('technician', ...MANAGER_ROLES)
+  const params = await searchParams
+  const initialSearch = params.q ?? ''
   const supabase = await createClient()
 
   // Distinct equipment IDs the user has been assigned to a ticket on (PM + service).
@@ -43,13 +50,8 @@ export default async function MyEquipmentPage() {
   if (equipmentIds.length === 0) {
     return (
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Equipment</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Equipment you&apos;ve been assigned to
-          </p>
-        </div>
-        <TechEquipmentList equipment={[]} />
+        <PageHeader title="Equipment" subtitle="Equipment you've been assigned to" />
+        <TechEquipmentList equipment={[]} initialSearch={initialSearch} />
       </div>
     )
   }
@@ -152,13 +154,8 @@ export default async function MyEquipmentPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Equipment</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Equipment you&apos;ve been assigned to
-        </p>
-      </div>
-      <TechEquipmentList equipment={enriched} />
+      <PageHeader title="Equipment" subtitle="Equipment you've been assigned to" />
+      <TechEquipmentList equipment={enriched} initialSearch={initialSearch} />
     </div>
   )
 }

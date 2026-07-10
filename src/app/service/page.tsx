@@ -2,6 +2,8 @@ import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { BarChart3 } from 'lucide-react'
+import PageHeader from '@/components/ui/PageHeader'
+import { ENTITY, newEntityLabel } from '@/lib/labels'
 import { ServiceTicketBoard } from './ServiceTicketBoard'
 
 export default async function ServicePage({
@@ -34,25 +36,37 @@ export default async function ServicePage({
     search: params.search ?? '',
   }
   // Both office staff AND techs can access (techs see their own tickets only)
+  const isTech = user.role === 'technician'
+  const canCreateTickets = !isTech || user.can_create_service_tickets
+  const isManager = !!user.role && MANAGER_ROLES.includes(user.role)
+
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Service Tickets</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            On-demand service requests — inside shop and field calls
-          </p>
-        </div>
-        {user.role && MANAGER_ROLES.includes(user.role) && (
-          <Link
-            href="/service/report"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shrink-0"
-          >
-            <BarChart3 className="h-4 w-4" />
-            Report
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        title="Service Tickets"
+        subtitle="On-demand service requests — inside shop and field calls"
+        actions={
+          <>
+            {isManager && (
+              <Link
+                href="/service/report"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shrink-0"
+              >
+                <BarChart3 className="h-4 w-4" />
+                Report
+              </Link>
+            )}
+            {canCreateTickets && (
+              <Link
+                href="/service/new"
+                className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 lg:min-h-0"
+              >
+                {newEntityLabel(ENTITY.service)}
+              </Link>
+            )}
+          </>
+        }
+      />
       <ServiceTicketBoard currentUser={user} initialFilters={initialFilters} />
     </div>
   )

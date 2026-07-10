@@ -4,13 +4,20 @@ import { getServiceTicket, updateServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
 import {
   ServiceTicketStatus,
-  SERVICE_VALID_TRANSITIONS,
-  SERVICE_MANAGER_ONLY_TARGETS,
   EMPTY_ESTIMATE_SIGNOFF_FIELDS,
   EMPTY_ESTIMATE_FOLLOWUP_FIELDS,
   PartRequest,
   ServicePartUsed,
 } from '@/types/service-tickets'
+import {
+  canTransition,
+  isManagerOnlyTarget,
+  isManagerOnlyReopenToApproved,
+  techCannotDecline,
+  techCannotComplete,
+  isCreditGatedTarget,
+  billingGateSatisfied,
+} from '@/lib/transitions/service'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
@@ -23,10 +30,6 @@ import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 import { notifyApprove } from '@/lib/service-tickets/notify-approve'
-
-// Status transitions that count as "performing work" — blocked while a credit
-// review is pending/blocked.
-const CREDIT_GATED_SERVICE_TARGETS: ServiceTicketStatus[] = ['in_progress', 'completed', 'billed']
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -390,7 +393,7 @@ export async function PATCH(
       const nextStatus = filtered.status as ServiceTicketStatus
 
       // Manager-only targets (reopen to 'open', cancel)
-      if (SERVICE_MANAGER_ONLY_TARGETS.includes(nextStatus) && nextStatus !== currentStatus) {
+      if (isManagerOnlyTarget(nextStatus) && nextStatus !== currentStatus) {
         if (!RESET_ROLES.includes(user.role!)) {
           return NextResponse.json({ error: 'Only managers can reopen or cancel tickets' }, { status: 403 })
         }
@@ -399,10 +402,7 @@ export async function PATCH(
       // Reopen-to-approved (worked ticket → estimate-approved phase) is also
       // a manager-only action. The normal estimated → approved staff approval
       // flow is unaffected because its source status isn't a worked state.
-      if (
-        nextStatus === 'approved' &&
-        (['in_progress', 'completed', 'billed'] as ServiceTicketStatus[]).includes(currentStatus)
-      ) {
+      if (isManagerOnlyReopenToApproved(currentStatus, nextStatus)) {
         if (!RESET_ROLES.includes(user.role!)) {
           return NextResponse.json({ error: 'Only managers can reopen tickets' }, { status: 403 })
         }
@@ -411,14 +411,13 @@ export async function PATCH(
       // Techs may approve an estimate but not decline it (approve-only). The
       // three approve fields are tech-allowed above, but declining is a harder-
       // to-reverse, customer-facing outcome that stays with staff. ('canceled'
-      // is already manager-only via SERVICE_MANAGER_ONLY_TARGETS.)
-      if (isTechnician(user.role) && currentStatus === 'estimated' && nextStatus === 'declined') {
+      // is already manager-only via isManagerOnlyTarget.)
+      if (isTechnician(user.role) && techCannotDecline(currentStatus, nextStatus)) {
         return NextResponse.json({ error: 'Only staff can decline an estimate' }, { status: 403 })
       }
 
       // Validate transition
-      const allowed = SERVICE_VALID_TRANSITIONS[currentStatus] ?? []
-      if (!allowed.includes(nextStatus)) {
+      if (!canTransition(currentStatus, nextStatus)) {
         return NextResponse.json(
           { error: `Invalid status transition: ${currentStatus} → ${nextStatus}` },
           { status: 409 }
@@ -448,7 +447,7 @@ export async function PATCH(
 
       // Credit-hold gate: block advancement into "work" states while AR review
       // is pending/blocked.
-      if (CREDIT_GATED_SERVICE_TARGETS.includes(nextStatus) && nextStatus !== currentStatus) {
+      if (isCreditGatedTarget(currentStatus, nextStatus)) {
         const creditGate = await isTicketCreditGated('service', id)
         if (creditGate) {
           return NextResponse.json(
@@ -464,7 +463,7 @@ export async function PATCH(
       }
 
       // Techs can't complete via PATCH (must use /complete endpoint)
-      if (isTechnician(user.role) && nextStatus === 'completed') {
+      if (isTechnician(user.role) && techCannotComplete(nextStatus)) {
         return NextResponse.json({ error: 'Use the complete endpoint to submit ticket completion' }, { status: 403 })
       }
 
@@ -504,15 +503,15 @@ export async function PATCH(
       // billing gate — mirrors the PM gate on pm_tickets.synergy_invoice_number.)
       if (nextStatus === 'billed') {
         // Check if synergy_invoice_number is being set in this request or already exists
-        const synergyInvoiceNum = filtered.synergy_invoice_number ?? null
-        if (!synergyInvoiceNum) {
+        const synergyInvoiceNum = (filtered.synergy_invoice_number as string | null | undefined) ?? null
+        if (!billingGateSatisfied({ synergy_invoice_number: synergyInvoiceNum })) {
           // Check existing value
           const { data: full } = await supabase
             .from('service_tickets')
             .select('synergy_invoice_number')
             .eq('id', id)
             .single()
-          if (!full?.synergy_invoice_number) {
+          if (!billingGateSatisfied({ synergy_invoice_number: full?.synergy_invoice_number })) {
             return NextResponse.json(
               { error: 'Synergy invoice number is required to mark a ticket as billed' },
               { status: 400 }

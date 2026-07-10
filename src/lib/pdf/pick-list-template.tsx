@@ -1,4 +1,5 @@
-import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
+import { PdfHeader, PdfFooter } from '@/lib/pdf/chrome'
 
 // ============================================================
 // Types
@@ -37,18 +38,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 36,
     backgroundColor: '#ffffff',
   },
-  header: {
-    marginBottom: 14,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#111111',
-    paddingBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  logo: { width: 150, height: 46, objectFit: 'contain' as const },
-  title: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: '#111111' },
-  subtitle: { fontSize: 10, color: '#444444', marginTop: 2, textAlign: 'right' as const },
   tableHeaderRow: {
     flexDirection: 'row',
     backgroundColor: '#f0f0f0',
@@ -76,16 +65,6 @@ const styles = StyleSheet.create({
   colWo: { width: 50, color: '#444444' },
   colTech: { width: 90, color: '#444444' },
   empty: { marginTop: 24, textAlign: 'center' as const, color: '#888888', fontSize: 10 },
-  footer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 36,
-    right: 36,
-    textAlign: 'center' as const,
-    fontSize: 7,
-    color: '#aaaaaa',
-    fontStyle: 'italic',
-  },
 })
 
 function dash(v: string | number | null | undefined): string {
@@ -103,17 +82,14 @@ export function PickListDocument({ rows, generatedDate, logoBase64 }: PickListDo
     <Document>
       <Page size="LETTER" orientation="landscape" style={styles.page} wrap>
         {/* Header (repeats on every page) */}
-        <View style={styles.header} fixed>
-          {logoBase64 ? <Image src={logoBase64} style={styles.logo} /> : <View />}
-          <View>
-            <Text style={styles.title}>Parts Pick List</Text>
-            <Text style={styles.subtitle}>
-              {generatedDate}
-              {'  |  '}
-              {rows.length} {rows.length === 1 ? 'part' : 'parts'}
-            </Text>
-          </View>
-        </View>
+        <PdfHeader
+          logoBase64={logoBase64}
+          title="Parts Pick List"
+          rightLines={[
+            { text: generatedDate },
+            { text: `${rows.length} ${rows.length === 1 ? 'part' : 'parts'}` },
+          ]}
+        />
 
         {/* Column headers (repeat on every page) */}
         <View style={styles.tableHeaderRow} fixed>
@@ -128,7 +104,7 @@ export function PickListDocument({ rows, generatedDate, logoBase64 }: PickListDo
         </View>
 
         {rows.length === 0 ? (
-          <Text style={styles.empty}>Nothing waiting to be pulled from stock.</Text>
+          <Text style={styles.empty}>Nothing waiting to be pulled.</Text>
         ) : (
           rows.map((r, i) => (
             <View key={i} style={styles.tableRow} wrap={false}>
@@ -144,11 +120,7 @@ export function PickListDocument({ rows, generatedDate, logoBase64 }: PickListDo
           ))
         )}
 
-        <Text
-          style={styles.footer}
-          fixed
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-        />
+        <PdfFooter />
       </Page>
     </Document>
   )

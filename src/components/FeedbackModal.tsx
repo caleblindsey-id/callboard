@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { X, Paperclip, Bug, Lightbulb, HelpCircle } from 'lucide-react'
+import { Paperclip, Bug, Lightbulb, HelpCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
+import Modal from '@/components/ui/Modal'
 
 type Category = 'bug' | 'idea' | 'question'
 
@@ -127,35 +128,8 @@ export default function FeedbackModal({ onClose, initialAttachment, captureFaile
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center"
-      onClick={() => !submitting && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="feedback-modal-title"
-    >
-      <div
-        className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900 dark:ring-1 dark:ring-white/10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
-          <h2 id="feedback-modal-title" className="text-base font-semibold text-gray-900 dark:text-white">
-            Send feedback
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            aria-label="Close"
-            className="text-gray-400 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:text-gray-200"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Body */}
-        {submitted ? (
+    <Modal open onClose={onClose} dismissible={!submitting} title="Send feedback" sheet size="md">
+      {submitted ? (
           <div className="px-5 py-10 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
               <span className="text-2xl">✓</span>
@@ -308,7 +282,6 @@ export default function FeedbackModal({ onClose, initialAttachment, captureFaile
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

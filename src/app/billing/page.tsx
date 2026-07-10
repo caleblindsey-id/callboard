@@ -9,6 +9,7 @@ import ServiceAwaitingInvoice from './ServiceAwaitingInvoice'
 import ServiceTypeFilter from './ServiceTypeFilter'
 import InvoicedArchive from './InvoicedArchive'
 import BillingTabs from './BillingTabs'
+import PageHeader from '@/components/ui/PageHeader'
 
 export default async function BillingPage({
   searchParams,
@@ -55,12 +56,10 @@ export default async function BillingPage({
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Billing</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Completed tickets ready to bill into Synergy
-        </p>
-      </div>
+      <PageHeader
+        title="Billing"
+        subtitle="Completed tickets ready to bill into Synergy"
+      />
       <BillingTabs
         pmCount={pmTickets.length}
         serviceCount={serviceTickets.length + serviceAwaitingInvoice.length}

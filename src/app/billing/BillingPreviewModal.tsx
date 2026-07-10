@@ -2,6 +2,8 @@
 
 import { TicketWithJoins } from '@/lib/db/tickets'
 import type { PartUsed } from '@/types/database'
+import Modal from '@/components/ui/Modal'
+import { formatDateShort } from '@/lib/format'
 
 interface BillingPreviewModalProps {
   open: boolean
@@ -51,95 +53,18 @@ export default function BillingPreviewModal({
   onCancel,
   onConfirm,
 }: BillingPreviewModalProps) {
-  if (!open) return null
-
   const total = tickets.reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
   const flaggedCount = tickets.filter((t) => ticketIsFlagged(t).flagged).length
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-4xl flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="p-5 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-            Export Preview
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Review the tickets below before generating the PDF. Nothing is marked as
-            billed until you click <span className="font-medium">Export PDF</span>.
-          </p>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-auto">
-          {tickets.length === 0 ? (
-            <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-              No tickets selected.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
-                <tr className="border-b border-gray-100 dark:border-gray-700">
-                  <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                  <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
-                  <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
-                  <th className="px-4 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Hours</th>
-                  <th className="px-4 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Parts</th>
-                  <th className="px-4 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Line Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {tickets.map((t) => {
-                  const flag = ticketIsFlagged(t)
-                  const rowClass = flag.flagged
-                    ? 'bg-amber-50 dark:bg-amber-900/20'
-                    : ''
-                  return (
-                    <tr key={t.id} className={rowClass}>
-                      <td className="px-4 py-2 text-gray-900 dark:text-white">
-                        <div className="flex items-center gap-2">
-                          <span>{t.customers?.name ?? '—'}</span>
-                          {flag.flagged && (
-                            <span
-                              title={flag.reasons.join(', ')}
-                              className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-700/50 text-amber-900 dark:text-amber-200"
-                            >
-                              flagged
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                        {[t.equipment?.make, t.equipment?.model]
-                          .filter(Boolean)
-                          .join(' ') || '—'}
-                      </td>
-                      <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                        {t.completed_date
-                          ? new Date(t.completed_date).toLocaleDateString()
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-400">
-                        {t.hours_worked ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-400">
-                        ${partsTotal(t).toFixed(2)}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-900 dark:text-white font-medium">
-                        {t.billing_amount != null
-                          ? `$${t.billing_amount.toFixed(2)}`
-                          : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <Modal
+      open={open}
+      onClose={onCancel}
+      size="xl"
+      dismissible={!exporting}
+      ariaLabelledBy="billing-preview-title"
+      footer={
+        <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="text-sm text-gray-700 dark:text-gray-300">
             <span className="font-medium">{tickets.length}</span> ticket
             {tickets.length === 1 ? '' : 's'} —{' '}
@@ -167,7 +92,84 @@ export default function BillingPreviewModal({
             </button>
           </div>
         </div>
+      }
+    >
+      {/* Header */}
+      <div className="p-5 border-b border-gray-200 dark:border-gray-700">
+        <h2 id="billing-preview-title" className="text-base font-semibold text-gray-900 dark:text-white">
+          Export Preview
+        </h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+          Review the tickets below before generating the PDF. Nothing is marked as
+          billed until you click <span className="font-medium">Export PDF</span>.
+        </p>
       </div>
-    </div>
+
+      {/* Table body — Modal's own overflow-y-auto wrapper handles scrolling */}
+      <div>
+        {tickets.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            No tickets selected.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
+              <tr className="border-b border-gray-100 dark:border-gray-700">
+                <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Customer</th>
+                <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Equipment</th>
+                <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Completed</th>
+                <th className="px-4 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Hours</th>
+                <th className="px-4 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Parts</th>
+                <th className="px-4 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Line Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {tickets.map((t) => {
+                const flag = ticketIsFlagged(t)
+                const rowClass = flag.flagged
+                  ? 'bg-amber-50 dark:bg-amber-900/20'
+                  : ''
+                return (
+                  <tr key={t.id} className={rowClass}>
+                    <td className="px-4 py-2 text-gray-900 dark:text-white">
+                      <div className="flex items-center gap-2">
+                        <span>{t.customers?.name ?? '—'}</span>
+                        {flag.flagged && (
+                          <span
+                            title={flag.reasons.join(', ')}
+                            className="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-700/50 text-amber-900 dark:text-amber-200"
+                          >
+                            flagged
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                      {[t.equipment?.make, t.equipment?.model]
+                        .filter(Boolean)
+                        .join(' ') || '—'}
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                      {formatDateShort(t.completed_date)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-400">
+                      {t.hours_worked ?? '—'}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-400">
+                      ${partsTotal(t).toFixed(2)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-900 dark:text-white font-medium">
+                      {t.billing_amount != null
+                        ? `$${t.billing_amount.toFixed(2)}`
+                        : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </Modal>
   )
 }

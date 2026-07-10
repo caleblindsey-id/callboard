@@ -1,6 +1,7 @@
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getSupplyRequestReport } from '@/lib/db/supply-requests'
 import SupplyReportClient from './SupplyReportClient'
+import PageHeader from '@/components/ui/PageHeader'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,12 +26,11 @@ export default async function SupplyReportPage({
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Supply Request Report</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          What technicians are requesting and how often.
-        </p>
-      </div>
+      <PageHeader
+        title="Supply Request Report"
+        subtitle="What technicians are requesting and how often."
+        backHref="/supply-requests"
+      />
       <SupplyReportClient report={report} range={range} />
     </div>
   )
