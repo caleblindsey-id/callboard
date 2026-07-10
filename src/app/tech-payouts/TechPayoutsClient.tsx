@@ -3,13 +3,16 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { TechLeadStatus, TechLeadType, SalesRep } from '@/types/database'
+import type { TechLeadStatus, TechLeadType, SalesRep, UserRole } from '@/types/database'
+import { RESET_ROLES } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import LeadReviewModal from '../tech-leads/LeadReviewModal'
 import CreateEquipmentFromLeadModal from '../tech-leads/CreateEquipmentFromLeadModal'
+import ManualMatchModal from '../tech-leads/ManualMatchModal'
+import SubmitLeadModal from '../my-leads/SubmitLeadModal'
 import PayoutReport from '../tech-leads/PayoutReport'
 import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
 import { formatMoney, formatDate } from '@/lib/format'
@@ -25,6 +28,7 @@ interface Props {
   aceEntries: AceLaborEntryWithJoins[]
   salesReps: SalesRep[]
   currentUserId: string
+  currentUserRole: UserRole | null
 }
 
 // Tab wording kills the triple "pending" the old labels carried (Pending ACE,
@@ -111,8 +115,13 @@ function aceTicketLink(e: AceLaborEntryWithJoins): { href: string; label: string
   return { href: '#', label: '—', customer: '—' }
 }
 
-export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId }: Props) {
+export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId, currentUserRole }: Props) {
   const router = useRouter()
+
+  // Editing / matching a lead past `pending` is super_admin/manager only (the
+  // routes enforce RESET_ROLES). Coordinators can view the hub but not act on
+  // awaiting-match leads, so hide those buttons rather than let them 409/403.
+  const canActPastPending = !!currentUserRole && RESET_ROLES.includes(currentUserRole)
 
   const pendingLeadsCount = useMemo(() => leads.filter(l => l.status === 'pending').length, [leads])
   const pendingAceCount   = useMemo(() => aceEntries.filter(e => e.status === 'pending').length, [aceEntries])
@@ -128,6 +137,8 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [reviewLead, setReviewLead] = useState<TechLeadWithJoins | null>(null)
   const [equipLead, setEquipLead] = useState<TechLeadWithJoins | null>(null)
+  const [editLead, setEditLead] = useState<TechLeadWithJoins | null>(null)
+  const [matchLead, setMatchLead] = useState<TechLeadWithJoins | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rejectingAceId, setRejectingAceId] = useState<string | null>(null)
@@ -475,6 +486,14 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                         <div className="flex gap-2 justify-end">
                           <button
                             type="button"
+                            onClick={() => setEditLead(lead)}
+                            disabled={isBusy}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setReviewLead(lead)}
                             disabled={isBusy}
                             className="px-3 py-1.5 text-xs font-medium text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 rounded-md disabled:opacity-50"
@@ -519,18 +538,40 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                         </div>
                       )}
                       {lead.status === 'approved' && isEquipmentSale && (
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex flex-col items-end gap-1.5">
                           <span className="text-xs text-gray-500 dark:text-gray-400 italic">
                             Waiting on Synergy sale
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCancel(lead)}
-                            disabled={isBusy}
-                            className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
+                          <div className="flex gap-2 justify-end">
+                            {canActPastPending && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditLead(lead)}
+                                  disabled={isBusy}
+                                  className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMatchLead(lead)}
+                                  disabled={isBusy}
+                                  className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md disabled:opacity-50"
+                                >
+                                  Match sale
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleCancel(lead)}
+                              disabled={isBusy}
+                              className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
                       )}
                     </td>
@@ -548,11 +589,22 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
         onClose={() => setReviewLead(null)}
         onDone={() => { setReviewLead(null); router.refresh() }}
         onApprovedPm={(lead) => { setReviewLead(null); setEquipLead(lead); router.refresh() }}
+        onEdit={(lead) => { setReviewLead(null); setEditLead(lead) }}
       />
       <CreateEquipmentFromLeadModal
         lead={equipLead}
         onClose={() => setEquipLead(null)}
         onDone={() => { setEquipLead(null); router.refresh() }}
+      />
+      <SubmitLeadModal
+        open={editLead !== null}
+        lead={editLead}
+        onClose={() => setEditLead(null)}
+      />
+      <ManualMatchModal
+        lead={matchLead}
+        onClose={() => setMatchLead(null)}
+        onDone={() => { setMatchLead(null); router.refresh() }}
       />
     </>
   )

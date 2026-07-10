@@ -33,6 +33,7 @@ export default async function TechPayoutsPage() {
         aceEntries={aceEntries}
         salesReps={salesReps}
         currentUserId={user.id}
+        currentUserRole={user.role}
       />
     </div>
   )
