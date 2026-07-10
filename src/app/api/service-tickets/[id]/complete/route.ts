@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
-import { stampCollectedOnStaged } from '@/lib/parts'
+import { stampCollectedOnStaged, partsAwaitingReview } from '@/lib/parts'
 import type { PartRequest } from '@/types/database'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
@@ -185,6 +185,23 @@ export async function POST(
           { status: 409 }
         )
       }
+    }
+
+    // Un-triaged parts gate. A part still in 'pending_review' hasn't been acted
+    // on by the office (order vs. pull-from-stock), so completing here orphans it
+    // in the Parts Queue Review tab with no home. Block completion until it's
+    // triaged or removed. Scoped to 'pending_review' only — 'requested'/'ordered'
+    // parts (already worked by the office / on the way) still allow completing
+    // the labor, preserving service's deliberate "finish work while a part is in
+    // flight" behavior. Cancelled parts are excluded via the flag.
+    const reviewParts = partsAwaitingReview(current.parts_requested as PartRequest[] | null)
+    if (reviewParts.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${reviewParts.length} part(s) are awaiting Parts Queue review. Triage or remove them before completing this ticket.`,
+        },
+        { status: 409 }
+      )
     }
 
     // Manager-only below-floor override (mirrors the PATCH route). A manager who

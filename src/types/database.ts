@@ -210,6 +210,11 @@ export type PartRequestStatus =
   | 'ordered'
   | 'received'
   | 'from_stock'
+  // Terminal state stamped by the parts-queue `cancel` action alongside
+  // `cancelled: true`. All queue/dashboard/completion logic gates on the
+  // `cancelled` flag, so this value is inert-by-default (never matches an
+  // active status literal) — it only keeps the JSONB self-consistent.
+  | 'cancelled'
 
 export interface PartRequest {
   description: string

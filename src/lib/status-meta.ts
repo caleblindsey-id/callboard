@@ -145,6 +145,13 @@ const PARTS_STATUS_META: Record<PartsStatusKey, StatusMeta> = {
     label: 'Pulled',
     classes: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300',
   },
+  // Terminal state stamped alongside cancelled:true. Part rows render the
+  // cancelled treatment off the `cancelled` flag (a struck-through line +
+  // "Cancelled"), so this badge meta is a fallback for completeness.
+  cancelled: {
+    label: 'Cancelled',
+    classes: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+  },
 }
 
 // Matches MySuppliesClient's existing local STATUS_BADGE exactly (dominant

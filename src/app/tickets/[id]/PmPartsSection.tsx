@@ -37,6 +37,10 @@ const STATUS_TEXT: Record<PartRequest['status'], string> = {
   ordered:   'text-blue-600 dark:text-blue-400',
   received:  'text-green-600 dark:text-green-400',
   from_stock: 'text-teal-600 dark:text-teal-400',
+  // Cancelled parts render via the `part.cancelled` branch (a literal
+  // "Cancelled" span), so this is never indexed — it just keeps the record
+  // exhaustive over PartRequestStatus.
+  cancelled: 'text-red-600 dark:text-red-400',
 }
 
 export default function PmPartsSection({

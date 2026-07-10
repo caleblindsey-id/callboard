@@ -4,6 +4,7 @@ import {
   validateNewManualPartRequests,
   hasNewRequestedPart,
   findPartMissingSynergyItemNumber,
+  partsAwaitingReview,
 } from './parts'
 import type { PartRequest } from '../types/database'
 
@@ -147,4 +148,46 @@ test('returns false when a stored part merely changes status', () => {
   const stored = manual()
   const advanced = { ...stored, status: 'ordered' as const }
   assert.equal(hasNewRequestedPart([stored], [advanced]), false)
+})
+
+// ── partsAwaitingReview ──
+// Gates service-ticket completion: a live pending_review part blocks; anything
+// past triage (requested/ordered/received/from_stock) or cancelled does not.
+
+test('flags a live pending_review part', () => {
+  const part = manual({ status: 'pending_review' })
+  assert.deepEqual(partsAwaitingReview([part]), [part])
+})
+
+test('a cancelled pending_review part does not block (the ghost-row case)', () => {
+  const part = manual({ status: 'pending_review', cancelled: true })
+  assert.deepEqual(partsAwaitingReview([part]), [])
+})
+
+test('an ordered part does not block completion', () => {
+  assert.deepEqual(partsAwaitingReview([manual({ status: 'ordered' })]), [])
+})
+
+test('a requested part does not block completion', () => {
+  assert.deepEqual(partsAwaitingReview([manual({ status: 'requested' })]), [])
+})
+
+test('a received part does not block completion', () => {
+  assert.deepEqual(partsAwaitingReview([manual({ status: 'received' })]), [])
+})
+
+test('handles null / empty parts', () => {
+  assert.deepEqual(partsAwaitingReview(null), [])
+  assert.deepEqual(partsAwaitingReview([]), [])
+})
+
+test('returns only the pending_review parts from a mixed array', () => {
+  const review = manual({ status: 'pending_review', requested_at: '2026-06-02T12:00:00.000Z' })
+  const parts = [
+    manual({ status: 'received' }),
+    review,
+    manual({ status: 'pending_review', cancelled: true }),
+    manual({ status: 'ordered' }),
+  ]
+  assert.deepEqual(partsAwaitingReview(parts), [review])
 })
