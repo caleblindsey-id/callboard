@@ -6,6 +6,7 @@ import type { InvoicedRow } from '@/lib/db/invoiced'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { formatDateShort } from '@/lib/format'
 
 // Read-only archive of completed + invoiced work orders (service + PM), so a
 // billed ticket can still be referenced after it leaves the active billing
@@ -58,9 +59,7 @@ function TypeBadge({ type }: { type: 'service' | 'pm' }) {
   )
 }
 
-function fmtDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString() : '—'
-}
+const fmtDate = formatDateShort
 
 export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: InvoicedArchiveProps) {
   const router = useRouter()

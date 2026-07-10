@@ -8,6 +8,7 @@ import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import InlineEditCell from './InlineEditCell'
+import { formatDateShort } from '@/lib/format'
 
 // PM tickets that have been exported to a billing PDF but are NOT yet billed.
 // They become 'billed' only once a manager keys the SynergyERP invoice number
@@ -373,9 +374,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           Completed:{' '}
-                          {t.completed_date
-                            ? new Date(t.completed_date).toLocaleDateString()
-                            : '—'}
+                          {formatDateShort(t.completed_date)}
                         </p>
                         <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           <span>Synergy Order #:</span>
@@ -461,9 +460,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                             : '—'}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                          {t.completed_date
-                            ? new Date(t.completed_date).toLocaleDateString()
-                            : '—'}
+                          {formatDateShort(t.completed_date)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           {renderUnexportButton(t)}

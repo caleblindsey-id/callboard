@@ -3,6 +3,7 @@
 import { TicketWithJoins } from '@/lib/db/tickets'
 import type { PartUsed } from '@/types/database'
 import Modal from '@/components/ui/Modal'
+import { formatDateShort } from '@/lib/format'
 
 interface BillingPreviewModalProps {
   open: boolean
@@ -149,9 +150,7 @@ export default function BillingPreviewModal({
                         .join(' ') || '—'}
                     </td>
                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
-                      {t.completed_date
-                        ? new Date(t.completed_date).toLocaleDateString()
-                        : '—'}
+                      {formatDateShort(t.completed_date)}
                     </td>
                     <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-400">
                       {t.hours_worked ?? '—'}

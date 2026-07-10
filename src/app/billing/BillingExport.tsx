@@ -10,6 +10,7 @@ import { MessageSquare } from 'lucide-react'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { formatDateShort } from '@/lib/format'
 import { FIELDS } from '@/lib/labels'
 
 const MONTHS = [
@@ -431,9 +432,7 @@ export default function BillingExport({
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           Completed:{' '}
-                          {t.completed_date
-                            ? new Date(t.completed_date).toLocaleDateString()
-                            : '—'}
+                          {formatDateShort(t.completed_date)}
                         </p>
                         <div className="mt-1 flex items-center justify-between gap-2">
                           {renderPoStatus(t)}
@@ -526,9 +525,7 @@ export default function BillingExport({
                           {t.customers?.ar_terms ?? '—'}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                          {t.completed_date
-                            ? new Date(t.completed_date).toLocaleDateString()
-                            : '—'}
+                          {formatDateShort(t.completed_date)}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {renderSynergyCell(t)}

@@ -7,6 +7,7 @@ import { Phone, Mail, MessageSquare, MoreHorizontal } from 'lucide-react'
 import type { PoFollowUpQueueTicket } from '@/lib/db/service-tickets'
 import ScrollableTable from '@/components/ScrollableTable'
 import PoFollowUpDrawer from './PoFollowUpDrawer'
+import { formatDateShort } from '@/lib/format'
 
 interface PoFollowUpWorklistProps {
   tickets: PoFollowUpQueueTicket[]
@@ -223,7 +224,7 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
                         {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Completed: {t.completed_at ? new Date(t.completed_at).toLocaleDateString() : '—'}
+                        Completed: {formatDateShort(t.completed_at)}
                       </p>
                     </div>
                     <LastContact t={t} />
@@ -276,7 +277,7 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
                         {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {t.completed_at ? new Date(t.completed_at).toLocaleDateString() : '—'}
+                        {formatDateShort(t.completed_at)}
                       </td>
                       <td className="px-4 py-3">
                         <LastContact t={t} />

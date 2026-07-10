@@ -10,6 +10,7 @@ import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { formatDateShort } from '@/lib/format'
 import { FIELDS } from '@/lib/labels'
 
 // "Ready to Export" — completed service tickets not yet exported. Export is the
@@ -395,9 +396,7 @@ export default function ServiceBillingExport({
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Completed:{' '}
-                      {t.completed_at
-                        ? new Date(t.completed_at).toLocaleDateString()
-                        : '—'}
+                      {formatDateShort(t.completed_at)}
                     </p>
                     <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                       <span>PO:</span>
@@ -470,9 +469,7 @@ export default function ServiceBillingExport({
                         {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {t.completed_at
-                          ? new Date(t.completed_at).toLocaleDateString()
-                          : '—'}
+                        {formatDateShort(t.completed_at)}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {renderSynergyCell(t)}

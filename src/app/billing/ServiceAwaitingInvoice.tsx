@@ -10,6 +10,7 @@ import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { formatDateShort } from '@/lib/format'
 import InlineEditCell from './InlineEditCell'
 
 // Service tickets that have been exported (work-order PDF pulled) but are NOT yet
@@ -504,9 +505,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           Completed:{' '}
-                          {t.completed_at
-                            ? new Date(t.completed_at).toLocaleDateString()
-                            : '—'}
+                          {formatDateShort(t.completed_at)}
                         </p>
                         <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           <span>PO:</span>
@@ -616,9 +615,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                          {t.completed_at
-                            ? new Date(t.completed_at).toLocaleDateString()
-                            : '—'}
+                          {formatDateShort(t.completed_at)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="inline-flex items-center gap-2">
