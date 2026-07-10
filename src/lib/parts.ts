@@ -19,6 +19,21 @@ export function partsOnOrder(
 }
 
 /**
+ * Parts still awaiting office triage — status 'pending_review' and not cancelled.
+ *
+ * A pending_review part hasn't been acted on (order vs. pull-from-stock), so
+ * completing a service ticket while one is present orphans it in the Parts Queue
+ * Review tab with no home. Used to gate service completion (server + client).
+ * Scoped to 'pending_review' only: 'requested'/'ordered' parts are already in
+ * the office's active workflow and still allow completing the labor.
+ */
+export function partsAwaitingReview(
+  parts: PartRequest[] | null | undefined
+): PartRequest[] {
+  return (parts ?? []).filter((p) => !p.cancelled && p.status === 'pending_review')
+}
+
+/**
  * True when a part is staged and ready for the tech to pick up — the same
  * definition the My Parts "Ready for Pickup" tab uses: received, or a from_stock
  * part that's been physically pulled off the shelf. Cancelled parts never count.

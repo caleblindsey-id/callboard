@@ -380,6 +380,13 @@ export async function POST(request: NextRequest) {
           cancel_reason: reason!.trim(),
           cancelled_at: now,
           cancelled_by: user.id,
+          // Terminal status. Every queue tab, dashboard count, and completion
+          // gate already keys off the `cancelled` flag, so status is redundant
+          // for filtering — but leaving the pre-cancel status (e.g.
+          // 'pending_review') produces contradictory "cancelled but awaiting
+          // review" rows. `reopen` forces status back to 'requested', so this
+          // never traps a re-opened part.
+          status: 'cancelled',
         }
         break
       }

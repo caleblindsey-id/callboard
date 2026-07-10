@@ -8,7 +8,7 @@ import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import { PartEntry, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
-import { partLabel, partsOnOrder } from '@/lib/parts'
+import { partLabel, partsOnOrder, partsAwaitingReview } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
@@ -1627,6 +1627,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   async function handleComplete(e: React.FormEvent) {
     e.preventDefault()
 
+    if (reviewPartsCount > 0) {
+      failValidation(
+        `${reviewPartsCount} part(s) are awaiting Parts Queue review. Triage or remove them before completing.`
+      )
+      return
+    }
+
     if (needsEquipmentVerify) {
       failValidation('Verify the equipment details above before completing.')
       return
@@ -1801,6 +1808,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const partsWaitingCount = partsOnOrderList.length
   const partsReceivedCount = livePartsRequested.length - partsWaitingCount
   const allPartsReceived = livePartsRequested.length > 0 && partsWaitingCount === 0
+  // Un-triaged parts block completion server-side (complete/route.ts). Mirror it
+  // here so the tech sees why Complete is unavailable instead of hitting a 409.
+  const reviewPartsCount = partsAwaitingReview(partsRequested).length
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
@@ -3153,7 +3163,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               {loading ? 'Starting...' : 'Start Work'}
             </button>
           )}
-          {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && reviewPartsCount > 0 && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              {reviewPartsCount} part{reviewPartsCount === 1 ? ' is' : 's are'} awaiting Parts Queue review. Triage or remove {reviewPartsCount === 1 ? 'it' : 'them'} before completing this ticket.
+            </div>
+          )}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && reviewPartsCount === 0 && (
             <button
               type="button"
               onClick={() => setShowCompletionForm(true)}

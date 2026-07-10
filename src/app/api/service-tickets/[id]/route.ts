@@ -944,6 +944,17 @@ export async function PATCH(
         return NextResponse.json({ error: manualError }, { status: 400 })
       }
 
+      // Lock parts on a billed ticket: a new request once it's billed lands in
+      // the office Parts Queue with nothing left to bill against, and orphans
+      // there. Reopen the ticket first. Editing/receiving existing parts (same
+      // count) is still allowed.
+      if (current.status === 'billed' && parts.length > existingParts.length) {
+        return NextResponse.json(
+          { error: 'This ticket is billed. Reopen it before adding new parts.' },
+          { status: 409 }
+        )
+      }
+
       // Machine gate: a new part request requires make/model/serial on the
       // ticket. Service resolves inline equipment_* COALESCE'd over the linked
       // equipment row (mirrors the parts_order_queue view).
