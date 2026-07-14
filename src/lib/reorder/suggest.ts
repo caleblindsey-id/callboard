@@ -56,10 +56,17 @@ export function suggestQty(input: SuggestQtyInput, opts: SuggestQtyOptions = {})
       (weeklyUsage > 0 && weeksOfSupply < targetWeeksOfSupply)
 
     if (needTrigger) {
-      const useMaxStock = input.maxStock > 0 && input.orderPoint > 0 && available <= input.orderPoint
-      const target = useMaxStock
-        ? input.maxStock
-        : Math.ceil(targetWeeksOfSupply * weeklyUsage) + (input.safetyStock || 0)
+      // Usage-first: the trailing-usage cushion is the baseline target. A stored
+      // max level can only RAISE the target ("order up to max"), never lower it.
+      // At Whse 4 the max is rarely set and sometimes contradictory (e.g. an
+      // order point above the max), so it must not drag a below-ROP item with
+      // real demand down to a zero suggestion — usage stays the floor.
+      const usageTarget = Math.ceil(targetWeeksOfSupply * weeklyUsage) + (input.safetyStock || 0)
+      const maxTarget =
+        input.maxStock > 0 && input.orderPoint > 0 && available <= input.orderPoint
+          ? input.maxStock
+          : 0
+      const target = Math.max(usageTarget, maxTarget)
       suggestedEach = Math.max(0, target - available)
     }
   }

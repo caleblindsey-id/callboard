@@ -1,3 +1,21 @@
+// Purchasing/Reorder module row shapes (migration 142) live in their own file
+// (kept separate from the PM/service unions below) — imported here only so the
+// Tables map below can reference them for a typed supabase.from(...) client.
+import type {
+  ReorderSessionRow,
+  ReorderSessionInsert,
+  ReorderSessionUpdate,
+  ReorderLineRow,
+  ReorderLineInsert,
+  ReorderLineUpdate,
+  ReorderSessionVendorRow,
+  ReorderSessionVendorInsert,
+  ReorderSessionVendorUpdate,
+  InvReorderRow,
+  InvVendorRow,
+  InvBinRow,
+} from './reorder'
+
 // ============================================================
 // Enums
 // ============================================================
@@ -1587,6 +1605,70 @@ export interface Database {
             referencedColumns: ['id']
           },
         ]
+      }
+      // Purchasing/Reorder module (migration 142) — see src/types/reorder.ts
+      reorder_sessions: {
+        Row: ReorderSessionRow
+        Insert: ReorderSessionInsert
+        Update: ReorderSessionUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'reorder_sessions_created_by_id_fkey'
+            columns: ['created_by_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      reorder_lines: {
+        Row: ReorderLineRow
+        Insert: ReorderLineInsert
+        Update: ReorderLineUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'reorder_lines_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'reorder_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      reorder_session_vendors: {
+        Row: ReorderSessionVendorRow
+        Insert: ReorderSessionVendorInsert
+        Update: ReorderSessionVendorUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'reorder_session_vendors_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'reorder_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      // Read-only synced inventory tables — the app never writes these (the
+      // Whse-4 sync writes via the service role, which bypasses this typed
+      // client entirely), so Insert/Update are untyped Partial<Row> stand-ins.
+      inv_reorder: {
+        Row: InvReorderRow
+        Insert: Partial<InvReorderRow>
+        Update: Partial<InvReorderRow>
+        Relationships: []
+      }
+      inv_vendors: {
+        Row: InvVendorRow
+        Insert: Partial<InvVendorRow>
+        Update: Partial<InvVendorRow>
+        Relationships: []
+      }
+      inv_bins: {
+        Row: InvBinRow
+        Insert: Partial<InvBinRow>
+        Update: Partial<InvBinRow>
+        Relationships: []
       }
     }
     Views: {

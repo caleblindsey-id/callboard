@@ -7,6 +7,7 @@ import type {
   TicketStatus,
 } from '@/types/database'
 import type { ServiceTicketStatus, ServiceTicketType } from '@/types/service-tickets'
+import type { ReorderSessionStatus } from '@/types/reorder'
 
 /**
  * status-meta.ts — the single source of truth for status LABEL + COLOR across
@@ -277,6 +278,28 @@ const TICKET_TYPE_META: Record<ServiceTicketType, StatusMeta> = {
   },
 }
 
+// Purchasing/Reorder session pipeline (migration 142). draft/canceled share the
+// gray family (terminal-negative-inert convention above) but at different
+// shades so the two remain visually distinct; walking reuses BLUE_IN_PROGRESS
+// and ordered reuses PURPLE_BILLED (money committed, same concept as "billed").
+const REORDER_STATUS_META: Record<ReorderSessionStatus, StatusMeta> = {
+  draft: {
+    label: 'Draft',
+    classes: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
+  },
+  walking: { label: 'Walking', classes: BLUE_IN_PROGRESS },
+  review: {
+    label: 'Review',
+    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  },
+  ordered: { label: 'Ordered', classes: PURPLE_BILLED },
+  closed: { label: 'Closed', classes: GREEN_COMPLETED },
+  canceled: {
+    label: 'Canceled',
+    classes: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  },
+}
+
 export const STATUS_META = {
   pm: PM_STATUS_META,
   service: SERVICE_STATUS_META,
@@ -287,6 +310,7 @@ export const STATUS_META = {
   creditReview: CREDIT_REVIEW_STATUS_META,
   creditHold: CREDIT_HOLD_STATUS_META,
   ticketType: TICKET_TYPE_META,
+  reorder: REORDER_STATUS_META,
 } as const
 
 export type StatusDomain = keyof typeof STATUS_META
