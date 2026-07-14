@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
-import { getTeamAnalytics, stripCostFieldsForCoordinator } from '@/lib/db/analytics'
+import { getTeamAnalytics, stripCostFieldsForCoordinator, type TicketType } from '@/lib/db/analytics'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const TICKET_TYPES: TicketType[] = ['pm', 'service', 'combined']
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,8 +20,12 @@ export async function GET(request: NextRequest) {
     if (!DATE_RE.test(date)) {
       return NextResponse.json({ error: 'Invalid date — must be YYYY-MM-DD' }, { status: 400 })
     }
+    const typeParam = (request.nextUrl.searchParams.get('type') ?? 'combined') as TicketType
+    if (!TICKET_TYPES.includes(typeParam)) {
+      return NextResponse.json({ error: 'Invalid type — must be pm, service, or combined' }, { status: 400 })
+    }
 
-    const raw = await getTeamAnalytics(periodParam, date)
+    const raw = await getTeamAnalytics(periodParam, date, typeParam)
     // Strip cost-derived fields (hourlyCost, laborCost, grossProfit) for
     // coordinators — back-calculable to per-tech compensation otherwise.
     const data = stripCostFieldsForCoordinator(raw, user.role)

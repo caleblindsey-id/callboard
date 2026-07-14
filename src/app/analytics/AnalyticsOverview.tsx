@@ -2,10 +2,11 @@
 
 import { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import type { TeamAnalytics } from '@/lib/db/analytics'
+import type { TeamAnalytics, TicketType } from '@/lib/db/analytics'
 import KpiCard from '@/components/analytics/KpiCard'
 import Leaderboard from '@/components/analytics/Leaderboard'
 import TargetsForm from '@/components/analytics/TargetsForm'
+import BacklogPanel from '@/components/analytics/BacklogPanel'
 import PageHeader from '@/components/ui/PageHeader'
 import SegmentedControl from '@/components/ui/SegmentedControl'
 import { Target } from 'lucide-react'
@@ -29,17 +30,18 @@ type TrendMetric = 'revenue' | 'tickets' | 'profit'
 export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProps) {
   const [data, setData] = useState<TeamAnalytics>(initialData)
   const [periodType, setPeriodType] = useState<PeriodType>(initialData.period.type)
+  const [ticketType, setTicketType] = useState<TicketType>(initialData.ticketType)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [sortMetric, setSortMetric] = useState<SortMetric>('revenue')
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('revenue')
   const [showTargets, setShowTargets] = useState(false)
 
-  const fetchData = useCallback(async (period: PeriodType) => {
+  const fetchData = useCallback(async (period: PeriodType, type: TicketType) => {
     setLoading(true)
     try {
       const today = new Date().toISOString().split('T')[0]
-      const res = await fetch(`/api/analytics/team?period=${period}&date=${today}`)
+      const res = await fetch(`/api/analytics/team?period=${period}&date=${today}&type=${type}`)
       if (!res.ok) {
         setError(true)
         return
@@ -56,7 +58,12 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
 
   function handlePeriodChange(period: PeriodType) {
     setPeriodType(period)
-    fetchData(period)
+    fetchData(period, ticketType)
+  }
+
+  function handleTypeChange(type: TicketType) {
+    setTicketType(type)
+    fetchData(periodType, type)
   }
 
   const { teamKpis: kpi, priorKpis: prior } = data
@@ -78,6 +85,16 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
               Team Targets
             </button>
             <SegmentedControl
+              ariaLabel="Ticket type"
+              options={[
+                { value: 'combined', label: 'Combined' },
+                { value: 'pm', label: 'PM' },
+                { value: 'service', label: 'Service' },
+              ]}
+              value={ticketType}
+              onChange={(v) => handleTypeChange(v as TicketType)}
+            />
+            <SegmentedControl
               ariaLabel="Analytics period"
               options={[
                 { value: 'weekly', label: 'Weekly' },
@@ -95,7 +112,7 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           <p className="flex-1">Failed to load this period. The data below may be stale.</p>
           <button
             type="button"
-            onClick={() => fetchData(periodType)}
+            onClick={() => fetchData(periodType, ticketType)}
             className="shrink-0 font-medium underline"
           >
             Retry
@@ -160,6 +177,9 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           activeMetric={trendMetric}
           onMetricChange={setTrendMetric}
         />
+
+        {/* Operational health / backlog — point-in-time, ignores the period toggle */}
+        <BacklogPanel backlog={data.backlog} ticketType={ticketType} />
       </div>
 
       {/* Targets Modal */}
@@ -171,7 +191,7 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           periodType={periodType}
           onClose={() => {
             setShowTargets(false)
-            fetchData(periodType)
+            fetchData(periodType, ticketType)
           }}
         />
       )}
