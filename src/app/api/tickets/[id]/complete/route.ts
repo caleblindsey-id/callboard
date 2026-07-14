@@ -30,6 +30,7 @@ interface CompleteTicketBody {
   billingContactPhone?: string
   additionalPartsUsed?: PartUsed[]
   additionalHoursWorked?: number
+  laborRateType?: 'standard' | 'industrial' | 'vacuum'
   tripChargeQty?: number
   machineHours: number
   dateCode: string
@@ -38,6 +39,11 @@ interface CompleteTicketBody {
 
 function isNonNegativeNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0
+}
+
+const LABOR_RATE_TYPES = ['standard', 'industrial', 'vacuum'] as const
+function isLaborRateType(v: unknown): v is (typeof LABOR_RATE_TYPES)[number] {
+  return typeof v === 'string' && (LABOR_RATE_TYPES as readonly string[]).includes(v)
 }
 
 export async function POST(
@@ -52,9 +58,16 @@ export async function POST(
       completedDate, hoursWorked, partsUsed, completionNotes,
       customerSignature, customerSignatureName, photos, poNumber,
       billingContactName, billingContactEmail, billingContactPhone,
-      additionalPartsUsed, additionalHoursWorked, tripChargeQty: tripChargeQtyIn, machineHours, dateCode,
+      additionalPartsUsed, additionalHoursWorked, laborRateType: laborRateTypeIn, tripChargeQty: tripChargeQtyIn, machineHours, dateCode,
       aceLabor,
     } = body
+
+    // Optional labor rate type override for the Additional Work (non-PM) labor
+    // line. Reject anything outside the known set before it reaches billing math
+    // or the DB CHECK constraint (feedback #76).
+    if (laborRateTypeIn !== undefined && !isLaborRateType(laborRateTypeIn)) {
+      return NextResponse.json({ error: 'Invalid labor rate type' }, { status: 400 })
+    }
 
     // Validate ACE labor payload if provided.
     if (aceLabor != null) {
@@ -230,9 +243,16 @@ export async function POST(
     const tripQty = isNonNegativeNumber(tripChargeQtyIn)
       ? tripChargeQtyIn
       : ((current.trip_charge_qty as number | null) ?? 0)
+
+    // The completer's rate-type pick wins (they may have switched it on the
+    // form without waiting for the 3s autosave); else the stored ticket value
+    // (feedback #76). Used for both the additional-labor billing math and the
+    // ACE payout below, and persisted onto the row.
+    const laborRateType = (laborRateTypeIn ?? current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum'
+
     const { billingAmount: finalBillingAmount, finalAdditionalParts } = await computePmBilling(supabase, {
       customerId: current.customer_id,
-      laborRateType: current.labor_rate_type ?? 'standard',
+      laborRateType,
       flatRate,
       additionalHours: finalAdditionalHours,
       additionalParts: additionalPartsUsed ?? [],
@@ -251,7 +271,19 @@ export async function POST(
     const completedMonth = completionDate.getUTCMonth() + 1
     const completedYear = completionDate.getUTCFullYear()
 
-    const laborRateType = (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum'
+    // Persist the chosen rate type onto the row so the stored value can't drift
+    // from the billed amount if the completer switched it just before hitting
+    // Complete (before autosave landed). The completion RPC below doesn't touch
+    // this column, so writing it here first is safe (feedback #76).
+    if (laborRateTypeIn !== undefined && laborRateType !== (current.labor_rate_type ?? 'standard')) {
+      const { error: rateErr } = await supabase
+        .from('pm_tickets')
+        .update({ labor_rate_type: laborRateType })
+        .eq('id', id)
+      if (rateErr) {
+        return NextResponse.json({ error: 'Failed to update labor rate type' }, { status: 500 })
+      }
+    }
 
     // All writes — ACE upsert (if provided), ticket completion update, and
     // optional month/year slide + anchor update — flow through a single

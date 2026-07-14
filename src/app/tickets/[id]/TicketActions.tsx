@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { TicketDetail } from '@/lib/db/tickets'
-import { PartRequest, PartUsed, TicketPhoto, UserRole, TicketStatus } from '@/types/database'
+import { PartRequest, PartUsed, TicketPhoto, UserRole, TicketStatus, LaborRateType } from '@/types/database'
 import { VALID_TRANSITIONS } from '@/lib/ticket-transitions'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
@@ -64,6 +64,7 @@ interface PmCompletionDraft {
   pmParts: PartEntry[]
   additionalParts: PartEntry[]
   additionalHoursWorked: string
+  laborRateType: LaborRateType
   tripChargeQty: string
   billingContactName: string
   billingContactEmail: string
@@ -77,7 +78,10 @@ interface TicketActionsProps {
   ticket: TicketDetail
   userRole: UserRole | null
   userId: string | null
-  laborRate: number
+  // All three per-customer labor rates, so the tech can switch the Additional
+  // Work labor type on the completion form and see the per-hour figure update
+  // without a round trip (feedback #76).
+  laborRates: Record<LaborRateType, number>
   tripChargeRate: number
 }
 
@@ -173,7 +177,7 @@ function forceTransitionsFor(status: TicketStatus): TicketStatus[] {
   return (VALID_TRANSITIONS[status] ?? []).filter(t => t !== 'completed')
 }
 
-export default function TicketActions({ ticket, userRole, userId, laborRate, tripChargeRate }: TicketActionsProps) {
+export default function TicketActions({ ticket, userRole, userId, laborRates, tripChargeRate }: TicketActionsProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -261,6 +265,17 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   const [tripChargeQty, setTripChargeQty] = useState(
     String(ticket.trip_charge_qty != null ? ticket.trip_charge_qty : 0)
   )
+
+  // Labor rate type for the Additional Work section. A PM is flat-rate under
+  // agreement, so this drives only the additional (non-PM) labor line + the ACE
+  // payout — never the covered PM work. Seeded from the ticket's creation-time
+  // type; the tech can switch it here when the extra work is billed at a
+  // different rate (feedback #76). `laborRate` is derived live from the
+  // pre-fetched per-customer rates so the "@ $/hr" figure updates instantly.
+  const [laborRateType, setLaborRateType] = useState<LaborRateType>(
+    (ticket.labor_rate_type ?? 'standard') as LaborRateType
+  )
+  const laborRate = laborRates[laborRateType] ?? laborRates.standard
 
   const [machineHours, setMachineHours] = useState(
     ticket.machine_hours != null ? String(ticket.machine_hours) : ''
@@ -461,6 +476,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           partsUsed: toPartUsed(pmParts),
           additionalPartsUsed: toPartUsed(additionalParts),
           additionalHoursWorked: parseFloat(additionalHoursWorked) || 0,
+          laborRateType,
           tripChargeQty: tripChargeQtyNum,
           completionNotes,
           billingAmount: grandTotal,
@@ -502,6 +518,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     parts_used: pmParts.length > 0 ? toPartUsed(pmParts) : null,
     additional_parts_used: additionalParts.length > 0 ? toPartUsed(additionalParts) : [],
     additional_hours_worked: parseFloat(additionalHoursWorked) || null,
+    labor_rate_type: laborRateType,
     trip_charge_qty: tripChargeQtyNum,
     photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
     billing_contact_name: billingContactName || null,
@@ -528,12 +545,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   // ticket id so switching tickets never cross-restores another WO's draft.
   const pmCompletionDraftState = useMemo<PmCompletionDraft>(() => ({
     completedDate, hoursWorked, machineHours, dateCode, completionNotes,
-    pmParts, additionalParts, additionalHoursWorked, tripChargeQty,
+    pmParts, additionalParts, additionalHoursWorked, laborRateType, tripChargeQty,
     billingContactName, billingContactEmail, billingContactPhone,
     aceLaborOpen, aceHours, aceReason,
   }), [
     completedDate, hoursWorked, machineHours, dateCode, completionNotes,
-    pmParts, additionalParts, additionalHoursWorked, tripChargeQty,
+    pmParts, additionalParts, additionalHoursWorked, laborRateType, tripChargeQty,
     billingContactName, billingContactEmail, billingContactPhone,
     aceLaborOpen, aceHours, aceReason,
   ])
@@ -575,6 +592,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         setAdditionalParts(draft.additionalParts.map((p) => ({ ...p, searchOpen: false, searching: false })))
       }
       setAdditionalHoursWorked(draft.additionalHoursWorked ?? '')
+      if (draft.laborRateType) setLaborRateType(draft.laborRateType)
       setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
       setBillingContactName(draft.billingContactName ?? '')
       setBillingContactEmail(draft.billingContactEmail ?? '')
@@ -677,7 +695,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedDate, hoursWorked, machineHours, dateCode, completionNotes, pmParts, additionalParts, additionalHoursWorked, billingContactName, billingContactEmail, billingContactPhone, photos])
+  }, [completedDate, hoursWorked, machineHours, dateCode, completionNotes, pmParts, additionalParts, additionalHoursWorked, laborRateType, billingContactName, billingContactEmail, billingContactPhone, photos])
 
   // Keep the unmount-flush closure pointing at the latest state. Refreshed
   // every render so the captured saveProgress sees current field values.
@@ -1067,6 +1085,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         setAdditionalHoursWorked={setAdditionalHoursWorked}
         additionalLaborTotal={additionalLaborTotal}
         laborRate={laborRate}
+        laborRateType={laborRateType}
+        setLaborRateType={setLaborRateType}
         isTech={isTech}
         tripChargeQty={tripChargeQty}
         setTripChargeQty={setTripChargeQty}
