@@ -4,7 +4,7 @@
  * AuditHistorySection so labels and diff rendering stay consistent.
  */
 
-import { formatMoney } from '@/lib/format'
+import { BUSINESS_TIME_ZONE, formatMoney } from '@/lib/format'
 
 export type AuditAction = 'insert' | 'update' | 'delete'
 export type AuditActorType = 'user' | 'customer' | 'system' | 'sync'
@@ -465,13 +465,16 @@ export function actorDisplayName(event: AuditEventWithActor): string {
 export function formatOccurredAt(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  // Compact format suitable for table rows. CST is Caleb's timezone; using
-  // user-locale Intl so it adapts on other machines without forcing CST.
-  return d.toLocaleString(undefined, {
+  // Compact format suitable for table rows. Pinned to the business timezone and
+  // en-US locale: AuditHistorySection is a server component, so Vercel SSR runs
+  // this in UTC and an unpinned zone would print UTC times (e.g. a 9:01 AM CDT
+  // event as 2:01 PM). Same fix as src/lib/format.ts's BUSINESS_TIME_ZONE pin.
+  return d.toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: BUSINESS_TIME_ZONE,
   })
 }

@@ -14,7 +14,7 @@
 // formatDateTimeLong — "Jun 2, 2026 · 3:14 PM" — long date + short time, for
 //                  timestamped log entries (e.g. billing/contact notes).
 
-const BUSINESS_TIME_ZONE = 'America/Chicago'
+export const BUSINESS_TIME_ZONE = 'America/Chicago'
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 // A Postgres DATE carries no timezone; anchor it to noon UTC so the calendar
