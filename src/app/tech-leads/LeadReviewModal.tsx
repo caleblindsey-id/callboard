@@ -18,6 +18,9 @@ interface Props {
   // approving a PM lead calls this (with the just-approved lead) instead of the
   // generic onDone, so the parent can open the create-equipment modal.
   onApprovedPm?: (lead: TechLeadWithJoins) => void
+  // Opens the full editor on this lead so a manager can correct fields (e.g. the
+  // wrong customer account) before approving. The parent swaps in SubmitLeadModal.
+  onEdit?: (lead: TechLeadWithJoins) => void
 }
 
 const NOTE_MAX = 500
@@ -30,7 +33,7 @@ const KIND_GROUP_LABEL: Record<SalesRepKind, string> = {
   rep: 'Sales Reps',
 }
 
-export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone, onApprovedPm }: Props) {
+export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone, onApprovedPm, onEdit }: Props) {
   const [mode, setMode] = useState<'choose' | 'reject' | 'email_rep'>('choose')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -389,7 +392,17 @@ export default function LeadReviewModal({ lead, salesReps = [], onClose, onDone,
         )}
 
         {mode === 'choose' && (
-          <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-end gap-2">
+          <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-2">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(lead)}
+                disabled={submitting}
+                className="mr-auto px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                Edit details
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setMode('reject')}

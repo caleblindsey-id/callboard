@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth'
 import type { TechLeadUpdate } from '@/types/database'
 import { validateLeadFields, type LeadFieldsInput } from '@/lib/tech-leads/validate-lead'
+import { evaluateLeadEditPermission } from '@/lib/tech-leads/edit-permissions'
 
-// PATCH /api/tech-leads/[id] — the submitter edits their own lead while it is
-// still `pending` (before a manager approves/rejects/cancels). Managers+ may
-// also edit a pending lead's fields. Status transitions remain on the
-// manager-only /update route; this route never changes status, ownership, or
+// PATCH /api/tech-leads/[id] — edit a lead's content fields.
+//   - The submitter (owner) or any manager role may edit while `pending`.
+//   - super_admin/manager may ALSO correct an `approved` / `match_pending`
+//     equipment-sale lead — e.g. fixing the wrong customer account on an
+//     awaiting-match lead (feedback #74). See evaluateLeadEditPermission.
+// Status transitions stay on the manager-only /update route; this route never
+// changes status (except the match_pending→approved re-arm below), ownership, or
 // the equipment-sale expiry window.
 //
 // tech_leads RLS grants techs no UPDATE policy by design (see migration 037 /
-// the photos route), so — like the photos route — we enforce ownership + the
-// pending gate here and write with the admin client.
+// the photos route), so — like the photos route — we enforce the edit gate here
+// and write with the admin client.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -28,24 +32,21 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: lead, error: fetchErr } = await supabase
       .from('tech_leads')
-      .select('id, submitted_by, status, lead_type')
+      .select('id, submitted_by, status, lead_type, customer_id')
       .eq('id', id)
       .single()
     if (fetchErr || !lead) {
       return NextResponse.json({ error: 'Lead not found.' }, { status: 404 })
     }
 
-    const isOwner = lead.submitted_by === user.id
-    const isManager = MANAGER_ROLES.includes(user.role)
-    if (!isOwner && !isManager) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    if (lead.status !== 'pending') {
-      return NextResponse.json(
-        { error: 'This lead has already been reviewed and can no longer be edited.' },
-        { status: 409 }
-      )
+    const permission = evaluateLeadEditPermission({
+      isOwner: lead.submitted_by === user.id,
+      role: user.role,
+      status: lead.status,
+      leadType: lead.lead_type,
+    })
+    if (!permission.allowed) {
+      return NextResponse.json({ error: permission.error }, { status: permission.status })
     }
 
     const body = (await request.json()) as LeadFieldsInput
@@ -86,15 +87,17 @@ export async function PATCH(
       proposed_equipment_tier: f.proposed_equipment_tier,
     }
 
-    // Admin write — ownership + role already enforced above. The status guard
-    // is repeated in the WHERE so a manager approving between our read and this
-    // write can't be silently overwritten back to the edited content.
+    // Admin write — the edit gate is already enforced above. The WHERE repeats
+    // the exact status we validated against, so a concurrent transition (a scan
+    // flipping approved→match_pending, a confirm earning the lead, an approve)
+    // between our read and this write matches 0 rows and 409s instead of being
+    // silently clobbered.
     const admin = await createAdminClient('SERVER_ONLY')
     const { data: written, error: writeErr } = await admin
       .from('tech_leads')
       .update(update)
       .eq('id', id)
-      .eq('status', 'pending')
+      .eq('status', lead.status)
       .select('id')
     if (writeErr) {
       console.error('tech-leads [id] PATCH error:', writeErr)
@@ -102,9 +105,36 @@ export async function PATCH(
     }
     if (!written || written.length === 0) {
       return NextResponse.json(
-        { error: 'This lead has already been reviewed and can no longer be edited.' },
+        { error: 'This lead was updated by someone else — reopen it and try again.' },
         { status: 409 }
       )
+    }
+
+    // Correcting the customer on an awaiting-match equipment-sale lead (feedback
+    // #74) invalidates any candidates detected against the OLD account, so dismiss
+    // pending ones and re-arm a match_pending lead back to approved. The nightly
+    // scan then re-evaluates against the corrected account. Only runs when the
+    // account actually changed on a non-pending equipment-sale lead.
+    const customerChanged = lead.customer_id !== f.customer_id
+    if (lead.lead_type === 'equipment_sale' && lead.status !== 'pending' && customerChanged) {
+      const nowIso = new Date().toISOString()
+      // Best-effort: the account is already corrected above; a failure here only
+      // leaves stale candidates the manager can dismiss, so we log rather than
+      // fail the edit.
+      const { error: dismissErr } = await admin
+        .from('equipment_sale_lead_candidates')
+        .update({ status: 'dismissed', reviewed_by: user.id, reviewed_at: nowIso })
+        .eq('tech_lead_id', id)
+        .eq('status', 'pending')
+      if (dismissErr) console.error('tech-leads [id] PATCH candidate dismiss error:', dismissErr)
+      if (lead.status === 'match_pending') {
+        const { error: rearmErr } = await admin
+          .from('tech_leads')
+          .update({ status: 'approved' })
+          .eq('id', id)
+          .eq('status', 'match_pending')
+        if (rearmErr) console.error('tech-leads [id] PATCH re-arm error:', rearmErr)
+      }
     }
 
     return NextResponse.json({ success: true })
