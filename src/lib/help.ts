@@ -39,6 +39,9 @@ export const ROLE_HOME_CATEGORY: Record<UserRole, string> = {
   coordinator: 'Office',
   manager: 'Managers',
   super_admin: 'Admin',
+  // No dedicated Purchasing help category yet (migration 142 role) — lands on
+  // Office pending real help-center content for the module.
+  purchasing: 'Office',
 }
 
 function categoryRank(category: string): number {

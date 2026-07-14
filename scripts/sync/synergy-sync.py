@@ -8,6 +8,7 @@ Runs nightly at 5:00 AM via Windows Task Scheduler.
 """
 
 import os
+import re
 import sys
 import logging
 import pyodbc
@@ -692,6 +693,388 @@ def sync_po_lines(conn) -> int:
 
 
 # ============================================================
+# Sync: Purchasing/Reorder inventory (Warehouse 4 only)
+# ============================================================
+#
+# Populates three read-only tables behind the Purchasing/Reorder walk module
+# (docs/superpowers/specs/2026-07-14-purchasing-reorder-module-design.md):
+#   inv_vendors  — vendor master (a80vm)
+#   inv_bins     — product<->bin (prodloc, Whse 4)
+#   inv_reorder  — one row per Whse-4 stocking product: the decision-panel
+#                  fields the reorder-walk suggestion engine and UI read.
+#
+# All three read Whse 4 (the service department's stockroom) exclusively —
+# Whse 1/2/3 (the three market branches) are out of scope for this module.
+# The app never writes to these tables; they're sync-owned, same as
+# `products` / `synergy_po_lines`.
+
+# Whse-4 period unit-sales buckets: 13 x 4-week columns, period 1 = most recent.
+PERIOD_USAGE_COLUMNS = [f"UnitSlsCurYear{i}" for i in range(1, 14)]
+
+# Whse-4 bin format: zone letter(s) + bay number + optional "-suffix"
+# (e.g. "E5", "W1", "E5-D"). Distinct from the main warehouses' "27 16B" format.
+_BIN_SORT_KEY_RE = re.compile(r"^([A-Za-z]+)(\d+)(?:-(.+))?$")
+
+# Synergy PackSize is free text like "12/CS", "4/CS", "10EA/PK" — the eaches
+# count is the leading integer.
+_PACK_QTY_RE = re.compile(r"^\s*(\d+)")
+
+
+def bin_sort_key(loc: str | None) -> str:
+    """Parse a Whse-4 bin location into a zero-padded walk-order sort key so
+    the reorder walk follows the physical serpentine path: "E5" -> "E|005|",
+    "W1" -> "W|001|", "E5-D" -> "E|005|D" (bay zero-padded to 3 digits).
+    Unparseable locations (blank, "SR", free text) sort last via "~~~".
+
+    Mirrors the TS `binSortKey` in src/lib/reorder/bin-sort.ts (Task 1.3) —
+    keep both in lockstep if the parse rule ever changes.
+    """
+    cleaned = (loc or "").strip().upper()
+    if not cleaned:
+        return "~~~"
+    m = _BIN_SORT_KEY_RE.match(cleaned)
+    if not m:
+        return "~~~"
+    zone, bay, suffix = m.group(1), m.group(2), m.group(3) or ""
+    return f"{zone}|{bay.zfill(3)}|{suffix}"
+
+
+def parse_pack_qty(pack_size) -> int:
+    """Eaches-per-buying-UOM from Synergy's `PackSize` text ("12/CS" -> 12,
+    "4/CS" -> 4, "10EA/PK" -> 10). Null/unparseable/zero -> 1 (treat as a
+    single each) — never 0, so downstream case-rounding can't divide by zero.
+
+    Mirrors the TS `parsePackQty` in src/lib/reorder/pack.ts (Task 1.3).
+    """
+    s = safe_str(pack_size)
+    if not s:
+        return 1
+    m = _PACK_QTY_RE.match(s)
+    if not m:
+        return 1
+    try:
+        qty = int(m.group(1))
+    except ValueError:
+        return 1
+    return qty if qty > 0 else 1
+
+
+def resolve_vendor_code(*candidates) -> int | None:
+    """First non-blank/non-zero candidate, coerced to int. Used to prefer the
+    per-warehouse `prodwhse.Vend` over the catalog-wide `prod.PrimVend`."""
+    for raw in candidates:
+        s = safe_str(raw)
+        if not s or s == "0":
+            continue
+        try:
+            code = int(float(s))
+        except ValueError:
+            continue
+        if code != 0:
+            return code
+    return None
+
+
+def sync_inv_vendors(conn) -> int:
+    """Full-refresh the vendor master (`a80vm`) into `inv_vendors`. Small
+    table (single-digit-thousand rows at most) — no incremental logic needed."""
+    log.info("--- Syncing inventory vendors (a80vm) ---")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT VendorCode, Name, MimimumOrderAmount, Terms, Contact, FreightCode
+            FROM a80vm
+        """)
+    except Exception as e:
+        log.warning(f"  Could not query 'a80vm' table: {e}. Skipping inv_vendors sync.")
+        return 0
+
+    rows = cursor.fetchall()
+    log.info(f"  Fetched {len(rows)} vendor rows from Synergy.")
+
+    run_ts = utcnow_iso()
+    vendors = []
+    for row in rows:
+        # a80vm.MimimumOrderAmount — ERP's own spelling (typo), not ours.
+        vendor_code = resolve_vendor_code(row.VendorCode)
+        if vendor_code is None:
+            continue
+        vendors.append({
+            "vendor_code": vendor_code,
+            "name": safe_str(row.Name),
+            "order_minimum": float(row.MimimumOrderAmount) if row.MimimumOrderAmount is not None else None,
+            "terms_code": int(row.Terms) if row.Terms is not None else None,
+            "contact": safe_str(row.Contact),
+            "freight_code": safe_str(row.FreightCode),
+            "synced_at": run_ts,
+        })
+
+    count = upsert_in_batches(vendors, "inv_vendors", on_conflict="vendor_code")
+    log.info(f"  Inventory vendors synced: {count}")
+    return count
+
+
+def sync_inv_bins(conn) -> int:
+    """Sync Whse-4 product<->bin rows (`prodloc`) into `inv_bins`, for the
+    reorder walk's bin-label scan-to-jump. Small set, full-refresh: every row
+    gets this run's `synced_at`, then stale rows (moved/removed since the
+    last run) are pruned — same idiom as sync_po_lines."""
+    log.info("--- Syncing inventory bins (prodloc, Whse 4) ---")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT ProdCode, Loc, PermPrim
+            FROM prodloc
+            WHERE Whse = 4 AND Loc IS NOT NULL AND Loc <> ''
+        """)
+    except Exception as e:
+        log.warning(f"  Could not query 'prodloc' table: {e}. Skipping inv_bins sync.")
+        return 0
+
+    rows = cursor.fetchall()
+    log.info(f"  Fetched {len(rows)} Whse-4 bin row(s) from Synergy.")
+
+    run_ts = utcnow_iso()
+    bins = []
+    for row in rows:
+        prod_code = safe_str(row.ProdCode)
+        loc = safe_str(row.Loc)
+        if not prod_code or not loc:
+            continue
+        bins.append({
+            "synergy_product_id": prod_code,
+            "bin_location": loc,
+            "is_primary": bool(row.PermPrim) if row.PermPrim is not None else False,
+            "sort_key": bin_sort_key(loc),
+            "synced_at": run_ts,
+        })
+
+    count = upsert_in_batches(bins, "inv_bins", on_conflict="synergy_product_id,bin_location")
+    log.info(f"  Inventory bins synced: {count}")
+
+    # Prune bins that dropped out of prodloc since the last run (moved bin,
+    # removed product) — anything not touched this run carries an older
+    # synced_at. Mirrors sync_po_lines' stale-row delete.
+    if bins:
+        try:
+            del_url = f"{SUPABASE_URL}/rest/v1/inv_bins?synced_at=lt.{run_ts}"
+            del_headers = supabase_headers()
+            del_headers["Prefer"] = "return=minimal"
+            resp = requests.delete(del_url, headers=del_headers, timeout=30)
+            if not resp.ok:
+                log.warning(f"  Could not prune stale inv_bins rows [{resp.status_code}]: {resp.text[:300]}")
+        except Exception as e:
+            log.warning(f"  Could not prune stale inv_bins rows: {e}")
+
+    return count
+
+
+def sync_inv_reorder(conn) -> int:
+    """Sync the Whse-4 reorder decision panel into `inv_reorder`: one row per
+    stocking product with on-hand/on-order/committed, usage, order point,
+    vendor, bin(s), and barcode.
+
+    Walk universe = Whse-4 rows with on-hand, an order point, or a usage
+    rate (mirrors the design spec's discovery filter). `DNReordFlg` rows ARE
+    included here (with do_not_reorder=true) — the suggestion engine
+    (src/lib/reorder/suggest.ts) and the session-scope query exclude them
+    downstream; the sync itself does not drop them, so history/reporting can
+    still see "not in stock, flagged do-not-reorder" items.
+
+    The LEFT JOIN to prodwhse carries the Whse=4 filter in its ON clause; the
+    WHERE pw.Whse = 4 below makes that effectively an inner join (a prod row
+    with no Whse-4 stock record has nothing to show on the reorder walk).
+    """
+    log.info("--- Syncing inventory reorder (prod + prodwhse, Whse 4) ---")
+    cursor = conn.cursor()
+
+    period_usage_select = ",\n                ".join(f"pw.{col}" for col in PERIOD_USAGE_COLUMNS)
+
+    try:
+        cursor.execute(f"""
+            SELECT
+                p.ProdCode,
+                p.Desc1,
+                p.Desc2,
+                p.ComdtyCode,
+                p.PackSize,
+                p.CostPO,
+                p.CostLoad,
+                p.PrimVend,
+                p.VendItem,
+                buy_uom.Code AS BuyUOMCode,
+                buy_uom_fb.Code AS BuyUOMFallbackCode,
+                stk_uom.Code AS StockUOMCode,
+                pw.QtyOnHand,
+                pw.QtyOnPO,
+                pw.QtyOnOrd,
+                pw.OrdPt,
+                pw.MinStkLvl,
+                pw.MaxStkLvl,
+                pw.SafetyStkQty,
+                pw.EOQOrdQty,
+                pw.DNReordFlg,
+                pw.SeasonalFlag,
+                pw.UsgRate,
+                pw.Demand,
+                pw.LastSoldDate,
+                pw.AvgLeadTime,
+                pw.Vend,
+                pw.VendPN,
+                {period_usage_select},
+                pbin.PrimaryBin,
+                pbin.AllBins,
+                upc.Barcode
+            FROM prod p
+            LEFT JOIN prodwhse pw ON pw.ProdCode = p.ProdCode AND pw.Whse = 4
+            LEFT JOIN ccodes buy_uom ON buy_uom.xDL4RecNum = p.UMVendOrd
+            LEFT JOIN ccodes buy_uom_fb ON buy_uom_fb.xDL4RecNum = p.UMPurchDefault
+            LEFT JOIN ccodes stk_uom ON stk_uom.xDL4RecNum = p.UMStkDefault
+            LEFT JOIN (
+                SELECT ProdCode,
+                       SUBSTRING_INDEX(GROUP_CONCAT(Loc ORDER BY PermPrim DESC SEPARATOR ','), ',', 1) AS PrimaryBin,
+                       GROUP_CONCAT(Loc ORDER BY PermPrim DESC SEPARATOR ', ') AS AllBins
+                FROM prodloc
+                WHERE Whse = 4
+                GROUP BY ProdCode
+            ) pbin ON pbin.ProdCode = p.ProdCode
+            LEFT JOIN (
+                SELECT ProductCode, MIN(UpcAltItem) AS Barcode
+                FROM upcxref
+                WHERE UpcYN = 1
+                GROUP BY ProductCode
+            ) upc ON upc.ProductCode = p.ProdCode
+            WHERE pw.Whse = 4
+              AND (pw.QtyOnHand <> 0 OR pw.OrdPt > 0 OR pw.UsgRate > 0)
+        """)
+    except Exception as e:
+        log.warning(f"  Could not query 'prod'/'prodwhse' for inv_reorder: {e}. Skipping inv_reorder sync.")
+        return 0
+
+    rows = cursor.fetchall()
+    log.info(f"  Fetched {len(rows)} Whse-4 reorder-candidate row(s) from Synergy.")
+
+    run_ts = utcnow_iso()
+    records = []
+    for row in rows:
+        prod_code = safe_str(row.ProdCode)
+        if not prod_code:
+            continue
+
+        # Combine Desc1 + Desc2, same convention as sync_products.
+        desc1 = safe_str(row.Desc1) or ""
+        desc2 = safe_str(row.Desc2)
+        description = (f"{desc1} {desc2}".strip()) if desc2 else (desc1 or None)
+
+        buying_uom = safe_str(row.BuyUOMCode) or safe_str(row.BuyUOMFallbackCode)
+        stock_uom = safe_str(row.StockUOMCode)
+        pack_size = safe_str(row.PackSize)
+        pack_qty = parse_pack_qty(pack_size)
+
+        # Unit cost for the reorder worksheet: prefer last PO cost (what the
+        # agent will actually pay next), fall back to loaded cost. This is
+        # deliberately the reverse preference of sync_products' unit_cost
+        # (which favors CostLoad for the service-ticket margin floor) — the
+        # spec's Confirmed Synergy Source Mapping calls for CostPO first here.
+        cost_po = float(row.CostPO) if row.CostPO is not None else None
+        cost_load = float(row.CostLoad) if row.CostLoad is not None else None
+        unit_cost = cost_po if (cost_po is not None and cost_po > 0) else cost_load
+
+        qty_on_hand = int(row.QtyOnHand) if row.QtyOnHand is not None else None
+        qty_on_po = int(row.QtyOnPO) if row.QtyOnPO is not None else None
+        qty_committed = int(row.QtyOnOrd) if row.QtyOnOrd is not None else None
+        # available = on hand + inbound (QtyOnPO) - committed (QtyOnOrd).
+        # Do not swap: QtyOnPO is inbound-from-vendor (good), QtyOnOrd is
+        # outbound-to-customer (reduces availability).
+        qty_available = (qty_on_hand or 0) + (qty_on_po or 0) - (qty_committed or 0)
+
+        # Preferred vendor: per-warehouse Vend first, catalog-wide PrimVend
+        # fallback (matches sync_products' PrimVend handling, extended with
+        # the Whse-4-specific override).
+        vendor_code = resolve_vendor_code(row.Vend, row.PrimVend)
+        vendor_item_number = safe_str(row.VendItem) or safe_str(row.VendPN)
+
+        # 13 x 4-week unit-sales buckets, period 1 = most recent. Blank -> 0
+        # (a real "no sales" reading, not a missing-data gap for this field).
+        period_usage = [
+            int(getattr(row, col)) if getattr(row, col) is not None else 0
+            for col in PERIOD_USAGE_COLUMNS
+        ]
+        # weekly_usage: trailing avg of the most recent 3 periods (~12 weeks).
+        # Fall back to Synergy's smoothed UsgRate, then Demand, only when all
+        # three recent periods are truly empty (not just low).
+        recent3 = period_usage[0:3]
+        if any(v != 0 for v in recent3):
+            weekly_usage = sum(recent3) / 12.0
+        elif row.UsgRate is not None and float(row.UsgRate) != 0:
+            weekly_usage = float(row.UsgRate) / 4.0
+        elif row.Demand is not None and float(row.Demand) != 0:
+            weekly_usage = float(row.Demand) / 4.0
+        else:
+            weekly_usage = 0.0
+
+        primary_bin = safe_str(row.PrimaryBin)
+        all_bins = safe_str(row.AllBins)
+
+        records.append({
+            "synergy_product_id": prod_code,
+            "description": description,
+            "commodity_code": safe_str(row.ComdtyCode),
+            "buying_uom": buying_uom,
+            "stock_uom": stock_uom,
+            "pack_size": pack_size,
+            "pack_qty": pack_qty,
+            "qty_on_hand": qty_on_hand,
+            "qty_on_po": qty_on_po,
+            "qty_committed": qty_committed,
+            "qty_available": qty_available,
+            "order_point": int(row.OrdPt) if row.OrdPt is not None else None,
+            "min_stock": int(row.MinStkLvl) if row.MinStkLvl is not None else None,
+            "max_stock": int(row.MaxStkLvl) if row.MaxStkLvl is not None else None,
+            "safety_stock": int(row.SafetyStkQty) if row.SafetyStkQty is not None else None,
+            "eoq": int(row.EOQOrdQty) if row.EOQOrdQty is not None else None,
+            "do_not_reorder": bool(row.DNReordFlg) if row.DNReordFlg is not None else False,
+            "seasonal": bool(row.SeasonalFlag) if row.SeasonalFlag is not None else False,
+            "usage_rate": int(row.UsgRate) if row.UsgRate is not None else None,
+            "demand": int(row.Demand) if row.Demand is not None else None,
+            "period_usage": period_usage,
+            "weekly_usage": round(weekly_usage, 2),
+            "last_sold_date": row.LastSoldDate.isoformat() if row.LastSoldDate is not None else None,
+            "avg_lead_time": float(row.AvgLeadTime) if row.AvgLeadTime is not None else None,
+            "unit_cost": unit_cost,
+            "vendor_code": vendor_code,
+            "vendor_item_number": vendor_item_number,
+            "primary_bin": primary_bin,
+            "bin_sort_key": bin_sort_key(primary_bin),
+            "all_bins": all_bins,
+            "barcode": safe_str(row.Barcode),
+            "active": True,  # explicit — rows absent from this pull are deactivated below
+            "synced_at": run_ts,
+        })
+
+    count = upsert_in_batches(records, "inv_reorder", on_conflict="synergy_product_id")
+    log.info(f"  Inventory reorder rows synced: {count}")
+
+    # Mark rows absent from this pull inactive (do NOT delete — reorder_lines
+    # snapshots reference inv_reorder history downstream, so past worksheets
+    # must stay intact). Same synced_at-based approach as sync_customers'
+    # deactivation, but PATCH-only (no need to diff a fetched active set
+    # since inv_reorder has no "provisional" carve-out).
+    if records:
+        try:
+            patch_url = f"{SUPABASE_URL}/rest/v1/inv_reorder?synced_at=lt.{run_ts}"
+            patch_headers = supabase_headers()
+            patch_headers["Prefer"] = "return=minimal"
+            resp = requests.patch(patch_url, json={"active": False}, headers=patch_headers, timeout=30)
+            if not resp.ok:
+                log.warning(f"  Could not deactivate stale inv_reorder rows [{resp.status_code}]: {resp.text[:300]}")
+        except Exception as e:
+            log.warning(f"  Could not deactivate stale inv_reorder rows: {e}")
+
+    return count
+
+
+# ============================================================
 # Sync: Contacts
 # ============================================================
 
@@ -1027,9 +1410,73 @@ def main_products_only() -> None:
     sys.exit(0)
 
 
+def main_inventory() -> None:
+    """Standalone run of the Purchasing/Reorder inventory feed (inv_vendors,
+    inv_bins, inv_reorder) for Whse 4, independent of the nightly full sync.
+    The nightly `main()` also runs these three (see below) — this mode lets
+    the feed run on its own schedule (e.g. run-inventory-reorder.ps1) without
+    re-running the heavier customer/contact/ship-to/product sync."""
+    log.info("=" * 60)
+    log.info("CallBoard — Purchasing/Reorder Inventory Sync starting")
+    log.info("=" * 60)
+
+    validate_env()
+
+    started_at = utcnow_iso()
+    sync_log_id = write_sync_log_start("inventory", started_at)
+
+    erp_conn = None
+    total_synced = 0
+    failures: list[str] = []
+    try:
+        log.info("Connecting to SynergyERP via ODBC DSN 'ERPlinked'...")
+        erp_conn = pyodbc.connect("DSN=ERPlinked", autocommit=True)
+        log.info("Connected.")
+
+        try:
+            total_synced += sync_inv_vendors(erp_conn)
+        except Exception as e:
+            log.error(f"inv_vendors sync failed: {e}", exc_info=True)
+            failures.append(f"inv_vendors: {e}")
+
+        try:
+            total_synced += sync_inv_bins(erp_conn)
+        except Exception as e:
+            log.error(f"inv_bins sync failed: {e}", exc_info=True)
+            failures.append(f"inv_bins: {e}")
+
+        try:
+            total_synced += sync_inv_reorder(erp_conn)
+        except Exception as e:
+            log.error(f"inv_reorder sync failed: {e}", exc_info=True)
+            failures.append(f"inv_reorder: {e}")
+
+    except pyodbc.Error as e:
+        log.error(f"Could not connect to SynergyERP: {e}", exc_info=True)
+        failures.append(f"odbc_connection: {e}")
+    finally:
+        if erp_conn:
+            erp_conn.close()
+            log.debug("ERP connection closed.")
+
+    completed_at = utcnow_iso()
+    if failures:
+        error_summary = "; ".join(failures)
+        log.error(f"Inventory sync completed with failures: {error_summary}")
+        write_sync_log_complete(sync_log_id, completed_at, total_synced,
+                                status="failed", error_message=error_summary)
+        sys.exit(1)
+    log.info(f"Inventory sync complete. Records synced: {total_synced}")
+    write_sync_log_complete(sync_log_id, completed_at, total_synced, status="success")
+    sys.exit(0)
+
+
 def main() -> None:
     if "--products-only" in sys.argv:
         main_products_only()
+        return
+    if "--inventory" in sys.argv:
+        main_inventory()
         return
 
     log.info("=" * 60)
@@ -1106,6 +1553,28 @@ def main() -> None:
         except Exception as e:
             log.error(f"PO-lines sync failed: {e}", exc_info=True)
             failures.append(f"po_lines: {e}")
+
+        # --- Purchasing/Reorder inventory (Whse 4): inv_vendors / inv_bins / inv_reorder ---
+        try:
+            count = sync_inv_vendors(erp_conn)
+            total_synced += count
+        except Exception as e:
+            log.error(f"inv_vendors sync failed: {e}", exc_info=True)
+            failures.append(f"inv_vendors: {e}")
+
+        try:
+            count = sync_inv_bins(erp_conn)
+            total_synced += count
+        except Exception as e:
+            log.error(f"inv_bins sync failed: {e}", exc_info=True)
+            failures.append(f"inv_bins: {e}")
+
+        try:
+            count = sync_inv_reorder(erp_conn)
+            total_synced += count
+        except Exception as e:
+            log.error(f"inv_reorder sync failed: {e}", exc_info=True)
+            failures.append(f"inv_reorder: {e}")
 
     except pyodbc.Error as e:
         log.error(f"Could not connect to SynergyERP: {e}", exc_info=True)

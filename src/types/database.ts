@@ -2,7 +2,7 @@
 // Enums
 // ============================================================
 
-export type UserRole = 'super_admin' | 'manager' | 'coordinator' | 'technician'
+export type UserRole = 'super_admin' | 'manager' | 'coordinator' | 'technician' | 'purchasing'
 
 // Role group constants — importable by both server and client code
 export const MANAGER_ROLES: UserRole[] = ['super_admin', 'manager', 'coordinator']
@@ -12,6 +12,10 @@ export const ADMIN_ROLES: UserRole[] = ['super_admin']
 // coordinators. Distinct from RESET_ROLES despite the same membership today —
 // the two are gated by different intent and may diverge.
 export const AUDIT_ROLES: UserRole[] = ['super_admin', 'manager']
+// Purchasing/Reorder module access (migration 142). Deliberately its own role
+// rather than folded into MANAGER_ROLES/RESET_ROLES — a purchasing agent gets
+// exactly this module, not manager-wide privileges.
+export const PURCHASING_ROLES: UserRole[] = ['super_admin', 'manager', 'purchasing']
 
 export type TicketStatus = 'unassigned' | 'assigned' | 'in_progress' | 'completed' | 'billed' | 'skipped' | 'skip_requested'
 
