@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
+import { formatDateShort } from '@/lib/format'
 import type { EquipmentEstimateHistoryRow } from '@/lib/db/estimate-history'
 import ScrollableTable from '@/components/ScrollableTable'
 
@@ -35,8 +36,10 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
   )
 }
 
+// Pinned to the business timezone via the shared helper so DATE/timestamptz
+// values render the correct Central calendar day (matches the rest of the app).
 function formatDate(date: string | null): string {
-  return date ? new Date(date).toLocaleDateString() : '—'
+  return formatDateShort(date)
 }
 
 // A unit's complete estimate ledger (migration 117 snapshots merged with live

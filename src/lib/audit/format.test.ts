@@ -1,6 +1,30 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderValue, summarizeComplexDiff, summarizeComplexValue } from './format'
+import { formatOccurredAt, renderValue, summarizeComplexDiff, summarizeComplexValue } from './format'
+
+// formatOccurredAt renders audit_events.occurred_at in the AuditHistorySection,
+// which is a server component (Vercel SSR runs UTC). Output must be pinned to
+// the business timezone, America/Chicago, so it is deterministic regardless of
+// the runtime zone. These assertions hold on any machine.
+
+test('formatOccurredAt: timestamptz renders Chicago wall-clock time (CDT)', () => {
+  // 14:01 UTC on 7/14 is 9:01 AM CDT (UTC-5) — must not print as 2:01 PM (UTC).
+  const out = formatOccurredAt('2026-07-14T14:01:00.000Z')
+  assert.ok(out.includes('09:01 AM'), `expected Central 09:01 AM, got: ${out}`)
+  assert.ok(out.includes('Jul 14, 2026'), `expected Jul 14, 2026, got: ${out}`)
+  assert.ok(!out.includes('02:01 PM'), `must not render UTC 02:01 PM, got: ${out}`)
+})
+
+test('formatOccurredAt: winter timestamptz renders Chicago time (CST)', () => {
+  // 05:30 UTC on 1/10 is 11:30 PM CST (UTC-6) on 1/9.
+  const out = formatOccurredAt('2026-01-10T05:30:00.000Z')
+  assert.ok(out.includes('11:30 PM'), `expected Central 11:30 PM, got: ${out}`)
+  assert.ok(out.includes('Jan 09, 2026'), `expected Jan 09, 2026, got: ${out}`)
+})
+
+test('formatOccurredAt: invalid input returns the raw string', () => {
+  assert.equal(formatOccurredAt('not-a-date'), 'not-a-date')
+})
 
 test('renderValue: primitives pass through unchanged', () => {
   assert.equal(renderValue('hello'), 'hello')

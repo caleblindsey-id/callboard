@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
+import { formatDateShort } from '@/lib/format'
 import StatusBadge from '@/components/StatusBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
@@ -93,7 +94,7 @@ export default function ServiceHistory({ items, showBilling, collapsible = false
                   }
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                  <div>{t.date ? new Date(t.date).toLocaleDateString() : '—'}</div>
+                  <div>{formatDateShort(t.date)}</div>
                   {t.hours_worked != null && (
                     <div>
                       {t.hours_worked}h
@@ -143,7 +144,7 @@ export default function ServiceHistory({ items, showBilling, collapsible = false
                       <TypeBadge type={t.type} />
                     </td>
                     <td className="px-5 py-3 text-gray-600 dark:text-gray-400">
-                      {t.date ? new Date(t.date).toLocaleDateString() : '—'}
+                      {formatDateShort(t.date)}
                     </td>
                     <td className="px-5 py-3">
                       {t.type === 'pm'
