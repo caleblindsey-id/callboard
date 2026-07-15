@@ -81,6 +81,25 @@ interface ServiceCompletionDraft {
   aceReason: string
 }
 
+// Local (localStorage) safety net for the "+ Request Part" order-entry form.
+// Unlike the completion form there is NO server autosave for these fields — a
+// part request lives only in React state until "Add Part" appends it to
+// parts_requested — so this draft is the only thing that keeps a half-entered
+// request from vanishing on a refresh or a backgrounded mobile PWA mid-entry
+// (feedback #73). Cleared on Add or Cancel via resetAddPartForm; restores
+// silently, mirroring the completion draft.
+interface PartsRequestDraft {
+  showAddPart: boolean
+  newPartDesc: string
+  newPartQty: string
+  newPartNumber: string
+  newPartVendorItemCode: string
+  newPartVendor: string
+  newPartVendorCode: string
+  newPartPrice: string
+  newPartSynergyProductId: number | null
+}
+
 const priorityConfig: Record<string, { label: string; classes: string }> = {
   emergency: { label: 'Emergency', classes: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
   standard: { label: 'Standard', classes: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' },
@@ -1420,6 +1439,58 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       !!newPartVendorItemCode.trim() &&
       newPartPriceValid
 
+  // Draft persistence for the parts-order request form (feedback #73). These
+  // fields have no server autosave — they're local until "Add Part" appends to
+  // parts_requested — so this localStorage draft is the only thing that keeps a
+  // half-entered request from vanishing on a refresh or a backgrounded PWA.
+  // Enabled whenever the request form can actually be shown (any pre-completion
+  // status with the machine identified — mirrors the PartsSection gate), and
+  // cleared on Add or Cancel via resetAddPartForm below. Restores silently, the
+  // same way the completion draft above does.
+  const partsRequestDraftState = useMemo<PartsRequestDraft>(() => ({
+    showAddPart,
+    newPartDesc, newPartQty, newPartNumber, newPartVendorItemCode,
+    newPartVendor, newPartVendorCode, newPartPrice, newPartSynergyProductId,
+  }), [
+    showAddPart,
+    newPartDesc, newPartQty, newPartNumber, newPartVendorItemCode,
+    newPartVendor, newPartVendorCode, newPartPrice, newPartSynergyProductId,
+  ])
+
+  const { clearDraft: clearPartsRequestDraft } = useFormDraft<PartsRequestDraft>({
+    key: `service-parts-request-${ticket.id}`,
+    state: partsRequestDraftState,
+    enabled:
+      ticket.status !== 'completed' &&
+      ticket.status !== 'billed' &&
+      ticket.status !== 'canceled' &&
+      machineComplete,
+    // Only persist/restore once a field carries real content — a bare open form
+    // (or a lone default qty) must not write a phantom draft or auto-expand.
+    isMeaningful: (s) =>
+      Boolean(
+        s.newPartDesc.trim() ||
+        s.newPartNumber.trim() ||
+        s.newPartVendorItemCode.trim() ||
+        s.newPartVendor.trim() ||
+        s.newPartPrice.trim() ||
+        s.newPartSynergyProductId != null
+      ),
+    onRestore: (draft) => {
+      setNewPartDesc(draft.newPartDesc ?? '')
+      setNewPartQty(draft.newPartQty || '1')
+      setNewPartNumber(draft.newPartNumber ?? '')
+      setNewPartVendorItemCode(draft.newPartVendorItemCode ?? '')
+      setNewPartVendor(draft.newPartVendor ?? '')
+      setNewPartVendorCode(draft.newPartVendorCode ?? '')
+      setNewPartPrice(draft.newPartPrice ?? '')
+      setNewPartSynergyProductId(draft.newPartSynergyProductId ?? null)
+      // Reopen the form so the restored fields are visible (gated on
+      // isMeaningful, so an empty form never auto-expands).
+      setShowAddPart(true)
+    },
+  })
+
   // Prefill the request from a picked Synergy catalog item: description, item #,
   // price, vendor (+ vendor_code), and vendor part #. Locks the description to a
   // chip until cleared. Loaded cost is never fetched — tech-facing search omits it.
@@ -1458,6 +1529,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     setNewPartPrice('')
     setNewPartSynergyProductId(null)
     partSearch.clear()
+    // Drop the saved draft — runs on both "Add Part" (committed) and "Cancel"
+    // (discarded), so a persisted request never outlives the entry it backed.
+    clearPartsRequestDraft()
   }
 
   async function handleAddPartRequest() {
