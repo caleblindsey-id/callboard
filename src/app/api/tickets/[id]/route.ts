@@ -37,6 +37,9 @@ const ALLOWED_FIELDS = [
   'billing_contact_phone',
   'additional_parts_used',
   'additional_hours_worked',
+  // Drives the rate on the Additional Work (non-PM) labor line; a tech can
+  // switch it on the completion form (feedback #76).
+  'labor_rate_type',
   'skip_reason',
   'skip_reason_category',
   'skip_recommended_month',
@@ -66,6 +69,7 @@ const TECH_ALLOWED_FIELDS = [
   'billing_contact_phone',
   'additional_parts_used',
   'additional_hours_worked',
+  'labor_rate_type',
   'skip_reason',
   'skip_reason_category',
   'skip_recommended_month',
@@ -131,6 +135,14 @@ export async function PATCH(
         ...p,
         unit_price: 0,
       }))
+    }
+
+    // labor_rate_type must be one of the known types — otherwise the DB CHECK
+    // constraint would reject it as an opaque 500 (feedback #76).
+    if (filtered.labor_rate_type !== undefined) {
+      if (!['standard', 'industrial', 'vacuum'].includes(filtered.labor_rate_type as string)) {
+        return NextResponse.json({ error: 'Invalid labor rate type' }, { status: 400 })
+      }
     }
 
     // photos validation: scoped to this ticket id, known image type only.

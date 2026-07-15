@@ -74,8 +74,17 @@ export default async function TicketDetailPage({
   // so fetch them in one round-trip tier instead of four sequential ones.
   // (poDueDates: est. arrival dates for ordered parts, looked up live from
   // Synergy open POs.)
-  const [laborRate, tripChargeRate, aceEntry, poDueDates] = await Promise.all([
-    getCustomerLaborRate(ticket.customer_id, ticket.labor_rate_type ?? 'standard'),
+  // Resolve all three labor rates (not just the ticket's creation-time type) so
+  // the tech can switch the Additional Work labor type on the completion form
+  // and see the per-hour figure update live (feedback #76). On a PM the rate
+  // type only drives the additional/non-PM labor + ACE payout — the PM itself
+  // is flat-rate under agreement.
+  const [laborRates, tripChargeRate, aceEntry, poDueDates] = await Promise.all([
+    Promise.all([
+      getCustomerLaborRate(ticket.customer_id, 'standard'),
+      getCustomerLaborRate(ticket.customer_id, 'industrial'),
+      getCustomerLaborRate(ticket.customer_id, 'vacuum'),
+    ]).then(([standard, industrial, vacuum]) => ({ standard, industrial, vacuum })),
     getTripChargeRate(),
     getEntryByTicket('pm', ticket.id),
     getPoDueDates(ticket.parts_requested ?? []),
@@ -388,7 +397,7 @@ export default async function TicketDetailPage({
             ticket={ticket}
             userRole={user?.role ?? null}
             userId={user?.id ?? null}
-            laborRate={laborRate}
+            laborRates={laborRates}
             tripChargeRate={tripChargeRate}
           />
         </>
