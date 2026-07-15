@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Plus, AlertTriangle } from 'lucide-react'
 import { requireRole } from '@/lib/auth'
-import { PURCHASING_ROLES } from '@/types/database'
+import { PURCHASING_ROLES, RESET_ROLES } from '@/types/database'
 import { listSessions } from '@/lib/db/reorder'
 import PageHeader from '@/components/ui/PageHeader'
 import PurchasingList from './PurchasingList'
@@ -9,8 +9,12 @@ import PurchasingList from './PurchasingList'
 // Top-level, sidebar-reachable list page — follows the CallBoard Page Shell
 // Standard (flat p-6 space-y-6, PageHeader), same as /service and /tickets.
 export default async function PurchasingPage() {
-  await requireRole(...PURCHASING_ROLES)
+  const user = await requireRole(...PURCHASING_ROLES)
   const sessions = await listSessions()
+  // Delete gating matches the reorder_sessions_delete RLS: super_admin/manager
+  // delete any walk; a purchasing user deletes only their OWN (created_by_id =
+  // them), decided per-row in the list. Coordinator/technician never reach here.
+  const canDeleteAny = !!user.role && RESET_ROLES.includes(user.role)
 
   return (
     <div className="p-6 space-y-6">
@@ -36,7 +40,7 @@ export default async function PurchasingPage() {
           </>
         }
       />
-      <PurchasingList sessions={sessions} />
+      <PurchasingList sessions={sessions} canDeleteAny={canDeleteAny} currentUserId={user.id} />
     </div>
   )
 }

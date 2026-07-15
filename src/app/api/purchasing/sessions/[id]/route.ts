@@ -121,3 +121,45 @@ export async function PATCH(
     return NextResponse.json({ error: 'Failed to update reorder session' }, { status: 500 })
   }
 }
+
+// Deleting a session cascades to its reorder_lines and
+// reorder_session_vendors (both ON DELETE CASCADE), so a single delete of
+// the session row is sufficient. The route gate only checks module membership
+// (PURCHASING_ROLES); the reorder_sessions_delete RLS policy is the real
+// authority: super_admin/manager delete any walk, a purchasing user only their
+// own (created_by_id = them). A purchasing user targeting someone else's walk
+// deletes zero rows and gets a 404, same as a missing id.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+
+    const user = await getCurrentUser()
+    if (!user?.role || !PURCHASING_ROLES.includes(user.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('reorder_sessions')
+      .delete()
+      .eq('id', id)
+      .select('id')
+
+    if (error) {
+      console.error('purchasing/sessions/[id] DELETE error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('purchasing/sessions/[id] DELETE error:', err)
+    return NextResponse.json({ error: 'Failed to delete reorder session' }, { status: 500 })
+  }
+}
