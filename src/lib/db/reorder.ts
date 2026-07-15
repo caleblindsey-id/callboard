@@ -81,6 +81,37 @@ export async function getSessionLines(sessionId: string): Promise<ReorderLineRow
   return lines
 }
 
+// Lean line reader for recomputeSessionRollups — the rollup math only ever
+// touches order_qty/pack_qty/unit_cost/vendor_code, not the other 25+ columns
+// getSessionLines' select('*') pulls on every line PATCH. Same pagination
+// pattern past the 1000-row ceiling; getSessionLines itself is left as-is
+// since the walk/review pages need the full row shape.
+type RollupLine = Pick<ReorderLineRow, 'order_qty' | 'pack_qty' | 'unit_cost' | 'vendor_code'>
+
+async function getSessionLinesForRollup(sessionId: string): Promise<RollupLine[]> {
+  const supabase = await createClient()
+  const lines: RollupLine[] = []
+  let offset = 0
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from('reorder_lines')
+      .select('order_qty, pack_qty, unit_cost, vendor_code')
+      .eq('session_id', sessionId)
+      .order('sort_key', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    if (error) throw error
+    const page = (data ?? []) as RollupLine[]
+    lines.push(...page)
+    if (page.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+
+  return lines
+}
+
 export async function getSessionVendors(sessionId: string): Promise<ReorderSessionVendorRow[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
@@ -105,7 +136,7 @@ export async function getSessionVendors(sessionId: string): Promise<ReorderSessi
 //   vendor.subtotal        = sum of extended cost for that vendor
 export async function recomputeSessionRollups(sessionId: string): Promise<void> {
   const supabase = await createClient()
-  const lines = await getSessionLines(sessionId)
+  const lines = await getSessionLinesForRollup(sessionId)
 
   let linesOrdered = 0
   let estTotalCost = 0
@@ -146,4 +177,37 @@ export async function recomputeSessionRollups(sessionId: string): Promise<void> 
       .eq('vendor_code', vendor.vendor_code)
     if (vendorError) throw vendorError
   }
+}
+
+// Below-reorder-point count for the dashboard card (Task 5.4) — mirrors the
+// below_rop scope filter in sessions/route.ts's fetchInScopeInvReorder:
+// active, not do-not-reorder, order_point set, and qty_available at or under
+// it. PostgREST can't compare two columns to each other, so this fetches only
+// the two columns needed and counts in JS after a paginated read, same as the
+// scope-resolution query the "New Reorder Walk > Below Reorder Point" flow
+// already runs.
+export async function getBelowReorderPointCount(): Promise<number> {
+  const supabase = await createClient()
+  let count = 0
+  let offset = 0
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from('inv_reorder')
+      .select('order_point, qty_available')
+      .eq('active', true)
+      .eq('do_not_reorder', false)
+      .gt('order_point', 0)
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    if (error) throw error
+    const page = (data ?? []) as Array<{ order_point: number | null; qty_available: number | null }>
+    for (const row of page) {
+      if ((row.qty_available ?? 0) <= (row.order_point ?? 0)) count += 1
+    }
+    if (page.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+
+  return count
 }

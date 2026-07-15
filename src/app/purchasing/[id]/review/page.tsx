@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { InvVendorRow } from '@/types/reorder'
 import BackButton from '@/components/BackButton'
 import ReorderStatusBadge from '@/components/ReorderStatusBadge'
+import ReorderFreshness from '@/components/ReorderFreshness'
 import ReorderReview from './ReorderReview'
 
 // Detail/workflow page keyed by id, same shell convention as the walk page
@@ -55,6 +56,7 @@ export default async function ReorderReviewPage({
             {session.name}
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Review, grouped by vendor</p>
+          <ReorderFreshness inventoryAsOf={session.inventory_as_of} />
         </div>
         <ReorderStatusBadge status={session.status} />
       </div>

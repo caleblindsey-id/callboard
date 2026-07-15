@@ -4,6 +4,7 @@ import { PURCHASING_ROLES } from '@/types/database'
 import { getSession, getSessionLines, getSessionVendors } from '@/lib/db/reorder'
 import BackButton from '@/components/BackButton'
 import ReorderStatusBadge from '@/components/ReorderStatusBadge'
+import ReorderFreshness from '@/components/ReorderFreshness'
 import ReorderWalk from './ReorderWalk'
 
 // Detail/workflow page keyed by id (like /service/[id], /tickets/[id]) — uses
@@ -34,6 +35,7 @@ export default async function ReorderWalkPage({
           <h1 className="text-xl lg:text-2xl font-semibold text-gray-900 dark:text-white truncate">
             {session.name}
           </h1>
+          <ReorderFreshness inventoryAsOf={session.inventory_as_of} />
         </div>
         <ReorderStatusBadge status={session.status} />
       </div>
