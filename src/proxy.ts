@@ -41,6 +41,35 @@ function isTechAllowed(pathname: string): boolean {
   return false
 }
 
+// Pages the purchasing role is allowed to access. Deliberately much narrower
+// than the technician allowlist above — the purchasing agent's whole world is
+// the /purchasing module (migration 142); their home is /purchasing itself,
+// NOT '/', because the office dashboard's sections query PM/service tables
+// that purchasing-role RLS can't read.
+const PURCHASING_ALLOWED_PAGES = ['/purchasing', '/login', '/change-password', '/account', '/notifications', '/help']
+const PURCHASING_ALLOWED_PAGE_PATTERNS = [
+  /^\/purchasing(\/|$)/,  // /purchasing, /purchasing/new, /purchasing/[id], /purchasing/[id]/review
+  /^\/help(\/|$)/,        // /help and all guide pages — read-only docs, all roles
+]
+
+// API routes the purchasing role is allowed to access. Anchored the same way
+// as TECH_ALLOWED_API_PATTERNS to avoid matching flat sibling routes.
+const PURCHASING_ALLOWED_API_PATTERNS = [
+  /^\/api\/purchasing(\/|$)/,   // GET/POST/PATCH the reorder session/line/vendor/search/worksheet routes
+  /^\/api\/auth\//,             // Self-service auth (change-password, PIN enroll) — all roles
+  /^\/api\/notifications(\/|$)/, // GET /api/notifications + POST /api/notifications/mark-read (the bell)
+  /^\/api\/help\/search$/,      // GET /api/help/search (help center search — all roles)
+  /^\/api\/feedback$/,          // POST /api/feedback (FAB submission — all roles)
+  /^\/api\/push\//,             // POST/DELETE /api/push/subscribe (purchasing opts into assignment push)
+]
+
+function isPurchasingAllowed(pathname: string): boolean {
+  if (PURCHASING_ALLOWED_PAGES.includes(pathname)) return true
+  if (PURCHASING_ALLOWED_PAGE_PATTERNS.some((p) => p.test(pathname))) return true
+  if (PURCHASING_ALLOWED_API_PATTERNS.some((p) => p.test(pathname))) return true
+  return false
+}
+
 const PM_COOKIE_OPTS = {
   httpOnly: true,
   sameSite: 'strict' as const,
@@ -151,6 +180,25 @@ export async function proxy(request: NextRequest) {
       }
       const url = request.nextUrl.clone()
       url.pathname = '/'
+      url.searchParams.set('error', 'denied')
+      return NextResponse.redirect(url)
+    }
+  }
+
+  if (role === 'purchasing') {
+    // Purchasing's home is /purchasing, not '/' — send them straight there
+    // instead of the office dashboard (which they don't have RLS access to).
+    if (pathname === '/') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/purchasing'
+      return NextResponse.redirect(url)
+    }
+    if (!isPurchasingAllowed(pathname)) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const url = request.nextUrl.clone()
+      url.pathname = '/purchasing'
       url.searchParams.set('error', 'denied')
       return NextResponse.redirect(url)
     }

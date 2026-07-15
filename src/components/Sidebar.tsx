@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { APP_NAME } from '@/lib/branding'
@@ -86,6 +86,11 @@ const officeGroups: NavGroup[] = [
   },
 ]
 
+// Purchasing/Reorder module (migration 142). Coordinator does NOT get this —
+// only manager/super_admin (via the queues group, appended in the groups
+// useMemo below) and the purchasing role's own minimal nav.
+const purchasingNavItem: NavItem = { label: 'Purchasing', icon: ShoppingCart, route: '/purchasing' }
+
 const auditLogItem: NavItem = { label: 'Audit Log', icon: ScrollText, route: '/admin/audit-log' }
 
 // Super-admin-only group, appended after the office groups.
@@ -116,6 +121,11 @@ const techNavItems: NavItem[] = [
   { label: 'My Leads', icon: Award, route: '/my-leads' },
   { label: 'Products', icon: Package, route: '/products' },
 ]
+
+// The purchasing role gets its own minimal nav — a single link to their one
+// module, not the full office menu (that path leaked the whole office nav to
+// purchasing users before this fix; see the groups useMemo below).
+const purchasingNavItems: NavItem[] = [purchasingNavItem]
 
 // First-load defaults; per-user choices are layered on top from localStorage.
 const DEFAULT_OPEN: Record<string, boolean> = {
@@ -201,6 +211,65 @@ function NavLink({
   )
 }
 
+// Small isolated count badge for the Purchasing nav link — non-terminal
+// reorder-session count. Deliberately its own tiny component with its own
+// plain useState/useEffect fetch, kept completely separate from the
+// useSyncExternalStore/navGroupStore hydration model above so it can't
+// destabilize it. Every setState call lives inside the fetch's .then()
+// callback rather than synchronously in the effect body, which keeps this
+// clean of react-hooks/set-state-in-effect (same shape as ReorderWalk.tsx's
+// mount-driven status effects).
+function PurchasingActiveBadge() {
+  const [count, setCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/purchasing/active-count', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { count?: number } | null) => {
+        if (!cancelled && data && typeof data.count === 'number') setCount(data.count)
+      })
+      .catch(() => {
+        // Network hiccup — the badge just stays hidden, nothing to surface here.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!count) return null
+
+  return (
+    <span className="ml-auto inline-flex min-w-[1.125rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+      {count}
+    </span>
+  )
+}
+
+// Purchasing's own NavLink variant, carrying the in-progress badge. Only ever
+// rendered where the viewer already has purchasing access (the queues group
+// for manager/super_admin, or the purchasing role's own minimal nav below),
+// so PurchasingActiveBadge's fetch never runs for a role that can't see it.
+function PurchasingNavLink({ pathname, onClose }: { pathname: string; onClose: () => void }) {
+  const isActive = isRouteActive(purchasingNavItem.route, pathname)
+  const Icon = purchasingNavItem.icon
+  return (
+    <Link
+      href={purchasingNavItem.route}
+      onClick={onClose}
+      className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+        isActive
+          ? 'bg-gray-800 text-white'
+          : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+      }`}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {purchasingNavItem.label}
+      <PurchasingActiveBadge />
+    </Link>
+  )
+}
+
 function NavGroupSection({
   group,
   pathname,
@@ -235,9 +304,13 @@ function NavGroupSection({
       </button>
       {expanded && (
         <div id={panelId} className="mt-0.5 space-y-1">
-          {group.items.map((item) => (
-            <NavLink key={item.route} item={item} pathname={pathname} onClose={onClose} />
-          ))}
+          {group.items.map((item) =>
+            item.route === purchasingNavItem.route ? (
+              <PurchasingNavLink key={item.route} pathname={pathname} onClose={onClose} />
+            ) : (
+              <NavLink key={item.route} item={item} pathname={pathname} onClose={onClose} />
+            )
+          )}
         </div>
       )}
     </div>
@@ -255,19 +328,33 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const user = useUser()
 
   const isTech = user?.role === 'technician'
+  const isPurchasing = user?.role === 'purchasing'
 
   // Office groups; super_admin gets the full Admin group (Settings + Audit Log),
   // managers get an Admin group with just the Audit Log. A null user (session
   // still resolving, or an unauthenticated visitor on a public route) gets no
   // groups at all — falling through to officeGroups here would render the
-  // full manager nav on any future public route. Memoized so the array isn't
-  // rebuilt on every UserProvider re-render.
+  // full manager nav on any future public route. The purchasing role gets no
+  // groups either — it renders its own minimal nav below instead (falling
+  // through to officeGroups here used to leak the entire office menu to a
+  // purchasing-role user, since they're neither tech, super_admin, nor
+  // manager). Purchasing is appended into the shared 'queues' group only for
+  // super_admin/manager, built here rather than by mutating the module-level
+  // officeGroups constant — coordinator keeps officeGroups exactly as-is, so
+  // it does NOT get the Purchasing item. Memoized so the array isn't rebuilt
+  // on every UserProvider re-render.
   const groups = useMemo(() => {
-    if (!user || isTech) return []
-    if (user.role === 'super_admin') return [...officeGroups, adminGroup]
-    if (user.role === 'manager') return [...officeGroups, managerAdminGroup]
+    if (!user || isTech || isPurchasing) return []
+    if (user.role === 'super_admin' || user.role === 'manager') {
+      const groupsWithPurchasing = officeGroups.map((g) =>
+        g.key === 'queues' ? { ...g, items: [...g.items, purchasingNavItem] } : g
+      )
+      return user.role === 'super_admin'
+        ? [...groupsWithPurchasing, adminGroup]
+        : [...groupsWithPurchasing, managerAdminGroup]
+    }
     return officeGroups
-  }, [isTech, user])
+  }, [isTech, isPurchasing, user])
 
   // Persisted open/closed prefs, layered over the first-load defaults. Server
   // snapshot is null → defaults render on the server and first client paint,
@@ -333,6 +420,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           {!user ? null : isTech ? (
             techNavItems.map((item) => (
               <NavLink key={item.route} item={item} pathname={pathname} onClose={onClose} />
+            ))
+          ) : isPurchasing ? (
+            purchasingNavItems.map((item) => (
+              <PurchasingNavLink key={item.route} pathname={pathname} onClose={onClose} />
             ))
           ) : (
             <>
