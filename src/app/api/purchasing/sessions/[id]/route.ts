@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { PURCHASING_ROLES } from '@/types/database'
+import { PURCHASING_ROLES, RESET_ROLES } from '@/types/database'
 import { getSession, recomputeSessionRollups } from '@/lib/db/reorder'
 import { REORDER_VALID_TRANSITIONS, ReorderSessionStatus } from '@/types/reorder'
 
@@ -119,5 +119,45 @@ export async function PATCH(
   } catch (err) {
     console.error('purchasing/sessions/[id] PATCH error:', err)
     return NextResponse.json({ error: 'Failed to update reorder session' }, { status: 500 })
+  }
+}
+
+// Deleting a session cascades to its reorder_lines and
+// reorder_session_vendors (both ON DELETE CASCADE), so a single delete of
+// the session row is sufficient. Gated to super_admin/manager to match the
+// reorder_sessions_delete RLS policy — coordinator and purchasing can't
+// delete a walk.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+
+    const user = await getCurrentUser()
+    if (!user?.role || !RESET_ROLES.includes(user.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('reorder_sessions')
+      .delete()
+      .eq('id', id)
+      .select('id')
+
+    if (error) {
+      console.error('purchasing/sessions/[id] DELETE error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('purchasing/sessions/[id] DELETE error:', err)
+    return NextResponse.json({ error: 'Failed to delete reorder session' }, { status: 500 })
   }
 }
