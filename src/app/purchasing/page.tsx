@@ -11,9 +11,10 @@ import PurchasingList from './PurchasingList'
 export default async function PurchasingPage() {
   const user = await requireRole(...PURCHASING_ROLES)
   const sessions = await listSessions()
-  // Delete is gated to super_admin/manager to match reorder_sessions_delete
-  // RLS — coordinator and purchasing can view/work walks but not delete one.
-  const canDelete = !!user.role && RESET_ROLES.includes(user.role)
+  // Delete gating matches the reorder_sessions_delete RLS: super_admin/manager
+  // delete any walk; a purchasing user deletes only their OWN (created_by_id =
+  // them), decided per-row in the list. Coordinator/technician never reach here.
+  const canDeleteAny = !!user.role && RESET_ROLES.includes(user.role)
 
   return (
     <div className="p-6 space-y-6">
@@ -39,7 +40,7 @@ export default async function PurchasingPage() {
           </>
         }
       />
-      <PurchasingList sessions={sessions} canDelete={canDelete} />
+      <PurchasingList sessions={sessions} canDeleteAny={canDeleteAny} currentUserId={user.id} />
     </div>
   )
 }

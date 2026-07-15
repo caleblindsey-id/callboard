@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
-import { PURCHASING_ROLES, RESET_ROLES } from '@/types/database'
+import { PURCHASING_ROLES } from '@/types/database'
 import { getSession, recomputeSessionRollups } from '@/lib/db/reorder'
 import { REORDER_VALID_TRANSITIONS, ReorderSessionStatus } from '@/types/reorder'
 
@@ -124,9 +124,11 @@ export async function PATCH(
 
 // Deleting a session cascades to its reorder_lines and
 // reorder_session_vendors (both ON DELETE CASCADE), so a single delete of
-// the session row is sufficient. Gated to super_admin/manager to match the
-// reorder_sessions_delete RLS policy — coordinator and purchasing can't
-// delete a walk.
+// the session row is sufficient. The route gate only checks module membership
+// (PURCHASING_ROLES); the reorder_sessions_delete RLS policy is the real
+// authority: super_admin/manager delete any walk, a purchasing user only their
+// own (created_by_id = them). A purchasing user targeting someone else's walk
+// deletes zero rows and gets a 404, same as a missing id.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -135,7 +137,7 @@ export async function DELETE(
     const { id } = await params
 
     const user = await getCurrentUser()
-    if (!user?.role || !RESET_ROLES.includes(user.role)) {
+    if (!user?.role || !PURCHASING_ROLES.includes(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

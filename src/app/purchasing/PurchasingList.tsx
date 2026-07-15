@@ -63,12 +63,22 @@ function deleteConfirmMessage(session: ReorderSessionRow): string {
 
 export default function PurchasingList({
   sessions,
-  canDelete = false,
+  canDeleteAny = false,
+  currentUserId,
 }: {
   sessions: ReorderSessionRow[]
-  canDelete?: boolean
+  canDeleteAny?: boolean
+  currentUserId?: string
 }) {
   const router = useRouter()
+
+  // Per-row: super_admin/manager (canDeleteAny) can delete any walk; a
+  // purchasing user can delete only their own. Mirrors the reorder_sessions_delete
+  // RLS so the button never appears for a walk the server would refuse to delete.
+  function canDeleteSession(session: ReorderSessionRow): boolean {
+    return canDeleteAny || (currentUserId != null && session.created_by_id === currentUserId)
+  }
+
   const [deleteTarget, setDeleteTarget] = useState<ReorderSessionRow | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -125,7 +135,7 @@ export default function PurchasingList({
               className="relative px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700"
             >
               <RowLink href={sessionHref(session)} label={`Open reorder walk ${session.name}`} />
-              {canDelete && (
+              {canDeleteSession(session) && (
                 <button
                   type="button"
                   onClick={(e) => openDelete(e, session)}
@@ -187,7 +197,7 @@ export default function PurchasingList({
                     {formatMoney(session.est_total_cost)}
                   </td>
                   <td className="relative z-10 px-3 py-3">
-                    {canDelete && (
+                    {canDeleteSession(session) && (
                       <button
                         type="button"
                         onClick={(e) => openDelete(e, session)}
