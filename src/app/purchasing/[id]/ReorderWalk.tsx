@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -12,12 +12,16 @@ import {
   SkipForward,
   Flag,
   MapPin,
+  Search,
+  ScanLine,
+  X,
 } from 'lucide-react'
 import SegmentedControl from '@/components/ui/SegmentedControl'
 import InlineError from '@/components/ui/InlineError'
 import ScrollableTable from '@/components/ScrollableTable'
 import { UrgencyDot, UrgencyBadge, URGENCY_META, reorderUrgency } from '@/components/ReorderStatusBadge'
 import { formatMoney } from '@/lib/format'
+import { useOfflineQueue, type QueuedLineMutation } from '@/lib/hooks/useOfflineQueue'
 import type { ReorderSessionRow, ReorderLineRow, ReorderSessionVendorRow } from '@/types/reorder'
 import type { ReorderUrgency } from '@/lib/reorder/suggest'
 
@@ -30,7 +34,10 @@ interface ReorderWalkProps {
 
 type ViewMode = 'card' | 'table'
 type SortMode = 'walk' | 'urgent' | 'vendor'
-type SaveState = 'saving' | 'saved' | 'error'
+// 'queued' = entered while offline (or the PATCH itself failed to reach the
+// server) and persisted to the IndexedDB-backed offline queue; cleared once
+// that mutation successfully flushes. See useOfflineQueue.
+type SaveState = 'saving' | 'saved' | 'queued' | 'error'
 
 const URGENCY_RANK: Record<ReorderUrgency, number> = { red: 0, amber: 1, green: 2, grey: 3 }
 
@@ -59,6 +66,10 @@ function compareByVendor(a: ReorderLineRow, b: ReorderLineRow): number {
   return compareByWalkOrder(a, b)
 }
 
+function comparatorForSort(mode: SortMode): (a: ReorderLineRow, b: ReorderLineRow) => number {
+  return mode === 'urgent' ? compareByUrgency : mode === 'vendor' ? compareByVendor : compareByWalkOrder
+}
+
 function lineMatchesFilter(line: ReorderLineRow, filter: string): boolean {
   if (filter === 'all') return true
   if (filter === 'below_rop') {
@@ -73,6 +84,36 @@ function lineMatchesFilter(line: ReorderLineRow, filter: string): boolean {
 
 function lineLabel(line: ReorderLineRow): string {
   return line.description ?? line.synergy_product_id
+}
+
+// Free-text search matching (P3, Task 3.1) — runs entirely against the
+// lines already loaded in React state, so it works offline with no API
+// round-trip. product # / description are contains-matches; bin is a
+// prefix match (covers both an exact bin and typing just the zone/bay);
+// barcode is an exact match (scanning a UPC should not fuzzy-match).
+function lineMatchesSearch(line: ReorderLineRow, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return false
+  if (line.synergy_product_id.toLowerCase().includes(q)) return true
+  if (line.description && line.description.toLowerCase().includes(q)) return true
+  if (line.bin_location && line.bin_location.toLowerCase().startsWith(q)) return true
+  if (line.barcode && line.barcode.toLowerCase() === q) return true
+  return false
+}
+
+// Scan-to-jump matching (P3, Task 3.2) — a scanned value is always an exact
+// read (a UPC or a printed bin label), so this is exact-match only, checked
+// in priority order: barcode first (a product UPC), then bin_location (a bin
+// label), then the product # itself (in case a shelf tag encodes it).
+function matchScannedValue(lines: ReorderLineRow[], raw: string): ReorderLineRow | null {
+  const value = raw.trim().toLowerCase()
+  if (!value) return null
+  return (
+    lines.find((l) => l.barcode && l.barcode.toLowerCase() === value) ??
+    lines.find((l) => l.bin_location && l.bin_location.toLowerCase() === value) ??
+    lines.find((l) => l.synergy_product_id.toLowerCase() === value) ??
+    null
+  )
 }
 
 // Module-level per wiki/feedback/no-inner-components.md — defining these
@@ -94,6 +135,9 @@ function SaveIndicator({ state }: { state?: SaveState }) {
   if (!state) return null
   if (state === 'saving') return <span className="text-xs text-gray-400 dark:text-gray-500">Saving…</span>
   if (state === 'saved') return <span className="text-xs text-green-600 dark:text-green-400">Saved</span>
+  if (state === 'queued') {
+    return <span className="text-xs text-amber-600 dark:text-amber-400">Queued — will sync when back online</span>
+  }
   return <span className="text-xs text-red-600 dark:text-red-400">Not saved — check connection</span>
 }
 
@@ -138,6 +182,208 @@ function FlagEditor({
   )
 }
 
+// Module-level (no-inner-components) — wraps the search input, which would
+// otherwise remount and drop focus on every keystroke if defined inside
+// ReorderWalk's body.
+function SearchPanel({
+  query,
+  onQueryChange,
+  onSubmit,
+  onScanClick,
+}: {
+  query: string
+  onQueryChange: (value: string) => void
+  onSubmit: () => void
+  onScanClick: () => void
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3 flex flex-col sm:flex-row gap-2">
+      <form
+        role="search"
+        className="flex-1 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          onSubmit()
+        }}
+      >
+        <input
+          type="search"
+          inputMode="search"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search product #, description, or bin…"
+          aria-label="Search reorder walk items"
+          className="min-h-[44px] flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+        <button
+          type="submit"
+          className="min-h-[44px] shrink-0 inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-slate-700 px-3 text-sm font-medium text-white hover:bg-slate-800 dark:hover:bg-slate-600"
+        >
+          <Search className="h-4 w-4" />
+          Go
+        </button>
+      </form>
+      <button
+        type="button"
+        onClick={onScanClick}
+        aria-label="Scan barcode or bin label"
+        className="min-h-[44px] shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+      >
+        <ScanLine className="h-4 w-4" />
+        Scan
+      </button>
+    </div>
+  )
+}
+
+// Live "as you type" result list, shown below SearchPanel. Clicking a result
+// jumps straight to that line (see jumpToLine).
+function SearchResults({
+  matches,
+  onPick,
+}: {
+  matches: ReorderLineRow[]
+  onPick: (line: ReorderLineRow) => void
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
+      {matches.map((line) => (
+        <button
+          key={line.id}
+          type="button"
+          onClick={() => onPick(line)}
+          className="w-full min-h-[44px] flex items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
+          <span className="min-w-0">
+            <span className="block font-medium text-gray-900 dark:text-white truncate">{lineLabel(line)}</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              {line.synergy_product_id}
+              {line.bin_location ? ` · Bin ${line.bin_location}` : ''}
+            </span>
+          </span>
+          <UrgencyDot urgency={reorderUrgency(line)} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+type ScannerStatus = 'starting' | 'scanning' | 'unsupported' | 'denied' | 'error'
+
+// Camera barcode scanner. Uses the native BarcodeDetector API where available
+// (no dependency added); when it's unavailable this shows a plain fallback
+// message rather than pulling in a library (html5-qrcode would be the
+// future optional add for a non-Chromium tablet fleet — deliberately not
+// added here per scope). Always stops its own camera stream on unmount/close
+// so no track is left running in the background.
+function ScannerModal({ onDetect, onClose }: { onDetect: (value: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const rafRef = useRef<number | null>(null)
+  const [status, setStatus] = useState<ScannerStatus>('starting')
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function start() {
+      if (typeof window === 'undefined' || !('BarcodeDetector' in window)) {
+        setStatus('unsupported')
+        return
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+        setStatus('scanning')
+        // BarcodeDetector isn't in TS's lib.dom.d.ts yet — feature-detected
+        // above via `in window`; the cast is local to this construction.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const DetectorCtor = (window as any).BarcodeDetector
+        const detector = new DetectorCtor({
+          formats: ['upc_a', 'upc_e', 'ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code'],
+        })
+
+        const tick = async () => {
+          if (cancelled || !videoRef.current) return
+          try {
+            const codes = await detector.detect(videoRef.current)
+            if (codes.length > 0) {
+              onDetect(codes[0].rawValue)
+              return // parent closes the modal on detect; no need to keep looping
+            }
+          } catch {
+            // Transient per-frame detect() failure — keep trying.
+          }
+          rafRef.current = requestAnimationFrame(tick)
+        }
+        rafRef.current = requestAnimationFrame(tick)
+      } catch (err) {
+        if (cancelled) return
+        if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+          setStatus('denied')
+        } else {
+          setStatus('error')
+        }
+      }
+    }
+
+    start()
+
+    return () => {
+      cancelled = true
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+  }, [onDetect])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Scan barcode or bin label">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-sm w-full overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Scan barcode or bin label</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close scanner"
+            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          {status === 'unsupported' && (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Camera scanning not supported on this device — use search instead.
+            </p>
+          )}
+          {status === 'denied' && (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Camera access was denied. Allow camera access to scan, or use search instead.
+            </p>
+          )}
+          {status === 'error' && (
+            <p className="text-sm text-gray-600 dark:text-gray-300">Couldn&apos;t start the camera. Use search instead.</p>
+          )}
+          {(status === 'starting' || status === 'scanning') && (
+            <video ref={videoRef} className="w-full rounded-md bg-black aspect-video" muted playsInline />
+          )}
+          {status === 'scanning' && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Point the camera at a barcode or bin label</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ReorderWalk({ session, initialLines, vendors }: ReorderWalkProps) {
   const router = useRouter()
 
@@ -152,8 +398,16 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
   const [flagDraft, setFlagDraft] = useState('')
   const [sessionError, setSessionError] = useState<string | null>(null)
 
+  // Search + scan-to-jump (P3)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchSubmitted, setSearchSubmitted] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scanMessage, setScanMessage] = useState<string | null>(null)
+
   const qtyTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const startedRef = useRef(false)
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
+  const appliedInitialQueueRef = useRef(false)
 
   // Start the walk: draft -> walking on first mount/interaction. router.refresh()
   // re-fetches the server page so the header's ReorderStatusBadge (rendered in
@@ -184,29 +438,101 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
     }
   }, [])
 
-  async function persistLine(lineId: string, patch: Partial<Pick<ReorderLineRow, 'order_qty' | 'line_status' | 'flag_note'>>) {
+  // Sends one queued mutation's PATCH and reconciles the server's returned
+  // row into local state on success — shared by the direct-edit path below
+  // and the offline queue's auto-flush (useOfflineQueue's onFlush). Throws
+  // on any non-2xx response or network failure so the caller (either
+  // persistLine or the queue's flush loop) decides what to do with the
+  // failure; this function only knows how to send + reconcile.
+  const sendLinePatch = useCallback(async (lineId: string, patch: QueuedLineMutation['patch']) => {
+    const res = await fetch(`/api/purchasing/lines/${lineId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Failed to save')
+    setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, ...data } : l)))
+    setSaveState((s) => ({ ...s, [lineId]: 'saved' }))
+    setTimeout(() => {
+      setSaveState((s) => {
+        if (s[lineId] !== 'saved') return s
+        const next = { ...s }
+        delete next[lineId]
+        return next
+      })
+    }, 2000)
+  }, [])
+
+  const offlineQueue = useOfflineQueue({
+    sessionId: session.id,
+    onFlush: async (mutation) => {
+      await sendLinePatch(mutation.lineId, mutation.patch)
+    },
+  })
+
+  // Reconcile any mutations already queued in IndexedDB (e.g. the page
+  // reloaded mid-dead-zone before they flushed) back onto the visible
+  // lines/qty inputs and mark them 'queued' — otherwise the walk would
+  // silently show the last server-synced value instead of the agent's
+  // unsaved entry until the next auto-flush tick. Runs once, when the queue
+  // finishes its initial IndexedDB load (see the eslint note in
+  // useOfflineQueue.ts — the equivalent render-time pattern here would need
+  // to read `appliedInitialQueueRef` during render, which trips
+  // `react-hooks/refs`, so this stays a plain effect like the rest of the
+  // file's mount-time effects).
+  useEffect(() => {
+    if (!offlineQueue.ready || appliedInitialQueueRef.current) return
+    appliedInitialQueueRef.current = true
+    if (offlineQueue.queuedByLineId.size === 0) return
+    setLines((prev) =>
+      prev.map((l) => {
+        const queued = offlineQueue.queuedByLineId.get(l.id)
+        return queued ? { ...l, ...queued.patch } : l
+      })
+    )
+    setQtyInputs((prev) => {
+      const next = { ...prev }
+      offlineQueue.queuedByLineId.forEach((mutation, lineId) => {
+        if (mutation.patch.order_qty !== undefined) next[lineId] = String(mutation.patch.order_qty)
+      })
+      return next
+    })
+    setSaveState((prev) => {
+      const next = { ...prev }
+      offlineQueue.queuedByLineId.forEach((_mutation, lineId) => {
+        next[lineId] = 'queued'
+      })
+      return next
+    })
+  }, [offlineQueue.ready, offlineQueue.queuedByLineId])
+
+  async function persistLine(lineId: string, patch: QueuedLineMutation['patch']) {
     setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, ...patch } : l)))
+
+    // Known offline — don't even attempt the round-trip, go straight to the
+    // queue so the UI doesn't sit in "Saving…" waiting on a request that
+    // can't complete.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSaveState((s) => ({ ...s, [lineId]: 'queued' }))
+      offlineQueue.enqueue(lineId, patch)
+      return
+    }
+
     setSaveState((s) => ({ ...s, [lineId]: 'saving' }))
     try {
-      const res = await fetch(`/api/purchasing/lines/${lineId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Failed to save')
-      setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, ...data } : l)))
-      setSaveState((s) => ({ ...s, [lineId]: 'saved' }))
-      setTimeout(() => {
-        setSaveState((s) => {
-          if (s[lineId] !== 'saved') return s
-          const next = { ...s }
-          delete next[lineId]
-          return next
-        })
-      }, 2000)
-    } catch {
-      setSaveState((s) => ({ ...s, [lineId]: 'error' }))
+      await sendLinePatch(lineId, patch)
+    } catch (err) {
+      // A thrown fetch (network unreachable — the dead-zone case, `!res.ok`
+      // never even ran) queues for later. A response the server actually
+      // returned (validation/permission/500) is a real error, not an offline
+      // gap, so it surfaces immediately rather than retrying silently forever.
+      if (err instanceof TypeError) {
+        setSaveState((s) => ({ ...s, [lineId]: 'queued' }))
+        offlineQueue.enqueue(lineId, patch)
+      } else {
+        setSaveState((s) => ({ ...s, [lineId]: 'error' }))
+      }
     }
   }
 
@@ -266,12 +592,52 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
 
   const visibleLines = useMemo(() => {
     const filtered = lines.filter((l) => lineMatchesFilter(l, filterMode))
-    const comparator = sortMode === 'urgent' ? compareByUrgency : sortMode === 'vendor' ? compareByVendor : compareByWalkOrder
-    return [...filtered].sort(comparator)
+    return [...filtered].sort(comparatorForSort(sortMode))
   }, [lines, filterMode, sortMode])
 
   const safeIndex = Math.min(cardIndex, Math.max(visibleLines.length - 1, 0))
   const currentLine = visibleLines[safeIndex] ?? null
+
+  const searchMatches = useMemo(() => {
+    if (!searchQuery.trim()) return []
+    return lines.filter((l) => lineMatchesSearch(l, searchQuery)).slice(0, 8)
+  }, [lines, searchQuery])
+
+  // Jump to any line by search/scan — always reachable regardless of the
+  // active filter or view mode. If the target is filtered out under the
+  // current filter, drop back to "all" first (computed locally, not from
+  // React state, so the position below is consistent within this call
+  // rather than racing the async setFilterMode). Card mode re-renders around
+  // the new cardIndex; table mode also scrolls the row into view since it
+  // doesn't re-render around a "current" position the way card mode does.
+  function jumpToLine(line: ReorderLineRow) {
+    const targetFilter = lineMatchesFilter(line, filterMode) ? filterMode : 'all'
+    if (targetFilter !== filterMode) setFilterMode(targetFilter)
+    const ordered = lines.filter((l) => lineMatchesFilter(l, targetFilter)).sort(comparatorForSort(sortMode))
+    const idx = ordered.findIndex((l) => l.id === line.id)
+    if (idx >= 0) setCardIndex(idx)
+    setSearchQuery('')
+    setSearchSubmitted(false)
+    setScanMessage(null)
+    requestAnimationFrame(() => {
+      rowRefs.current.get(line.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
+  function handleSearchSubmit() {
+    setSearchSubmitted(true)
+    if (searchMatches.length > 0) jumpToLine(searchMatches[0])
+  }
+
+  function handleScanDetect(value: string) {
+    setScannerOpen(false)
+    const match = matchScannedValue(lines, value)
+    if (match) {
+      jumpToLine(match)
+    } else {
+      setScanMessage(`No item for "${value}"`)
+    }
+  }
 
   function changeSort(mode: SortMode) {
     setSortMode(mode)
@@ -323,6 +689,14 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
           <p className="text-sm font-semibold text-gray-900 dark:text-white">{orderedCount} ordered</p>
           <p className="text-xs text-gray-500 dark:text-gray-400">{formatMoney(estTotal)} est.</p>
         </div>
+        {offlineQueue.pendingCount > 0 && (
+          <span
+            role="status"
+            className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 px-2.5 py-1 text-xs font-medium text-amber-800 dark:text-amber-300"
+          >
+            {offlineQueue.pendingCount} pending sync
+          </span>
+        )}
         <Link
           href={`/purchasing/${session.id}/review`}
           className="min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 dark:bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 dark:hover:bg-slate-600 lg:min-h-0"
@@ -380,6 +754,28 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
           </select>
         </div>
       </div>
+
+      {/* Search + scan-to-jump (P3) — available in both card and table mode */}
+      <SearchPanel
+        query={searchQuery}
+        onQueryChange={(v) => {
+          setSearchQuery(v)
+          setSearchSubmitted(false)
+        }}
+        onSubmit={handleSearchSubmit}
+        onScanClick={() => {
+          setScanMessage(null)
+          setScannerOpen(true)
+        }}
+      />
+      {searchQuery.trim() && searchMatches.length > 0 && (
+        <SearchResults matches={searchMatches} onPick={jumpToLine} />
+      )}
+      {searchSubmitted && searchQuery.trim() && searchMatches.length === 0 && (
+        <InlineError message={`No item matches "${searchQuery.trim()}"`} />
+      )}
+      {scanMessage && <InlineError message={scanMessage} onRetry={() => setScanMessage(null)} retryLabel="Dismiss" />}
+      {scannerOpen && <ScannerModal onDetect={handleScanDetect} onClose={() => setScannerOpen(false)} />}
 
       {visibleLines.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -576,7 +972,13 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
                   const extended = qty * (line.pack_qty ?? 1) * (line.unit_cost ?? 0)
                   return (
                     <Fragment key={line.id}>
-                      <tr className={line.id === currentLine?.id ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+                      <tr
+                        ref={(el) => {
+                          if (el) rowRefs.current.set(line.id, el)
+                          else rowRefs.current.delete(line.id)
+                        }}
+                        className={line.id === currentLine?.id ? 'bg-slate-50 dark:bg-slate-800/40' : ''}
+                      >
                         <td className="px-3 py-2">
                           <span className="inline-flex items-center" title={URGENCY_META[urgency].label}>
                             <UrgencyDot urgency={urgency} />

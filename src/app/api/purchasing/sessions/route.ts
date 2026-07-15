@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
         vendor_name: row.vendor_code != null ? vendorNameByCode.get(row.vendor_code) ?? null : null,
         vendor_item_number: row.vendor_item_number,
         bin_location: row.primary_bin,
+        barcode: row.barcode,
         buying_uom: row.buying_uom,
         pack_qty: row.pack_qty,
         qoh: row.qty_on_hand,

@@ -84,6 +84,7 @@ export type ReorderLineRow = {
   vendor_name: string | null
   vendor_item_number: string | null
   bin_location: string | null
+  barcode: string | null
   buying_uom: string | null
   pack_qty: number | null
   qoh: number | null
