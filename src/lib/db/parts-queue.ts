@@ -200,6 +200,7 @@ export async function getMyPartsQueue(userId: string): Promise<MyPartRow[]> {
       .from('service_tickets')
       .select('id, work_order_number, status, parts_requested, customers(name), equipment_make, equipment_model, equipment_serial_number, equipment(make, model, serial_number)')
       .eq('assigned_technician_id', userId)
+      .is('deleted_at', null)
       // Service parts drop off the tech queue at completion (parity with PM
       // above), not at billing — once the work is done the tech is finished
       // with them. Mirrors getPartsReadyForPickupCount / getPartsOnOrderCount.

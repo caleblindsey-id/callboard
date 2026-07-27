@@ -32,11 +32,13 @@ export default async function MyEquipmentPage({
       .from('pm_tickets')
       .select('equipment_id')
       .eq('assigned_technician_id', user.id)
+      .is('deleted_at', null)
       .not('equipment_id', 'is', null),
     supabase
       .from('service_tickets')
       .select('equipment_id')
       .eq('assigned_technician_id', user.id)
+      .is('deleted_at', null)
       .not('equipment_id', 'is', null),
   ])
 
