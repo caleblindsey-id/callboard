@@ -542,6 +542,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   function handleCopyRequestedParts() {
     const converted = partsFromSaved(copyableRequestedParts.map((r) => requestToUsedLine(r)))
     setCompletionParts((prev) => [...prev, ...converted])
+    // Open the completion card if it's collapsed. The parts persist either way
+    // (the completion autosave runs whenever the ticket is in_progress, not only
+    // when this card is open), but adding a line the tech can't see reads as the
+    // button having done nothing.
+    setShowCompletionForm(true)
   }
   // Record that a fulfilled part was deliberately not used. Soft-flag in place
   // (never splice) — the Parts Queue addresses parts by array ordinal, so
@@ -2902,11 +2907,25 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       {/* Parts the branch bought or pulled that never made it onto the work
           order. Sits ABOVE the completion card, not inside its collapsed
           "Parts Used" details — the buried Copy button is exactly why these
-          were being missed. Warn only: the Complete button stays enabled. */}
-      {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
+          were being missed. Warn only: the Complete button stays enabled.
+          Deliberately NOT gated on showCompletionForm: gating it there would
+          hide the warning until the tech opens the completion card, which is
+          the same "you only see it if you go looking" failure the buried Copy
+          button had. Matches the PM side, which shows it for the whole
+          in-progress phase. The completion autosave is likewise keyed on
+          in_progress, so Add persists whether or not the card is open.
+
+          `onAdd` is tech-only because `parts_used` is in TECH_ALLOWED_FIELDS and
+          NOT the staff allowlist (see api/service-tickets/[id]/route.ts) — the
+          completion form is a technician flow. Offering staff a button whose
+          PATCH comes back 400 "No recognized fields" is worse than not offering
+          it. Staff still see the warning and can still mark a part not-used,
+          which writes parts_requested (allowed for both roles), and the office
+          has the full list on /parts-queue/not-on-work-order. */}
+      {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
         <MissingFromWorkOrderNotice
           items={missingWorkOrderItems}
-          onAdd={handleCopyRequestedParts}
+          onAdd={isTech ? handleCopyRequestedParts : undefined}
           onExclude={handleExcludePartFromWorkOrder}
           busy={loading || saving}
         />

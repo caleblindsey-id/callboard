@@ -95,9 +95,14 @@ export default function MissingFromWorkOrderNotice({
               : `${items.length} fulfilled parts are not on this work order`}
           </p>
           <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">
-            {interactive
+            {onAdd
               ? 'These were received or pulled from stock. If they were used on this job, add them so they get billed.'
-              : 'These were received or pulled from stock but never added to the work order, so they were not billed.'}
+              : onExclude
+                ? // Staff on an open ticket: parts_used is a technician-only field,
+                  // so they can't add the line themselves — but they can record
+                  // that a part went unused.
+                  'These were received or pulled from stock. The technician needs to add them to the work order, or mark them not used.'
+                : 'These were received or pulled from stock but never added to the work order, so they were not billed.'}
           </p>
 
           <ul className="mt-2 space-y-1.5">
