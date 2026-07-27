@@ -136,7 +136,26 @@ export default function PmPartsSection({
     setSaving(true)
     setError(null)
     try {
-      const updated = parts.map((p, i) => i === index ? { ...p, status } : p)
+      // Stamp the lifecycle audit fields the parts-queue route stamps for the
+      // same transitions (mark_ordered / mark_received). This inline path writes
+      // parts_requested straight through PATCH, and used to set `status` alone —
+      // so a part advanced from here landed in the queue's Received tab with a
+      // null date, sorted oddly, and left no record of who received it. Guarded
+      // on the existing value so re-clicking can't overwrite the original stamp.
+      const now = new Date().toISOString()
+      const updated = parts.map((p, i) => {
+        if (i !== index) return p
+        const nextPart: PartRequest = { ...p, status }
+        if (status === 'ordered' && !nextPart.ordered_at) {
+          nextPart.ordered_at = now
+          nextPart.ordered_by = userId ?? undefined
+        }
+        if (status === 'received' && !nextPart.received_at) {
+          nextPart.received_at = now
+          nextPart.received_by = userId ?? undefined
+        }
+        return nextPart
+      })
       await patchTicket({ parts_requested: updated })
       setParts(updated)
       router.refresh()
@@ -233,7 +252,20 @@ export default function PmPartsSection({
       const now = new Date().toISOString()
       const updated = parts.map((p, i) =>
         i === index
-          ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId ?? undefined }
+          ? {
+              ...p,
+              cancelled: true,
+              // Stamp the terminal status too, not just the flag. The parts-queue
+              // `cancel` action does this (PR #247); this in-ticket path bypasses
+              // that route entirely and used to leave status at its pre-delete
+              // value, re-creating the contradictory "cancelled but pending_review"
+              // rows that #247 cleaned up. Inert either way — every tab, count and
+              // gate reads the `cancelled` flag — but the JSONB should not lie.
+              status: 'cancelled' as const,
+              cancel_reason: 'Removed from ticket',
+              cancelled_at: now,
+              cancelled_by: userId ?? undefined,
+            }
           : p
       )
       await patchTicket({ parts_requested: updated })

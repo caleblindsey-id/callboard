@@ -71,6 +71,14 @@ export interface PartEntry {
   requiresDetail?: boolean
   // Free-text "what were the supplies" entered by the tech. Optional.
   detail?: string
+  // Link back to the originating part request (that request's requested_at),
+  // set when the line was auto-added on fulfillment. Must survive this
+  // round-trip: the completion form rehydrates from the saved array and PUTs it
+  // back wholesale, so dropping the field here would strip the exact link off
+  // every auto-added line the moment a tech opens the form, silently demoting
+  // partsMissingFromWorkOrder() to description guessing. Same reason the vendor
+  // fields are carried. Never edited in the UI.
+  fromRequestAt?: string | null
 }
 
 export function emptyPart(): PartEntry {
@@ -91,7 +99,7 @@ export function emptyPart(): PartEntry {
   }
 }
 
-export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string }[]): PartEntry[] {
+export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
     quantity: String(p.quantity),
@@ -113,10 +121,12 @@ export function partsFromSaved(saved: { synergy_product_id?: number | null; desc
     vendorItemCode: p.vendor_item_code ?? null,
     vendor: p.vendor ?? null,
     vendorCode: p.vendor_code ?? null,
+    // Preserve the auto-add link across the form round-trip (see PartEntry).
+    fromRequestAt: p.from_request_at ?? null,
   }))
 }
 
-export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string }[] {
+export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
@@ -132,6 +142,7 @@ export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: n
     ...(p.vendorItemCode?.trim() ? { vendor_item_code: p.vendorItemCode.trim() } : {}),
     ...(p.vendor?.trim() ? { vendor: p.vendor.trim() } : {}),
     ...(p.vendorCode?.trim() ? { vendor_code: p.vendorCode.trim() } : {}),
+    ...(p.fromRequestAt ? { from_request_at: p.fromRequestAt } : {}),
   }))
 }
 

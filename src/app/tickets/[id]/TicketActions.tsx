@@ -10,7 +10,14 @@ import { compressImage } from '@/lib/image-utils'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import type { SkipRequestPayload } from './SkipRequestForm'
-import { partsOnOrder } from '@/lib/parts'
+import {
+  partsOnOrder,
+  fulfilledRequestedParts,
+  isCoveredByAgreement,
+  partsMissingFromWorkOrder,
+  requestToUsedLine,
+} from '@/lib/parts'
+import MissingFromWorkOrderNotice from '@/components/parts/MissingFromWorkOrderNotice'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import TicketNextStepBar from './TicketNextStepBar'
@@ -48,6 +55,14 @@ export interface PartEntry {
   requiresDetail?: boolean
   // Free-text "what were the supplies". Optional.
   detail?: string
+  // Link back to the originating part request (that request's requested_at),
+  // set when the line was seeded from a request or auto-added on fulfillment.
+  // Must survive this round-trip: the completion form rehydrates from the saved
+  // arrays and PUTs them back wholesale, so dropping it here would strip the
+  // exact link off every auto-added line the first time a tech saves, silently
+  // demoting partsMissingFromWorkOrder() to description guessing. Never edited
+  // in the UI.
+  fromRequestAt?: string | null
 }
 
 // Local (localStorage) safety net for the in_progress completion form — the
@@ -101,6 +116,8 @@ function partsFromSaved(saved: PartUsed[]): PartEntry[] {
     // requiresDetail never fires again on rehydrate).
     requiresDetail: !!p.requires_detail,
     detail: p.detail ?? '',
+    // Preserve the auto-add link across the form round-trip (see PartEntry).
+    fromRequestAt: p.from_request_at ?? null,
   }))
 }
 
@@ -126,16 +143,16 @@ function partsFromDefaults(defaults: { synergy_product_id: number; quantity: num
 // deleted instead of silently re-seeding (and re-billing) on reopen.
 
 function partRequestToEntry(r: PartRequest): PartEntry {
+  // Built through the shared requestToUsedLine() so the seed and the
+  // fulfillment auto-add produce identical lines — including from_request_at,
+  // which is what lets partsMissingFromWorkOrder() tell a seeded part from a
+  // missing one exactly rather than by comparing descriptions.
+  //
   // unit_price MUST carry through for billable manual parts: a manual part has
   // no synergy_product_id, so the completion server falls back to this
-  // submitted price (drop it and the part silently bills $0).
-  return partsFromSaved([{
-    synergy_product_id: r.synergy_product_id ?? null,
-    description: r.description,
-    quantity: r.quantity,
-    unit_price: r.unit_price ?? 0,
-    detail: r.detail,
-  }])[0]
+  // submitted price (drop it and the part silently bills $0). requestToUsedLine
+  // keeps the request's price when there's no catalog price to override it.
+  return partsFromSaved([requestToUsedLine(r)])[0]
 }
 
 function partsFromRequested(reqs: PartRequest[]): PartEntry[] {
@@ -166,6 +183,10 @@ function toPartUsed(entries: PartEntry[]): PartUsed[] {
     // Persist only when meaningful so non-flagged parts stay lean.
     ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
     ...(p.requiresDetail ? { requires_detail: true } : {}),
+    // Keep the auto-add link across the form round-trip. This function PUTs the
+    // whole array back, so omitting it would strip the exact request link off
+    // every line the first time a tech saves the completion form.
+    ...(p.fromRequestAt ? { from_request_at: p.fromRequestAt } : {}),
   }))
 }
 
@@ -233,11 +254,9 @@ export default function TicketActions({ ticket, userRole, userId, laborRates, tr
   // completion billing split. from_stock is billable to the customer just like a
   // received part, so it must be included or a pulled-from-stock part goes
   // uncharged.
-  const requestedReceived = (ticket.parts_requested ?? []).filter(
-    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled,
-  )
-  const requestedCovered = requestedReceived.filter((r) => r.covered_by_agreement === true)
-  const requestedBillable = requestedReceived.filter((r) => r.covered_by_agreement !== true)
+  const requestedReceived = fulfilledRequestedParts(ticket.parts_requested)
+  const requestedCovered = requestedReceived.filter(isCoveredByAgreement)
+  const requestedBillable = requestedReceived.filter((r) => !isCoveredByAgreement(r))
   const completionSeeded = ticket.completion_seeded_at != null
 
   // PM parts (covered): saved draft once seeded; else equipment defaults +
@@ -1200,6 +1219,61 @@ export default function TicketActions({ ticket, userRole, userId, laborRates, tr
     )
   }
 
+  // Fulfilled parts (received / pulled from stock) that never reached the work
+  // order. While the job is open we diff against the LIVE form state, so a line
+  // the tech deletes reappears here immediately; once completed/billed we diff
+  // against what was actually saved. Same shared matcher the server-side
+  // auto-add and the office report use.
+  const isCompletionOpen = ticket.status === 'in_progress'
+  const missingWorkOrderParts = partsMissingFromWorkOrder(
+    ticket.parts_requested,
+    isCompletionOpen ? toPartUsed(pmParts) : ticket.parts_used,
+    isCompletionOpen ? toPartUsed(additionalParts) : ticket.additional_parts_used,
+  )
+  // Paired with their position in parts_requested — the "not used" write
+  // addresses parts by array ordinal (same convention as the Parts Queue).
+  const missingWorkOrderItems = missingWorkOrderParts.map((part) => ({
+    part,
+    index: (ticket.parts_requested ?? []).indexOf(part),
+  }))
+
+  // Copy the missing parts into the right completion section. Covered-by-
+  // agreement goes to PM Service (forced to $0 at completion), everything else
+  // to Additional Work (billable) — the same split as the seed above, via the
+  // shared predicate, so the banner can't route a part differently than the
+  // auto-add would have.
+  function handleAddMissingToWorkOrder() {
+    const covered = missingWorkOrderParts.filter(isCoveredByAgreement)
+    const billable = missingWorkOrderParts.filter((p) => !isCoveredByAgreement(p))
+    if (covered.length > 0) setPmParts((prev) => [...prev, ...partsFromRequested(covered)])
+    if (billable.length > 0) {
+      setAdditionalParts((prev) => [...prev, ...partsFromRequested(billable)])
+    }
+  }
+
+  // Record that a fulfilled part was deliberately not used. Soft-flag in place
+  // (never splice) — the Parts Queue addresses parts by array ordinal, so
+  // removing an element strands its reference to every later part.
+  async function handleExcludePartFromWorkOrder(index: number, reason: string) {
+    const now = new Date().toISOString()
+    const updated = (ticket.parts_requested ?? []).map((p, i) =>
+      i === index
+        ? { ...p, wo_excluded_at: now, wo_excluded_by: userId ?? undefined, wo_exclude_reason: reason }
+        : p,
+    )
+    const res = await fetch(`/api/tickets/${ticket.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts_requested: updated }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'Failed to update part')
+      return
+    }
+    router.refresh()
+  }
+
   return (
     <>
       <TicketNextStepBar
@@ -1209,6 +1283,18 @@ export default function TicketActions({ ticket, userRole, userId, laborRates, tr
         onStartWork={handleStart}
         onOpenSkipRequest={() => setSkipRequestOpen(true)}
       />
+      {/* Sits above the completion panel rather than inside it — PM had no
+          equivalent of the service "Copy Requested Parts" button at all, so a
+          part that arrived after completion_seeded_at was stamped had no way
+          back onto the work order. Warn only; Complete stays enabled. */}
+      {(isCompletionOpen || ticket.status === 'completed' || ticket.status === 'billed') && (
+        <MissingFromWorkOrderNotice
+          items={missingWorkOrderItems}
+          onAdd={isCompletionOpen ? handleAddMissingToWorkOrder : undefined}
+          onExclude={isCompletionOpen ? handleExcludePartFromWorkOrder : undefined}
+          busy={loading || saving}
+        />
+      )}
       {panel}
     </>
   )

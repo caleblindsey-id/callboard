@@ -7,8 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
-import { PartRequest } from '@/types/database'
-import { isPartStagedReady } from '@/lib/parts'
+import { PartRequest, PartUsed } from '@/types/database'
+import { isPartStagedReady, isFulfillingAction, workOrderAutoAddPatch } from '@/lib/parts'
 import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
 
 type Source = 'pm' | 'service'
@@ -132,16 +132,47 @@ export async function POST(request: NextRequest) {
 
     // Pull updated_at for an optimistic-lock check on write — protects against
     // concurrent edits to different parts on the same ticket silently
-    // overwriting each other.
-    const { data: ticket, error: fetchErr } = await supabase
-      .from(table)
-      .select('id, parts_requested, status, updated_at, parts_ready_notified_at, assigned_technician_id')
-      .eq('id', ticket_id)
-      .single()
+    // overwriting each other. parts_used (+ additional_parts_used on PM) come
+    // along so the auto-add below can tell "already on the work order" from
+    // "never added" without a second round-trip.
+    //
+    // Two literal .select() branches rather than one interpolated string:
+    // additional_parts_used is PM-only, and supabase-js parses the select
+    // literal at the type level — a computed string collapses the row type to
+    // SelectQueryError. Same landmine as the parts-pull work; cast through
+    // unknown to the shape both branches share.
+    type TicketRow = {
+      id: string
+      parts_requested: PartRequest[] | null
+      parts_used: PartUsed[] | null
+      additional_parts_used?: PartUsed[] | null
+      status: string
+      updated_at: string
+      parts_ready_notified_at: string | null
+      assigned_technician_id: string | null
+    }
+    const ticketQuery =
+      source === 'pm'
+        ? supabase
+            .from('pm_tickets')
+            .select(
+              'id, parts_requested, parts_used, additional_parts_used, status, updated_at, parts_ready_notified_at, assigned_technician_id'
+            )
+            .eq('id', ticket_id)
+            .single()
+        : supabase
+            .from('service_tickets')
+            .select(
+              'id, parts_requested, parts_used, status, updated_at, parts_ready_notified_at, assigned_technician_id'
+            )
+            .eq('id', ticket_id)
+            .single()
+    const { data: ticketData, error: fetchErr } = await ticketQuery
 
-    if (fetchErr || !ticket) {
+    if (fetchErr || !ticketData) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
+    const ticket = ticketData as unknown as TicketRow
 
     // A technician may only acknowledge pickup on a ticket assigned to them.
     // Managers/coordinators (already past the gate above) may do it on any ticket.
@@ -464,6 +495,62 @@ export async function POST(request: NextRequest) {
         live.length > 0 &&
         live.every((p) => p.status === 'received' || p.status === 'from_stock')
       updatePayload.parts_received = allReceived
+    }
+
+    // --- Auto-add the fulfilled part to the work order -------------------
+    //
+    // parts_requested is procurement; parts_used / additional_parts_used are the
+    // billable work order, and ONLY the latter is read by billing, the work-order
+    // PDF, and the billing export. Nothing linked them, so a part could be
+    // requested, PO'd, received and physically collected while never appearing on
+    // the invoice — the branch bought it and ate the cost. About a quarter of
+    // fulfilled parts were going out that way, on both ticket types.
+    //
+    // Trigger is "the part just landed in the tech's hands": received against a
+    // PO, or pulled off our own shelf. Deliberately scoped to those two actions
+    // rather than to "any touch of an already-staged part" — otherwise the office
+    // patching a PO number on a received part would silently re-add a line the
+    // tech had deleted on purpose. Legacy parts received before this shipped are
+    // the reconciliation report's job, not a side effect of an unrelated edit.
+    // isPartStagedReady is still checked so a bare pull_from_stock triage (nobody
+    // has walked to the bin yet) can't slip through.
+    //
+    // This rides in the SAME fn_update_parts_queue payload as the status change
+    // (migration 145) so the part status and its work-order line land under one
+    // optimistic lock. A separate follow-up write would race the technician's
+    // completion-form autosave, which PUTs the whole array, and quietly drop the
+    // line. The tech can still delete an auto-added line; the missing-parts
+    // banner is what catches that, not merge logic here.
+    //
+    // No explicit audit write: the zz_audit_*_trg triggers (migration 058) diff
+    // every non-denylisted column, so a parts_used change is already captured.
+    // The line's own from_request_at is what marks it auto-added vs hand-typed.
+    // The decision itself lives in workOrderAutoAddPatch() (src/lib/parts.ts) so
+    // it is unit-testable without a database. Only the catalog lookup happens
+    // here: the request's unit_price is a snapshot from request time and can be
+    // weeks stale by the time the part is received, so a catalog-linked part
+    // re-prices off products.
+    if (isFulfillingAction(action) && isPartStagedReady(next)) {
+      let catalog: { unit_price: number | null; requires_detail: boolean | null } | null = null
+      if (next.product_number?.trim()) {
+        const { data: prod } = await supabase
+          .from('products')
+          .select('unit_price, requires_detail')
+          .eq('number', next.product_number.trim())
+          .maybeSingle()
+        catalog = prod ?? null
+      }
+      const autoAdd = workOrderAutoAddPatch({
+        source,
+        action,
+        part: next,
+        existingUsed: ticket.parts_used,
+        existingAdditional: ticket.additional_parts_used,
+        catalog,
+      })
+      if (autoAdd) {
+        updatePayload[autoAdd.column] = autoAdd.value
+      }
     }
 
     // "Whole order filled" tech notification. Stricter than parts_received above:
