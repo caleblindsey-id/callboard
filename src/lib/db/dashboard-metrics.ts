@@ -50,6 +50,7 @@ export async function getOpenWorkCounts(technicianId?: string): Promise<OpenWork
   let svcQ = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .in('status', OPEN_SERVICE_STATUSES)
 
   if (technicianId) {
@@ -75,6 +76,7 @@ export async function getPendingApproval(): Promise<PendingApproval> {
   const { data, error } = await supabase
     .from('service_tickets')
     .select('estimate_amount')
+    .is('deleted_at', null)
     .eq('status', 'estimated')
 
   if (error) throw error
@@ -105,6 +107,7 @@ export async function getMtdRevenue(technicianId?: string): Promise<MtdRevenue> 
   let svcQ = supabase
     .from('service_tickets')
     .select('billing_amount')
+    .is('deleted_at', null)
     .in('status', ['completed', 'billed'])
     .gte('completed_at', start)
     .lt('completed_at', end)
@@ -139,6 +142,7 @@ export async function getCreditHoldCount(): Promise<number> {
     supabase
       .from('service_tickets')
       .select('customer_id')
+      .is('deleted_at', null)
       .in('status', OPEN_SERVICE_STATUSES),
   ])
   if (pmRes.error) throw pmRes.error
@@ -171,6 +175,7 @@ export async function getStaleEstimatesCount(daysThreshold = 14): Promise<number
   const { count, error } = await supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .eq('status', 'estimated')
     .lt('created_at', cutoff)
 
@@ -188,10 +193,12 @@ export async function getEstimatesPipeline(): Promise<EstimatesPipeline> {
     supabase
       .from('service_tickets')
       .select('estimate_amount')
+      .is('deleted_at', null)
       .eq('status', 'estimated'),
     supabase
       .from('service_tickets')
       .select('estimate_amount')
+      .is('deleted_at', null)
       .in('status', ['approved', 'in_progress', 'completed', 'billed'])
       .gte('estimate_approved_at', start)
       .lt('estimate_approved_at', end),
@@ -309,6 +316,7 @@ export async function getReadyToBillCounts(): Promise<ReadyToBillCounts> {
     supabase
       .from('service_tickets')
       .select('billing_amount')
+      .is('deleted_at', null)
       .eq('status', 'completed'),
   ])
   if (pmRes.error) throw pmRes.error
@@ -342,6 +350,7 @@ export async function getReadyForPickupCounts(): Promise<ReadyForPickupCounts> {
   const { data, error } = await supabase
     .from('service_tickets')
     .select('ready_for_pickup_at, pickup_notified_at, pickup_called_at, contact_email, equipment(contact_email)')
+    .is('deleted_at', null)
     .eq('awaiting_pickup', true)
     .is('picked_up_at', null)
   if (error) throw error
