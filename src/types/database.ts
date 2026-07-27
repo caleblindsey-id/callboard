@@ -194,6 +194,16 @@ export interface PartUsed {
   vendor_item_code?: string
   vendor?: string
   vendor_code?: string
+  // Link back to the originating PartRequest, set to that request's
+  // `requested_at`. The two JSONB arrays share no id, so this is the only exact
+  // key tying a work-order line to the part request that produced it — it lets
+  // partsMissingFromWorkOrder() tell "already on the WO" from "never added"
+  // without guessing at descriptions. Stamped by the auto-add on fulfillment
+  // (parts-queue mark_received / mark_pulled / pull_from_stock) and by the
+  // manual add from the missing-parts banner. Absent on hand-typed lines and on
+  // every line predating the auto-add, which is why the matcher still falls back
+  // to synergy_product_id and then to the normalized description.
+  from_request_at?: string
 }
 
 // First-PM-on-site completion captured by the tech at lead submission
@@ -307,6 +317,17 @@ export interface PartRequest {
   // auto-stamped on ticket completion for any staged part never acknowledged.
   collected_at?: string
   collected_by?: string
+  // Deliberately kept OFF the work order: the part was fulfilled but not
+  // actually used (wrong part, machine failed differently, going back on the
+  // shelf). JSONB only — no migration. Set from the missing-parts banner, which
+  // requires a reason: a received part that goes unused is a real inventory
+  // event worth recording, not a dismissable warning. Suppresses the part from
+  // partsMissingFromWorkOrder() and from the auto-add, so re-receiving it can't
+  // silently resurrect a line the tech explicitly rejected. Distinct from
+  // `cancelled`, which means the request itself was killed before fulfillment.
+  wo_excluded_at?: string
+  wo_excluded_by?: string
+  wo_exclude_reason?: string
 }
 
 // ============================================================

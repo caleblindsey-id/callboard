@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
 import { getPartsQueue } from '@/lib/db/parts-queue'
 import type { PartsQueueSource } from '@/types/database'
@@ -59,6 +60,14 @@ export default async function PartsQueuePage({
       <PageHeader
         title="Parts Queue"
         subtitle="Parts requested by techs across PM and service tickets — enter Synergy item #, PO #, and vendor here."
+        actions={
+          <Link
+            href="/parts-queue/not-on-work-order"
+            className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+          >
+            Parts not on a work order
+          </Link>
+        }
       />
       {/* Stock-vs-order triage runs on synced qty-on-hand — warn when it's stale. */}
       <SyncStaleNotice />

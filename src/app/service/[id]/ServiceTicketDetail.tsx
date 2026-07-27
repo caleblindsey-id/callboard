@@ -8,7 +8,14 @@ import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import { PartEntry, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
-import { partLabel, partsOnOrder, partsAwaitingReview } from '@/lib/parts'
+import {
+  partLabel,
+  partsOnOrder,
+  partsAwaitingReview,
+  partsMissingFromWorkOrder,
+  requestToUsedLine,
+} from '@/lib/parts'
+import MissingFromWorkOrderNotice from '@/components/parts/MissingFromWorkOrderNotice'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
@@ -397,26 +404,6 @@ function MarginOverrideModal({ violations, onSubmit, onCancel }: MarginOverrideM
   )
 }
 
-// Requested parts eligible to copy onto the completed work order — fulfilled
-// (received, or pulled from stock) and not cancelled. Mirrors the PM ticket
-// completion-seed filter (TicketActions.tsx requestedReceived) so both ticket
-// types treat "fulfilled" the same way; unlike PM, this is copied on demand
-// via a button rather than auto-seeded (service tickets have no
-// completion_seeded_at guard to stop a re-seed from resurrecting a part the
-// tech deliberately removed).
-function fulfilledRequestedParts(requested: PartRequest[]): PartRequest[] {
-  return requested.filter(
-    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled
-  )
-}
-
-// Dedupe key for a requested part vs an already-added completion part:
-// Synergy item # when catalog-linked, else the normalized description.
-function partDedupeKey(p: { synergyProductId?: number | null; synergy_product_id?: number | null; description: string }): string {
-  const id = p.synergyProductId ?? p.synergy_product_id
-  return id != null ? `id:${id}` : `desc:${p.description.trim().toLowerCase()}`
-}
-
 export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -532,24 +519,49 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       ? partsFromSaved(ticket.parts_used)
       : []
   )
-  // Fulfilled requested parts not yet copied onto the work order — backs the
-  // "Copy Requested Parts" button below. Recomputed on every render so a part
-  // that arrives (or gets copied) updates the button immediately.
-  const copyableRequestedParts = fulfilledRequestedParts(partsRequested).filter(
-    (r) => !completionParts.some((p) => partDedupeKey(p) === partDedupeKey(r))
+  // Fulfilled requested parts not yet on the work order — backs both the "Copy
+  // Requested Parts" button and the missing-parts banner. Recomputed on every
+  // render (not seeded into state) so a part that arrives, gets auto-added, or
+  // gets copied updates the UI immediately. This is deliberately computed from
+  // the LIVE completion-form parts rather than the saved array: if the tech
+  // deletes an auto-added line, it reappears here straight away.
+  //
+  // Uses the shared matcher so the banner, the server-side auto-add, and the
+  // office reconciliation report can never disagree about whether a part is
+  // missing.
+  const copyableRequestedParts = partsMissingFromWorkOrder(
+    partsRequested,
+    toServicePartUsed(completionParts)
   )
+  // Paired with their position in parts_requested — the "not used" write
+  // addresses parts by array ordinal (same convention as the Parts Queue).
+  const missingWorkOrderItems = copyableRequestedParts.map((part) => ({
+    part,
+    index: partsRequested.indexOf(part),
+  }))
   function handleCopyRequestedParts() {
-    const converted = partsFromSaved(
-      copyableRequestedParts.map((r) => ({
-        synergy_product_id: r.synergy_product_id ?? null,
-        description: r.description,
-        quantity: r.quantity,
-        unit_price: r.unit_price ?? 0,
-        detail: r.detail,
-        product_number: r.product_number,
-      }))
-    )
+    const converted = partsFromSaved(copyableRequestedParts.map((r) => requestToUsedLine(r)))
     setCompletionParts((prev) => [...prev, ...converted])
+    // Open the completion card if it's collapsed. The parts persist either way
+    // (the completion autosave runs whenever the ticket is in_progress, not only
+    // when this card is open), but adding a line the tech can't see reads as the
+    // button having done nothing.
+    setShowCompletionForm(true)
+  }
+  // Record that a fulfilled part was deliberately not used. Soft-flag in place
+  // (never splice) — the Parts Queue addresses parts by array ordinal, so
+  // removing an element strands the queue's reference to every later part.
+  async function handleExcludePartFromWorkOrder(index: number, reason: string) {
+    const now = new Date().toISOString()
+    const updatedParts = partsRequested.map((p, i) =>
+      i === index
+        ? { ...p, wo_excluded_at: now, wo_excluded_by: userId, wo_exclude_reason: reason }
+        : p
+    )
+    await apiAction(async () => {
+      await patchTicket({ parts_requested: updatedParts })
+      setPartsRequested(updatedParts)
+    })
   }
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
@@ -1664,7 +1676,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     const now = new Date().toISOString()
     const updatedParts = partsRequested.map((p, i) =>
       i === index
-        ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId }
+        ? {
+            ...p,
+            cancelled: true,
+            // Stamp the terminal status too, not just the flag. The parts-queue
+            // `cancel` action does this (PR #247); this in-ticket path bypasses
+            // that route entirely and used to leave status at its pre-delete
+            // value, re-creating the contradictory "cancelled but pending_review"
+            // rows that #247 cleaned up. Inert either way — every tab, count and
+            // gate reads the `cancelled` flag — but the JSONB should not lie.
+            status: 'cancelled' as const,
+            cancel_reason: 'Removed from ticket',
+            cancelled_at: now,
+            cancelled_by: userId,
+          }
         : p
     )
     await apiAction(async () => {
@@ -2879,6 +2904,33 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       {/* ── Section 7: Completion Form ──
           Collapsible — opens by default in_progress; on mobile it's also the
           only open section. */}
+      {/* Parts the branch bought or pulled that never made it onto the work
+          order. Sits ABOVE the completion card, not inside its collapsed
+          "Parts Used" details — the buried Copy button is exactly why these
+          were being missed. Warn only: the Complete button stays enabled.
+          Deliberately NOT gated on showCompletionForm: gating it there would
+          hide the warning until the tech opens the completion card, which is
+          the same "you only see it if you go looking" failure the buried Copy
+          button had. Matches the PM side, which shows it for the whole
+          in-progress phase. The completion autosave is likewise keyed on
+          in_progress, so Add persists whether or not the card is open.
+
+          `onAdd` is tech-only because `parts_used` is in TECH_ALLOWED_FIELDS and
+          NOT the staff allowlist (see api/service-tickets/[id]/route.ts) — the
+          completion form is a technician flow. Offering staff a button whose
+          PATCH comes back 400 "No recognized fields" is worse than not offering
+          it. Staff still see the warning and can still mark a part not-used,
+          which writes parts_requested (allowed for both roles), and the office
+          has the full list on /parts-queue/not-on-work-order. */}
+      {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
+        <MissingFromWorkOrderNotice
+          items={missingWorkOrderItems}
+          onAdd={isTech ? handleCopyRequestedParts : undefined}
+          onExclude={handleExcludePartFromWorkOrder}
+          busy={loading || saving}
+        />
+      )}
+
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
         <div ref={completionCardRef}>
         <CompletionSection
@@ -3022,6 +3074,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               </div>
             </div>
           )}
+
+          {/* Fulfilled parts that never reached the work order. Read-only here:
+              the ticket is done, so this is the office's cue that the invoice
+              went out light, not something the tech can still fix in place. */}
+          <div className="mt-4">
+            <MissingFromWorkOrderNotice items={missingWorkOrderItems} />
+          </div>
 
           {/* Completion notes */}
           {ticket.completion_notes && (

@@ -1,4 +1,4 @@
-import type { PartRequest } from '@/types/database'
+import type { PartRequest, PartUsed } from '@/types/database'
 
 /**
  * Parts that are neither received nor cancelled — i.e. still on order.
@@ -31,6 +31,228 @@ export function partsAwaitingReview(
   parts: PartRequest[] | null | undefined
 ): PartRequest[] {
   return (parts ?? []).filter((p) => !p.cancelled && p.status === 'pending_review')
+}
+
+/**
+ * Requested parts that have actually been fulfilled — received against a PO, or
+ * pulled from our own stock — and not cancelled.
+ *
+ * Single source of truth for "the branch has this part in hand", shared by the
+ * PM completion seed, the service Copy-Requested-Parts button, the auto-add on
+ * fulfillment, and the missing-from-work-order check. Previously duplicated in
+ * ServiceTicketDetail and TicketActions, which is exactly how the two ticket
+ * types drift.
+ *
+ * Note this is deliberately looser than isPartStagedReady(): a from_stock part
+ * counts as fulfilled the moment the office triages it, whether or not anyone
+ * has physically pulled it off the shelf yet. Billing cares that we committed
+ * the part; the pickup notification cares that it's on the counter.
+ */
+export function fulfilledRequestedParts(
+  parts: PartRequest[] | null | undefined
+): PartRequest[] {
+  return (parts ?? []).filter(
+    (p) => !p.cancelled && (p.status === 'received' || p.status === 'from_stock')
+  )
+}
+
+/**
+ * Normalized description for fuzzy part matching: lowercased, stripped of every
+ * non-alphanumeric character. Techs retype descriptions freely ("MOTOR/FAN 120V
+ * W/ CRIMPS 105162" on the request vs "VAC MOTOR" on the work order), so exact
+ * string equality misses real matches and inflates the missing count.
+ */
+function normalizeDesc(text: string | null | undefined): string {
+  return (text ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * True when `used` is the work-order line for `request`. Three tiers, strongest
+ * first:
+ *   1. from_request_at — the exact link stamped by the auto-add. Unambiguous.
+ *   2. synergy_product_id — same catalog item on both sides.
+ *   3. normalized description containment, either direction, plus the Synergy
+ *      item # appearing inside the used description (a common tech shorthand:
+ *      request "621923-001 Squeegee", WO line "Squeegee").
+ *
+ * Tier 3 is intentionally generous. A false match under-reports the problem;
+ * a false MISS nags the tech about a part that is already billed, which trains
+ * them to ignore the banner. Under-reporting is the cheaper error here.
+ */
+function usedLineMatchesRequest(used: PartUsed, request: PartRequest): boolean {
+  if (used.from_request_at && request.requested_at) {
+    return used.from_request_at === request.requested_at
+  }
+  if (request.synergy_product_id != null && used.synergy_product_id != null) {
+    if (used.synergy_product_id === request.synergy_product_id) return true
+  }
+  const usedDesc = normalizeDesc(used.description)
+  if (!usedDesc) return false
+  const partNo = normalizeDesc(request.product_number)
+  if (partNo.length > 3 && usedDesc.includes(partNo)) return true
+  const reqDesc = normalizeDesc(request.description)
+  if (reqDesc.length <= 3) return false
+  return usedDesc.includes(reqDesc) || reqDesc.includes(usedDesc)
+}
+
+/**
+ * Fulfilled requested parts that never made it onto the work order.
+ *
+ * This is the whole point of the feature. `parts_requested` (procurement) and
+ * `parts_used` / `additional_parts_used` (the billable work order) are separate
+ * JSONB arrays with no foreign key, and only the latter is read by billing, the
+ * work-order PDF, and the billing export. A part could be requested, PO'd,
+ * received, collected by the tech, and shown as fully fulfilled in the Parts
+ * Queue while being worth $0 on the invoice — the branch eats the cost. Roughly
+ * a quarter of fulfilled parts were landing that way.
+ *
+ * Pass every billable array the ticket has: service tickets pass parts_used; PM
+ * tickets pass parts_used AND additional_parts_used, since a part may sit in
+ * either depending on covered_by_agreement.
+ *
+ * Single source of truth behind the auto-add dedupe, the tech-facing banner,
+ * and the office reconciliation report, so the three can't disagree about
+ * whether a part is missing. (Same lesson as the from_stock waiting-count bug:
+ * a hand-rolled second copy of this predicate is how it breaks.)
+ */
+export function partsMissingFromWorkOrder(
+  requested: PartRequest[] | null | undefined,
+  ...usedArrays: Array<PartUsed[] | null | undefined>
+): PartRequest[] {
+  const used = usedArrays.flatMap((arr) => arr ?? [])
+  return fulfilledRequestedParts(requested).filter(
+    (r) => !r.wo_excluded_at && !used.some((u) => usedLineMatchesRequest(u, r))
+  )
+}
+
+/** The bits of a `products` row the work-order line cares about. */
+export type PartCatalogInfo = {
+  unit_price?: number | null
+  requires_detail?: boolean | null
+}
+
+/**
+ * Convert a fulfilled part request into a work-order line.
+ *
+ * `catalog` supplies the live products-table values when the part is
+ * catalog-linked. The price on the request is a snapshot from request time and
+ * can be weeks stale by the time the part is received, so the catalog price
+ * wins when we have one. Falls back to the request's own unit_price (already
+ * the CUSTOMER price — see the gate in validateNewManualPartRequests — not
+ * cost), then to 0. Manual off-catalog parts have no catalog row and keep the
+ * price the tech captured, which is the only price anyone ever had for them.
+ *
+ * Carries the sourcing fields through so an auto-added line is indistinguishable
+ * from a properly hand-entered one downstream, and stamps from_request_at so the
+ * part is never double-added.
+ */
+export function requestToUsedLine(
+  request: PartRequest,
+  catalog?: PartCatalogInfo | null
+): PartUsed {
+  const catalogPrice = catalog?.unit_price
+  const price =
+    typeof catalogPrice === 'number' && Number.isFinite(catalogPrice)
+      ? catalogPrice
+      : typeof request.unit_price === 'number' && Number.isFinite(request.unit_price)
+        ? request.unit_price
+        : 0
+  const line: PartUsed = {
+    synergy_product_id: request.synergy_product_id ?? null,
+    quantity: request.quantity,
+    description: request.description,
+    unit_price: price,
+  }
+  if (request.detail) line.detail = request.detail
+  if (catalog?.requires_detail) line.requires_detail = true
+  if (request.product_number) line.product_number = request.product_number
+  if (request.vendor_item_code) line.vendor_item_code = request.vendor_item_code
+  if (request.vendor) line.vendor = request.vendor
+  if (request.vendor_code) line.vendor_code = request.vendor_code
+  if (request.requested_at) line.from_request_at = request.requested_at
+  return line
+}
+
+/**
+ * Actions that mean "this part just landed in the tech's hands" and so should
+ * put a line on the work order.
+ *
+ * Deliberately NOT "any touch of an already-staged part": otherwise the office
+ * patching a PO number on a received part would silently re-add a line the tech
+ * had deleted on purpose. Parts fulfilled before this feature shipped are the
+ * reconciliation report's job, not a side effect of an unrelated edit.
+ */
+export function isFulfillingAction(action: string): boolean {
+  return action === 'mark_received' || action === 'mark_pulled'
+}
+
+/**
+ * Decide whether a part that just changed state needs a work-order line, and
+ * which array it belongs in.
+ *
+ * Pure so it can be tested without a database: the caller does the catalog
+ * lookup and hands the result in. Returns the columns to merge into the
+ * fn_update_parts_queue payload — which is how the line lands under the SAME
+ * optimistic lock as the part status (migration 145). A separate follow-up
+ * write would race the technician's completion-form autosave, which PUTs the
+ * whole array, and quietly drop the line.
+ *
+ * `null` means "nothing to do": wrong action, part not actually in hand, part
+ * already on the work order (so a re-fired mark_received is idempotent), or the
+ * tech explicitly marked it not-used.
+ */
+export function workOrderAutoAddPatch(input: {
+  source: 'pm' | 'service'
+  action: string
+  part: PartRequest
+  existingUsed: PartUsed[] | null | undefined
+  existingAdditional?: PartUsed[] | null | undefined
+  catalog?: PartCatalogInfo | null
+}): { column: 'parts_used' | 'additional_parts_used'; value: PartUsed[]; line: PartUsed } | null {
+  const { source, action, part, catalog } = input
+  const existingUsed = input.existingUsed ?? []
+  const existingAdditional = input.existingAdditional ?? []
+
+  if (!isFulfillingAction(action)) return null
+  // Stricter than fulfilledRequestedParts: a from_stock part only counts once
+  // someone has physically pulled it, so a bare pull_from_stock triage can't
+  // put a line on the work order before the part leaves the shelf.
+  if (!isPartStagedReady(part)) return null
+
+  // Same predicate the banner and the office report use, so the three can never
+  // disagree about whether this part is already accounted for.
+  const stillMissing = partsMissingFromWorkOrder(
+    [part],
+    existingUsed,
+    source === 'pm' ? existingAdditional : null
+  )
+  if (stillMissing.length === 0) return null
+
+  const line = requestToUsedLine(part, catalog)
+
+  // PM splits covered-by-agreement parts (parts_used, forced to $0 at
+  // completion) from billable extras (additional_parts_used), using the same
+  // predicate as the completion seed in TicketActions so the auto-add and the
+  // seed can never route the same part to different arrays. Service tickets
+  // have a single billable array.
+  if (source === 'pm' && !isCoveredByAgreement(part)) {
+    return { column: 'additional_parts_used', value: [...existingAdditional, line], line }
+  }
+  return { column: 'parts_used', value: [...existingUsed, line], line }
+}
+
+/**
+ * True when a fulfilled PM part is covered by the service agreement (goes on
+ * parts_used at $0) rather than billable (goes on additional_parts_used at
+ * price).
+ *
+ * `undefined` means the request predates the coverage picker, and defaults to
+ * BILLABLE so a legacy part surfaces for review instead of silently going out
+ * at $0. Mirrors the existing completion-seed split in TicketActions so the
+ * auto-add and the seed can't route the same part differently.
+ */
+export function isCoveredByAgreement(part: PartRequest): boolean {
+  return part.covered_by_agreement === true
 }
 
 /**
