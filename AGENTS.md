@@ -39,9 +39,25 @@ guarded or not, because the checker only flags reads. That is why
 `src/app/api/billing/pdf/route.ts`'s CAS write carried no `deleted_at` or
 `status` guard for two review rounds after the read on the same route was
 already fixed: the write was invisible to `npm test` the whole time and
-needed a manual grep for `.update(` chains on these two tables to find. When
-you touch a bulk write on either table, check it by hand; a passing test run
-is not evidence the write is safe.
+needed a manual review to find. When you touch a bulk write on either
+table, check it by hand; a passing test run is not evidence the write is
+safe.
+
+A manual review of these writes has itself proven fallible once already:
+one sweep found and fixed five id-set writes across five routes, a second
+sweep found and fixed a sixth, and both still missed two more
+(`billing/service/mark-billed/route.ts`'s pickup-stage update and
+`notify-assignment.ts`'s audit-stamp update, both several dozen lines below
+a write already checked in the same file, and both trusting an id set
+filtered a few lines earlier in the same request rather than carrying
+their own guard). The pattern in both misses is the same: a file gets
+marked "checked" after its first or most obvious `.update(` is fixed, and a
+second write lower in the same file is never re-examined. The miss was
+only caught by re-deriving the full list from scratch: grep every
+`.in('id', ...)` in the repo (not just ones next to a `.update(` you
+already noticed), then check the table for every single match, including
+matches in files you have already touched. Do not treat a file as done
+because one write in it is guarded.
 
 Prefer `applyServiceTicketFilters()` in `src/lib/db/service-tickets.ts` for board
 and count queries. It already handles the default-hide, deletedOnly, and

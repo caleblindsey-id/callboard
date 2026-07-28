@@ -278,6 +278,7 @@ export async function notifyTechOfBulkAssignment(
         assigned_notify_message_id: sendResult.messageId,
       })
       .in('id', tickets.map((t) => t.id))
+      .is('deleted_at', null)
   } catch (err) {
     console.error('notifyTechOfBulkAssignment: audit write failed', err)
   }

@@ -201,6 +201,7 @@ export async function POST(request: NextRequest) {
           ready_for_pickup_at: new Date().toISOString(),
         })
         .in('id', toStage)
+        .is('deleted_at', null)
         .is('ready_for_pickup_at', null)
 
       if (stageError) {
