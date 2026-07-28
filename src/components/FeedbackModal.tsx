@@ -134,7 +134,7 @@ export default function FeedbackModal({ onClose, initialAttachment, captureFaile
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
               <span className="text-2xl">✓</span>
             </div>
-            <div className="text-sm font-medium text-gray-900 dark:text-white">Thanks — we'll review it.</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-white">Thanks, we&apos;ll review it.</div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
@@ -169,7 +169,7 @@ export default function FeedbackModal({ onClose, initialAttachment, captureFaile
             {/* Body */}
             <div>
               <label htmlFor="feedback-body" className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                What's going on?
+                What&apos;s going on?
               </label>
               <textarea
                 id="feedback-body"

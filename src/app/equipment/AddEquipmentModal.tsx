@@ -141,6 +141,9 @@ export default function AddEquipmentModal({
   // Debounced customer search
   useEffect(() => {
     if (!customerSearch.trim()) {
+      // Deliberate reset-on-input-change; see "Lint:
+      // react-hooks/set-state-in-effect" in AGENTS.md.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCustomerResults([])
       setComboOpen(false)
       return
@@ -179,6 +182,10 @@ export default function AddEquipmentModal({
 
   // Load ship-to locations when customer changes
   useEffect(() => {
+    // Clearing the selection before the fetch is the point: a stale ship-to
+    // from the previous customer must never remain selectable. See "Lint:
+    // react-hooks/set-state-in-effect" in AGENTS.md.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShipToLocationId('')
     setShipToLocations([])
     if (!customerId) return

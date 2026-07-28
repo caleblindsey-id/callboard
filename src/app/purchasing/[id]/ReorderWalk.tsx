@@ -485,6 +485,7 @@ export default function ReorderWalk({ session, initialLines, vendors }: ReorderW
     if (!offlineQueue.ready || appliedInitialQueueRef.current) return
     appliedInitialQueueRef.current = true
     if (offlineQueue.queuedByLineId.size === 0) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLines((prev) =>
       prev.map((l) => {
         const queued = offlineQueue.queuedByLineId.get(l.id)
