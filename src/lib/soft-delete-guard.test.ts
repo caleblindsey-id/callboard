@@ -142,12 +142,18 @@ test('a guard on a DIFFERENT variable in the same function does not count', () =
 
 test('the SAME variable name guarded in a DIFFERENT function does not leak across (dashboard-metrics.ts regression)', () => {
   // dashboard-metrics.ts declares `svcQ` in both getOpenWorkCounts and
-  // getMtdRevenue. Only one of those two chains carries the guard. A
-  // whole-file, name-only siblingGuards set would (and did) wrongly mark
-  // both as guarded. Scope-qualifying the key must keep them apart.
+  // getMtdRevenue. Only one of those two chains carries the guard. The OLD,
+  // unscoped implementation built siblingGuards from the bare variable name,
+  // so a guarded `svcQ` chain in some OTHER function would add just 'svcQ' to
+  // the set, and `siblingGuards.has('svcQ')` would then incorrectly match this
+  // chain too. This test must discriminate: it hands classify a set containing
+  // ONLY the bare name (what the old code would have built), against a chain
+  // scope-qualified as 'fnA'. Bare-name lookup would find 'svcQ' present and
+  // wrongly return 'guarded'; scope-qualified lookup correctly rejects it
+  // because 'fnA::svcQ' is not in the set.
   const unguardedInFnA = chain([['select', ['id']]], { variableName: 'svcQ', scopeId: 'fnA' })
-  const siblingGuardsFromFnB = new Set(['fnB::svcQ'])
-  assert.equal(classify(unguardedInFnA, siblingGuardsFromFnB).kind, 'violation')
+  const bareNameSiblingGuards = new Set(['svcQ'])
+  assert.equal(classify(unguardedInFnA, bareNameSiblingGuards).kind, 'violation')
 })
 
 test('extractChains assigns different scopeIds to the same variable name declared in two different functions', () => {
@@ -208,6 +214,8 @@ test('the reassignment form q = q.eq(...).is(deleted_at) registers as guarded (A
 
 test('a chain passed to applyServiceTicketFilters(...) is exempt via helper delegation', () => {
   const src = `
+    function applyServiceTicketFilters(q, filters) { return q }
+
     const baseQuery = () =>
       applyServiceTicketFilters(
         supabase.from('service_tickets').select('id', { count: 'exact', head: true }),
@@ -222,6 +230,57 @@ test('a chain passed to applyServiceTicketFilters(...) is exempt via helper dele
   assert.equal(verdict.kind, 'exempt')
 })
 
+test('helper delegation only counts the query as the FIRST argument, not any position (F1)', () => {
+  // applyServiceTicketFilters(otherQ, ourQuery) puts our chain in the filters
+  // position, not the query position. Only arguments[0] may be exempt.
+  const src = `
+    function applyServiceTicketFilters(q, filters) { return q }
+
+    const baseQuery = () =>
+      applyServiceTicketFilters(
+        otherQ,
+        supabase.from('service_tickets').select('id', { count: 'exact', head: true })
+      )
+  `
+  const chains = extractChains(src, 'probe.ts')
+  assert.equal(chains.length, 1)
+  assert.equal(chains[0].passedToHelper, null)
+  assert.equal(classify(chains[0], NO_SIBLINGS).kind, 'violation')
+})
+
+test('a bare call to a same-named local helper is NOT exempt without a definition or import in this file (F2)', () => {
+  // The real applyServiceTicketFilters is module-private to service-tickets.ts
+  // and never exported. A file that calls something with the same name but
+  // neither declares nor imports it must not get a free exemption.
+  const src = `
+    const baseQuery = () =>
+      applyServiceTicketFilters(
+        supabase.from('service_tickets').select('id', { count: 'exact', head: true }),
+        filters
+      )
+  `
+  const chains = extractChains(src, 'probe.ts')
+  assert.equal(chains.length, 1)
+  assert.equal(chains[0].passedToHelper, null)
+  assert.equal(classify(chains[0], NO_SIBLINGS).kind, 'violation')
+})
+
+test('an imported applyServiceTicketFilters is honored just like a local declaration (F2)', () => {
+  const src = `
+    import { applyServiceTicketFilters } from './service-tickets'
+
+    const baseQuery = () =>
+      applyServiceTicketFilters(
+        supabase.from('service_tickets').select('id', { count: 'exact', head: true }),
+        filters
+      )
+  `
+  const chains = extractChains(src, 'probe.ts')
+  assert.equal(chains.length, 1)
+  assert.equal(chains[0].passedToHelper, 'applyServiceTicketFilters')
+  assert.equal(classify(chains[0], NO_SIBLINGS).kind, 'exempt')
+})
+
 test('the reassignment form X = applyServiceTicketFilters(X, ...) registers as guarded (getServiceTickets shape)', () => {
   // service-tickets.ts:getServiceTickets reassigns through the helper rather
   // than chaining .is(...) or passing the from(...) expression straight in.
@@ -230,6 +289,8 @@ test('the reassignment form X = applyServiceTicketFilters(X, ...) registers as g
     fs.writeFileSync(
       path.join(tmpDir, 'probe.ts'),
       `
+        function applyServiceTicketFilters(q, filters) { return q }
+
         export async function getServiceTickets(filters?: ServiceTicketFilters) {
           let query = supabase
             .from('service_tickets')
@@ -242,6 +303,57 @@ test('the reassignment form X = applyServiceTicketFilters(X, ...) registers as g
     )
     const findings = scanRepo(tmpDir)
     assert.equal(findings.length, 0)
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('a variable name reused for two different .from() chains in one function fails closed either direction (F4)', () => {
+  // Fail-closed within-one-function collision, distinct from the cross-function
+  // case above: a plain re-declaration of the same name to an entirely
+  // different, unguarded query must not inherit the first declaration's guard.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'soft-delete-guard-test-'))
+  try {
+    fs.writeFileSync(
+      path.join(tmpDir, 'probe.ts'),
+      `
+        export async function listSomething(cond: boolean) {
+          let q = supabase.from('service_tickets').select('id').is('deleted_at', null)
+          if (cond) {
+            q = supabase.from('service_tickets').select('id')
+          }
+          return q
+        }
+      `
+    )
+    const findings = scanRepo(tmpDir)
+    // The first (directly guarded) chain must not produce a finding; the
+    // second (unguarded, same name) must, and must not be masked by the first.
+    assert.equal(findings.length, 1)
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('guarded and unguarded copies of the same variable name in if/else branches also fail closed (F4)', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'soft-delete-guard-test-'))
+  try {
+    fs.writeFileSync(
+      path.join(tmpDir, 'probe.ts'),
+      `
+        export async function listSomething(cond: boolean) {
+          if (cond) {
+            let q = supabase.from('service_tickets').select('id').is('deleted_at', null)
+            return q
+          } else {
+            let q = supabase.from('service_tickets').select('id')
+            return q
+          }
+        }
+      `
+    )
+    const findings = scanRepo(tmpDir)
+    assert.equal(findings.length, 1)
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   }

@@ -20,10 +20,10 @@ export type QueryChain = {
   // declares `svcQ` in both getOpenWorkCounts and getMtdRevenue) cannot leak a
   // guard from one function into an unguarded chain in the other.
   scopeId: string
-  // Name of the helper this chain's outermost expression is passed into as an
-  // argument (e.g. 'applyServiceTicketFilters'), or null. That helper applies
-  // the soft-delete guard internally, on a query object the checker cannot see
-  // chained inline.
+  // Name of the helper this chain's outermost expression is passed into as its
+  // first (query) argument (e.g. 'applyServiceTicketFilters'), or null. That
+  // helper owns the soft-delete decision for a query object the checker
+  // cannot see chained inline.
   passedToHelper: string | null
 }
 
@@ -88,20 +88,38 @@ function scopeIdFor(node: ts.Node): string {
   return '<module>'
 }
 
-// The one shared filter helper whose default branch applies
-// .is('deleted_at', null) internally (src/lib/db/service-tickets.ts:45-69).
-// A chain passed straight into it as an argument is guarded by the helper,
-// even though the checker never sees .is(...) chained onto this expression.
+// The one shared filter helper that owns the soft-delete decision for a query
+// it is handed: default hides deleted rows, deletedOnly flips to deleted-only,
+// includeDeleted skips the predicate entirely (src/lib/db/service-tickets.ts:45-69,
+// all three are explicit caller opt-ins the helper itself decides between). A
+// chain passed straight into it as the query argument is exempt, even though
+// the checker never sees .is(...) chained onto this expression.
 const DELEGATION_HELPER = 'applyServiceTicketFilters'
 
-function helperDelegation(outermost: ts.Node): string | null {
+// Bare-identifier matching on DELEGATION_HELPER would blind-exempt any file
+// that happens to declare or import a same-named local function, since the
+// real helper is module-private to service-tickets.ts and not exported. This
+// is a proportionate guard, not a module resolver: it only asks whether THIS
+// file's own source defines or imports something named applyServiceTicketFilters.
+function definesOrImportsHelper(sourceText: string): boolean {
+  const declares = new RegExp(`\\bfunction\\s+${DELEGATION_HELPER}\\s*[(<]`).test(sourceText)
+  const imports = new RegExp(`import[\\s\\S]*?\\{[\\s\\S]*?\\b${DELEGATION_HELPER}\\b[\\s\\S]*?\\}[\\s\\S]*?from`).test(
+    sourceText
+  )
+  return declares || imports
+}
+
+function helperDelegation(outermost: ts.Node, helperAvailable: boolean): string | null {
+  if (!helperAvailable) return null
   const parent = outermost.parent
   if (
     parent &&
     ts.isCallExpression(parent) &&
     ts.isIdentifier(parent.expression) &&
     parent.expression.text === DELEGATION_HELPER &&
-    parent.arguments.some((a) => a === outermost)
+    // Only the first (query) argument counts. applyServiceTicketFilters(otherQ, ourQuery)
+    // would put `outermost` in the filters position, not the query position.
+    parent.arguments[0] === outermost
   ) {
     return DELEGATION_HELPER
   }
@@ -134,6 +152,7 @@ function assignedVariable(outermost: ts.Node): string | null {
 export function extractChains(sourceText: string, fileName: string): QueryChain[] {
   const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const chains: QueryChain[] = []
+  const helperAvailable = definesOrImportsHelper(sourceText)
 
   const visit = (node: ts.Node): void => {
     if (
@@ -152,7 +171,7 @@ export function extractChains(sourceText: string, fileName: string): QueryChain[
           line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
           variableName: assignedVariable(outermost),
           scopeId: scopeIdFor(node),
-          passedToHelper: helperDelegation(outermost),
+          passedToHelper: helperDelegation(outermost, helperAvailable),
         })
       }
     }
@@ -183,12 +202,13 @@ function hasGuard(methods: ChainMethod[]): boolean {
 // This walks every `X = ...` assignment and records a scope-qualified key when
 // either of two guard-equivalent shapes appears:
 //   Form 1: X = X.<chain>, with `.is('deleted_at', ...)` anywhere in the chain.
-//   Form 2: X = applyServiceTicketFilters(X, ...) — reassigns through the
+//   Form 2: X = applyServiceTicketFilters(X, ...), which reassigns through the
 //   shared helper (service-tickets.ts:45-69, getServiceTickets:117) instead of
 //   chaining .is(...) directly. Same guarantee, different shape.
 function reassignmentGuardKeys(sourceText: string, fileName: string): Set<string> {
   const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const keys = new Set<string>()
+  const helperAvailable = definesOrImportsHelper(sourceText)
 
   const visit = (node: ts.Node): void => {
     if (
@@ -210,6 +230,7 @@ function reassignmentGuardKeys(sourceText: string, fileName: string): Set<string
       const isChainForm = carriesGuard && ts.isIdentifier(cur) && cur.text === name
 
       const isHelperReassignForm =
+        helperAvailable &&
         ts.isCallExpression(node.right) &&
         ts.isIdentifier(node.right.expression) &&
         node.right.expression.text === DELEGATION_HELPER &&
@@ -246,7 +267,7 @@ export function classify(chain: QueryChain, siblingGuards: Set<string>): Verdict
   if (passedToHelper) {
     return {
       kind: 'exempt',
-      why: `delegates soft-delete scoping to ${passedToHelper}(...), which applies .is('deleted_at', null) internally`,
+      why: `delegates soft-delete handling to ${passedToHelper}(...), which owns the soft-delete decision for this query (default hide, deletedOnly, or includeDeleted, per its caller's filters)`,
     }
   }
 
@@ -280,7 +301,7 @@ function walkFiles(dir: string, out: string[] = []): string[] {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue
       walkFiles(path.join(dir, entry.name), out)
-    } else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith('.test.ts')) {
+    } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
       out.push(path.join(dir, entry.name))
     }
   }
@@ -300,15 +321,39 @@ export function scanRepo(rootDir: string): Finding[] {
     const rel = path.relative(process.cwd(), abs).split(path.sep).join('/')
     const chains = extractChains(text, abs)
 
+    // Scope qualification (QueryChain.scopeId) closes the cross-FUNCTION
+    // version of this leak, but not the within-one-function version: reusing
+    // one variable name for two different .from() chains in the same scope
+    // (a plain re-declaration, or guarded/unguarded copies in if/else branches)
+    // still shares one scope::variable key. We do not attempt flow or block
+    // analysis to tell those apart. Fail closed instead: if a scope has more
+    // than one .from() chain landing on the same variable name, that slot is
+    // ambiguous, so it never participates in sibling-guard matching at all,
+    // in either direction. Worst case this flags a safe query as a finding,
+    // which is the direction it is safe to be wrong in.
+    const slotOccurrences = new Map<string, number>()
+    for (const c of chains) {
+      if (!c.variableName) continue
+      const key = `${c.scopeId}::${c.variableName}`
+      slotOccurrences.set(key, (slotOccurrences.get(key) ?? 0) + 1)
+    }
+    const isAmbiguousSlot = (key: string) => (slotOccurrences.get(key) ?? 0) > 1
+
     // Variables that receive the guard anywhere in this file, for the
     // reassignment form. Collected per file, keyed per scope+variable so the
     // same variable name reused in a different function never leaks a guard
     // across the boundary (see QueryChain.scopeId).
     const siblingGuards = new Set<string>()
     for (const c of chains) {
-      if (c.variableName && hasGuard(c.methods)) siblingGuards.add(`${c.scopeId}::${c.variableName}`)
+      if (!c.variableName) continue
+      const key = `${c.scopeId}::${c.variableName}`
+      if (isAmbiguousSlot(key)) continue
+      if (hasGuard(c.methods)) siblingGuards.add(key)
     }
-    for (const key of reassignmentGuardKeys(text, abs)) siblingGuards.add(key)
+    for (const key of reassignmentGuardKeys(text, abs)) {
+      if (isAmbiguousSlot(key)) continue
+      siblingGuards.add(key)
+    }
 
     for (const c of chains) {
       // A dynamic table name in a file that mentions neither table is not ours.
