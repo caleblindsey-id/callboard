@@ -15,3 +15,18 @@ npm run check:migrations
 ```
 
 This compares `supabase/migrations/*.sql` against the database's applied set (via the `public.applied_migrations` RPC, migration 092) and fails loudly on any repo migration that was never applied. Note: the recorded migration **names** diverge from the repo `NNN_` filenames, and the baseline migrations (001–006) predate tracking — reconcile by **effect**, not by number. Known-divergent/baseline files are allowlisted in `scripts/check-migration-drift.mjs`.
+
+# Soft-deleted tickets
+
+`service_tickets.deleted_at` and `pm_tickets.deleted_at` are soft deletes, and a
+deleted ticket keeps its pre-delete status. RLS does NOT filter deleted rows: the
+select policies scope by role only. So every multi-row read that counts, sums, or
+lists needs `.is('deleted_at', null)` or it silently inflates.
+
+`npm test` enforces this. If a read is deliberately unguarded (a by-id lookup, a
+write, audit-trail resolution), add an entry with a reason to
+`src/lib/soft-delete-allowlist.ts`.
+
+Prefer `applyServiceTicketFilters()` in `src/lib/db/service-tickets.ts` for board
+and count queries. It already handles the default-hide, deletedOnly, and
+includeDeleted cases.
