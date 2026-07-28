@@ -14,22 +14,23 @@ The app knows the answer already. `NextStepBar.tsx:200` renders **Start Work** o
 
 ### Size of it
 
-Measured against `callboard-dev`, 2026-07-28:
+Measured against **production**, 2026-07-28. Note for anyone re-running these: production is the Supabase project named *"Scheduler Program"* (`haohkybnmnpuxpiykjvb`) — the name is legacy, and it is what `.env.local` points at. The project named `callboard-dev` is a snapshot frozen on 2026-06-23 with no activity since; an earlier draft of this spec measured against it and got materially different numbers.
 
-| Approved tickets (not deleted) | 34 |
+| Approved tickets (not deleted) | 22 |
 |---|---|
-| Have live pending parts — Start Work is hidden | **15** |
-| Startable | 19 |
+| Have live pending parts — Start Work is hidden | **11** |
+| Startable | 11 |
 | Carrying an open credit review | 0 |
+| Average age | 31 days (oldest 174) |
 
-**44% of the queue is not actionable, and the board gives no signal which 44%.**
+**Half the queue is not actionable, and the board gives no signal which half.**
 
 ### Why the existing control does not cover it
 
 A `Waiting on Parts` checkbox already exists in the FilterBar. It fails this use case twice over:
 
 1. **It is one-way.** It shows the *blocked* tickets. Tamara wants the complement — the ones she can send.
-2. **It is inaccurate.** It keys off the `parts_received` column, which disagrees with the detail page's derivation on **4 of the 34** approved rows: tickets whose every live part is `cancelled` or `from_stock` read as "waiting" on the board while their detail page shows a live Start Work button.
+2. **It is inaccurate, latently.** It keys off the `parts_received` column, and **22 tickets in prod carry a wrong value** — every live part `cancelled` or `from_stock`, yet still flagged as waiting. None of those 22 are sitting in `approved` today, so the filter is not actively misreporting the Approved tab; the wrongness is one status transition away, and the derivation that produces it is still live in the codebase. (In the stale `callboard-dev` snapshot, 4 of 34 approved rows *were* affected — which is how this surfaced.)
 
 That inaccuracy is a symptom of a deeper split. "Are this ticket's parts in?" is currently computed **three different ways**:
 
@@ -72,9 +73,13 @@ Both write paths call it: `api/service-tickets/[id]/route.ts:985` and `api/parts
 
 ### 2. Migration 146 — backfill
 
-Existing rows were written under the old rules, so the code fix alone leaves them wrong (the 4 drifting approved rows in dev, plus the prod equivalent). Migration 146 sets `parts_received = true` wherever no live pending part remains.
+Existing rows were written under the old rules, so the code fix alone leaves them wrong. `146_backfill_parts_received.sql` sets `parts_received = true` wherever no live pending part remains. It skips empty `parts_requested` (see §3), includes soft-deleted rows (deletion is reversible; a restored ticket should come back correct), and is idempotent.
 
-Per AGENTS.md there is no CI step that applies migrations: this gets applied to dev in the same change, the prod SQL is handed over explicitly, and `npm run check:migrations` confirms no drift after deploy.
+Scope: **22 rows in prod**, 11 in the dev snapshot.
+
+**Ordering is load-bearing.** The backfill must land *after* the §1 code alignment, not before. `api/service-tickets/[id]/route.ts:985` still excludes `from_stock`, so while it is live, the next parts PATCH on a backfilled ticket rewrites the column back to `false`. Backfilling first produces a fix that quietly decays.
+
+Per AGENTS.md there is no CI step that applies migrations. Status: **applied to `callboard-dev` 2026-07-28** (recorded as `146_backfill_parts_received`; verified 0 remaining drift, 0 inverse drift, 0 part-less rows flipped). **Not yet applied to prod** — that waits on the code change shipping, then `npm run check:migrations` to confirm no drift.
 
 ### 3. Filter predicates
 
@@ -95,7 +100,9 @@ The chip says `Parts 2 of 3`, which the boolean alone cannot supply, and the lis
 
 The counts come from a single aggregate over the **`parts_order_queue`** view for the ticket ids on the current page — one indexed query, no blob.
 
-The view carries its own status gate (migration 055 restricts it to approved-and-later tickets), so it is only a valid source on the tabs where the chip renders. Verified: across all **39** approved + in-progress rows in dev, the view's pending count and the JSONB derivation agree on **39/39**. The chip renders on exactly those two stages.
+The view carries its own status gate (migration 055 restricts it to approved-and-later tickets), so it is only a valid source on the tabs where the chip renders — and the chip renders on exactly those two stages. Verified against both databases: the view's pending count and the JSONB derivation agree on **32/32** approved + in-progress rows in prod, and **39/39** in the dev snapshot.
+
+Across all statuses the view under-reports (18 vs 21 tickets-with-pending-parts in dev) precisely because of that status gate. That is the reason the chip is scoped to Approved and In Progress rather than being generalized to every tab.
 
 ### 5. Credit is a chip, not a predicate
 
@@ -105,7 +112,7 @@ It is **not** in the `ready` predicate. Three reasons:
 
 1. **Not expressible server-side.** "Has no open credit review" is an anti-join against a child table. PostgREST cannot do it: a non-inner embed nulls the embed but still returns the parent row — the same constraint that forced `customers!inner` on the `poNeeded` path (`lib/db/service-tickets.ts:79-82`). Including it would mean dropping rows client-side, which re-introduces the page-1 cap that killed the derive-per-request approach and makes the `Showing N of M` footer under-count.
 2. **It would make the board contradict the detail page.** `viewerHasPrimaryAction` (`ServiceTicketDetail.tsx:2054`) gates Start Work on parts *alone*. A credit-blocked approved ticket renders the button today. A board claiming "not ready" about a ticket whose detail page offers Start Work is a worse failure than the one being fixed.
-3. **Zero affected rows** among approved tickets in dev.
+3. **Zero affected rows** — no approved ticket in prod (or in the dev snapshot) currently carries an open credit review.
 
 Credit instead makes the **chip** credit-aware — pure render, zero query cost, since the data is already on the row. An approved row with an open credit review shows its credit state rather than a green `Ready`, so the board never displays "Ready" beside a red "Credit blocked" badge.
 
