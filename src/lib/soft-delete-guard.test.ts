@@ -56,3 +56,24 @@ test('records the variable a chain is assigned to', () => {
   const chains = extractChains(src, 'probe.ts')
   assert.equal(chains[0].variableName, 'svcQ')
 })
+
+test('the walk survives await and parentheses mid-chain', () => {
+  const src = `
+    const { count } = (await supabase
+      .from('service_tickets')
+      .select('id', { count: 'exact', head: true })
+      .is('deleted_at', null))
+  `
+  const chains = extractChains(src, 'probe.ts')
+  assert.equal(chains.length, 1)
+  assert.deepEqual(chains[0].methods.map((m) => m.name), ['select', 'is'])
+})
+
+test('line numbers are accurate for chains not starting on line 1', () => {
+  const src = `const x = 1
+const y = 2
+const { data } = await supabase.from('service_tickets').select('id')`
+  const chains = extractChains(src, 'probe.ts')
+  assert.equal(chains.length, 1)
+  assert.equal(chains[0].line, 3)
+})
