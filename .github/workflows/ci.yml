@@ -1,0 +1,58 @@
+name: CI
+
+# Enforcement that a local hook cannot provide. .githooks/pre-push only exists on
+# branches that contain it and only after npm install has run, so long-lived
+# branches and web-UI merges are unenforced. master auto-deploys to production,
+# so this is the last gate before a bad query ships.
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+# A new push to the same PR cancels the previous run rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the local dev version. The test runner relies on Node's own
+          # glob expansion of "src/**/*.test.ts", which needs a recent Node.
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Guards against a regression of the bug fixed alongside this workflow:
+      # an unquoted glob let sh expand the pattern and silently run 117 of 254
+      # tests. A suite that quietly shrinks is worse than one that fails, so
+      # assert a floor rather than trusting the exit code alone.
+      - name: Assert the whole suite actually ran
+        run: |
+          COUNT=$(npm test 2>&1 | grep -E "^. tests [0-9]+" | grep -oE "[0-9]+" | tail -1)
+          echo "Test count: $COUNT"
+          if [ -z "$COUNT" ] || [ "$COUNT" -lt 250 ]; then
+            echo "Expected at least 250 tests, got '$COUNT'."
+            echo "The test glob may have silently stopped matching nested files."
+            exit 1
+          fi
+
+# Lint is deliberately NOT gated here. It exits non-zero on 9 pre-existing errors
+# unrelated to this workflow, so gating it would fail every PR from day one and
+# the whole check would get switched off. Add it once those are cleared.
