@@ -191,8 +191,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch ticket data' }, { status: 500 })
     }
 
-    if (!rawTickets || rawTickets.length === 0) {
-      return NextResponse.json({ error: 'No tickets found for the provided IDs' }, { status: 404 })
+    // Strict count check (mirrors mark-billed/unexport/service export): a
+    // batch that includes a deleted, non-completed, or otherwise missing id
+    // must fail the whole request, not silently render a partial PDF for
+    // the subset that happened to match. The Ready to Export board this
+    // route is fed from already filters to completed + unexported +
+    // non-deleted, so a mismatch here only happens via a stale tab or a
+    // request that did not come from that board.
+    if (!rawTickets || rawTickets.length !== ticketIds.length) {
+      return NextResponse.json(
+        { error: 'One or more tickets not found or not eligible for export (must be completed and not deleted)' },
+        { status: 404 }
+      )
     }
 
     // --- Validate PO requirements ---
@@ -435,8 +445,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark tickets as exported only AFTER successful render. CAS on
-    // billing_exported=false: a concurrent retry would match zero rows and
-    // be skipped (the first request already won the race).
+    // status='completed' + billing_exported=false: a concurrent retry, or a
+    // ticket reopened / soft-deleted during the render, would match zero
+    // rows and be skipped (the first request already won the race, or the
+    // ticket is no longer eligible). Brought to parity with
+    // /api/billing/service/export/route.ts, which already carried all three
+    // guards on its CAS write; this route previously had none of them here
+    // (the fetch's own deleted_at/status filters do not protect the write,
+    // which runs after an async PDF render and photo signed-URL fetch).
     //
     // Export does NOT bill. Tickets stay status='completed' and move to the
     // "Awaiting Invoice #" queue; they only become 'billed' once a manager
@@ -447,6 +463,8 @@ export async function POST(request: NextRequest) {
       .from('pm_tickets')
       .update({ billing_exported: true })
       .in('id', ticketIds as string[])
+      .is('deleted_at', null)
+      .eq('status', 'completed')
       .eq('billing_exported', false)
       .select('id')
 

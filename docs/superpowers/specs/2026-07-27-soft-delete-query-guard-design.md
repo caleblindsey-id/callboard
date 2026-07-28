@@ -52,6 +52,24 @@ The helper exemption is load-bearing: `applyServiceTicketFilters()` in `src/lib/
 
 Remaining exceptions are judgment, not pattern. Audit-trail resolution should outlive deletion. The billing routes act on an `.in('id', ids)` set already sourced from a guarded board list, which is only safe because of where the ids came from, and an AST cannot know that.
 
+> **Superseded during implementation (Task 4 fix round 1, 2026-07-28).** The
+> "already sourced from a guarded board list" reasoning quoted above and in
+> the example below was tried as the allowlist rationale for
+> `mark-billed`/`unexport` on both PM and service tickets, then rejected on
+> review: it only covers the read layer. The routes' own fetch and CAS
+> update never checked `deleted_at`, and soft-delete does not clear
+> `status`/`billing_exported`, so a stale tab or a crafted request bypassing
+> the board entirely could still bill or un-export a soft-deleted ticket.
+> The fix was to add the guard to the routes (both the fetch and the write),
+> not to document the upstream-source argument as sufficient. Do not
+> re-adopt this reasoning for a new route; check the route's own query, not
+> where its caller says the ids came from. See
+> `src/app/api/billing/mark-billed/route.ts`,
+> `src/app/api/billing/unexport/route.ts`, and their three service-ticket
+> siblings for the corrected shape, plus `src/app/api/billing/pdf/route.ts`
+> (fixed one round later, PM export's CAS write) for the same pattern one
+> more time.
+
 These go in an explicit allowlist keyed by file path and symbol, with a **required** reason string:
 
 ```ts
@@ -61,6 +79,15 @@ These go in an explicit allowlist keyed by file path and symbol, with a **requir
 { file: 'src/app/api/billing/service/mark-billed/route.ts', symbol: 'POST',
   reason: 'Acts on an explicit id set posted from the billing board, which is already guarded.' },
 ```
+
+> **Superseded during implementation.** The allowlist as built lives at
+> `src/lib/soft-delete-allowlist.ts` (not under a `src/lib/db/__guards__/`
+> directory) and is keyed by **file path and line number**, not file path
+> and symbol. Line numbers were cheaper for the checker to produce and
+> compare than resolving an enclosing symbol name, at the cost of the
+> allowlist needing a line-number bump whenever code above an entry shifts.
+> The required-reason rule and the "judgment, not pattern" intent described
+> above are unchanged; only the key shape differs from what is shown here.
 
 An entry with an empty or missing reason fails the test. This makes the allowlist the documentation for a distinction that otherwise exists only in a chat transcript, and makes each future exception a deliberate reviewable act rather than a silent omission.
 

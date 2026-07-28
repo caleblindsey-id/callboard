@@ -23,9 +23,25 @@ deleted ticket keeps its pre-delete status. RLS does NOT filter deleted rows: th
 select policies scope by role only. So every multi-row read that counts, sums, or
 lists needs `.is('deleted_at', null)` or it silently inflates.
 
-`npm test` enforces this. If a read is deliberately unguarded (a by-id lookup, a
+`npm test` enforces this for direct multi-row `.select()` reads on `pm_tickets`
+and `service_tickets`. If a read is deliberately unguarded (a by-id lookup, a
 write, audit-trail resolution), add an entry with a reason to
 `src/lib/soft-delete-allowlist.ts`.
+
+**What the guard does NOT cover, so these need a human read, not a green test
+run:** embedded joins, for example `.from('ace_labor_entries').select('...,
+service_tickets(...)')`, where the ticket data arrives nested inside another
+table's row and the checker never sees a `pm_tickets`/`service_tickets`
+`.from()` chain to flag; anything read through `.rpc()`; and, most
+importantly, **write paths are exempt by design.** An `.update(...).in('id',
+...)` chain on `pm_tickets` or `service_tickets` is never a scanner finding,
+guarded or not, because the checker only flags reads. That is why
+`src/app/api/billing/pdf/route.ts`'s CAS write carried no `deleted_at` or
+`status` guard for two review rounds after the read on the same route was
+already fixed: the write was invisible to `npm test` the whole time and
+needed a manual grep for `.update(` chains on these two tables to find. When
+you touch a bulk write on either table, check it by hand; a passing test run
+is not evidence the write is safe.
 
 Prefer `applyServiceTicketFilters()` in `src/lib/db/service-tickets.ts` for board
 and count queries. It already handles the default-hide, deletedOnly, and
