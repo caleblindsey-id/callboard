@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { extractChains } from './soft-delete-guard'
+import { extractChains, classify, type QueryChain } from './soft-delete-guard'
 
 test('extracts a simple chain with its table and methods', () => {
   const src = `
@@ -76,4 +76,67 @@ const { data } = await supabase.from('service_tickets').select('id')`
   const chains = extractChains(src, 'probe.ts')
   assert.equal(chains.length, 1)
   assert.equal(chains[0].line, 3)
+})
+
+function chain(methods: [string, string[]][], over: Partial<QueryChain> = {}): QueryChain {
+  return {
+    table: 'service_tickets',
+    methods: methods.map(([name, args]) => ({ name, args })),
+    line: 1,
+    variableName: null,
+    ...over,
+  }
+}
+
+const NO_SIBLINGS = new Set<string>()
+
+test('a chain carrying the guard is guarded', () => {
+  const c = chain([['select', ['id']], ['is', ['deleted_at', '<expr>']], ['eq', ['status', 'open']]])
+  assert.equal(classify(c, NO_SIBLINGS).kind, 'guarded')
+})
+
+test('a bare multi-row read is a violation', () => {
+  const c = chain([['select', ['id']], ['eq', ['status', 'open']]])
+  assert.equal(classify(c, NO_SIBLINGS).kind, 'violation')
+})
+
+test('writes are exempt', () => {
+  for (const verb of ['insert', 'update', 'upsert', 'delete']) {
+    const c = chain([[verb, ['<expr>']], ['eq', ['status', 'open']]])
+    assert.equal(classify(c, NO_SIBLINGS).kind, 'exempt', `${verb} should be exempt`)
+  }
+})
+
+test('a read by primary key is exempt', () => {
+  const c = chain([['select', ['id']], ['eq', ['id', '<expr>']]])
+  assert.equal(classify(c, NO_SIBLINGS).kind, 'exempt')
+})
+
+test('a single-row read is exempt', () => {
+  for (const terminal of ['single', 'maybeSingle']) {
+    const c = chain([['select', ['id']], ['eq', ['approval_token', '<expr>']], [terminal, []]])
+    assert.equal(classify(c, NO_SIBLINGS).kind, 'exempt', `${terminal} should be exempt`)
+  }
+})
+
+test('a guard applied to the same variable later in the file counts', () => {
+  const c = chain([['select', ['id']]], { variableName: 'svcQ' })
+  assert.equal(classify(c, new Set(['svcQ'])).kind, 'guarded')
+})
+
+test('a guard on a DIFFERENT variable does not count', () => {
+  // service-reports.ts had a guarded and an unguarded query in one function.
+  // A file-scope or function-scope check would have missed the real bug.
+  const c = chain([['select', ['id']]], { variableName: 'sentQ' })
+  assert.equal(classify(c, new Set(['awaitingQ'])).kind, 'violation')
+})
+
+test('an unresolvable table name is a violation only when not otherwise exempt', () => {
+  const exempt = chain([['update', ['<expr>']], ['eq', ['id', '<expr>']]], { table: null })
+  assert.equal(classify(exempt, NO_SIBLINGS).kind, 'exempt')
+
+  const risky = chain([['select', ['id']], ['eq', ['status', 'open']]], { table: null })
+  const v = classify(risky, NO_SIBLINGS)
+  assert.equal(v.kind, 'violation')
+  assert.match(v.kind === 'violation' ? v.why : '', /table name/i)
 })

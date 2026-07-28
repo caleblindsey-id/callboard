@@ -105,3 +105,46 @@ export function extractChains(sourceText: string, fileName: string): QueryChain[
   visit(sf)
   return chains
 }
+
+export type Verdict =
+  | { kind: 'guarded' }
+  | { kind: 'exempt'; why: string }
+  | { kind: 'violation'; why: string }
+
+const WRITE_VERBS = new Set(['insert', 'update', 'upsert', 'delete'])
+const SINGLE_TERMINALS = new Set(['single', 'maybeSingle'])
+
+function hasGuard(methods: ChainMethod[]): boolean {
+  return methods.some((m) => m.name === 'is' && m.args[0] === 'deleted_at')
+}
+
+export function classify(chain: QueryChain, siblingGuards: Set<string>): Verdict {
+  const { methods, variableName, table } = chain
+
+  if (hasGuard(methods)) return { kind: 'guarded' }
+
+  // The `let q = supabase.from(...)...; q = q.is('deleted_at', null)` form.
+  // Keyed on the variable, never the enclosing function: service-reports.ts
+  // holds a guarded and an unguarded query in one function, so a wider scope
+  // would have hidden the original bug.
+  if (variableName && siblingGuards.has(variableName)) return { kind: 'guarded' }
+
+  if (methods.some((m) => WRITE_VERBS.has(m.name))) {
+    return { kind: 'exempt', why: 'write path' }
+  }
+  if (methods.some((m) => m.name === 'eq' && m.args[0] === 'id')) {
+    return { kind: 'exempt', why: 'reads one row by primary key' }
+  }
+  if (methods.some((m) => SINGLE_TERMINALS.has(m.name))) {
+    return { kind: 'exempt', why: 'reads a single row' }
+  }
+
+  if (table === null) {
+    return {
+      kind: 'violation',
+      why: 'dynamic table name could not be resolved, and the chain is not otherwise exempt',
+    }
+  }
+
+  return { kind: 'violation', why: "multi-row read missing .is('deleted_at', null)" }
+}
