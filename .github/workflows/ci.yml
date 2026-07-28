@@ -36,6 +36,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Gates on errors. Warnings are reported but not fatal: the 15 remaining
+      # are mostly jsx-a11y/alt-text on @react-pdf/renderer Image elements,
+      # which have no alt prop to give. See "Lint: react-hooks/set-state-in-effect"
+      # in AGENTS.md for the seven acknowledged disables.
+      - name: Lint
+        run: npm run lint
+
       - name: Test
         run: npm test
 
@@ -52,7 +59,3 @@ jobs:
             echo "The test glob may have silently stopped matching nested files."
             exit 1
           fi
-
-# Lint is deliberately NOT gated here. It exits non-zero on 9 pre-existing errors
-# unrelated to this workflow, so gating it would fail every PR from day one and
-# the whole check would get switched off. Add it once those are cleared.

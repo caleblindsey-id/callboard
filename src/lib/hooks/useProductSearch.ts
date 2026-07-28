@@ -70,6 +70,11 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
 
   useEffect(() => {
     if (!shouldSearchProducts(query)) {
+      // Deliberate reset-on-input-change. Deriving this at render instead
+      // either flashes the previous query's results for the debounce window
+      // or closes the dropdown mid-typing, both of which this clear avoids.
+      // See "Lint: react-hooks/set-state-in-effect" in AGENTS.md.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([])
       setComboOpen(false)
       setError(false)

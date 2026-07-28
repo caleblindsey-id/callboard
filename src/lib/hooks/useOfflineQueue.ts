@@ -162,6 +162,7 @@ export function useOfflineQueue({ sessionId, onFlush, intervalMs = 5000 }: UseOf
   // repo-wide lint-rule remediation pass, which is out of this task's scope.
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReady(false)
     queueRef.current = new Map()
     syncState()

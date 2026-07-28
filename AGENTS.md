@@ -62,3 +62,36 @@ because one write in it is guarded.
 Prefer `applyServiceTicketFilters()` in `src/lib/db/service-tickets.ts` for board
 and count queries. It already handles the default-hide, deletedOnly, and
 includeDeleted cases.
+
+# Lint: react-hooks/set-state-in-effect
+
+`npm run lint` gates CI on **errors** (warnings are reported, not fatal). Keep it
+at zero errors.
+
+Seven call sites carry a targeted
+`eslint-disable-next-line react-hooks/set-state-in-effect`. They are all the same
+shape: an effect that **resets derived state when its input changes**, before
+kicking off a fetch. Do not remove them without reading this.
+
+The rule wants the reset derived during render instead. In this codebase that
+does not work, for two separate reasons:
+
+1. **It changes the UX.** For the debounced search boxes, deriving the cleared
+   view at render either flashes the previous query's results for the 300ms
+   debounce window or closes the dropdown mid-typing. The synchronous clear is
+   what avoids both. Same for the customer-to-ship-to and customer-to-equipment
+   resets, where a stale selection from the previous customer must not survive
+   even briefly, and where `CreateTicketModal`'s clear-then-filter-post-fetch
+   order is load-bearing for draft restoration.
+2. **It collides with another rule.** In `useOfflineQueue.ts` and
+   `ReorderWalk.tsx` the render-time equivalent has to read a ref during render,
+   which trips `react-hooks/refs`. There is no formulation that satisfies both.
+
+So the rule stays **enabled** repo-wide, and every new violation is still an
+error that fails CI. These seven are individually acknowledged rather than the
+rule being downgraded, because a global downgrade would let future violations
+through silently.
+
+If you are adding new code and hit this rule, treat it as a real finding first.
+Reach for a disable only when you can write down which of the two reasons above
+applies to your case.
