@@ -47,31 +47,35 @@ export const SOFT_DELETE_ALLOWLIST: AllowlistEntry[] = [
   // plan specified and Task 2 had not implemented yet, not a judgment call,
   // so a mechanical exemption is correct instead of a standing allowlist entry.
 
-  // pm_tickets: out of scope for this task. Task 4 owns the pm_tickets triage;
-  // these are parked here only so the suite is green in the meantime.
+  // pm_tickets triage (Task 4, 2026-07-28):
   {
     file: 'src/app/api/billing/mark-billed/route.ts',
     line: 53,
-    reason: 'PENDING TASK 4 TRIAGE',
+    reason:
+      'Acts on an explicit id set posted from the PM Awaiting Invoice board (getPmAwaitingInvoiceTickets in src/lib/db/tickets.ts, which already filters .is(\'deleted_at\', null)). The route re-checks status and billing_exported before writing. Mirrors the service-ticket mark-billed route allowlisted for the same reason.',
   },
   {
     file: 'src/app/api/billing/unexport/route.ts',
     line: 49,
-    reason: 'PENDING TASK 4 TRIAGE',
+    reason:
+      'Acts on an explicit id set posted from the same guarded PM Awaiting Invoice board as mark-billed. The route re-checks status and billing_exported before writing. Mirrors the service-ticket unexport route allowlisted for the same reason.',
   },
   {
     file: 'src/app/api/tickets/route.ts',
     line: 52,
-    reason: 'PENDING TASK 4 TRIAGE',
+    reason:
+      'Deliberately deleted_at-inclusive. This duplicate check (same equipment + month/year, not billed) exists to keep the manual create path consistent with the rest of the PM lifecycle, which treats a soft-deleted ticket as still occupying its slot: pm-generation.ts:241 uses the identical deleted_at-inclusive pre-fetch on purpose to block auto-regeneration, and the DB-level UNIQUE(pm_schedule_id, month, year) constraint (migration 004) is not partial on deleted_at, so tickets/[id]/restore/route.ts has to handle the resulting 23505 as an expected case. If this one site alone excluded deleted rows, a manager could delete a mis-created PM and manually recreate a duplicate that batch generation and restore would still refuse, which is the asymmetry this guard exists to catch, not fix.',
   },
   {
     file: 'src/lib/db/auditEvents.ts',
     line: 104,
-    reason: 'PENDING TASK 4 TRIAGE',
+    reason:
+      'Same rationale as the service_tickets half of this Promise.all on the next line (already allowlisted): resolving a work order number to ticket ids for the audit trail has to find deleted PM tickets too, or a deleted ticket\'s history stops rendering.',
   },
   {
     file: 'src/lib/pm-generation.ts',
     line: 241,
-    reason: 'PENDING TASK 4 TRIAGE',
+    reason:
+      'Deliberately deleted_at-inclusive per the function\'s own comment: soft-deleted tickets still block regeneration on purpose, so batch generation cannot re-create a duplicate for the same schedule/equipment and month right after a delete. Removing the guard here would also create the schedule-vs-manual asymmetry described at src/app/api/tickets/route.ts:52.',
   },
 ]
