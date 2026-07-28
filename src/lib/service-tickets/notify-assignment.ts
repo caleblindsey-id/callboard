@@ -208,6 +208,7 @@ export async function notifyTechOfBulkAssignment(
   const { data: rows } = await supabase
     .from('service_tickets')
     .select('id, work_order_number, customers(name)')
+    .is('deleted_at', null)
     .in('id', ticketIds)
   type RowShape = { id: string; work_order_number: number | null; customers: { name: string } | null }
   const tickets = ((rows as unknown as RowShape[] | null) ?? [])

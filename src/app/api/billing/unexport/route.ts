@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     const { data: rawTickets, error: fetchError } = await supabase
       .from('pm_tickets')
       .select('id, work_order_number, status, billing_exported')
+      .is('deleted_at', null)
       .in('id', ticketIds as string[])
 
     if (fetchError) {
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
       .from('pm_tickets')
       .update({ billing_exported: false, synergy_invoice_number: null })
       .in('id', ticketIds as string[])
+      .is('deleted_at', null)
       .eq('status', 'completed')
       .eq('billing_exported', true)
       .select('id')
