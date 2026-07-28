@@ -3,6 +3,8 @@
 // npm test glob on both Windows and macOS. No app code imports it, so it never
 // reaches the bundle.
 import ts from 'typescript'
+import fs from 'node:fs'
+import path from 'node:path'
 
 export type ChainMethod = { name: string; args: string[] }
 
@@ -11,6 +13,18 @@ export type QueryChain = {
   methods: ChainMethod[]
   line: number
   variableName: string | null
+  // Identity of the nearest enclosing function-like node (its source start
+  // position, stringified), or '<module>' when the chain sits at module scope.
+  // siblingGuards is keyed on `${scopeId}::${variableName}` so that the same
+  // variable name reused in two different functions (dashboard-metrics.ts
+  // declares `svcQ` in both getOpenWorkCounts and getMtdRevenue) cannot leak a
+  // guard from one function into an unguarded chain in the other.
+  scopeId: string
+  // Name of the helper this chain's outermost expression is passed into as an
+  // argument (e.g. 'applyServiceTicketFilters'), or null. That helper applies
+  // the soft-delete guard internally, on a query object the checker cannot see
+  // chained inline.
+  passedToHelper: string | null
 }
 
 // A Supabase chain always terminates in one of these. Array.from(...).map(...)
@@ -51,6 +65,47 @@ function walkChain(fromCall: ts.CallExpression): { methods: ChainMethod[]; outer
   }
 
   return { methods, outermost: node }
+}
+
+// Position of the nearest enclosing function-like node, stringified, or
+// '<module>' when the chain is not inside any function. Position beats name:
+// it stays unique for anonymous arrows and for two functions that happen to
+// share a name, and (the case that matters here) it tells apart two DIFFERENT
+// functions that happen to reuse the same local variable name.
+function scopeIdFor(node: ts.Node): string {
+  let n: ts.Node | undefined = node
+  while (n) {
+    if (
+      ts.isFunctionDeclaration(n) ||
+      ts.isFunctionExpression(n) ||
+      ts.isArrowFunction(n) ||
+      ts.isMethodDeclaration(n)
+    ) {
+      return String(n.getStart())
+    }
+    n = n.parent
+  }
+  return '<module>'
+}
+
+// The one shared filter helper whose default branch applies
+// .is('deleted_at', null) internally (src/lib/db/service-tickets.ts:45-69).
+// A chain passed straight into it as an argument is guarded by the helper,
+// even though the checker never sees .is(...) chained onto this expression.
+const DELEGATION_HELPER = 'applyServiceTicketFilters'
+
+function helperDelegation(outermost: ts.Node): string | null {
+  const parent = outermost.parent
+  if (
+    parent &&
+    ts.isCallExpression(parent) &&
+    ts.isIdentifier(parent.expression) &&
+    parent.expression.text === DELEGATION_HELPER &&
+    parent.arguments.some((a) => a === outermost)
+  ) {
+    return DELEGATION_HELPER
+  }
+  return null
 }
 
 // Finds the identifier a chain lands in, covering both `const q = ...` and the
@@ -96,6 +151,8 @@ export function extractChains(sourceText: string, fileName: string): QueryChain[
           methods,
           line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
           variableName: assignedVariable(outermost),
+          scopeId: scopeIdFor(node),
+          passedToHelper: helperDelegation(outermost),
         })
       }
     }
@@ -118,16 +175,80 @@ function hasGuard(methods: ChainMethod[]): boolean {
   return methods.some((m) => m.name === 'is' && m.args[0] === 'deleted_at')
 }
 
+// AST replacement for the old regex reassignment pass. The regex
+// `/(\w+)\s*=\s*\1\s*\.is\(.../` had two bugs: it could not know which
+// function the reassignment lived in (so it fed the whole-file bare-name
+// collision this fix closes), and it only matched `.is(` immediately after
+// the identifier, missing the chained form `q = q.eq('a', b).is('deleted_at', null)`.
+// This walks every `X = ...` assignment and records a scope-qualified key when
+// either of two guard-equivalent shapes appears:
+//   Form 1: X = X.<chain>, with `.is('deleted_at', ...)` anywhere in the chain.
+//   Form 2: X = applyServiceTicketFilters(X, ...) — reassigns through the
+//   shared helper (service-tickets.ts:45-69, getServiceTickets:117) instead of
+//   chaining .is(...) directly. Same guarantee, different shape.
+function reassignmentGuardKeys(sourceText: string, fileName: string): Set<string> {
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const keys = new Set<string>()
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    ) {
+      const name = node.left.text
+
+      let cur: ts.Expression = node.right
+      let carriesGuard = false
+      while (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression)) {
+        const pae = cur.expression
+        if (pae.name.text === 'is' && cur.arguments.length > 0 && literalArg(cur.arguments[0]) === 'deleted_at') {
+          carriesGuard = true
+        }
+        cur = pae.expression
+      }
+      const isChainForm = carriesGuard && ts.isIdentifier(cur) && cur.text === name
+
+      const isHelperReassignForm =
+        ts.isCallExpression(node.right) &&
+        ts.isIdentifier(node.right.expression) &&
+        node.right.expression.text === DELEGATION_HELPER &&
+        node.right.arguments.length > 0 &&
+        ts.isIdentifier(node.right.arguments[0]) &&
+        node.right.arguments[0].text === name
+
+      if (isChainForm || isHelperReassignForm) {
+        keys.add(`${scopeIdFor(node)}::${name}`)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sf)
+  return keys
+}
+
 export function classify(chain: QueryChain, siblingGuards: Set<string>): Verdict {
-  const { methods, variableName, table } = chain
+  const { methods, variableName, scopeId, table, passedToHelper } = chain
 
   if (hasGuard(methods)) return { kind: 'guarded' }
 
   // The `let q = supabase.from(...)...; q = q.is('deleted_at', null)` form.
-  // Keyed on the variable, never the enclosing function: service-reports.ts
-  // holds a guarded and an unguarded query in one function, so a wider scope
-  // would have hidden the original bug.
-  if (variableName && siblingGuards.has(variableName)) return { kind: 'guarded' }
+  // Keyed on `${scopeId}::${variableName}`, never the variable name alone:
+  // service-reports.ts holds a guarded and an unguarded query in one function
+  // (two DIFFERENT variables, still needs to tell them apart), and
+  // dashboard-metrics.ts reuses the SAME variable name (`svcQ`/`pmQ`) across
+  // two DIFFERENT functions (still needs to keep them apart too). Scope alone
+  // handles the first case; variable name alone handles neither, which is why
+  // both a bare-name key and a whole-file key are wrong.
+  if (variableName && siblingGuards.has(`${scopeId}::${variableName}`)) return { kind: 'guarded' }
+
+  if (passedToHelper) {
+    return {
+      kind: 'exempt',
+      why: `delegates soft-delete scoping to ${passedToHelper}(...), which applies .is('deleted_at', null) internally`,
+    }
+  }
 
   if (methods.some((m) => WRITE_VERBS.has(m.name))) {
     return { kind: 'exempt', why: 'write path' }
@@ -147,4 +268,59 @@ export function classify(chain: QueryChain, siblingGuards: Set<string>): Verdict
   }
 
   return { kind: 'violation', why: "multi-row read missing .is('deleted_at', null)" }
+}
+
+export type Finding = { file: string; line: number; table: string | null; why: string }
+
+const WATCHED_TABLES = new Set(['service_tickets', 'pm_tickets'])
+const SKIP_DIRS = new Set(['node_modules', '.next', '.git'])
+
+function walkFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue
+      walkFiles(path.join(dir, entry.name), out)
+    } else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith('.test.ts')) {
+      out.push(path.join(dir, entry.name))
+    }
+  }
+  return out
+}
+
+export function scanRepo(rootDir: string): Finding[] {
+  const findings: Finding[] = []
+
+  for (const abs of walkFiles(rootDir)) {
+    const text = fs.readFileSync(abs, 'utf8')
+
+    // Cheap prefilter. Skipping files that never mention either table keeps the
+    // full scan well under a second, which is what makes a pre-push hook viable.
+    if (!text.includes('service_tickets') && !text.includes('pm_tickets')) continue
+
+    const rel = path.relative(process.cwd(), abs).split(path.sep).join('/')
+    const chains = extractChains(text, abs)
+
+    // Variables that receive the guard anywhere in this file, for the
+    // reassignment form. Collected per file, keyed per scope+variable so the
+    // same variable name reused in a different function never leaks a guard
+    // across the boundary (see QueryChain.scopeId).
+    const siblingGuards = new Set<string>()
+    for (const c of chains) {
+      if (c.variableName && hasGuard(c.methods)) siblingGuards.add(`${c.scopeId}::${c.variableName}`)
+    }
+    for (const key of reassignmentGuardKeys(text, abs)) siblingGuards.add(key)
+
+    for (const c of chains) {
+      // A dynamic table name in a file that mentions neither table is not ours.
+      const watched = c.table === null ? true : WATCHED_TABLES.has(c.table)
+      if (!watched) continue
+
+      const verdict = classify(c, siblingGuards)
+      if (verdict.kind === 'violation') {
+        findings.push({ file: rel, line: c.line, table: c.table, why: verdict.why })
+      }
+    }
+  }
+
+  return findings
 }
