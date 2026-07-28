@@ -208,6 +208,7 @@ export async function notifyTechOfBulkAssignment(
   const { data: rows } = await supabase
     .from('service_tickets')
     .select('id, work_order_number, customers(name)')
+    .is('deleted_at', null)
     .in('id', ticketIds)
   type RowShape = { id: string; work_order_number: number | null; customers: { name: string } | null }
   const tickets = ((rows as unknown as RowShape[] | null) ?? [])
@@ -277,6 +278,7 @@ export async function notifyTechOfBulkAssignment(
         assigned_notify_message_id: sendResult.messageId,
       })
       .in('id', tickets.map((t) => t.id))
+      .is('deleted_at', null)
   } catch (err) {
     console.error('notifyTechOfBulkAssignment: audit write failed', err)
   }

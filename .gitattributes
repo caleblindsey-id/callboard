@@ -1,0 +1,3 @@
+# Shell hooks must keep LF endings or sh fails with a bad interpreter error
+# on checkout under core.autocrlf=true.
+.githooks/** text eol=lf

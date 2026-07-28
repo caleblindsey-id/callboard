@@ -15,3 +15,50 @@ npm run check:migrations
 ```
 
 This compares `supabase/migrations/*.sql` against the database's applied set (via the `public.applied_migrations` RPC, migration 092) and fails loudly on any repo migration that was never applied. Note: the recorded migration **names** diverge from the repo `NNN_` filenames, and the baseline migrations (001–006) predate tracking — reconcile by **effect**, not by number. Known-divergent/baseline files are allowlisted in `scripts/check-migration-drift.mjs`.
+
+# Soft-deleted tickets
+
+`service_tickets.deleted_at` and `pm_tickets.deleted_at` are soft deletes, and a
+deleted ticket keeps its pre-delete status. RLS does NOT filter deleted rows: the
+select policies scope by role only. So every multi-row read that counts, sums, or
+lists needs `.is('deleted_at', null)` or it silently inflates.
+
+`npm test` enforces this for direct multi-row `.select()` reads on `pm_tickets`
+and `service_tickets`. If a read is deliberately unguarded (a by-id lookup, a
+write, audit-trail resolution), add an entry with a reason to
+`src/lib/soft-delete-allowlist.ts`.
+
+**What the guard does NOT cover, so these need a human read, not a green test
+run:** embedded joins, for example `.from('ace_labor_entries').select('...,
+service_tickets(...)')`, where the ticket data arrives nested inside another
+table's row and the checker never sees a `pm_tickets`/`service_tickets`
+`.from()` chain to flag; anything read through `.rpc()`; and, most
+importantly, **write paths are exempt by design.** An `.update(...).in('id',
+...)` chain on `pm_tickets` or `service_tickets` is never a scanner finding,
+guarded or not, because the checker only flags reads. That is why
+`src/app/api/billing/pdf/route.ts`'s CAS write carried no `deleted_at` or
+`status` guard for two review rounds after the read on the same route was
+already fixed: the write was invisible to `npm test` the whole time and
+needed a manual review to find. When you touch a bulk write on either
+table, check it by hand; a passing test run is not evidence the write is
+safe.
+
+A manual review of these writes has itself proven fallible once already:
+one sweep found and fixed five id-set writes across five routes, a second
+sweep found and fixed a sixth, and both still missed two more
+(`billing/service/mark-billed/route.ts`'s pickup-stage update and
+`notify-assignment.ts`'s audit-stamp update, both several dozen lines below
+a write already checked in the same file, and both trusting an id set
+filtered a few lines earlier in the same request rather than carrying
+their own guard). The pattern in both misses is the same: a file gets
+marked "checked" after its first or most obvious `.update(` is fixed, and a
+second write lower in the same file is never re-examined. The miss was
+only caught by re-deriving the full list from scratch: grep every
+`.in('id', ...)` in the repo (not just ones next to a `.update(` you
+already noticed), then check the table for every single match, including
+matches in files you have already touched. Do not treat a file as done
+because one write in it is guarded.
+
+Prefer `applyServiceTicketFilters()` in `src/lib/db/service-tickets.ts` for board
+and count queries. It already handles the default-hide, deletedOnly, and
+includeDeleted cases.

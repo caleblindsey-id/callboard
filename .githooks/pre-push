@@ -1,0 +1,18 @@
+#!/bin/sh
+# Blocks a push that would introduce an unguarded multi-row read of
+# service_tickets / pm_tickets. See docs/superpowers/specs/2026-07-27-soft-delete-query-guard-design.md
+GUARD_TEST="src/lib/soft-delete-guard.test.ts"
+
+if [ ! -f "$GUARD_TEST" ]; then
+  echo "pre-push: soft-delete guard test not found on this branch, skipping."
+  exit 0
+fi
+
+echo "pre-push: running soft-delete query guard..."
+if ! npx tsx --test "$GUARD_TEST"; then
+  echo ""
+  echo "Push blocked: unguarded ticket reads found. Fix them, or add an"
+  echo "allowlist entry with a reason in src/lib/soft-delete-allowlist.ts."
+  exit 1
+fi
+exit 0

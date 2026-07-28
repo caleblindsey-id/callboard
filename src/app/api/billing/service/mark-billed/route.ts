@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
         billing_type, warranty_credit_received_at,
         customers ( name, po_required )
       `)
+      .is('deleted_at', null)
       .in('id', ticketIds as string[])
 
     if (fetchError) {
@@ -154,6 +155,7 @@ export async function POST(request: NextRequest) {
       .from('service_tickets')
       .update({ status: 'billed', billed_at: new Date().toISOString() })
       .in('id', ticketIds as string[])
+      .is('deleted_at', null)
       .eq('status', 'completed')
       .eq('billing_exported', true)
       .select('id')
@@ -199,6 +201,7 @@ export async function POST(request: NextRequest) {
           ready_for_pickup_at: new Date().toISOString(),
         })
         .in('id', toStage)
+        .is('deleted_at', null)
         .is('ready_for_pickup_at', null)
 
       if (stageError) {
