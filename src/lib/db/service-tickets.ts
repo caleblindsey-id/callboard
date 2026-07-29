@@ -165,16 +165,17 @@ export type ServicePartsCount = { pending: number; total: number }
  * projected as columns.
  *
  * ONLY valid for approved / in_progress tickets. The view's service branch hides
- * requested + pending_review parts while a ticket is still open or estimated
- * (migration 102), so at those stages it under-reports and the caller must not
- * ask. Cancelled parts leave the denominator, matching the detail page, where
- * they stay visible but struck through.
+ * requested + pending_review parts while a ticket is open or estimated
+ * (migration 102) and now also while it is declined or canceled (migration 147),
+ * so at those stages it under-reports and the caller must not ask. Cancelled
+ * parts leave the denominator, matching the detail page, where they stay visible
+ * but struck through.
  *
  * Soft deletes: the view projects no deleted_at, so this cannot filter on one.
- * It doesn't need to — ticketIds always arrive from an already-guarded list
- * query, so a deleted ticket is never in the id set. Flagged explicitly because
- * npm test's guard only inspects direct service_tickets reads and would not
- * catch a regression here (AGENTS.md).
+ * It doesn't need to, twice over — the view itself now excludes soft-deleted
+ * tickets (migration 147), and ticketIds always arrive from an already-guarded
+ * list query. Flagged explicitly because npm test's guard only inspects direct
+ * service_tickets reads and would not catch a regression here (AGENTS.md).
  */
 export async function getServicePartsCounts(
   ticketIds: string[]

@@ -151,6 +151,9 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
       // Mirror the parts_order_queue view rule: hide service parts still awaiting
       // an estimate decision (pending_review or requested) until the estimate is
       // approved — uncommitted estimates aren't actionable yet. PM parts always show.
+      // The view extends the same rule to declined/canceled tickets (migration
+      // 147); no branch for that is needed here because the query above drops
+      // those tickets wholesale.
       if (
         source === 'service' &&
         (status === 'requested' || status === 'pending_review') &&
