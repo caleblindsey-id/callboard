@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { isPartOutstanding } from '@/lib/parts'
 import type {
   ServiceTicketRow,
   ServiceTicketWithJoins,
@@ -148,6 +149,70 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
   // 082), which isn't in the generated database.ts types yet, so the inferred row type
   // can't resolve the join. Cast through `unknown` — same pattern as applyServiceTicketFilters.
   return data as unknown as ServiceTicketWithJoins[]
+}
+
+// --- Per-ticket parts counts for the board's readiness chip ---
+
+export type ServicePartsCount = { pending: number; total: number }
+
+/**
+ * Live part counts per ticket, keyed by ticket id, for the chip's "N of M".
+ *
+ * Reads the parts_order_queue view rather than the tickets' parts_requested
+ * JSONB: the board's list select deliberately omits that blob to keep large
+ * JSONB off the wire, and re-adding it to render a two-number chip would undo
+ * that. The view already explodes each part into a row with status + cancelled
+ * projected as columns.
+ *
+ * ONLY valid for approved / in_progress tickets. The view's service branch hides
+ * requested + pending_review parts while a ticket is still open or estimated
+ * (migration 102), so at those stages it under-reports and the caller must not
+ * ask. Cancelled parts leave the denominator, matching the detail page, where
+ * they stay visible but struck through.
+ *
+ * Soft deletes: the view projects no deleted_at, so this cannot filter on one.
+ * It doesn't need to — ticketIds always arrive from an already-guarded list
+ * query, so a deleted ticket is never in the id set. Flagged explicitly because
+ * npm test's guard only inspects direct service_tickets reads and would not
+ * catch a regression here (AGENTS.md).
+ */
+export async function getServicePartsCounts(
+  ticketIds: string[]
+): Promise<Record<string, ServicePartsCount>> {
+  if (ticketIds.length === 0) return {}
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('parts_order_queue')
+    .select('ticket_id, status, cancelled')
+    .eq('source', 'service')
+    .in('ticket_id', ticketIds)
+
+  if (error) throw error
+  return tallyServicePartRows(data ?? [])
+}
+
+/**
+ * Fold exploded part rows into per-ticket {pending, total}. Pure so the counting
+ * rule is testable without a database — the same reason workOrderAutoAddPatch is
+ * split from its route.
+ *
+ * Cancelled parts are dropped before counting, so they leave both the numerator
+ * and the denominator: the chip reads "Parts 1 of 2" on a ticket whose third
+ * part was cancelled, matching livePartsRequested on the detail page.
+ */
+export function tallyServicePartRows(
+  rows: Array<{ ticket_id: string | null; status: string | null; cancelled: boolean | null }>
+): Record<string, ServicePartsCount> {
+  const counts: Record<string, ServicePartsCount> = {}
+  for (const row of rows) {
+    if (row.cancelled || !row.ticket_id) continue
+    const entry = counts[row.ticket_id] ?? { pending: 0, total: 0 }
+    entry.total += 1
+    if (isPartOutstanding(row)) entry.pending += 1
+    counts[row.ticket_id] = entry
+  }
+  return counts
 }
 
 // --- Service ticket counts grouped by status (service board tabs) ---

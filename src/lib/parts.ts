@@ -10,12 +10,26 @@ import type { PartRequest, PartUsed } from '@/types/database'
 export function partsOnOrder(
   parts: PartRequest[] | null | undefined
 ): PartRequest[] {
-  // 'from_stock' is fulfilled in-house (pulled from the shelf, no PO), so it's
-  // NOT on order — treated like 'received' for the completion/deletion gates.
-  // 'pending_review' IS still in flight (not yet triaged) and correctly blocks.
-  return (parts ?? []).filter(
-    (p) => p.status !== 'received' && p.status !== 'from_stock' && !p.cancelled
-  )
+  return (parts ?? []).filter(isPartOutstanding)
+}
+
+/**
+ * The one status/cancelled test behind every "is this part still outstanding?"
+ * question. Deliberately structural rather than taking a full PartRequest: the
+ * same judgement has to be made about a `parts_order_queue` view row, which
+ * projects the JSONB element's status and cancelled flag as plain columns. The
+ * board's readiness chip counts view rows while the detail page counts JSONB
+ * entries, and they must never disagree about the same ticket.
+ *
+ * 'from_stock' is fulfilled in-house (pulled from the shelf, no PO), so it is
+ * NOT outstanding — treated like 'received' for the completion/deletion gates.
+ * 'pending_review' IS still in flight (not yet triaged) and correctly blocks.
+ */
+export function isPartOutstanding(part: {
+  status?: string | null
+  cancelled?: boolean | null
+}): boolean {
+  return part.status !== 'received' && part.status !== 'from_stock' && !part.cancelled
 }
 
 /**

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyServiceTicketFilters } from './service-tickets'
+import { applyServiceTicketFilters, tallyServicePartRows } from './service-tickets'
 
 /**
  * Pins the filters applyServiceTicketFilters() emits.
@@ -84,6 +84,65 @@ test('asking for both is contradictory and emits both, matching nothing', () => 
   // silent precedence rule.
   const calls = partsCalls(filtersFor({ waitingOnParts: true, ready: true }))
   assert.equal(calls.length, 3)
+})
+
+// ── tallyServicePartRows (the readiness chip's "N of M") ──
+
+function row(ticket_id: string, status: string, cancelled = false) {
+  return { ticket_id, status, cancelled }
+}
+
+test('counts pending against the live total, per ticket', () => {
+  assert.deepEqual(
+    tallyServicePartRows([
+      row('a', 'received'),
+      row('a', 'ordered'),
+      row('a', 'pending_review'),
+      row('b', 'received'),
+    ]),
+    { a: { pending: 2, total: 3 }, b: { pending: 0, total: 1 } },
+  )
+})
+
+test('from_stock is fulfilled, so it lands in the denominator only', () => {
+  // The chip has to agree with Start Work on the detail page, which treats a
+  // pulled-from-stock part as in hand.
+  assert.deepEqual(tallyServicePartRows([row('a', 'from_stock'), row('a', 'ordered')]), {
+    a: { pending: 1, total: 2 },
+  })
+})
+
+test('a cancelled part leaves both the numerator and the denominator', () => {
+  // "Parts 1 of 2" on a three-part ticket whose third was cancelled — matching
+  // livePartsRequested on the detail page, where it stays visible but struck out.
+  assert.deepEqual(
+    tallyServicePartRows([
+      row('a', 'received'),
+      row('a', 'ordered'),
+      row('a', 'ordered', true),
+    ]),
+    { a: { pending: 1, total: 2 } },
+  )
+})
+
+test('a ticket whose every part was cancelled reports nothing outstanding', () => {
+  assert.deepEqual(tallyServicePartRows([row('a', 'ordered', true)]), {})
+})
+
+test('no rows means no entry, which the route reads as zero parts', () => {
+  // A ticket with no parts never appears in the view at all. The route defaults
+  // those to {0, 0} so the chip can tell "nothing outstanding" from "not fetched".
+  assert.deepEqual(tallyServicePartRows([]), {})
+})
+
+test('every pre-fulfilment status counts as pending', () => {
+  for (const status of ['pending_review', 'requested', 'ordered']) {
+    assert.deepEqual(
+      tallyServicePartRows([row('a', status)]),
+      { a: { pending: 1, total: 1 } },
+      `${status} should be pending`,
+    )
+  }
 })
 
 // ── soft-delete scoping (unchanged, guarded here so the parts work can't erode it) ──

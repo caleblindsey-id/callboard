@@ -7,6 +7,7 @@ import {
   partsAwaitingReview,
   partsOnOrder,
   partsAllFulfilled,
+  isPartOutstanding,
   fulfilledRequestedParts,
   partsMissingFromWorkOrder,
   requestToUsedLine,
@@ -220,6 +221,17 @@ test('fulfilledRequestedParts counts a from_stock part before it is pulled', () 
   // the part, not that someone has walked to the bin yet.
   const part = manual({ status: 'from_stock', pulled_at: undefined })
   assert.deepEqual(fulfilledRequestedParts([part]), [part])
+})
+
+// ── isPartOutstanding ──
+
+test('isPartOutstanding judges a bare parts_order_queue row, not just a PartRequest', () => {
+  // The structural signature is the point: the board's chip counts view rows
+  // while the detail page counts JSONB entries, and one rule has to serve both.
+  assert.equal(isPartOutstanding({ status: 'ordered', cancelled: false }), true)
+  assert.equal(isPartOutstanding({ status: 'received', cancelled: false }), false)
+  assert.equal(isPartOutstanding({ status: 'from_stock', cancelled: false }), false)
+  assert.equal(isPartOutstanding({ status: 'ordered', cancelled: true }), false)
 })
 
 // ── partsAllFulfilled (the parts_received column + the board's ready signal) ──
