@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician, canCreateServiceTickets } from '@/lib/auth'
-import { getServiceTickets } from '@/lib/db/service-tickets'
+import { getServiceTickets, getServicePartsCounts } from '@/lib/db/service-tickets'
 import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import type { ServiceTicketStatus, ServicePriority, ServiceTicketType, ServiceBillingType } from '@/types/service-tickets'
@@ -193,6 +193,7 @@ export async function GET(request: NextRequest) {
       ticketType?: ServiceTicketType
       billingType?: ServiceBillingType
       waitingOnParts?: boolean
+      ready?: boolean
       poNeeded?: boolean
       deletedOnly?: boolean
       limit?: number
@@ -206,6 +207,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.get('ticketType')) filters.ticketType = searchParams.get('ticketType') as ServiceTicketType
     if (searchParams.get('billingType')) filters.billingType = searchParams.get('billingType') as ServiceBillingType
     if (searchParams.get('waitingOnParts') === 'true') filters.waitingOnParts = true
+    if (searchParams.get('ready') === 'true') filters.ready = true
     if (searchParams.get('poNeeded') === '1') filters.poNeeded = true
 
     // Opt-in pagination (board load-more). No limit param = full result set,
@@ -227,6 +229,31 @@ export async function GET(request: NextRequest) {
     }
 
     const tickets = await getServiceTickets(filters)
+
+    // Attach the readiness chip's part counts. Scoped by ROW status, not by the
+    // requested tab, so the chip works on the mixed All view too; and skipped
+    // entirely when the page has no such rows, so no extra query is paid for the
+    // tabs that never render it. parts_order_queue under-reports for open and
+    // estimated tickets by design (migration 102), which is why these two
+    // statuses are the whole of the list.
+    const chipTicketIds = tickets
+      .filter((t) => t.status === 'approved' || t.status === 'in_progress')
+      .map((t) => t.id)
+    if (chipTicketIds.length > 0) {
+      const partsCounts = await getServicePartsCounts(chipTicketIds)
+      const chipIds = new Set(chipTicketIds)
+      for (const ticket of tickets) {
+        if (!chipIds.has(ticket.id)) continue
+        // Default to zeroes rather than leaving these undefined: a ticket with no
+        // parts has no rows in the view at all, and the chip must be able to tell
+        // that (nothing outstanding — "Ready") apart from a status whose counts
+        // were never fetched.
+        const counts = partsCounts[ticket.id] ?? { pending: 0, total: 0 }
+        ticket.parts_pending = counts.pending
+        ticket.parts_total = counts.total
+      }
+    }
+
     return NextResponse.json(tickets)
   } catch (err) {
     console.error('service-tickets GET error:', err)

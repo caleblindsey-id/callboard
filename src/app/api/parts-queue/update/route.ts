@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed } from '@/types/database'
-import { isPartStagedReady, isFulfillingAction, workOrderAutoAddPatch } from '@/lib/parts'
+import { isPartStagedReady, isFulfillingAction, workOrderAutoAddPatch, partsAllFulfilled } from '@/lib/parts'
 import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
 
 type Source = 'pm' | 'service'
@@ -483,18 +483,12 @@ export async function POST(request: NextRequest) {
     const updated = [...parts]
     updated[part_index] = next
 
-    // Service tickets derive parts_received from all live (non-cancelled) parts
-    // being received. PM tickets don't have a parts_received column — the
-    // asymmetry is intentional.
+    // PM tickets don't have a parts_received column — the asymmetry is intentional.
     const updatePayload: Record<string, unknown> = { parts_requested: updated }
     if (source === 'service') {
-      const live = updated.filter((p) => !p.cancelled)
-      // from_stock is fulfilled in-house, same as received, for the "all parts in"
-      // flag that gates service completion.
-      const allReceived =
-        live.length > 0 &&
-        live.every((p) => p.status === 'received' || p.status === 'from_stock')
-      updatePayload.parts_received = allReceived
+      // Shared with api/service-tickets/[id] so the two writers of this column can
+      // never disagree; src/lib/parts.ts carries the rule and why it is one function.
+      updatePayload.parts_received = partsAllFulfilled(updated)
     }
 
     // --- Auto-add the fulfilled part to the work order -------------------

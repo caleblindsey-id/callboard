@@ -10,12 +10,51 @@ import type { PartRequest, PartUsed } from '@/types/database'
 export function partsOnOrder(
   parts: PartRequest[] | null | undefined
 ): PartRequest[] {
-  // 'from_stock' is fulfilled in-house (pulled from the shelf, no PO), so it's
-  // NOT on order — treated like 'received' for the completion/deletion gates.
-  // 'pending_review' IS still in flight (not yet triaged) and correctly blocks.
-  return (parts ?? []).filter(
-    (p) => p.status !== 'received' && p.status !== 'from_stock' && !p.cancelled
-  )
+  return (parts ?? []).filter(isPartOutstanding)
+}
+
+/**
+ * The one status/cancelled test behind every "is this part still outstanding?"
+ * question. Deliberately structural rather than taking a full PartRequest: the
+ * same judgement has to be made about a `parts_order_queue` view row, which
+ * projects the JSONB element's status and cancelled flag as plain columns. The
+ * board's readiness chip counts view rows while the detail page counts JSONB
+ * entries, and they must never disagree about the same ticket.
+ *
+ * 'from_stock' is fulfilled in-house (pulled from the shelf, no PO), so it is
+ * NOT outstanding — treated like 'received' for the completion/deletion gates.
+ * 'pending_review' IS still in flight (not yet triaged) and correctly blocks.
+ */
+export function isPartOutstanding(part: {
+  status?: string | null
+  cancelled?: boolean | null
+}): boolean {
+  return part.status !== 'received' && part.status !== 'from_stock' && !part.cancelled
+}
+
+/**
+ * True when the ticket has nothing outstanding on the parts side — every live
+ * (non-cancelled) part is received or pulled from stock.
+ *
+ * Single source of truth for the `service_tickets.parts_received` column, which
+ * gates service completion and drives the board's waiting-on-parts filter. It is
+ * the exact complement of partsOnOrder(), and is written that way on purpose: the
+ * column used to be derived by hand at each write site, and the copies drifted —
+ * `api/service-tickets/[id]` required every live part to be 'received' while
+ * `api/parts-queue/update` also accepted 'from_stock', so triaging a part to
+ * pull-from-stock set the flag from one route and cleared it from the other.
+ * Migration 146 backfills the rows written under the old rules.
+ *
+ * Vacuously true when nothing is live, which is deliberate: a ticket whose every
+ * part was cancelled has nothing left to wait for, and the old `live.length > 0`
+ * guard pinned those at false forever. Callers that need to distinguish "no parts
+ * outstanding" from "no parts at all" must check the array themselves — the board
+ * predicate does exactly that, via `OR parts_requested = '[]'`.
+ */
+export function partsAllFulfilled(
+  parts: PartRequest[] | null | undefined
+): boolean {
+  return partsOnOrder(parts).length === 0
 }
 
 /**

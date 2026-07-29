@@ -5,6 +5,9 @@ import {
   hasNewRequestedPart,
   findPartMissingSynergyItemNumber,
   partsAwaitingReview,
+  partsOnOrder,
+  partsAllFulfilled,
+  isPartOutstanding,
   fulfilledRequestedParts,
   partsMissingFromWorkOrder,
   requestToUsedLine,
@@ -218,6 +221,94 @@ test('fulfilledRequestedParts counts a from_stock part before it is pulled', () 
   // the part, not that someone has walked to the bin yet.
   const part = manual({ status: 'from_stock', pulled_at: undefined })
   assert.deepEqual(fulfilledRequestedParts([part]), [part])
+})
+
+// ── isPartOutstanding ──
+
+test('isPartOutstanding judges a bare parts_order_queue row, not just a PartRequest', () => {
+  // The structural signature is the point: the board's chip counts view rows
+  // while the detail page counts JSONB entries, and one rule has to serve both.
+  assert.equal(isPartOutstanding({ status: 'ordered', cancelled: false }), true)
+  assert.equal(isPartOutstanding({ status: 'received', cancelled: false }), false)
+  assert.equal(isPartOutstanding({ status: 'from_stock', cancelled: false }), false)
+  assert.equal(isPartOutstanding({ status: 'ordered', cancelled: true }), false)
+})
+
+// ── partsAllFulfilled (the parts_received column + the board's ready signal) ──
+
+test('every live part received means nothing outstanding', () => {
+  assert.equal(
+    partsAllFulfilled([manual({ status: 'received' }), manual({ status: 'received' })]),
+    true,
+  )
+})
+
+test('a from_stock part counts as fulfilled — the drift feedback #79 fixed', () => {
+  // api/service-tickets/[id] used to require 'received' here while
+  // api/parts-queue/update also accepted 'from_stock', so triaging a part to
+  // pull-from-stock set the column from one route and cleared it from the other.
+  assert.equal(partsAllFulfilled([manual({ status: 'from_stock' })]), true)
+  assert.equal(
+    partsAllFulfilled([manual({ status: 'received' }), manual({ status: 'from_stock' })]),
+    true,
+  )
+})
+
+test('an all-cancelled ticket has nothing left to wait for', () => {
+  // The old derivation required live.length > 0, which pinned these at false
+  // forever — the ticket sat in "waiting on parts" with no live part in sight.
+  assert.equal(
+    partsAllFulfilled([
+      manual({ status: 'ordered', cancelled: true }),
+      manual({ status: 'pending_review', cancelled: true }),
+    ]),
+    true,
+  )
+})
+
+test('a cancelled part does not hold back an otherwise-fulfilled ticket', () => {
+  assert.equal(
+    partsAllFulfilled([
+      manual({ status: 'received' }),
+      manual({ status: 'ordered', cancelled: true }),
+    ]),
+    true,
+  )
+})
+
+test('one live part still in flight blocks, at every pre-fulfilment status', () => {
+  for (const status of ['pending_review', 'requested', 'ordered'] as const) {
+    assert.equal(
+      partsAllFulfilled([manual({ status: 'received' }), manual({ status })]),
+      false,
+      `${status} should still count as outstanding`,
+    )
+  }
+})
+
+test('no parts at all is vacuously fulfilled', () => {
+  // Deliberate. Callers that must tell "nothing outstanding" apart from "no parts
+  // ever" check the array themselves — the board does, via OR parts_requested = '[]'.
+  assert.equal(partsAllFulfilled([]), true)
+  assert.equal(partsAllFulfilled(null), true)
+  assert.equal(partsAllFulfilled(undefined), true)
+})
+
+test('partsAllFulfilled is the exact complement of partsOnOrder', () => {
+  // Not a tautology worth deleting: it is the invariant that lets the detail
+  // page's Start Work gate (partsOnOrder-based) and the board's readiness chip
+  // (parts_received-based) claim the same thing about the same ticket.
+  const cases: PartRequest[][] = [
+    [],
+    [manual({ status: 'received' })],
+    [manual({ status: 'from_stock' })],
+    [manual({ status: 'ordered' })],
+    [manual({ status: 'received' }), manual({ status: 'requested' })],
+    [manual({ status: 'ordered', cancelled: true })],
+  ]
+  for (const parts of cases) {
+    assert.equal(partsAllFulfilled(parts), partsOnOrder(parts).length === 0)
+  }
 })
 
 // ── partsMissingFromWorkOrder ──

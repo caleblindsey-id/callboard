@@ -220,6 +220,14 @@ export type ServiceTicketWithJoins = ServiceTicketRow & {
   assigned_technician: { name: string } | null
   deleted_by: { name: string } | null
   credit_reviews: { status: CreditReviewStatus }[] | null
+  // Live (non-cancelled) part counts backing the board's readiness chip, mirroring
+  // the detail page's "N of M still pending". Optional because only GET
+  // /api/service-tickets populates them, and only for the approved / in_progress
+  // rows on the page — the parts_order_queue view they come from carries a status
+  // gate that makes it an invalid source for earlier stages. Absent means "not
+  // asked for", which is why the chip checks status rather than these being set.
+  parts_pending?: number
+  parts_total?: number
 }
 
 export type ServiceTicketDetail = ServiceTicketRow & {

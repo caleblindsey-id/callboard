@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { isPartOutstanding } from '@/lib/parts'
 import type {
   ServiceTicketRow,
   ServiceTicketWithJoins,
@@ -20,6 +21,13 @@ interface ServiceTicketFilters {
   ticketType?: ServiceTicketType
   billingType?: ServiceBillingType
   waitingOnParts?: boolean
+  // The complement of waitingOnParts: nothing outstanding on the parts side, so
+  // the work can actually be dispatched. Powers the Approved tab's "Ready to
+  // start" filter (feedback #79 — half that queue is blocked on parts and the
+  // board gave no signal which half). Deliberately NOT credit-aware: "has no open
+  // credit review" is an anti-join PostgREST can't express, and filtering it
+  // client-side would silently cap the result at the first page.
+  ready?: boolean
   // Completed tickets for PO-required customers that still have no customer PO on
   // file — the "waiting on PO" worklist. Forces status='completed' and requires
   // an inner customers join (see getServiceTickets), so it's handled there rather
@@ -42,7 +50,10 @@ interface ServiceTicketFilters {
 // and soft-delete predicates) keeps the board's list and tab counts from
 // drifting apart. Status is intentionally NOT applied here — the list applies
 // its single status filter and the counts helper iterates every status separately.
-function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters): Q {
+// Exported for src/lib/db/service-tickets.test.ts, which pins the parts
+// predicates by recording the filters this emits. Not intended for callers —
+// the query helpers below apply it themselves.
+export function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters): Q {
   // The Supabase builder is chainable but its generics make a typed pass-through
   // awkward; cast to a minimal chainable shape, reassign, and return as Q.
   let q = query as unknown as {
@@ -50,14 +61,24 @@ function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters):
     neq(column: string, value: unknown): typeof q
     is(column: string, value: unknown): typeof q
     not(column: string, operator: string, value: unknown): typeof q
+    or(filters: string): typeof q
   }
   if (filters?.technicianId) q = q.eq('assigned_technician_id', filters.technicianId)
   if (filters?.customerId) q = q.eq('customer_id', filters.customerId)
   if (filters?.priority) q = q.eq('priority', filters.priority)
   if (filters?.ticketType) q = q.eq('ticket_type', filters.ticketType)
   if (filters?.billingType) q = q.eq('billing_type', filters.billingType)
+  // waitingOnParts and ready are exact complements over the same two columns.
+  // The `parts_requested <> '[]'` half of waiting (and its `= '[]'` mirror in
+  // ready) is load-bearing rather than redundant: parts_received defaults to
+  // false and a ticket that never requested a part never runs the derivation, so
+  // without it a brand-new ticket would be reported "waiting on parts" from birth.
+  // Passing both is contradictory and correctly matches nothing.
   if (filters?.waitingOnParts) {
     q = q.eq('parts_received', false).neq('parts_requested', '[]' as unknown as PartRequest[])
+  }
+  if (filters?.ready) {
+    q = q.or('parts_received.eq.true,parts_requested.eq.[]')
   }
   // Soft-delete scoping. Default hides deleted tickets from every board/count
   // surface; the manager-only "Deleted" view opts in via deletedOnly.
@@ -128,6 +149,70 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
   // 082), which isn't in the generated database.ts types yet, so the inferred row type
   // can't resolve the join. Cast through `unknown` — same pattern as applyServiceTicketFilters.
   return data as unknown as ServiceTicketWithJoins[]
+}
+
+// --- Per-ticket parts counts for the board's readiness chip ---
+
+export type ServicePartsCount = { pending: number; total: number }
+
+/**
+ * Live part counts per ticket, keyed by ticket id, for the chip's "N of M".
+ *
+ * Reads the parts_order_queue view rather than the tickets' parts_requested
+ * JSONB: the board's list select deliberately omits that blob to keep large
+ * JSONB off the wire, and re-adding it to render a two-number chip would undo
+ * that. The view already explodes each part into a row with status + cancelled
+ * projected as columns.
+ *
+ * ONLY valid for approved / in_progress tickets. The view's service branch hides
+ * requested + pending_review parts while a ticket is still open or estimated
+ * (migration 102), so at those stages it under-reports and the caller must not
+ * ask. Cancelled parts leave the denominator, matching the detail page, where
+ * they stay visible but struck through.
+ *
+ * Soft deletes: the view projects no deleted_at, so this cannot filter on one.
+ * It doesn't need to — ticketIds always arrive from an already-guarded list
+ * query, so a deleted ticket is never in the id set. Flagged explicitly because
+ * npm test's guard only inspects direct service_tickets reads and would not
+ * catch a regression here (AGENTS.md).
+ */
+export async function getServicePartsCounts(
+  ticketIds: string[]
+): Promise<Record<string, ServicePartsCount>> {
+  if (ticketIds.length === 0) return {}
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('parts_order_queue')
+    .select('ticket_id, status, cancelled')
+    .eq('source', 'service')
+    .in('ticket_id', ticketIds)
+
+  if (error) throw error
+  return tallyServicePartRows(data ?? [])
+}
+
+/**
+ * Fold exploded part rows into per-ticket {pending, total}. Pure so the counting
+ * rule is testable without a database — the same reason workOrderAutoAddPatch is
+ * split from its route.
+ *
+ * Cancelled parts are dropped before counting, so they leave both the numerator
+ * and the denominator: the chip reads "Parts 1 of 2" on a ticket whose third
+ * part was cancelled, matching livePartsRequested on the detail page.
+ */
+export function tallyServicePartRows(
+  rows: Array<{ ticket_id: string | null; status: string | null; cancelled: boolean | null }>
+): Record<string, ServicePartsCount> {
+  const counts: Record<string, ServicePartsCount> = {}
+  for (const row of rows) {
+    if (row.cancelled || !row.ticket_id) continue
+    const entry = counts[row.ticket_id] ?? { pending: 0, total: 0 }
+    entry.total += 1
+    if (isPartOutstanding(row)) entry.pending += 1
+    counts[row.ticket_id] = entry
+  }
+  return counts
 }
 
 // --- Service ticket counts grouped by status (service board tabs) ---
