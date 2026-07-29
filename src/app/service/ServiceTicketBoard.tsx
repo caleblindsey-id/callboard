@@ -64,7 +64,16 @@ function ReadinessChipCell({ ticket }: { ticket: ServiceTicketWithJoins }) {
   if (!chip) return null
   if (chip.kind === 'credit') return <CreditReviewBadge status={chip.status} />
   if (chip.kind === 'ready') return <Badge domain="readiness" status="ready" />
-  return <Badge domain="readiness" status="waiting" label={readinessChipLabel(chip)} />
+  // nowrap: the column is narrow enough that a two-digit count ("Parts 5 of 5")
+  // wrapped mid-label and turned the pill into a blob.
+  return (
+    <Badge
+      domain="readiness"
+      status="waiting"
+      label={readinessChipLabel(chip)}
+      className="whitespace-nowrap"
+    />
+  )
 }
 
 // Sort priority by severity (emergency first), not alphabetically.
