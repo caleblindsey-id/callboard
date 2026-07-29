@@ -257,6 +257,20 @@ const CREDIT_REVIEW_STATUS_META: Record<CreditReviewStatus, StatusMeta> = {
   },
 }
 
+// Dispatch readiness for an approved / in-progress service ticket: can this work
+// actually be started? Derived from the parts counts, never stored (feedback
+// #79). The 'waiting' label is a fallback — the board overrides it per row with
+// the live "Parts N of M" count, matching the detail page's phrasing. Green here
+// is deliberately the same GREEN_COMPLETED the boards already read as "nothing
+// left to do", and amber matches the parts domain's own in-flight color.
+const READINESS_STATUS_META: Record<'ready' | 'waiting', StatusMeta> = {
+  ready: { label: 'Ready', classes: GREEN_COMPLETED },
+  waiting: {
+    label: 'Waiting on parts',
+    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  },
+}
+
 const CREDIT_HOLD_STATUS_META: Record<CreditHoldStatusKey, StatusMeta> = {
   active: {
     label: 'Credit Hold',
@@ -308,6 +322,7 @@ export const STATUS_META = {
   lead: LEAD_STATUS_META,
   ace: ACE_STATUS_META,
   creditReview: CREDIT_REVIEW_STATUS_META,
+  readiness: READINESS_STATUS_META,
   creditHold: CREDIT_HOLD_STATUS_META,
   ticketType: TICKET_TYPE_META,
   reorder: REORDER_STATUS_META,

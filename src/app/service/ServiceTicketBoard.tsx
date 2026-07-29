@@ -8,7 +8,13 @@ import { ServiceTicketWithJoins, ServiceTicketStatus, ServicePriority, ServiceTi
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
 import CreditReviewBadge from '@/components/CreditReviewBadge'
+import Badge from '@/components/ui/Badge'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
+import {
+  resolveReadinessChip,
+  readinessChipLabel,
+  readinessSortRank,
+} from '@/lib/service-readiness'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { getStatusMeta } from '@/lib/status-meta'
 import { createClient } from '@/lib/supabase/client'
@@ -32,6 +38,7 @@ type ServiceSortKey =
   | 'type'
   | 'technician'
   | 'created'
+  | 'readiness'
 
 // Free-text service address captured on the ticket — fallback for the location
 // column when no synced ship-to is linked (mirrors the PM board's billing-city
@@ -43,6 +50,21 @@ function serviceAddressLine(ticket: ServiceTicketWithJoins): string | null {
       .filter((s): s is string => !!s)
       .join(', ') || null
   )
+}
+
+/**
+ * The dispatch-readiness chip: can this approved ticket actually be started?
+ *
+ * Renders nothing for rows the question doesn't apply to, which is most of the
+ * board — see resolveReadinessChip for the precedence and why absent counts
+ * deliberately produce no chip rather than a green one.
+ */
+function ReadinessChipCell({ ticket }: { ticket: ServiceTicketWithJoins }) {
+  const chip = resolveReadinessChip(ticket)
+  if (!chip) return null
+  if (chip.kind === 'credit') return <CreditReviewBadge status={chip.status} />
+  if (chip.kind === 'ready') return <Badge domain="readiness" status="ready" />
+  return <Badge domain="readiness" status="waiting" label={readinessChipLabel(chip)} />
 }
 
 // Sort priority by severity (emergency first), not alphabetically.
@@ -68,6 +90,11 @@ const SERVICE_SORT_ACCESSORS: SortAccessors<ServiceTicketWithJoins, ServiceSortK
   type: t => t.ticket_type,
   technician: t => t.assigned_technician?.name,
   created: t => t.created_at,
+  // Blocked work first, then credit-gated, then startable, then rows with no
+  // chip. The DEFAULT sort is deliberately left alone — silently reordering a
+  // board people have learned costs more than it saves, and one click on the
+  // "Ready to start" segment is the direct answer to the complaint.
+  readiness: t => readinessSortRank(resolveReadinessChip(t)),
 }
 
 // `type` (not `interface`) so it satisfies the hook's `Record<string, string>`
@@ -78,10 +105,23 @@ export type ServiceBoardInitialFilters = {
   type: string
   tech: string
   waitingOnParts: string
+  ready: string
   poNeeded: string
   deleted: string
   search: string
 }
+
+// The parts filter is one three-way choice, not two independent checkboxes: a
+// ticket is either startable or blocked, never both. Kept as two URL params
+// rather than one so the dashboard's existing ?waitingOnParts=1 deep links keep
+// working untouched.
+type PartsReadinessFilter = 'all' | 'ready' | 'waiting'
+
+const PARTS_READINESS_OPTIONS: { value: PartsReadinessFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'ready', label: 'Ready to start' },
+  { value: 'waiting', label: 'Waiting on parts' },
+]
 
 // Status tabs for the board — workflow order (actionable stages first, terminal
 // states last) so a manager can scan and follow up by stage. `all` is the count
@@ -182,6 +222,14 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
   const typeFilter = filters.type as '' | ServiceTicketType
   const techFilter = filters.tech
   const waitingOnParts = filters.waitingOnParts === '1'
+  const readyToStart = filters.ready === '1'
+  // Waiting wins if a hand-built URL sets both, so the control always shows a
+  // single active segment even when the query string is contradictory.
+  const partsReadiness: PartsReadinessFilter = waitingOnParts
+    ? 'waiting'
+    : readyToStart
+      ? 'ready'
+      : 'all'
   // Completed tickets for PO-required customers with no customer PO yet. Forces
   // status='completed' server-side; deep-linked from the "Waiting on PO" cards.
   const poNeeded = filters.poNeeded === '1'
@@ -261,11 +309,16 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
     if (priorityFilter) params.set('priority', priorityFilter)
     if (typeFilter) params.set('ticketType', typeFilter)
     if (techFilter) params.set('technicianId', techFilter)
-    if (waitingOnParts) params.set('waitingOnParts', 'true')
+    // Send exactly the segment the control is showing. Deriving from
+    // partsReadiness rather than the two raw params means a contradictory
+    // ?waitingOnParts=1&ready=1 URL can't ask the server for the empty
+    // intersection while the UI claims one segment is active.
+    if (partsReadiness === 'waiting') params.set('waitingOnParts', 'true')
+    else if (partsReadiness === 'ready') params.set('ready', 'true')
     if (poNeeded) params.set('poNeeded', '1')
     params.set('limit', String(PAGE_SIZE))
     return params
-  }, [statusFilter, priorityFilter, typeFilter, techFilter, waitingOnParts, poNeeded, deletedView])
+  }, [statusFilter, priorityFilter, typeFilter, techFilter, partsReadiness, poNeeded, deletedView])
 
   useEffect(() => {
     async function fetchTickets() {
@@ -375,7 +428,8 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
         if (priorityFilter) params.set('priority', priorityFilter)
         if (typeFilter) params.set('ticketType', typeFilter)
         if (techFilter) params.set('technicianId', techFilter)
-        if (waitingOnParts) params.set('waitingOnParts', 'true')
+        if (partsReadiness === 'waiting') params.set('waitingOnParts', 'true')
+        else if (partsReadiness === 'ready') params.set('ready', 'true')
 
         const res = await fetch(`/api/service-tickets/counts?${params.toString()}`)
         if (res.ok) {
@@ -386,7 +440,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
       }
     }
     fetchCounts()
-  }, [priorityFilter, typeFilter, techFilter, waitingOnParts])
+  }, [priorityFilter, typeFilter, techFilter, partsReadiness])
 
   return (
     <div className="space-y-6">
@@ -419,7 +473,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
           onChange: (v) => set('search', v, { debounce: true }),
           placeholder: 'WO#, customer, equipment, address, tech',
         }}
-        activeCount={[priorityFilter, typeFilter, techFilter].filter(Boolean).length + (waitingOnParts ? 1 : 0) + (poNeeded ? 1 : 0)}
+        activeCount={[priorityFilter, typeFilter, techFilter].filter(Boolean).length + (partsReadiness !== 'all' ? 1 : 0) + (poNeeded ? 1 : 0)}
       >
         <div className="w-full lg:w-auto">
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
@@ -463,16 +517,39 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
           </div>
         )}
 
-        <div className="w-full lg:w-auto flex items-end">
-          <label className="flex items-center gap-2 cursor-pointer py-1.5">
-            <input
-              type="checkbox"
-              checked={waitingOnParts}
-              onChange={(e) => set('waitingOnParts', e.target.checked ? '1' : '')}
-              className="rounded border-gray-300 dark:border-gray-600 accent-slate-600"
-            />
-            <span className="text-sm text-gray-700 dark:text-gray-300">Waiting on Parts</span>
+        {/* Was a one-way "Waiting on Parts" checkbox, which only ever showed the
+            blocked half. The dispatch question is the complement — which of
+            these can I send — so the control offers both sides (feedback #79). */}
+        <div className="w-full lg:w-auto">
+          <label id="parts-readiness-label" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+            Parts
           </label>
+          <div
+            role="group"
+            aria-labelledby="parts-readiness-label"
+            className="inline-flex w-full lg:w-auto rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden"
+          >
+            {PARTS_READINESS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={partsReadiness === opt.value}
+                onClick={() =>
+                  setMany({
+                    waitingOnParts: opt.value === 'waiting' ? '1' : '',
+                    ready: opt.value === 'ready' ? '1' : '',
+                  })
+                }
+                className={`flex-1 lg:flex-none px-3 py-1.5 text-sm whitespace-nowrap transition-colors border-r last:border-r-0 border-gray-300 dark:border-gray-600 ${
+                  partsReadiness === opt.value
+                    ? 'bg-slate-900 text-white dark:bg-slate-600'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="w-full lg:w-auto flex items-end">
@@ -578,6 +655,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                       </span>
                       <ServiceStatusBadge status={ticket.status} />
                       <PriorityBadge priority={ticket.priority} />
+                      <ReadinessChipCell ticket={ticket} />
                     </div>
                     <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 shrink-0" />
                   </div>
@@ -645,6 +723,7 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                     )}
                     <SortHeader label="WO #" colKey="work_order_number" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="Readiness" colKey="readiness" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Priority" colKey="priority" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Location" colKey="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -685,6 +764,9 @@ export function ServiceTicketBoard({ currentUser, initialFilters }: ServiceTicke
                       </td>
                       <td className="px-4 py-3">
                         <ServiceStatusBadge status={ticket.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <ReadinessChipCell ticket={ticket} />
                       </td>
                       <td className="px-4 py-3">
                         <PriorityBadge priority={ticket.priority} />
