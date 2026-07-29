@@ -193,6 +193,7 @@ export async function GET(request: NextRequest) {
       ticketType?: ServiceTicketType
       billingType?: ServiceBillingType
       waitingOnParts?: boolean
+      ready?: boolean
       poNeeded?: boolean
       deletedOnly?: boolean
       limit?: number
@@ -206,6 +207,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.get('ticketType')) filters.ticketType = searchParams.get('ticketType') as ServiceTicketType
     if (searchParams.get('billingType')) filters.billingType = searchParams.get('billingType') as ServiceBillingType
     if (searchParams.get('waitingOnParts') === 'true') filters.waitingOnParts = true
+    if (searchParams.get('ready') === 'true') filters.ready = true
     if (searchParams.get('poNeeded') === '1') filters.poNeeded = true
 
     // Opt-in pagination (board load-more). No limit param = full result set,
