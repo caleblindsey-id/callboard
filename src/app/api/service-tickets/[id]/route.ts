@@ -21,7 +21,7 @@ import {
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { partsOnOrder, partsAllFulfilled, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice, MARGIN_FLOOR, COST_FLOOR } from '@/lib/margin'
@@ -978,12 +978,10 @@ export async function PATCH(
           )
         }
       }
-      // parts_received: ignore cancelled parts. Without this filter, a single
-      // cancelled part keeps parts_received=false forever (since cancelled parts
-      // retain their pre-cancel status, never 'received').
-      const live = parts.filter((p: PartRequest) => !p.cancelled)
-      const allReceived = live.length > 0 && live.every((p: PartRequest) => p.status === 'received')
-      filtered.parts_received = allReceived
+      // Shared with api/parts-queue/update so the two writers of this column can
+      // never disagree. This route used to require every live part to be
+      // 'received', excluding from_stock, which is the drift migration 146 cleans up.
+      filtered.parts_received = partsAllFulfilled(parts)
     }
 
     // Validate equipment_id belongs to this ticket's customer (prevents cross-customer linking)

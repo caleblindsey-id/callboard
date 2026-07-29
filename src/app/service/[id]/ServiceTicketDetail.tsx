@@ -11,6 +11,7 @@ import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import {
   partLabel,
   partsOnOrder,
+  partsAllFulfilled,
   partsAwaitingReview,
   partsMissingFromWorkOrder,
   requestToUsedLine,
@@ -2029,7 +2030,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // visibility AND suppress the WorkflowStatusCard "Next:" line when the
   // viewer has a button (so we don't show "Next: Build the estimate" right
   // above a "Build Estimate" button).
-  const partsBlocking = livePartsRequested.length > 0 && !allPartsReceived
+  // Same predicate as the server-side parts_received column and the board's
+  // readiness chip, so Start Work here can't contradict what the board claims.
+  // (Identical to the old `livePartsRequested.length > 0 && !allPartsReceived`:
+  // the length guard cancelled out. allPartsReceived keeps its own guard because
+  // it drives display, where "all received" on a part-less ticket reads wrong.)
+  const partsBlocking = !partsAllFulfilled(partsRequested)
   // Pending parts that withhold Start Work, grouped by label for the
   // blocked-state callout (feedback #71). Before this, an approved ticket with
   // parts still pending simply hid the Start Work button, so a tech had no idea

@@ -19,6 +19,31 @@ export function partsOnOrder(
 }
 
 /**
+ * True when the ticket has nothing outstanding on the parts side — every live
+ * (non-cancelled) part is received or pulled from stock.
+ *
+ * Single source of truth for the `service_tickets.parts_received` column, which
+ * gates service completion and drives the board's waiting-on-parts filter. It is
+ * the exact complement of partsOnOrder(), and is written that way on purpose: the
+ * column used to be derived by hand at each write site, and the copies drifted —
+ * `api/service-tickets/[id]` required every live part to be 'received' while
+ * `api/parts-queue/update` also accepted 'from_stock', so triaging a part to
+ * pull-from-stock set the flag from one route and cleared it from the other.
+ * Migration 146 backfills the rows written under the old rules.
+ *
+ * Vacuously true when nothing is live, which is deliberate: a ticket whose every
+ * part was cancelled has nothing left to wait for, and the old `live.length > 0`
+ * guard pinned those at false forever. Callers that need to distinguish "no parts
+ * outstanding" from "no parts at all" must check the array themselves — the board
+ * predicate does exactly that, via `OR parts_requested = '[]'`.
+ */
+export function partsAllFulfilled(
+  parts: PartRequest[] | null | undefined
+): boolean {
+  return partsOnOrder(parts).length === 0
+}
+
+/**
  * Parts still awaiting office triage — status 'pending_review' and not cancelled.
  *
  * A pending_review part hasn't been acted on (order vs. pull-from-stock), so
