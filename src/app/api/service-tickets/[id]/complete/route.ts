@@ -11,6 +11,7 @@ import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, COST_FLOOR } from '@/lib/margin'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
+import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -23,6 +24,12 @@ interface CompleteServiceTicketBody {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   warranty_labor_covered?: boolean
+  // Rate class the completer picked on the completion form. Absent = keep
+  // whatever the ticket already had. Mirrors the PM /complete route's
+  // laborRateType (feedback #76); added for service tickets so a technician —
+  // who never sees the staff-only Assignment card — can classify a heated
+  // pressure washer as industrial before the bill is computed (feedback #83).
+  labor_rate_type?: string
   trip_charge_qty?: number
   machine_hours?: number | null
   date_code?: string | null
@@ -47,6 +54,14 @@ export async function POST(
     const body = await request.json() as CompleteServiceTicketBody
 
     const { completed_at, hours_worked, parts_used, completion_notes, customer_signature, customer_signature_name, photos, ace_labor } = body
+
+    // Reject an unknown rate class before it reaches the billing math or the DB
+    // CHECK constraint. getCustomerLaborRate silently falls back to the standard
+    // column for an unrecognised key, so an unvalidated value would bill at the
+    // wrong rate with nothing in the logs.
+    if (body.labor_rate_type !== undefined && !isLaborRateType(body.labor_rate_type)) {
+      return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
+    }
 
     if (ace_labor != null) {
       if (!isNonNegativeNumber(ace_labor.hours) || ace_labor.hours <= 0) {
@@ -267,6 +282,11 @@ export async function POST(
     // billing_amount is no longer accepted from the client — it's recomputed
     // for all roles from authoritative inputs.
     const billingType = current.billing_type as string
+    // The completer's pick wins over the stored type, so the rate the tech saw
+    // in the on-screen billing preview is the rate the bill is computed at. Used
+    // for the labor line AND the ACE payout entry below, which must agree.
+    const laborRateType = resolveLaborRateType(body.labor_rate_type, current.labor_rate_type)
+    const laborRateTypeChanged = laborRateType !== (current.labor_rate_type ?? 'standard')
     const finalParts: ServicePartUsed[] = parts_used ?? []
     const diagnosticCharge = Number(current.diagnostic_charge ?? 0) || 0
     // A diagnostic invoice number means the diagnostic visit was already billed
@@ -279,7 +299,7 @@ export async function POST(
     if (billingType === 'warranty') {
       finalBillingAmount = 0
     } else {
-      const laborRate = await getCustomerLaborRate(current.customer_id, current.labor_rate_type ?? 'standard')
+      const laborRate = await getCustomerLaborRate(current.customer_id, laborRateType)
       const laborTotal = hours_worked * laborRate
 
       const billablePartsTotal = billingType === 'partial_warranty'
@@ -331,7 +351,7 @@ export async function POST(
           .update({
             hours: ace_labor.hours,
             reason: ace_labor.reason.trim(),
-            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            labor_rate_type: laborRateType,
             status: 'pending',
             rejected_reason: null,
             approved_by_id: null,
@@ -358,7 +378,7 @@ export async function POST(
             service_ticket_id: id,
             tech_id: aceTechId,
             hours: ace_labor.hours,
-            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            labor_rate_type: laborRateType,
             reason: ace_labor.reason.trim(),
             status: 'pending',
             created_by_id: user.id,
@@ -385,6 +405,9 @@ export async function POST(
       warranty_labor_covered: body.warranty_labor_covered,
       machine_hours: machineHours,
       date_code: dateCode,
+      // Persisted in the same UPDATE as the billing_amount derived from it, so
+      // the stored rate class and the stored dollar figure can't drift apart.
+      ...(laborRateTypeChanged ? { labor_rate_type: laborRateType } : {}),
       // Stamp the manager's below-floor approval when one was exercised on this
       // completion (who/when/why); undefined leaves the columns untouched.
       ...(didOverride

@@ -4,7 +4,7 @@ category: Technicians
 roles: [super_admin, manager, coordinator, technician]
 order: 15
 summary: Open a new service (repair) ticket for a customer — available when your manager enables it for you.
-last_verified: 2026-06-12
+last_verified: 2026-07-30
 ---
 
 Most service tickets are opened by the office. But if your manager has turned on the permission for you, you can create one yourself — for example when you're on site and find a new problem to log. A ticket you create is **assigned to you automatically**.
@@ -21,7 +21,7 @@ This is a per-technician permission. If you don't see a **+ New Service Ticket**
 4. **Equipment** *(required)* — pick the machine. If it isn't on file, register it inline (at least a **Make or Model**). A serial that already exists for the customer is flagged.
 5. **Ticket details:**
    - **Type** — *Inside (Shop)* or *Outside (Field)*. Outside adds a service-address section.
-   - **Billing Type**, **Priority**, and **Labor Rate**.
+   - **Billing Type**, **Priority**, and **Labor Rate** (Standard / Industrial / Vacuum — pick **Industrial** for heated pressure washers and similar units so the job bills at the right rate).
    - **Problem Description** *(required)*.
    - **Diagnostic Fee** — optional, only if one was already invoiced in Synergy.
 6. **Contact** *(required)* — a name, plus at least an email **or** phone. CallBoard pre-fills from the equipment, ship-to, or customer when it can.
@@ -33,3 +33,4 @@ This is a per-technician permission. If you don't see a **+ New Service Ticket**
 - **I don't see the New Service Ticket button.** The permission isn't enabled for your account — ask your manager to turn it on in Settings.
 - **Can I assign it to another technician?** No — tickets you create are assigned to you. The office can reassign it afterward if needed.
 - **The customer is on credit hold.** You can still create the ticket, but it routes to the office for credit approval and stays gated until released.
+- **I picked the wrong Labor Rate.** You can change it later — on the estimate (**Labor Rate Type**) or on the completion form (**Labor Type**), right up until you mark the job complete.

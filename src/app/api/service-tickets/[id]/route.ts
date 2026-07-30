@@ -30,6 +30,7 @@ import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 import { notifyApprove } from '@/lib/service-tickets/notify-approve'
+import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -126,6 +127,14 @@ const TECH_ALLOWED_FIELDS = [
   'contact_name',
   'contact_email',
   'contact_phone',
+  // The tech on the machine is the one who knows it's a heated pressure washer
+  // (industrial) rather than a standard unit, and they never see the staff-only
+  // Assignment card — so without this they had no way to set the rate class at
+  // any stage and the job silently billed at the standard rate (feedback #83).
+  // Only the rate CLASS; the dollar value per class stays office-controlled in
+  // Settings, same split as trip_charge_qty. The tech ownership check below
+  // scopes this to their own ticket.
+  'labor_rate_type',
 ] as const
 
 export async function GET(
@@ -177,8 +186,7 @@ export async function PATCH(
       Object.entries(raw).filter(([key]) => allowedFields.includes(key))
     )
 
-    if (filtered.labor_rate_type !== undefined &&
-        !['standard', 'industrial', 'vacuum'].includes(filtered.labor_rate_type as string)) {
+    if (filtered.labor_rate_type !== undefined && !isLaborRateType(filtered.labor_rate_type)) {
       return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
     }
 
@@ -826,7 +834,7 @@ export async function PATCH(
       filtered.labor_rate_type !== undefined
 
     if (estimateInputsChanged) {
-      const rateType = (filtered.labor_rate_type as string | undefined) ?? current.labor_rate_type ?? 'standard'
+      const rateType = resolveLaborRateType(filtered.labor_rate_type, current.labor_rate_type)
       const laborRate = await getCustomerLaborRate(current.customer_id, rateType)
 
       // Use the new value if supplied, otherwise fall back to the existing

@@ -15,6 +15,7 @@ import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
+import { isLaborRateType } from '@/lib/labor-rate-type'
 
 interface CompleteTicketBody {
   completedDate: string
@@ -39,11 +40,6 @@ interface CompleteTicketBody {
 
 function isNonNegativeNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0
-}
-
-const LABOR_RATE_TYPES = ['standard', 'industrial', 'vacuum'] as const
-function isLaborRateType(v: unknown): v is (typeof LABOR_RATE_TYPES)[number] {
-  return typeof v === 'string' && (LABOR_RATE_TYPES as readonly string[]).includes(v)
 }
 
 export async function POST(

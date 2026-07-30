@@ -78,6 +78,10 @@ interface ServiceTicketDetailProps {
 // fields are out of scope (Round 9 targets the completion form only).
 interface ServiceCompletionDraft {
   billingType: ServiceBillingType
+  // Same lifecycle as billingType: picked on the completion form and only sent
+  // when the job is marked complete, so it isn't covered by the server autosave
+  // and would otherwise be lost on a mid-completion refresh (feedback #83).
+  laborRateType: string
   hoursWorked: string
   tripChargeQty: string
   machineHours: string
@@ -803,8 +807,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         estimate_labor_hours: hours,
         estimate_parts: toServicePartUsed(estimateParts),
         diagnosis_notes: diagnosisNotes || null,
-        // Staff-only field — server re-resolves and snapshots estimate_labor_rate from it.
-        ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
+        // Server re-resolves and snapshots estimate_labor_rate from this. Now
+        // tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; the
+        // server allowlist is the authority on who may write it. Same fix as
+        // trip_charge_qty below: gating it on isStaff here silently dropped a
+        // tech's rate-class pick on submit (feedback #83).
+        labor_rate_type: estimateRateType,
         // Trip charge qty lives inline under labor hours; persist it with the estimate.
         // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; the server
         // allowlist is the authority on who may write it. Gating it on isStaff here
@@ -1120,8 +1128,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         diagnosis_notes: diagnosisNotes || null,
         estimate_labor_hours: parseFloat(estimateLaborHours) || null,
         estimate_parts: estimateParts.length > 0 ? toServicePartUsed(estimateParts) : [],
-        // Staff-only field — server filters it out for techs.
-        ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
+        // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; server allowlist gates it.
+        labor_rate_type: estimateRateType,
         // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; server allowlist gates it.
         trip_charge_qty: parseFloat(tripChargeQty) || 0,
       }
@@ -1255,10 +1263,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // mid-completion doesn't lose the form on refresh. Keyed by ticket id, and
   // only enabled during the completion phase (not the estimate builder).
   const serviceCompletionDraftState = useMemo<ServiceCompletionDraft>(() => ({
-    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    billingType, laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
     completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
   }), [
-    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    billingType, laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
     completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
   ])
 
@@ -1283,6 +1291,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       const serverLastSaved = new Date(ticket.updated_at).getTime()
       if (!Number.isFinite(lastEditedAt) || lastEditedAt <= serverLastSaved) return
       if (draft.billingType) setBillingType(draft.billingType)
+      if (draft.laborRateType) setLaborRateType(draft.laborRateType)
       setHoursWorked(draft.hoursWorked ?? '')
       setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
       setMachineHours(draft.machineHours ?? '')
@@ -1773,6 +1782,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       const res = await requestWithMarginOverride(`/api/service-tickets/${ticket.id}/complete`, 'POST', {
         completed_at: new Date().toISOString(),
         hours_worked: hours,
+        // Rate class the completer picked on the form. Sent with the completion
+        // rather than PATCHed first (like billing_type above) so the stored
+        // labor_rate_type and the billing_amount computed from it land in the
+        // same UPDATE and can't disagree (feedback #83).
+        labor_rate_type: laborRateType,
         trip_charge_qty: parseFloat(tripChargeQty) || 0,
         parts_used: toServicePartUsed(completionParts),
         completion_notes: completionNotes || null,
@@ -1914,7 +1928,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
-  const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
+  // Completion labor rate follows the rate class selected on the completion
+  // form, not just the type stored at page load, so the on-screen billing
+  // preview matches what /complete will compute (feedback #83). All three
+  // customer-resolved rates are already on the client via laborRates.
+  const effectiveLaborRate = laborRates?.[laborRateType] ?? laborRate
+  const laborTotal = (parseFloat(hoursWorked) || 0) * effectiveLaborRate
   // Trip charge billed (0 on full-warranty tickets, matching the server).
   // Billed trip charge = trips × per-trip rate (0 on full-warranty tickets).
   const tripChargeQtyNum = parseFloat(tripChargeQty) || 0
@@ -2948,13 +2967,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           saveSuccess={saveSuccess}
           localSavedVisible={localSavedVisible}
           taxRatePercent={taxRatePercent}
-          laborRate={laborRate}
+          laborRate={effectiveLaborRate}
+          laborRates={laborRates}
           tripChargeRate={tripChargeRate}
           completionOpen={completionOpen}
           equipmentToVerify={equipmentToVerify}
           onEquipmentVerified={handleEquipmentVerified}
           billingType={billingType}
           setBillingType={setBillingType}
+          laborRateType={laborRateType}
+          setLaborRateType={setLaborRateType}
           hoursWorked={hoursWorked}
           setHoursWorked={setHoursWorked}
           tripChargeQty={tripChargeQty}
