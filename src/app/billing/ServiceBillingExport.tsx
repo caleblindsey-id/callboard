@@ -50,6 +50,7 @@ const ALL_MONTHS = 0
 
 type ServiceBillingSortKey =
   | 'customer'
+  | 'wo'
   | 'poStatus'
   | 'equipment'
   | 'technician'
@@ -60,6 +61,7 @@ type ServiceBillingSortKey =
 
 const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, ServiceBillingSortKey> = {
   customer: t => t.customers?.name,
+  wo: t => t.work_order_number,
   // Group PO-needed rows first (they block export), then has-PO, then not-required.
   poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   equipment: t =>
@@ -421,6 +423,7 @@ export default function ServiceBillingExport({
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="WO#" colKey="wo" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -442,6 +445,9 @@ export default function ServiceBillingExport({
                             {customerSubline(t)}
                           </span>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                        {t.work_order_number ?? '—'}
                       </td>
                       <td className="px-4 py-3">
                         {renderPoStatus(t)}

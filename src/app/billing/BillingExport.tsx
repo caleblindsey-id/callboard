@@ -52,6 +52,7 @@ const ALL_MONTHS = 0
 
 type BillingSortKey =
   | 'customer'
+  | 'wo'
   | 'poStatus'
   | 'equipment'
   | 'technician'
@@ -62,6 +63,7 @@ type BillingSortKey =
 
 const BILLING_SORT_ACCESSORS: SortAccessors<TicketWithJoins, BillingSortKey> = {
   customer: t => t.customers?.name,
+  wo: t => t.work_order_number,
   // Group PO-needed rows first (they block export), then has-PO, then not-required.
   poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
@@ -424,6 +426,7 @@ export default function BillingExport({
                           </p>
                         )}
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {t.work_order_number != null ? `WO#${t.work_order_number} · ` : ''}
                           Tech: {t.users?.name ?? '—'} · Hrs: {t.hours_worked ?? '—'} ·{' '}
                           {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
                         </p>
@@ -464,6 +467,7 @@ export default function BillingExport({
                       />
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="WO#" colKey="wo" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Technician" colKey="technician" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -496,6 +500,9 @@ export default function BillingExport({
                               {customerSubline(t)}
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                          {t.work_order_number ?? '—'}
                         </td>
                         <td className="px-4 py-3">
                           {renderPoStatus(t)}

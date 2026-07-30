@@ -27,6 +27,7 @@ function needsInvoice(t: TicketWithJoins): boolean {
 
 type PmInvoiceSortKey =
   | 'customer'
+  | 'wo'
   | 'invoice'
   | 'synergy'
   | 'equipment'
@@ -36,6 +37,7 @@ type PmInvoiceSortKey =
 
 const PM_INVOICE_SORT_ACCESSORS: SortAccessors<TicketWithJoins, PmInvoiceSortKey> = {
   customer: t => t.customers?.name,
+  wo: t => t.work_order_number,
   // Invoice-needed rows first (they block mark-billed).
   invoice: t => (needsInvoice(t) ? 0 : 1),
   synergy: t => t.synergy_order_number,
@@ -406,6 +408,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                       />
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="WO#" colKey="wo" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Order #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -436,6 +439,9 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                               {customerSubline(t)}
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                          {t.work_order_number ?? '—'}
                         </td>
                         <td className="px-4 py-3">
                           {renderInvoiceStatus(t)}

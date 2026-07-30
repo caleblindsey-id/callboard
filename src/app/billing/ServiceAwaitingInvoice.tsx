@@ -58,6 +58,7 @@ function isBlocked(t: ServiceBillingTicket): boolean {
 
 type ServiceInvoiceSortKey =
   | 'customer'
+  | 'wo'
   | 'invoice'
   | 'poStatus'
   | 'synergy'
@@ -70,6 +71,7 @@ type ServiceInvoiceSortKey =
 
 const SERVICE_INVOICE_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, ServiceInvoiceSortKey> = {
   customer: t => t.customers?.name,
+  wo: t => t.work_order_number,
   // Invoice-needed rows first (they block mark-billed).
   invoice: t => (needsInvoice(t) ? 0 : 1),
   // PO-needed rows first (they block mark-billed), then has-PO, then not-required.
@@ -544,6 +546,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                       />
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="WO#" colKey="wo" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Order #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -577,6 +580,9 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                               {customerSubline(t)}
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                          {t.work_order_number ?? '—'}
                         </td>
                         <td className="px-4 py-3">
                           {renderPoStatus(t)}
