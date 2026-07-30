@@ -41,6 +41,18 @@ test('shouldNotifyForMonth: July still notifies at 11 PM CDT on July 31 (Aug 1 i
   assert.equal(shouldNotifyForMonth(7, 2026, lateJuly), true)
 })
 
+test('shouldNotifyForMonth: month 0 never notifies', () => {
+  assert.equal(shouldNotifyForMonth(0, 2026, MID_JULY), false)
+})
+
+test('shouldNotifyForMonth: month 13 never notifies', () => {
+  assert.equal(shouldNotifyForMonth(13, 2026, MID_JULY), false)
+})
+
+test('shouldNotifyForMonth: NaN month never notifies', () => {
+  assert.equal(shouldNotifyForMonth(NaN, 2026, MID_JULY), false)
+})
+
 test('groupCreatedByTechnician: counts per technician across a mixed batch', () => {
   const result = groupCreatedByTechnician([
     { assigned_technician_id: TECH_A },

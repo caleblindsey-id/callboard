@@ -22,6 +22,13 @@ export type PmNotificationPayload = {
 // so at 11 PM CDT on July 31 a naive comparison reads August and would classify
 // a current-month July run as "past".
 export function shouldNotifyForMonth(month: number, year: number, now: Date = new Date()): boolean {
+  // An out-of-range month never notifies. This is also what keeps
+  // buildPmNotification safe: formatMonthYear falls back to a literal em-dash
+  // for a bad month, and house rules forbid dashes in user-facing copy. The
+  // gate returning false means the builder is never reached with one.
+  if (!Number.isInteger(month) || month < 1 || month > 12) return false
+  if (!Number.isInteger(year)) return false
+
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: BUSINESS_TIME_ZONE,
     year: 'numeric',
