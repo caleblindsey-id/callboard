@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PartUsed } from '@/types/database'
 import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
+import { shippingChargeAmount } from '@/lib/shipping'
 
 // Shared PM billing math. Extracted from POST /api/tickets/[id]/complete so the
 // first-PM-on-site auto-completion (Create Equipment from an approved tech lead)
@@ -8,6 +9,7 @@ import { getCustomerLaborRate, getTripChargeRate } from '@/lib/db/settings'
 //
 // Formula: flat_rate + (additionalHours × customer labor rate)
 //          + sum(additionalParts qty × canonical unit_price) + (tripQty × trip rate)
+//          + shippingCharge
 // Result is rounded to cents to match .toFixed(2) display everywhere.
 
 export interface ComputePmBillingParams {
@@ -20,6 +22,12 @@ export interface ComputePmBillingParams {
   // synergy_product_id, others clamped to a non-negative unit_price.
   additionalParts: PartUsed[]
   tripQty: number
+  // Inbound freight billed to the customer (migration 148, feedback #80). Flat
+  // dollars off the ticket column; NULL/absent → 0. Optional so the two callers
+  // that predate it keep compiling, but both pass it — a PM ticket can
+  // special-order a part just as a service ticket can, and the asymmetry
+  // AGENTS.md warns about is exactly how these two paths drift.
+  shippingCharge?: number | null
 }
 
 export interface ComputePmBillingResult {
@@ -32,6 +40,7 @@ export async function computePmBilling(
   params: ComputePmBillingParams,
 ): Promise<ComputePmBillingResult> {
   const { customerId, laborRateType, flatRate, additionalHours, additionalParts, tripQty } = params
+  const shippingCharge = shippingChargeAmount(params.shippingCharge)
 
   const laborRate = await getCustomerLaborRate(customerId, laborRateType)
 
@@ -68,7 +77,9 @@ export async function computePmBilling(
   const tripCharge = tripQty * (await getTripChargeRate())
 
   const billingAmount =
-    Math.round((flatRate + additionalHours * laborRate + additionalPartsTotal + tripCharge) * 100) / 100
+    Math.round(
+      (flatRate + additionalHours * laborRate + additionalPartsTotal + tripCharge + shippingCharge) * 100,
+    ) / 100
 
   return { billingAmount, finalAdditionalParts }
 }

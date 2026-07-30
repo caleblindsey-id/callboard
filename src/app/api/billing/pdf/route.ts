@@ -50,6 +50,7 @@ interface RawTicket {
   machine_hours: number | null
   date_code: string | null
   billing_amount: number | null
+  shipping_charge: number | null
   customers: {
     name: string
     account_number: string | null
@@ -169,6 +170,7 @@ export async function POST(request: NextRequest) {
         additional_parts_used,
         additional_hours_worked,
         billing_amount,
+        shipping_charge,
         customer_signature,
         customer_signature_name,
         photos,
@@ -387,6 +389,7 @@ export async function POST(request: NextRequest) {
         additionalHoursWorked: raw.additional_hours_worked,
         laborRate,
         billingAmount: raw.billing_amount,
+        shippingCharge: raw.shipping_charge,
         billingType: raw.pm_schedules?.billing_type ?? null,
         flatRate: raw.pm_schedules?.flat_rate ?? null,
         poRequired: raw.customers?.po_required ?? false,

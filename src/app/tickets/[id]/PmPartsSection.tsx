@@ -7,6 +7,7 @@ import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
+import { normalizeShippingNote } from '@/lib/shipping'
 import { formatDate } from '@/lib/format'
 import { getStatusMeta } from '@/lib/status-meta'
 import InlineError from '@/components/ui/InlineError'
@@ -100,6 +101,16 @@ export default function PmPartsSection({
         ...(entry.vendorCode?.trim() ? { vendor_code: entry.vendorCode.trim() } : {}),
         ...(entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? { unit_price: priceParsed } : {}),
         ...(entry.coveredByAgreement !== undefined ? { covered_by_agreement: entry.coveredByAgreement } : {}),
+        // Requested shipping speed (feedback #80). Only a non-default speed is
+        // written, so a standard-ground request stays as lean on the JSONB as
+        // before — and reads back through the same absent -> 'standard' path
+        // every pre-feature row uses.
+        ...(entry.shippingMethod && entry.shippingMethod !== 'standard'
+          ? { shipping_method: entry.shippingMethod }
+          : {}),
+        ...(normalizeShippingNote(entry.shippingNote)
+          ? { shipping_note: normalizeShippingNote(entry.shippingNote) }
+          : {}),
         // New requests enter the office Review step (stock-vs-order triage) before
         // they reach the To-Order queue.
         status: 'pending_review',
@@ -459,6 +470,7 @@ export default function PmPartsSection({
                 showCoverage={true}
                 showVendorItemCode={true}
                 showVendor={true}
+                showShipping={true}
                 label="Request a Part"
                 onRequestPart={handleRequestDraftPart}
               />

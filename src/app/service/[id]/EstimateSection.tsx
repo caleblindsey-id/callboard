@@ -526,6 +526,10 @@ export default function EstimateSection({
                 showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
                 showVendor={true}
                 showVendorItemCode={true}
+                // Only meaningful when the per-row Request button is live — the
+                // speed is a procurement instruction, not part of the quote, so
+                // there's nothing to ask about when the row can't be requested.
+                showShipping={machineComplete}
                 label="Estimated Parts"
                 allowPriceOverride={isStaff}
                 allowPriceEdit={isTech}
@@ -556,6 +560,13 @@ export default function EstimateSection({
                       <span>${tripChargeNum.toFixed(2)}</span>
                     </div>
                   )}
+                  {/* No Shipping line here on purpose: freight is not part of
+                      estimate_amount (it is only known once the PO is placed,
+                      after approval), so showing it in the quote builder would
+                      display a charge the Estimate Total doesn't contain. It
+                      appears on the emailed/printed estimate and the customer
+                      approval page as a display-time line, alongside the
+                      diagnostic fee, which is excluded for the same reason. */}
                 </div>
                 <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-300 dark:border-gray-700">
                   <span className="text-base font-bold text-gray-900 dark:text-white">Estimate Total</span>

@@ -15,6 +15,9 @@ import type {
   InvVendorRow,
   InvBinRow,
 } from './reorder'
+// Requested shipping speed on a part (feedback #80). The method list, labels,
+// and validators live in src/lib/shipping.ts so every consumer shares one copy.
+import type { ShippingMethod } from '../lib/shipping'
 
 // ============================================================
 // Enums
@@ -328,6 +331,15 @@ export interface PartRequest {
   wo_excluded_at?: string
   wo_excluded_by?: string
   wo_exclude_reason?: string
+  // Shipping speed the technician asked for at request time (feedback #80).
+  // JSONB only — no migration; the parts_order_queue view projects it so the
+  // buyer sees it before placing the PO (migration 149). Absent = 'standard',
+  // which is what every pre-feature row means and why no backfill was needed.
+  // Read it through shippingMethodOf() in src/lib/shipping.ts, never directly.
+  shipping_method?: ShippingMethod
+  // Free-text carrier instruction from the tech ("customer's UPS account",
+  // "must land before Friday"). Optional, capped at SHIPPING_NOTE_MAX_LEN.
+  shipping_note?: string
 }
 
 // ============================================================
@@ -420,6 +432,16 @@ export type PartsQueueRow = {
   // part's (po_number, product_number), joined from synergy_po_lines. null when
   // the part isn't on an open PO (no PO# yet, or already received/closed).
   po_due_date: string | null
+  // Shipping speed the tech asked for, projected off the JSONB by migration 149.
+  // Typed as a plain string because the view can surface anything a past write
+  // put there — narrow it with shippingMethodOf()/isPriorityShipping().
+  shipping_method: string | null
+  shipping_note: string | null
+  // Parent ticket's freight charge (migration 150). Ticket-level, so every row
+  // sharing a (source, ticket_id) carries the same value — the client updates
+  // them together, the way it already does for synergy_order_number. Numeric
+  // over PostgREST can arrive as a string; the client Numbers it on write.
+  shipping_charge: number | null
 }
 
 // Open SynergyERP purchase-order lines (migration 115), synced by
@@ -609,6 +631,11 @@ export type PmTicketRow = {
   // (PM is always field work). trip_charge (105, flat dollars) retained, unused.
   trip_charge: number | null
   trip_charge_qty: number | null
+  // Inbound freight billed to the customer (migration 148, feedback #80). Flat
+  // dollars — unlike trip_charge_qty there is no per-unit rate to multiply.
+  // NULL = no freight charged, which is deliberately distinct from an explicit
+  // 0 ("quoted, and it was free"). Office-entered; never in TECH_ALLOWED_FIELDS.
+  shipping_charge: number | null
   billing_exported: boolean
   customer_signature: string | null
   customer_signature_name: string | null
@@ -922,7 +949,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'shipping_charge' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at'
 >
 
 export type SettingsRow = {

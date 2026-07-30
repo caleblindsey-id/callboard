@@ -10,6 +10,7 @@ import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed } from '@/types/database'
 import { isPartStagedReady, isFulfillingAction, workOrderAutoAddPatch, partsAllFulfilled } from '@/lib/parts'
 import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
+import { isShippingMethod, normalizeShippingCharge, SHIPPING_NOTE_MAX_LEN } from '@/lib/shipping'
 
 type Source = 'pm' | 'service'
 
@@ -29,11 +30,15 @@ type UpdateBody = {
     | 'mark_pulled'
     | 'mark_collected'
     | 'return_to_review'
+    | 'set_shipping_charge'
   fields?: Partial<PartRequest>
   reason?: string
   // Used only by 'set_synergy_order' — written to the parent ticket column,
   // not the parts_requested JSONB.
   synergy_order_number?: string | null
+  // Used only by 'set_shipping_charge' — also a parent-ticket column write.
+  // null clears it back to "no freight charged".
+  shipping_charge?: number | string | null
   // Justification for the 'order' triage action when we already have stock / a PO.
   triage_reason?: string
 }
@@ -55,6 +60,13 @@ const PATCH_FIELDS: ReadonlySet<keyof PartRequest> = new Set([
   'product_number',
   'vendor_item_code',
   'po_number',
+  // The tech sets these at request time, but the office has to be able to
+  // correct them: a customer changes their mind about paying for overnight
+  // after the request is in, or the tech picks the wrong speed. Safe to patch
+  // freely — unlike the lifecycle fields excluded above, neither carries any
+  // audit meaning.
+  'shipping_method',
+  'shipping_note',
 ])
 
 const FIELD_MAX_LEN: Partial<Record<keyof PartRequest, number>> = {
@@ -64,6 +76,7 @@ const FIELD_MAX_LEN: Partial<Record<keyof PartRequest, number>> = {
   vendor_item_code: 100,
   po_number: 100,
   cancel_reason: 1000,
+  shipping_note: SHIPPING_NOTE_MAX_LEN,
 }
 
 function sanitizePatchFields(input: Partial<PartRequest> | undefined): Partial<PartRequest> {
@@ -74,6 +87,10 @@ function sanitizePatchFields(input: Partial<PartRequest> | undefined): Partial<P
     const raw = (input as Record<string, unknown>)[key]
     if (raw === undefined) continue
     if (raw !== null && typeof raw !== 'string') continue
+    // shipping_method is an enum, not free text — an unrecognized value would
+    // read back as 'standard' everywhere (shippingMethodOf falls back) and so
+    // silently lose a rush request. Reject rather than store the garbage.
+    if (key === 'shipping_method' && raw !== null && !isShippingMethod(raw)) continue
     const max = FIELD_MAX_LEN[key]
     const value = typeof raw === 'string' && max ? raw.slice(0, max) : raw
     ;(out as Record<string, unknown>)[key] = value
@@ -108,7 +125,10 @@ export async function POST(request: NextRequest) {
     if (!ticket_id) {
       return NextResponse.json({ error: 'Invalid ticket_id' }, { status: 400 })
     }
-    if (action !== 'set_synergy_order' && (!Number.isInteger(part_index) || part_index < 0)) {
+    // Both set_synergy_order and set_shipping_charge are TICKET-level writes with
+    // no per-part state, so neither carries a part_index to validate.
+    const isTicketLevel = action === 'set_synergy_order' || action === 'set_shipping_charge'
+    if (!isTicketLevel && (!Number.isInteger(part_index) || part_index < 0)) {
       return NextResponse.json({ error: 'Invalid part_index' }, { status: 400 })
     }
 
@@ -239,6 +259,50 @@ export async function POST(request: NextRequest) {
         ticket_id,
         source,
         synergy_order_number: updatedRow?.synergy_order_number ?? null,
+      })
+    }
+
+    // Ticket-level write: the freight the customer is billed for this order
+    // (feedback #80). Lives here rather than only on the ticket page because the
+    // buyer placing the PO is the one person who ever sees the vendor's freight
+    // quote — by the time anyone opens the ticket again, the number is gone.
+    //
+    // Rides fn_update_parts_queue for the same reason every other write here
+    // does: the updated_at predicate inside it is the optimistic lock, and a
+    // separate .update() would sit outside it. Guarded by the billed/completed
+    // check above, so a post-invoice edit can't land — freight is a term of
+    // billing_amount, which is final once the ticket completes.
+    if (action === 'set_shipping_charge') {
+      const parsed = normalizeShippingCharge(body.shipping_charge)
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 })
+      }
+
+      const { data: rpcRows, error: rpcErr } = await supabase.rpc('fn_update_parts_queue', {
+        p_source: source,
+        p_ticket_id: ticket_id,
+        p_expected_updated_at: ticket.updated_at,
+        p_update_payload: { shipping_charge: parsed.value },
+      })
+      if (rpcErr) {
+        if (rpcErr.code === '40001') {
+          return NextResponse.json(
+            { error: 'This ticket was changed by someone else. Refresh and try again.' },
+            { status: 409 }
+          )
+        }
+        console.error('parts-queue set_shipping_charge RPC error:', rpcErr)
+        return NextResponse.json({ error: 'Failed to update shipping charge' }, { status: 500 })
+      }
+      const updatedRow = (Array.isArray(rpcRows) ? rpcRows[0] : rpcRows) as { shipping_charge?: number | string | null } | null
+      // Postgres numeric arrives as a string over PostgREST; normalize so the
+      // client can render it without re-parsing.
+      const stored = updatedRow?.shipping_charge
+      return NextResponse.json({
+        success: true,
+        ticket_id,
+        source,
+        shipping_charge: stored == null ? null : Number(stored),
       })
     }
 

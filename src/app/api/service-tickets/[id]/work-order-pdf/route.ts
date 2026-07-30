@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getCustomerLaborRate, getSetting } from '@/lib/db/settings'
 import { taxRatePercent } from '@/lib/tax'
+import { shippingChargeAmount } from '@/lib/shipping'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -51,6 +52,7 @@ export async function POST(
         diagnostic_charge,
         diagnostic_invoice_number,
         billing_amount,
+        shipping_charge,
         customer_signature,
         customer_signature_name,
         photos,
@@ -171,9 +173,22 @@ export async function POST(
     const diagnosticPdf = (raw.diagnostic_charge as number | null) ?? 0
     const hasDiagInvoice = !!String(raw.diagnostic_invoice_number ?? '').trim()
     const signedDiagnosticPdf = hasDiagInvoice ? -diagnosticPdf : diagnosticPdf
+    // Freight is a term of billing_amount too, so it MUST come out of the
+    // subtraction above — otherwise it silently inflates the derived trip-charge
+    // line and the customer sees a $25 shipping cost printed as a trip charge.
+    // Warranty tickets bill 0 and never had shipping added, so it's 0 there,
+    // matching how the complete route computed the total.
+    const shippingChargePdf =
+      (raw.billing_type as string) === 'warranty'
+        ? 0
+        : shippingChargeAmount(raw.shipping_charge as number | null)
     const tripChargePdf = Math.max(
       0,
-      ((raw.billing_amount as number | null) ?? 0) - laborTotalPdf - partsTotalPdf - signedDiagnosticPdf,
+      ((raw.billing_amount as number | null) ?? 0)
+        - laborTotalPdf
+        - partsTotalPdf
+        - signedDiagnosticPdf
+        - shippingChargePdf,
     )
 
     const workOrder = {
@@ -210,6 +225,7 @@ export async function POST(
         warrantyCovered: p.warranty_covered ?? false,
       })),
       tripCharge: tripChargePdf,
+      shippingCharge: shippingChargePdf,
       diagnosticCharge: (raw.diagnostic_charge as number | null) ?? 0,
       diagnosticInvoiceNumber: (raw.diagnostic_invoice_number as string | null) ?? null,
       billingTotal: (raw.billing_amount as number | null) ?? 0,

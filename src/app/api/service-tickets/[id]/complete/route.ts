@@ -9,6 +9,7 @@ import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from 
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, COST_FLOOR } from '@/lib/margin'
+import { shippingChargeAmount } from '@/lib/shipping'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
@@ -143,7 +144,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, labor_rate_type, equipment_id, customer_id, parts_requested')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, shipping_charge, labor_rate_type, equipment_id, customer_id, parts_requested')
       .eq('id', id)
       .single()
 
@@ -318,7 +319,16 @@ export async function POST(
         : effectiveTripChargeQty(current.trip_charge_qty as number | null, current.ticket_type as string)
       const tripCharge = tripQty * await getTripChargeRate()
 
-      finalBillingAmount = laborTotal + billablePartsTotal + signedDiagnostic + tripCharge
+      // Inbound freight (feedback #80), flat dollars set by the office at PO
+      // time. Read from the stored column only — never from the request body:
+      // this route is tech-reachable, and what the customer pays for freight is
+      // a pricing decision that stays office-owned (same reason shipping_charge
+      // is absent from TECH_ALLOWED_FIELDS on the PATCH route). NULL → 0, so
+      // tickets with no special-order parts are unaffected.
+      const shippingCharge = shippingChargeAmount(current.shipping_charge as number | null)
+
+      finalBillingAmount =
+        laborTotal + billablePartsTotal + signedDiagnostic + tripCharge + shippingCharge
     }
     // Round to cents to avoid stored vs. displayed drift.
     finalBillingAmount = Math.round(finalBillingAmount * 100) / 100
