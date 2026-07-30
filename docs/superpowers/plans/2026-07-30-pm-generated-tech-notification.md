@@ -419,7 +419,8 @@ silent by never calling this rather than by a flag someone could drop."
 - Modify: `src/app/api/tickets/generate/route.ts`
 
 **Interfaces:**
-- Consumes: `notifyTechsOfGeneratedPms` from `@/lib/pm-tickets/notify-generated` (Task 2). `generatePmTickets` already returns `created: PmTicketRow[]`, which satisfies the `Pick<PmTicketRow, 'assigned_technician_id'>[]` parameter.
+- Consumes: `notifyTechsOfGeneratedPms` from `@/lib/pm-tickets/notify-generated` (Task 2).
+- **Read this carefully, the two names are easy to swap.** `generatePmTickets` returns a `GeneratePmTicketsResult` (`src/lib/pm-generation.ts:68-85`) in which `created` is a **number** (the count of inserted rows) and `tickets` is the **`PmTicketRow[]`** of the rows actually inserted (`aggregate.tickets.push(...monthResult.created)` at line ~180). Pass **`result.tickets`** to the notify helper, not `result.created`. The existing `created: result.created` line in the response body is a count and stays exactly as it is.
 - Produces: a `notifiedTechs: number` field on the `POST /api/tickets/generate` JSON response. Task 4 reads it.
 
 The preview branch returns early at line 45 and is therefore already silent; no guard is needed for it.
@@ -443,7 +444,9 @@ The existing code ends the credit-review loop and then returns. Insert the notif
     let notifiedTechs = 0
     try {
       notifiedTechs = await notifyTechsOfGeneratedPms({
-        created: result.created,
+        // result.tickets, NOT result.created — created is a count, tickets is
+        // the PmTicketRow[] of rows actually inserted this run.
+        created: result.tickets,
         month,
         year,
       })
