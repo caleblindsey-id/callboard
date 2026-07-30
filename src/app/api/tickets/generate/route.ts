@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     let notifiedTechs = 0
     try {
       notifiedTechs = await notifyTechsOfGeneratedPms({
-        // result.tickets, NOT result.created — created is a count, tickets is
+        // result.tickets, NOT result.created. created is a count, tickets is
         // the PmTicketRow[] of rows actually inserted this run.
         created: result.tickets,
         month,

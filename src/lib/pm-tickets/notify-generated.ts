@@ -12,9 +12,12 @@
 // the source of truth; the alert rides on top.
 //
 // Deliberately NOT called from generatePmTickets(): the schedule-create backfill
-// path in POST /api/pm-schedules also generates tickets, always for past months,
-// and it stays silent by never calling this rather than by passing a flag a
-// future edit could forget.
+// path in POST /api/pm-schedules also generates tickets, and it stays silent by
+// never calling this rather than by passing a flag a future edit could forget.
+// Do not "simplify" that by routing backfill through here and relying on the
+// month gate to suppress it. Backfill is not past-months-only - monthsInRange
+// runs through the current month inclusive, so a current-month backfill would
+// pass the gate and fire a one-PM push on every schedule creation.
 
 import 'server-only'
 import { createNotification } from '@/lib/notifications/create-notification'
