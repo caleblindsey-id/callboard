@@ -104,6 +104,11 @@ export type ServiceTicketRow = {
   // trip_charge (migration 105, flat dollars) is retained but no longer read.
   trip_charge: number | null
   trip_charge_qty: number | null
+  // Inbound freight billed to the customer (migration 148, feedback #80). Flat
+  // dollars; NULL = none charged, distinct from an explicit 0. Entered by the
+  // office at PO time in the Parts Queue, correctable on the ticket until
+  // billed. Sits beside trip_charge in every total and on every PDF.
+  shipping_charge: number | null
   diagnostic_invoice_number: string | null
   // Verified-existence stamp for the diagnostic invoice # (migration 137).
   // Written only by the nightly Synergy validator; gates the estimate-surface

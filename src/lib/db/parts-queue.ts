@@ -20,7 +20,8 @@ const QUEUE_COLUMNS = `
   covered_by_agreement,
   qty_on_hand, qty_on_po,
   triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage,
-  pulled_at, pulled_by, bin_location, po_due_date
+  pulled_at, pulled_by, bin_location, po_due_date,
+  shipping_method, shipping_note, shipping_charge
 `
 
 // Estimated arrival dates for a ticket's ordered parts, keyed

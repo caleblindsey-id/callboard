@@ -47,6 +47,11 @@ interface ServiceWorkOrderData {
   laborRate: number
   parts: ServiceWorkOrderPart[]
   tripCharge: number
+  // Inbound freight billed to the customer (feedback #80). 0 when none was
+  // charged. Rendered as its own line beside the trip charge rather than folded
+  // into the parts subtotal, so the customer can see exactly what the shipping
+  // cost — which is the whole point of passing it through rather than burying it.
+  shippingCharge: number
   diagnosticCharge: number
   // When present, the diagnostic was already billed separately (Synergy invoice),
   // so it renders as a negative credit on this work order rather than a charge.
@@ -313,6 +318,15 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             </View>
           )}
 
+          {workOrder.shippingCharge > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.colDescription}>Shipping</Text>
+              <Text style={styles.colQty}>—</Text>
+              <Text style={styles.colPrice}>—</Text>
+              <Text style={styles.colTotal}>{money(workOrder.shippingCharge)}</Text>
+            </View>
+          )}
+
           {workOrder.diagnosticCharge > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.colDescription}>
@@ -347,6 +361,12 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Trip Charge:</Text>
               <Text style={styles.summaryValue}>{money(workOrder.tripCharge)}</Text>
+            </View>
+          )}
+          {workOrder.shippingCharge > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Shipping:</Text>
+              <Text style={styles.summaryValue}>{money(workOrder.shippingCharge)}</Text>
             </View>
           )}
           {workOrder.diagnosticCharge > 0 && (

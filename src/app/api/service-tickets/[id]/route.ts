@@ -25,6 +25,7 @@ import { partsOnOrder, partsAllFulfilled, validateNewManualPartRequests, hasNewR
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice, MARGIN_FLOOR, COST_FLOOR } from '@/lib/margin'
+import { normalizeShippingCharge } from '@/lib/shipping'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
@@ -63,6 +64,13 @@ const STAFF_ALLOWED_FIELDS = [
   'billing_amount',
   'diagnostic_charge',
   'trip_charge_qty',
+  // Inbound freight billed to the customer (feedback #80). STAFF-ONLY on
+  // purpose: the number comes off the vendor's freight quote at PO time, which
+  // only the buyer sees. Deliberately absent from TECH_ALLOWED_FIELDS below —
+  // a tech setting what the customer pays for freight is a pricing decision,
+  // and the tech-facing price controls they DO have (trip_charge_qty, part
+  // prices) are all quantity or catalog-bounded.
+  'shipping_charge',
   'diagnostic_invoice_number',
   'po_number',
   'awaiting_pickup',
@@ -217,6 +225,18 @@ export async function PATCH(
       }
     }
 
+    // shipping_charge validation (null clears it back to "no freight charged",
+    // which is deliberately distinct from an explicit 0). Shared validator with
+    // the parts-queue set_shipping_charge action so the two write paths can't
+    // disagree about what's acceptable.
+    if (filtered.shipping_charge !== undefined) {
+      const sc = normalizeShippingCharge(filtered.shipping_charge)
+      if (!sc.ok) {
+        return NextResponse.json({ error: sc.error }, { status: 400 })
+      }
+      filtered.shipping_charge = sc.value
+    }
+
     // estimate_labor_hours validation
     if (filtered.estimate_labor_hours !== undefined && filtered.estimate_labor_hours !== null) {
       const h = parseFloat(String(filtered.estimate_labor_hours))
@@ -258,7 +278,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, shipping_charge, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -269,6 +289,30 @@ export async function PATCH(
     // Techs can only update their own assigned tickets
     if (isTechnician(user.role) && current.assigned_technician_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Freight is a TERM of billing_amount, and billing_amount is computed once,
+    // server-side, at completion. Accepting a shipping_charge edit afterwards
+    // would store a number that no total anywhere reflects — the PDF and the
+    // invoice would silently disagree with the column. Reject instead, and say
+    // what to do about it. Reopening re-runs the completion math, which picks
+    // the new freight up correctly.
+    //
+    // Not a practical constraint in the normal flow: parts must be RECEIVED
+    // before a service ticket can complete, and the vendor's freight lands with
+    // the goods — so the number is knowable well before this point. The
+    // mark-ordered prompt exists to make sure it is actually captured there.
+    if (
+      filtered.shipping_charge !== undefined &&
+      (current.status === 'completed' || current.status === 'billed') &&
+      (filtered.shipping_charge ?? null) !== (current.shipping_charge ?? null)
+    ) {
+      return NextResponse.json(
+        {
+          error: `Cannot change the shipping charge on a ${current.status} ticket — its total is already final. Reopen the ticket to change it.`,
+        },
+        { status: 409 },
+      )
     }
 
     // Manager-only below-floor override. Read from the raw body (it's not a
@@ -875,6 +919,14 @@ export async function PATCH(
         ? 0
         : effectiveTripChargeQty(tripQtyRaw, current.ticket_type as string) * await getTripChargeRate()
 
+      // Freight is deliberately NOT part of estimate_amount, exactly like the
+      // diagnostic fee. Both are known only AFTER the quote: freight arrives
+      // with the vendor's PO, which is placed once the customer has already
+      // approved. Folding it in would mean silently rewriting an approved
+      // figure after the fact, and — because this recompute only fires when an
+      // estimate INPUT changes — a later freight edit would leave the stored
+      // amount stale while the PDF still derived its trip-charge line from it.
+      // Both estimate surfaces add it as a display-time line instead.
       const total = laborTotal + partsTotal + tripCharge
 
       filtered.estimate_amount = total

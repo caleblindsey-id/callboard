@@ -3,8 +3,8 @@ title: Order parts (the Parts Queue)
 category: Office
 roles: [super_admin, manager, coordinator]
 order: 20
-summary: Work the shared queue of parts requested across all tickets — decide stock vs. order, pull or order them, and receive them in.
-last_verified: 2026-06-19
+summary: Work the shared queue of parts requested across all tickets — decide stock vs. order, pull or order them, bill the freight, and receive them in.
+last_verified: 2026-07-30
 ---
 
 The **Parts Queue** is one shared list of every part technicians have requested across all PM and service tickets. You decide whether each part comes from stock or gets ordered, then move it through to fulfilment.
@@ -45,6 +45,27 @@ For each row in **To Order**:
 > **Mark Ordered stays greyed out until both the Synergy Item # and Synergy PO # are filled in** (hover the button to see which is missing). The row's Synergy Order # is shared by every part on the same ticket — set it once and it applies to all of them.
 
 Fields save **when you click away** (on blur), not when you press Enter.
+
+### Rush shipping requests
+
+If the technician asked for faster shipping, the row shows an amber **2-Day** or **Next Day** badge. Hover it to read their note (things like the customer's own carrier account, or a date the part has to land by). Expand the row to see the full request under **Shipping**.
+
+Check for the badge **before** you place the order — it's the only chance to pick the right service level.
+
+## Billing the freight back to the customer
+
+We pay to have special-order parts shipped in, and that cost goes on the customer's invoice.
+
+Right after you tap **Mark Ordered**, you'll be asked **"Freight on this order?"**. Enter what the vendor is charging for shipping and tap **Save shipping**. If the order genuinely has no freight — a stock pull, a warranty replacement, a vendor who ships free over a threshold — tap **No freight on this order** and move on.
+
+A few things worth knowing:
+
+- **You're only asked once per ticket.** The charge covers the whole order, so if several parts ship together, put the total freight in the first time. You won't be prompted again for the other parts.
+- **You can change it later.** Expand any row on the ticket and edit **Shipping charge**. That's the place to correct the figure when the vendor's invoice arrives with a different number than the quote.
+- **Leaving it blank is not the same as entering 0.** Blank means nobody has answered yet; `0` means you checked and the freight was free.
+- **It has to be set before the ticket is completed.** Once a ticket is completed or billed, its total is final and the field locks — you'd have to reopen the ticket to change it.
+
+The amount appears as its own **Shipping** line on the work order and the estimate, separate from the trip charge, and is already included in the ticket's total.
 
 ## Receiving a part
 

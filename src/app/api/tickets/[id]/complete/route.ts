@@ -161,7 +161,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('pm_tickets')
-      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
+      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, shipping_charge, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -257,6 +257,10 @@ export async function POST(
       additionalHours: finalAdditionalHours,
       additionalParts: additionalPartsUsed ?? [],
       tripQty,
+      // Office-set freight off the ticket column (feedback #80). Read from the
+      // stored row, never the request body — this route is tech-reachable and
+      // freight pricing stays office-owned.
+      shippingCharge: current.shipping_charge as number | null,
     })
 
     // Snapshot the customer's pricing-visibility flag onto the ticket so future

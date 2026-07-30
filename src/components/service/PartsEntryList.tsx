@@ -6,6 +6,12 @@ import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
 import { shouldSearchProducts } from '@/lib/products-search'
 import { minPrice } from '@/lib/margin'
 import VendorPicker from '@/components/VendorPicker'
+import {
+  SHIPPING_METHODS,
+  SHIPPING_NOTE_MAX_LEN,
+  shippingMethodLabel,
+  type ShippingMethod,
+} from '@/lib/shipping'
 
 // ── Types (shared with ServiceTicketDetail) ──
 
@@ -79,6 +85,16 @@ export interface PartEntry {
   // partsMissingFromWorkOrder() to description guessing. Same reason the vendor
   // fields are carried. Never edited in the UI.
   fromRequestAt?: string | null
+  // Requested shipping speed + carrier note, surfaced when the parent opts in
+  // via showShipping (feedback #80). Deliberately TRANSIENT: unlike the vendor
+  // fields above, these are NOT persisted by toServicePartUsed, because the
+  // arrays this component saves into (parts_used / estimate_parts) are the
+  // billable work order and the customer quote — neither is a procurement
+  // instruction. The value is read at the moment onRequestPart fires and
+  // written onto the resulting PartRequest, which is where it belongs; from
+  // then on the office owns it in the Parts Queue.
+  shippingMethod?: ShippingMethod
+  shippingNote?: string
 }
 
 export function emptyPart(): PartEntry {
@@ -174,13 +190,19 @@ interface PartsEntryListProps {
   // Surface a vendor-name input on each row. When set alongside onRequestPart,
   // vendor name becomes a required field for MANUAL part requests.
   showVendor?: boolean
+  // Surface the requested-shipping-speed picker + carrier note on each row
+  // (feedback #80). Only meaningful alongside onRequestPart — the value is read
+  // when the row is requested and carried onto the PartRequest. Never required:
+  // 'standard' is a valid answer and the default, so the Request gate is
+  // unchanged.
+  showShipping?: boolean
   // When provided, each row renders a "Request" button that hands the entry
   // off to the caller (which creates a PartRequest on the ticket). The caller
   // is responsible for flipping `alreadyRequested` on success.
   onRequestPart?: (index: number) => Promise<void>
 }
 
-export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, showCoverage = false, label = 'Parts', allowPriceOverride = false, allowPriceEdit = false, showVendorItemCode = false, showVendor = false, onRequestPart }: PartsEntryListProps) {
+export default function PartsEntryList({ parts, setParts, showPricing, showWarranty, showCoverage = false, label = 'Parts', allowPriceOverride = false, allowPriceEdit = false, showVendorItemCode = false, showVendor = false, showShipping = false, onRequestPart }: PartsEntryListProps) {
   const debounceRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const comboRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
   // Tracks which dropdown result is keyboard-highlighted per row (-1 = none)
@@ -625,6 +647,71 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                       Not included — bill customer
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Requested shipping speed (feedback #80). Optional — 'standard'
+                  is the default and a perfectly good answer, so unlike the
+                  coverage picker above this never gates the Request button. The
+                  note only appears once a rush is picked: a carrier instruction
+                  on a ground order is noise the buyer doesn't need to read. */}
+              {showShipping && (
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    Shipping
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {SHIPPING_METHODS.map((method) => {
+                      const selected = (part.shippingMethod ?? 'standard') === method
+                      return (
+                        <button
+                          key={method}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => {
+                            setParts((prev) => {
+                              const u = [...prev]
+                              u[i] = {
+                                ...u[i],
+                                shippingMethod: method,
+                                // Dropping back to standard clears the note too,
+                                // so a stale "overnight, customer pays" can't
+                                // ride along on a ground order.
+                                ...(method === 'standard' ? { shippingNote: '' } : {}),
+                              }
+                              return u
+                            })
+                          }}
+                          className={`flex-1 min-w-[96px] rounded-md border px-3 min-h-[44px] sm:min-h-[34px] text-sm font-medium transition-colors ${
+                            selected
+                              ? method === 'standard'
+                                ? 'border-gray-400 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                                : 'border-amber-500 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
+                              : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {shippingMethodLabel(method)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {(part.shippingMethod ?? 'standard') !== 'standard' && (
+                    <input
+                      type="text"
+                      value={part.shippingNote ?? ''}
+                      onChange={(e) => {
+                        setParts((prev) => {
+                          const u = [...prev]
+                          u[i] = { ...u[i], shippingNote: e.target.value }
+                          return u
+                        })
+                      }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                      maxLength={SHIPPING_NOTE_MAX_LEN}
+                      placeholder="Shipping note, e.g. customer's UPS account, must land before Friday (optional)"
+                      className="mt-2 w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                    />
+                  )}
                 </div>
               )}
 

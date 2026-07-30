@@ -16,6 +16,12 @@ import {
   partsMissingFromWorkOrder,
   requestToUsedLine,
 } from '@/lib/parts'
+import {
+  isShippingMethod,
+  normalizeShippingNote,
+  shippingChargeAmount,
+  type ShippingMethod,
+} from '@/lib/shipping'
 import MissingFromWorkOrderNotice from '@/components/parts/MissingFromWorkOrderNotice'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
@@ -106,6 +112,12 @@ interface PartsRequestDraft {
   newPartVendorCode: string
   newPartPrice: string
   newPartSynergyProductId: number | null
+  // Requested shipping speed + carrier note (feedback #80). In the draft for the
+  // same reason every other field is: a tech who picks "next day", backgrounds
+  // the PWA, and comes back must not silently lose the rush — the part would be
+  // ordered ground and nobody would know the request had ever been made.
+  newPartShippingMethod: ShippingMethod
+  newPartShippingNote: string
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -494,6 +506,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [newPartVendor, setNewPartVendor] = useState('')
   const [newPartVendorCode, setNewPartVendorCode] = useState('')
   const [newPartPrice, setNewPartPrice] = useState('')
+  // Shipping speed the tech is asking the office to order at, plus an optional
+  // carrier instruction. Defaults to 'standard' — the overwhelming majority of
+  // requests, and the behaviour every pre-feature request already had.
+  const [newPartShippingMethod, setNewPartShippingMethod] = useState<ShippingMethod>('standard')
+  const [newPartShippingNote, setNewPartShippingNote] = useState('')
   // Set when the description is matched to a Synergy catalog item — links the
   // request to the product (exempts it from the manual vendor/price gate) and
   // prefills item #, price, vendor, and vendor part # from the catalog.
@@ -1341,6 +1358,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       // the To-Order queue. Service parts stay hidden until the estimate is approved.
       status: 'pending_review',
       requested_at: new Date().toISOString(),
+      // Speed picked on this estimate row (feedback #80). Read here, at the
+      // moment the row becomes a real request — the entry itself never persists
+      // it, since estimate_parts is the customer's quote, not a purchase order.
+      ...(entry.shippingMethod && entry.shippingMethod !== 'standard'
+        ? { shipping_method: entry.shippingMethod }
+        : {}),
+      ...(normalizeShippingNote(entry.shippingNote)
+        ? { shipping_note: normalizeShippingNote(entry.shippingNote) }
+        : {}),
     }
     const updatedRequests = [...partsRequested, newPart]
     await apiAction(async () => {
@@ -1410,6 +1436,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       unit_price: Number.isFinite(ep.unit_price) ? ep.unit_price : undefined,
       status: 'pending_review',
       requested_at: nowIso,
+      // No shipping_method here, and that is deliberate rather than an
+      // oversight: this promotes rows off the SAVED estimate_parts array, which
+      // stores the customer's quote and carries no procurement fields. Every
+      // promoted part therefore lands as standard ground — the behaviour this
+      // button already had. A rush is set per-row with the Request button, or
+      // patched by the office in the Parts Queue.
     }))
     const updatedRequests = [...partsRequested, ...newParts]
     await apiAction(async () => {
@@ -1464,10 +1496,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     showAddPart,
     newPartDesc, newPartQty, newPartNumber, newPartVendorItemCode,
     newPartVendor, newPartVendorCode, newPartPrice, newPartSynergyProductId,
+    newPartShippingMethod, newPartShippingNote,
   }), [
     showAddPart,
     newPartDesc, newPartQty, newPartNumber, newPartVendorItemCode,
     newPartVendor, newPartVendorCode, newPartPrice, newPartSynergyProductId,
+    newPartShippingMethod, newPartShippingNote,
   ])
 
   const { clearDraft: clearPartsRequestDraft } = useFormDraft<PartsRequestDraft>({
@@ -1487,7 +1521,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         s.newPartVendorItemCode.trim() ||
         s.newPartVendor.trim() ||
         s.newPartPrice.trim() ||
-        s.newPartSynergyProductId != null
+        s.newPartSynergyProductId != null ||
+        // A typed carrier instruction is real content. The method PICKER is
+        // deliberately not listed: it always holds a value ('standard' by
+        // default), so keying off it would make every freshly-opened form look
+        // meaningful and write a phantom draft.
+        (s.newPartShippingNote ?? '').trim()
       ),
     onRestore: (draft) => {
       setNewPartDesc(draft.newPartDesc ?? '')
@@ -1498,6 +1537,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       setNewPartVendorCode(draft.newPartVendorCode ?? '')
       setNewPartPrice(draft.newPartPrice ?? '')
       setNewPartSynergyProductId(draft.newPartSynergyProductId ?? null)
+      // Drafts written before this feature have no shipping keys — fall back to
+      // the same 'standard' default a fresh form starts at.
+      setNewPartShippingMethod(
+        isShippingMethod(draft.newPartShippingMethod) ? draft.newPartShippingMethod : 'standard',
+      )
+      setNewPartShippingNote(draft.newPartShippingNote ?? '')
       // Reopen the form so the restored fields are visible (gated on
       // isMeaningful, so an empty form never auto-expands).
       setShowAddPart(true)
@@ -1541,6 +1586,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     setNewPartVendorCode('')
     setNewPartPrice('')
     setNewPartSynergyProductId(null)
+    setNewPartShippingMethod('standard')
+    setNewPartShippingNote('')
     partSearch.clear()
     // Drop the saved draft — runs on both "Add Part" (committed) and "Cancel"
     // (discarded), so a persisted request never outlives the entry it backed.
@@ -1561,6 +1608,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       // New requests enter the office Review step (stock-vs-order triage) first.
       status: 'pending_review',
       requested_at: new Date().toISOString(),
+      // Only persist a non-default speed, so a standard-ground request stays as
+      // lean on the JSONB as it was before this feature (and reads back through
+      // the same absent -> 'standard' path as every legacy row).
+      ...(newPartShippingMethod !== 'standard' ? { shipping_method: newPartShippingMethod } : {}),
+      ...(normalizeShippingNote(newPartShippingNote)
+        ? { shipping_note: normalizeShippingNote(newPartShippingNote) }
+        : {}),
     }
     const updatedParts = [...partsRequested, newPart]
     await apiAction(async () => {
@@ -1926,7 +1980,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const signedDiagnosticNum = String(ticket.diagnostic_invoice_number ?? '').trim()
     ? -diagnosticChargeNum
     : diagnosticChargeNum
-  const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum
+  // Inbound freight (feedback #80) — office-set on the ticket, so it's read
+  // straight off the row rather than from any form field. 0 on full-warranty,
+  // matching how the complete route computed billing_amount.
+  const shippingChargeNum =
+    ticket.billing_type === 'warranty' ? 0 : shippingChargeAmount(ticket.shipping_charge)
+  const billingTotal = ticket.billing_type === 'warranty'
+    ? 0
+    : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum + shippingChargeNum
   // Sales tax (parts only, display-only) — mirrors the work-order PDF so the
   // on-screen total matches what the customer sees. 0 on warranty (no parts billed).
   const taxRateFraction = (taxRatePercent ?? 0) / 100
@@ -1939,6 +2000,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const estPartsTotal = estimateParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
+  // Mirrors the server's estimate recompute exactly — which excludes freight,
+  // for the same reason it excludes the diagnostic fee (see the PATCH route).
   const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal + tripChargeNum
   const estTaxAmount = ticket.billing_type === 'warranty' ? 0 : computePartsTax(estPartsTotal, taxRateFraction)
 
@@ -2883,6 +2946,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           setNewPartVendorCode={setNewPartVendorCode}
           newPartPrice={newPartPrice}
           setNewPartPrice={setNewPartPrice}
+          newPartShippingMethod={newPartShippingMethod}
+          setNewPartShippingMethod={setNewPartShippingMethod}
+          newPartShippingNote={newPartShippingNote}
+          setNewPartShippingNote={setNewPartShippingNote}
           newPartSynergyProductId={newPartSynergyProductId}
           newPartIsCatalog={newPartIsCatalog}
           addPartReady={addPartReady}
@@ -2983,6 +3050,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           onError={setError}
           laborTotal={laborTotal}
           partsTotal={partsTotal}
+          shippingChargeNum={shippingChargeNum}
           billingTotal={billingTotal}
           billTaxAmount={billTaxAmount}
           tripChargeNum={tripChargeNum}
@@ -3045,6 +3113,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 </InfoField>
               ) : null
             })()}
+            {ticket.shipping_charge != null && (
+              <InfoField label="Shipping">
+                ${Number(ticket.shipping_charge).toFixed(2)}
+              </InfoField>
+            )}
             {ticket.diagnostic_charge != null && (
               <InfoField label="Diagnostic Charge">
                 ${ticket.diagnostic_charge.toFixed(2)}

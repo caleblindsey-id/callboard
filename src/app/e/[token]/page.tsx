@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { Metadata } from 'next'
 import { computePartsTax, taxRatePercent } from '@/lib/tax'
+import { shippingChargeAmount } from '@/lib/shipping'
 import { estimateDiagnosticLine, signedDiagnostic } from '@/lib/service-tickets/diagnostic'
 import ApprovalForm from './ApprovalForm'
 
@@ -23,7 +24,7 @@ export default async function ApprovalPage({
     .from('service_tickets')
     .select(`
       id, work_order_number, status, problem_description, diagnosis_notes,
-      estimate_labor_hours, estimate_labor_rate, estimate_parts, estimate_amount,
+      estimate_labor_hours, estimate_labor_rate, estimate_parts, estimate_amount, shipping_charge,
       billing_type, diagnostic_charge, diagnostic_invoice_number, diagnostic_invoice_validation_status,
       service_address, service_city, service_state, service_zip,
       equipment_make, equipment_model, equipment_serial_number,
@@ -85,7 +86,12 @@ export default async function ApprovalPage({
   const repairTotal = isWarranty ? 0 : (ticket.estimate_amount ?? laborTotal + partsTotal)
   const tripCharge = Math.max(0, repairTotal - laborTotal - partsTotal)
   const diag = estimateDiagnosticLine(ticket)
-  const total = repairTotal + signedDiagnostic(diag)
+  // Freight (feedback #80) behaves exactly like the diagnostic fee here: not in
+  // estimate_amount, because it is only known once the PO is placed. Added to
+  // the signed total as its own display line so the customer sees the real
+  // number on the page where they approve.
+  const shippingCharge = isWarranty ? 0 : shippingChargeAmount(ticket.shipping_charge)
+  const total = repairTotal + signedDiagnostic(diag) + shippingCharge
   // Sales tax (parts only, display-only) — mirrors the estimate PDF so the
   // online approval total reflects what the customer is billed. 0 when exempt.
   const custRow = (Array.isArray(ticket.customers) ? ticket.customers[0] : ticket.customers) as
@@ -203,6 +209,12 @@ export default async function ApprovalPage({
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Trip Charge</span>
                   <span className="font-medium text-gray-900 dark:text-white">${tripCharge.toFixed(2)}</span>
+                </div>
+              )}
+              {shippingCharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">Shipping</span>
+                  <span className="font-medium text-gray-900 dark:text-white">${shippingCharge.toFixed(2)}</span>
                 </div>
               )}
               {diag && (

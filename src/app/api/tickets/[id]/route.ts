@@ -16,6 +16,7 @@ import {
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { normalizeShippingCharge } from '@/lib/shipping'
 
 // Only allow these fields to be updated via PATCH. `skip_previous_status` is
 // intentionally excluded — it's set server-side inside the skip-request branch
@@ -30,6 +31,9 @@ const ALLOWED_FIELDS = [
   'parts_used',
   'billing_amount',
   'trip_charge_qty',
+  // Inbound freight billed to the customer (migration 148, feedback #80).
+  // Validated as a non-negative number below, same as the service route.
+  'shipping_charge',
   'photos',
   'po_number',
   'billing_contact_name',
@@ -125,6 +129,39 @@ export async function PATCH(
         .single()
       if (!owned || owned.assigned_technician_id !== user.id) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    // shipping_charge validation (feedback #80). null clears it back to "no
+    // freight charged", which is distinct from an explicit 0. Same shared
+    // validator the service route and the parts-queue action use.
+    if (filtered.shipping_charge !== undefined) {
+      const sc = normalizeShippingCharge(filtered.shipping_charge)
+      if (!sc.ok) {
+        return NextResponse.json({ error: sc.error }, { status: 400 })
+      }
+      filtered.shipping_charge = sc.value
+
+      // Freight is a term of billing_amount, which is computed once at
+      // completion. Storing a change afterwards would leave a number no total
+      // reflects. Mirrors the identical guard on the service route.
+      const { data: currentRow } = await supabase
+        .from('pm_tickets')
+        .select('status, shipping_charge')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .single()
+      const status = currentRow?.status as string | undefined
+      if (
+        (status === 'completed' || status === 'billed') &&
+        sc.value !== ((currentRow?.shipping_charge as number | null) ?? null)
+      ) {
+        return NextResponse.json(
+          {
+            error: `Cannot change the shipping charge on a ${status} ticket — its total is already final. Reopen the ticket to change it.`,
+          },
+          { status: 409 },
+        )
       }
     }
 

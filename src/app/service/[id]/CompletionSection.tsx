@@ -64,6 +64,8 @@ interface CompletionSectionProps {
   // Derived billing math — computed in the parent
   laborTotal: number
   partsTotal: number
+  // Office-set inbound freight, already 0'd for warranty by the parent.
+  shippingChargeNum: number
   billingTotal: number
   billTaxAmount: number
   tripChargeNum: number
@@ -125,6 +127,7 @@ export default function CompletionSection({
   onError,
   laborTotal,
   partsTotal,
+  shippingChargeNum,
   billingTotal,
   billTaxAmount,
   tripChargeNum,
@@ -319,6 +322,15 @@ export default function CompletionSection({
               <div className="flex justify-between">
                 <span>Trip: {tripChargeQtyNum} × ${tripChargeRate.toFixed(2)}</span>
                 <span>${tripChargeNum.toFixed(2)}</span>
+              </div>
+            )}
+            {/* Freight set by the office at PO time (feedback #80). Read-only
+                here — the tech is seeing what the customer will be billed, not
+                setting it. */}
+            {shippingChargeNum > 0 && (
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span>${shippingChargeNum.toFixed(2)}</span>
               </div>
             )}
           </div>

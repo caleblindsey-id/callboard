@@ -24,6 +24,10 @@ interface PricingSummary {
   laborRatePerHour: number
   pmPartsPriced: boolean
   tripCharge: number
+  // Inbound freight billed to the customer (feedback #80); 0 when none. Its own
+  // row beside Trip Charge, and — like labor and trip — NOT taxed: the rule in
+  // src/lib/tax.ts scopes sales tax to tangible parts only.
+  shippingCharge: number
   grandTotal: number
   // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
   // file. Display-only — applied to the itemized parts only (migration 133).
@@ -343,6 +347,11 @@ function PricingSummarySection({
   // Flat trip charge — applies regardless of billing type.
   if ((pricing.tripCharge ?? 0) > 0) {
     rows.push({ desc: 'Trip Charge', total: pricing.tripCharge })
+  }
+
+  // Inbound freight on special-ordered parts, passed through to the customer.
+  if ((pricing.shippingCharge ?? 0) > 0) {
+    rows.push({ desc: 'Shipping', total: pricing.shippingCharge })
   }
 
   // Sales tax applies to itemized PARTS only (tangible goods). For flat-rate the

@@ -354,6 +354,11 @@ export async function POST(
           additionalHours: 0,
           additionalParts: [],
           tripQty: 0,
+          // Always 0: this path mints a brand-new first-PM ticket that has
+          // never been through the parts queue, so no freight can exist on it
+          // yet. Stated explicitly rather than omitted so it reads as a
+          // decision, not an oversight.
+          shippingCharge: 0,
         })
         const partsUsed: PartUsed[] = (fpc.parts_used ?? []).map((p) => ({ ...p, unit_price: 0 }))
         // The first PM occupies the schedule's first slot (anchor month / starting

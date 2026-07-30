@@ -41,6 +41,10 @@ export interface BillingTicket {
   additionalPartsUsed: PartLine[]
   additionalHoursWorked: number | null
   laborRate: number
+  // Inbound freight billed to the customer (migration 148, feedback #80). Shown
+  // as its own summary line so the coordinator keying the Synergy invoice can
+  // see what portion of the total is shipping. Already inside billingAmount.
+  shippingCharge: number | null
   billingAmount: number | null
   billingType: string | null
   flatRate: number | null
