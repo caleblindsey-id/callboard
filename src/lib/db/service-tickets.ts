@@ -10,6 +10,7 @@ import type {
   ServiceBillingType,
   PartRequest,
 } from '@/types/service-tickets'
+import type { LaborRateType } from '@/types/database'
 
 // --- List service tickets with filters ---
 
@@ -333,6 +334,11 @@ export async function completeServiceTicket(
     warranty_labor_covered?: boolean
     machine_hours?: number | null
     date_code?: string | null
+    // Rate class the labor was actually billed at. Only present when the
+    // completer changed it on the completion form (feedback #83); persisted in
+    // the same UPDATE as the billing_amount computed from it, so the stored
+    // rate type and the stored dollar figure can never disagree.
+    labor_rate_type?: LaborRateType
     // Optional manager below-floor approval stamp (migration 126). Only present
     // when a manager approved a below-floor price during this completion.
     margin_override_by?: string
@@ -357,6 +363,7 @@ export async function completeServiceTicket(
       warranty_labor_covered: data.warranty_labor_covered ?? false,
       machine_hours: data.machine_hours ?? null,
       date_code: data.date_code ?? null,
+      ...(data.labor_rate_type ? { labor_rate_type: data.labor_rate_type } : {}),
       ...(data.margin_override_by
         ? {
             margin_override_by: data.margin_override_by,

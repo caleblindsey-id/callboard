@@ -450,23 +450,27 @@ export default function EstimateSection({
             />
           ) : (
           <form onSubmit={onSubmitEstimate} className="space-y-4">
-              {/* Labor Rate Type — staff can correct the rate the office picked at intake */}
-              {isStaff && (
-                <div className="max-w-lg">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Labor Rate Type
-                  </label>
-                  <select
-                    value={estimateRateType}
-                    onChange={(e) => setEstimateRateType(e.target.value)}
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  >
-                    <option value="standard">Standard — ${laborRates.standard.toFixed(2)}/hr</option>
-                    <option value="industrial">Industrial — ${laborRates.industrial.toFixed(2)}/hr</option>
-                    <option value="vacuum">Vacuum — ${laborRates.vacuum.toFixed(2)}/hr</option>
-                  </select>
-                </div>
-              )}
+              {/* Labor Rate Type — correct the rate class the office picked at
+                  intake. Open to the tech building the estimate, not just
+                  staff: the person on the machine is the one who knows it's a
+                  heated pressure washer (industrial) rather than a standard
+                  unit, and quoting it at the wrong class puts the wrong number
+                  in front of the customer (feedback #83). Only the class is
+                  tech-editable — the dollars per class stay in Settings. */}
+              <div className="max-w-lg">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Labor Rate Type
+                </label>
+                <select
+                  value={estimateRateType}
+                  onChange={(e) => setEstimateRateType(e.target.value)}
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                >
+                  <option value="standard">Standard — ${laborRates.standard.toFixed(2)}/hr</option>
+                  <option value="industrial">Industrial — ${laborRates.industrial.toFixed(2)}/hr</option>
+                  <option value="vacuum">Vacuum — ${laborRates.vacuum.toFixed(2)}/hr</option>
+                </select>
+              </div>
 
               {/* Labor Hours */}
               <div className="max-w-lg">
