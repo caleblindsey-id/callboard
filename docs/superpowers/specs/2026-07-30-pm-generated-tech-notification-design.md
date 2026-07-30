@@ -59,16 +59,38 @@ Two approaches were rejected:
 
 ## Architecture
 
-New module `src/lib/pm-tickets/notify-generated.ts`:
+Two new modules, split along the testability boundary described below.
 
-| Export | Kind | Responsibility |
-| --- | --- | --- |
-| `shouldNotifyForMonth(month, year, now?)` | pure | True when the generated month is current-or-future in `America/Chicago` |
-| `groupCreatedByTechnician(created)` | pure | `PmTicketRow[]` to `[{ technicianId, count }]`, dropping rows with a null technician |
-| `notifyTechsOfGeneratedPms({ created, month, year })` | I/O | Fan out push + bell per technician, best-effort, returns the number of techs notified |
+`src/lib/pm-tickets/pm-notify-rules.ts` — pure, no server-side imports:
+
+| Export | Responsibility |
+| --- | --- |
+| `shouldNotifyForMonth(month, year, now?)` | True when the generated month is current-or-future in `America/Chicago` |
+| `groupCreatedByTechnician(created)` | Rows to `[{ technicianId, count }]`, dropping rows with a null technician |
+| `buildPmNotification({ month, year, count, appUrl })` | The message payload: `{ title, body, url, tag }` |
+
+`src/lib/pm-tickets/notify-generated.ts` — the I/O shell:
+
+| Export | Responsibility |
+| --- | --- |
+| `notifyTechsOfGeneratedPms({ created, month, year })` | Fan out push + bell per technician, best-effort, returns the number of techs notified |
 
 Call site: `src/app/api/tickets/generate/route.ts`, immediately after the existing
 credit-review enqueue loop and before the response is built.
+
+### Why the pure logic is a separate file
+
+The `server-only` package's default export **throws at import time**
+(`node_modules/server-only/index.js`), and both `create-notification.ts:11` and
+`send-push.ts:8` import it. A `node --test` file that transitively pulled either in
+would crash before its first assertion. Keeping the decisions and the copy in a module
+that imports nothing server-side makes them testable; the I/O shell that cannot be unit
+tested stays as thin as possible. This mirrors `src/lib/service-readiness.ts`, a tested
+pure module that imports only types and other pure modules.
+
+`buildPmNotification` takes `appUrl` as a parameter rather than reading
+`process.env.NEXT_PUBLIC_APP_URL` itself, so the copy and the URL shape are assertable
+without mutating the environment. The I/O shell reads the variable and passes it down.
 
 ### Why the timezone gate is not cosmetic
 
@@ -140,9 +162,17 @@ what the board showed at generation, and the board itself stays correct.
 
 ## Testing
 
-`src/lib/pm-tickets/notify-generated.test.ts`, run by the existing
+`src/lib/pm-tickets/pm-notify-rules.test.ts`, run by the existing
 `node --import tsx --test "src/**/*.test.ts"` script and placed beside the module in the
 same way as `src/lib/reorder/*.test.ts`.
+
+`buildPmNotification`:
+- singular copy at `count: 1` ("1 PM ticket assigned to you.")
+- plural copy above 1
+- title carries the month name and the year
+- `tag` is zero-padded (`pm-generated-2026-08`)
+- `url` carries the month and year query params, and degrades to a relative path when
+  `appUrl` is empty
 
 `groupCreatedByTechnician`:
 - rows with a null `assigned_technician_id` are dropped
@@ -162,8 +192,9 @@ codebase is preferred over introducing a mocking layer for one function.
 
 ## Files touched
 
-- New: `src/lib/pm-tickets/notify-generated.ts`
-- New: `src/lib/pm-tickets/notify-generated.test.ts`
+- New: `src/lib/pm-tickets/pm-notify-rules.ts` (pure decisions + copy)
+- New: `src/lib/pm-tickets/pm-notify-rules.test.ts`
+- New: `src/lib/pm-tickets/notify-generated.ts` (I/O shell)
 - Modified: `src/app/api/tickets/generate/route.ts` (call the helper, add `notifiedTechs`
   to the response)
 - Modified: `src/app/tickets/GeneratePmModal.tsx` (read `notifiedTechs`, append it to the
