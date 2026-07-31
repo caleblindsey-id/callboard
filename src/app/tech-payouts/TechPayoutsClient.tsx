@@ -15,11 +15,13 @@ import ManualMatchModal from '../tech-leads/ManualMatchModal'
 import SubmitLeadModal from '../my-leads/SubmitLeadModal'
 import PayoutReport from '../tech-leads/PayoutReport'
 import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
+import CommissionTab from './CommissionTab'
+import type { CommissionReport } from '@/lib/commission/report-types'
 import { formatMoney, formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
 import Tabs, { type TabItem } from '@/components/ui/Tabs'
 
-type TabKey = 'pending' | 'pending_ace' | 'approved' | 'match' | 'earned' | 'paid' | 'closed' | 'payout'
+type TabKey = 'pending' | 'pending_ace' | 'approved' | 'match' | 'earned' | 'paid' | 'closed' | 'payout' | 'commission'
 type TypeFilter = 'all' | TechLeadType
 
 interface Props {
@@ -29,6 +31,11 @@ interface Props {
   salesReps: SalesRep[]
   currentUserId: string
   currentUserRole: UserRole | null
+  commissionReport: CommissionReport
+  availablePeriods: string[]
+  /** Set from ?tab=commission so the period picker can round-trip through the
+   *  server without the hub bouncing back to its default queue. */
+  forcedTab?: TabKey
 }
 
 // Tab wording kills the triple "pending" the old labels carried (Pending ACE,
@@ -45,6 +52,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'paid',        label: 'Paid' },
   { key: 'closed',      label: 'Rejected / Cancelled / Expired' },
   { key: 'payout',      label: 'Payout Report' },
+  { key: 'commission',  label: 'Commission' },
 ]
 
 // Display label for the per-row status badge. DB enum values stay the same;
@@ -115,7 +123,7 @@ function aceTicketLink(e: AceLaborEntryWithJoins): { href: string; label: string
   return { href: '#', label: '—', customer: '—' }
 }
 
-export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId, currentUserRole }: Props) {
+export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId, currentUserRole, commissionReport, availablePeriods, forcedTab }: Props) {
   const router = useRouter()
 
   // Editing / matching a lead past `pending` is super_admin/manager only (the
@@ -127,11 +135,14 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
   const pendingAceCount   = useMemo(() => aceEntries.filter(e => e.status === 'pending').length, [aceEntries])
 
   // Default tab: whichever Pending queue has more items; tie or both zero → Payout Report.
+  // forcedTab wins when the URL asked for one, so changing the commission
+  // period (a server round-trip) does not bounce back to a queue tab.
   const initialTab: TabKey = useMemo(() => {
+    if (forcedTab) return forcedTab
     if (pendingLeadsCount === 0 && pendingAceCount === 0) return 'payout'
     if (pendingAceCount > pendingLeadsCount) return 'pending_ace'
     return 'pending'
-  }, [pendingLeadsCount, pendingAceCount])
+  }, [forcedTab, pendingLeadsCount, pendingAceCount])
 
   const [tab, setTab] = useState<TabKey>(initialTab)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
@@ -153,7 +164,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
   const pendingAce = useMemo(() => aceEntries.filter(e => e.status === 'pending'), [aceEntries])
 
   const counts = useMemo(() => {
-    const c: Record<TabKey, number> = { pending: 0, pending_ace: 0, approved: 0, match: 0, earned: 0, paid: 0, closed: 0, payout: 0 }
+    const c: Record<TabKey, number> = { pending: 0, pending_ace: 0, approved: 0, match: 0, earned: 0, paid: 0, closed: 0, payout: 0, commission: 0 }
     for (const l of typeFiltered) {
       if (l.status === 'pending')             c.pending++
       else if (l.status === 'approved')       c.approved++
@@ -279,7 +290,9 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
         }))}
       />
 
-      {tab === 'payout' ? (
+      {tab === 'commission' ? (
+        <CommissionTab report={commissionReport} availablePeriods={availablePeriods} />
+      ) : tab === 'payout' ? (
         <PayoutReport leads={typeFiltered} aceEntries={aceEntries} />
       ) : tab === 'match' ? (
         <MatchCandidatesTab
