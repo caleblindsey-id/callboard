@@ -107,6 +107,101 @@ export type AceLaborEntry = {
   updated_at: string
 }
 
+// ---------------------------------------------------------------------------
+// Commission (migration 153). Tech payouts Rounds 2-4.
+// ---------------------------------------------------------------------------
+
+/** Effective-dated commission rate band. Half-open [min_subtotal, max_subtotal),
+ *  max null = unbounded. The rate applies to the WHOLE subtotal, so boundaries
+ *  are cliffs -- see src/lib/commission/tiers.ts. */
+export type CommissionTierRow = {
+  id: string
+  effective_from: string
+  min_subtotal: number
+  max_subtotal: number | null
+  /** Fraction, not percent: 0.025 = 2.5%. */
+  rate: number
+  notes: string | null
+  created_by_id: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PayoutPeriodStatus = 'draft' | 'locked' | 'paid'
+
+/** One payout month. `period` is Central-anchored 'YYYY-MM' -- derive it with
+ *  monthKeyInZone from src/lib/business-time.ts, never toISOString().slice(). */
+export type PayoutPeriodRow = {
+  id: string
+  period: string
+  status: PayoutPeriodStatus
+  locked_at: string | null
+  locked_by_id: string | null
+  paid_at: string | null
+  paid_by_id: string | null
+  notes: string | null
+  created_by_id: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** `basis` feeds the tiered subtotal, `commission` is the computed tier payout,
+ *  `bonus` is flat and added AFTER the percentage. A CHECK constraint keeps kind
+ *  and category consistent so a bonus can never inflate the subtotal. */
+export type PayoutLineKind = 'basis' | 'commission' | 'bonus'
+
+export type PayoutLineCategory =
+  | 'labor_shop' | 'labor_warranty' | 'trip_charge' | 'pm_labor' | 'ace_labor'
+  | 'commission'
+  | 'pm_bonus' | 'equipment_bonus'
+
+export type PayoutLineSourceKind =
+  | 'pm_ticket' | 'service_ticket' | 'ace_labor_entry' | 'tech_lead'
+  | 'synergy_invoice' | 'manual'
+
+export type PayoutLineRow = {
+  id: string
+  payout_period_id: string
+  tech_id: string
+  kind: PayoutLineKind
+  category: PayoutLineCategory
+  /** Signed. Negative for credit memos and reversals. */
+  amount: number
+  source_kind: PayoutLineSourceKind | null
+  source_id: string | null
+  source_ref: string | null
+  /** Snapshotted at lock. Never re-derive a locked line from the tier table. */
+  rate_at_lock: number | null
+  basis_subtotal_at_lock: number | null
+  note: string | null
+  created_by_id: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Buckets mirror the Round 1 ProdCode split. NOTE: `diagnostic_fee` is
+ *  captured but is NOT part of the commissioned subtotal -- it was never on the
+ *  manual workbook. See src/lib/db/commission.ts. */
+export type SynergyLaborBucket =
+  | 'labor_shop' | 'labor_warranty' | 'trip_charge' | 'pm_labor' | 'diagnostic_fee'
+
+export type SynergyLaborFactRow = {
+  id: string
+  /** The sslsm code (401-411, 444). Deliberately NOT a FK to users. */
+  synergy_id: string
+  period: string
+  bucket: SynergyLaborBucket
+  amount: number
+  /** 0.85 on pm_labor rows: "PM Profit Est." is a flat parts allowance. */
+  pm_factor_applied: number | null
+  pulled_at: string
+  created_at: string
+  updated_at: string
+}
+
 export type AceLaborEntryRow = AceLaborEntry
 export type AceLaborEntryInsert =
   Pick<AceLaborEntryRow, 'tech_id' | 'hours' | 'labor_rate_type' | 'reason'> &
@@ -577,6 +672,12 @@ export type UserRow = {
   hourly_cost: number | null
   must_change_password: boolean
   can_create_service_tickets: boolean
+  /** Earns tiered commission on billed labor (migration 153). Defaults false:
+   *  eligibility is opt-in so a new user never silently starts accruing. */
+  commission_eligible: boolean
+  /** Flat rate REPLACING the commission_tiers lookup, as a fraction. NULL =
+   *  use the tier table, which is the normal case. */
+  commission_rate_override: number | null
 }
 
 export type EquipmentRow = {
@@ -941,6 +1042,10 @@ export type ProductInsert = MakeOptional<
 export type UserInsert = MakeOptional<
   Omit<UserRow, 'id' | 'created_at'>,
   'active' | 'synergy_id' | 'hourly_cost' | 'must_change_password' | 'can_create_service_tickets'
+  // Both have DB defaults (false / NULL), so callers must not be forced to pass
+  // them. Omitting a new defaulted column here is what breaks the build with a
+  // SelectQueryError or a "missing properties" insert error.
+  | 'commission_eligible' | 'commission_rate_override'
 >
 
 export type EquipmentInsert = MakeOptional<
@@ -1532,6 +1637,34 @@ export interface Database {
             referencedColumns: ['id']
           },
         ]
+      }
+      commission_tiers: {
+        Row: CommissionTierRow
+        Insert: Partial<Omit<CommissionTierRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<CommissionTierRow, 'effective_from' | 'min_subtotal' | 'rate'>
+        Update: Partial<Omit<CommissionTierRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      payout_periods: {
+        Row: PayoutPeriodRow
+        Insert: Partial<Omit<PayoutPeriodRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<PayoutPeriodRow, 'period'>
+        Update: Partial<Omit<PayoutPeriodRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      payout_lines: {
+        Row: PayoutLineRow
+        Insert: Partial<Omit<PayoutLineRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<PayoutLineRow, 'payout_period_id' | 'tech_id' | 'kind' | 'category' | 'amount'>
+        Update: Partial<Omit<PayoutLineRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      synergy_labor_facts: {
+        Row: SynergyLaborFactRow
+        Insert: Partial<Omit<SynergyLaborFactRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<SynergyLaborFactRow, 'synergy_id' | 'period' | 'bucket' | 'amount'>
+        Update: Partial<Omit<SynergyLaborFactRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
       }
       tech_leads: {
         Row: TechLeadRow
