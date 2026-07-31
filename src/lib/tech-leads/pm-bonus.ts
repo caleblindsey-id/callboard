@@ -1,6 +1,6 @@
 // Tech-lead PM bonus rules.
 //
-// Mirrors the payout logic in supabase/migrations/147_tech_lead_four_month_75_percent.sql
+// Mirrors the payout logic in supabase/migrations/151_tech_lead_four_month_75_percent.sql
 // (function earn_tech_lead_on_pm_completion). Keep the two in sync.
 //
 // The written plan ("Outside Service Technician Commission Structure", eff. 2022-11-01)

@@ -62,11 +62,15 @@ export type EquipmentSaleTier =
 
 export type EquipmentSaleCandidateStatus = 'pending' | 'confirmed' | 'dismissed'
 
-// Schedule interval_months values that earn a lead bonus: 1/2/3 (monthly,
-// bi-monthly, quarterly) earn the full first-PM flat rate; 6 (semi-annual) earns
-// half. See @/lib/tech-leads/pm-bonus and migration 094 for the per-interval rate.
-// 1/2/3 earn the full flat rate, 4 earns 75%, 6 earns half. Rates live in
-// src/lib/tech-leads/pm-bonus.ts and migration 147 -- keep all three in sync.
+// Schedule interval_months values that earn a lead bonus. 1/2/3 (monthly, bi-monthly,
+// quarterly) earn the full first-PM flat rate, 4 earns 75%, 6 (semi-annual) earns half,
+// 12 (annual) earns nothing. Rates live in src/lib/tech-leads/pm-bonus.ts and migration
+// 151 -- keep all three in sync.
+//
+// NOTE: this constant currently has NO callers. It documents the rule but enforces
+// nothing, so correcting it does not by itself change any behavior. The values that
+// actually govern are the trigger (authoritative, sets bonus_amount) and pm-bonus.ts
+// (modal previews only).
 export const BONUS_ELIGIBLE_INTERVAL_MONTHS = [1, 2, 3, 4, 6] as const
 
 export type SyncType = 'customers' | 'contacts' | 'products' | 'full'

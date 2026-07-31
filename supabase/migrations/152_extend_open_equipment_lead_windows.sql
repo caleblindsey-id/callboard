@@ -1,4 +1,4 @@
--- Migration 148: extend STILL-OPEN equipment-sale lead windows from 90 to 180 days
+-- Migration 152: extend STILL-OPEN equipment-sale lead windows from 90 to 180 days
 --
 -- Companion to the EQUIPMENT_SALE_WINDOW_DAYS 90 -> 180 change in
 -- src/lib/tech-leads/bonus-tiers.ts. That constant is only read at INSERT, where it
@@ -12,7 +12,10 @@
 --   - It recalculates no bonus and pays nobody for the past.
 --   - Terminal states (earned, paid, rejected, cancelled, expired) are untouched.
 --
--- Expected effect at authoring time (prod, 2026-07-31): 15 rows.
+-- APPLIED 2026-07-31: prod 15 rows, dev 12 rows. Post-check on both: 0 rows left in
+-- scope, and every touched row sits at submitted_at + 180d. All 15 prod rows were
+-- status 'approved'; each gained exactly 90 days; earliest expiry was 2026-08-10, so
+-- nothing decayed out between authoring and apply.
 --
 -- >>> TIME-SENSITIVE. <<<
 -- The `expires_at > now()` guard is what makes this safe, and it is also what makes

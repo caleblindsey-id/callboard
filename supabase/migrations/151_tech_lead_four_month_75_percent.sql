@@ -1,6 +1,12 @@
--- Migration 147: four-month PM leads earn 75% of the flat rate
+-- Migration 151: four-month PM leads earn 75% of the flat rate
 --
--- Updates the earn trigger last set by migration 094.
+-- Updates the earn trigger last set by the 2026-06-04 migration
+-- `tech_lead_four_month_75pct_bonus` (ledger version 20260604205716), whose .sql file
+-- is MISSING from this repo. That migration is applied to BOTH prod and dev and already
+-- pays 0.75 at interval 4, so this file is a no-op against those databases. Verified
+-- against live pg_proc on both, 2026-07-31. It is kept because it restores the missing
+-- file to the repo and records the annual-pays-nothing ruling in the function comment.
+-- Do NOT assume from the file list alone that a rule is unimplemented; check the ledger.
 --
 -- The written commission plan ("Outside Service Technician Commission Structure",
 -- effective 2022-11-01) pays the PM sale bonus on PMs PER YEAR:

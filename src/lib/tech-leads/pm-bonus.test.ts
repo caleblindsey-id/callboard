@@ -7,7 +7,7 @@ import {
 } from './pm-bonus'
 
 // These pin the payout rules to the written commission plan and mirror
-// supabase/migrations/147_tech_lead_four_month_75_percent.sql. If the trigger changes,
+// supabase/migrations/151_tech_lead_four_month_75_percent.sql. If the trigger changes,
 // these must change with it -- a preview that disagrees with the trigger means the tech
 // is shown one number and paid another.
 //
