@@ -41,4 +41,9 @@ export function tierAmount(tier: EquipmentSaleTier): number {
   return EQUIPMENT_SALE_TIERS[tier].amount
 }
 
-export const EQUIPMENT_SALE_WINDOW_DAYS = 90
+// Window a submitted equipment-sale lead stays eligible for a matching Synergy sale.
+// The written plan (eff. 2022-11-01) says 12 months; Caleb set it to 6 on 2026-07-31.
+// This was 90 days from launch until then, which expired leads at a quarter of the
+// intended window. Stamped onto tech_leads.expires_at at INSERT, so a change here only
+// affects new leads -- existing rows keep the window they were created under.
+export const EQUIPMENT_SALE_WINDOW_DAYS = 180
