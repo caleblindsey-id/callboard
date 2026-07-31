@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { monthWindowUtc } from '@/lib/business-time'
 
 // Read-only "Invoiced" archive: completed + billed work orders (service and PM),
 // normalized into one shape so the billing page can show them in a single list
@@ -41,12 +42,13 @@ type PmBilledRaw = {
 }
 
 // Half-open [start, nextMonth) window on billed_at. Both columns are timestamptz.
+//
+// Anchored to America/Chicago, NOT UTC. The previous version built the boundary
+// as `${year}-${month}-01T00:00:00.000Z`, which is 7:00 PM Central on the last
+// day of the previous month, so a ticket billed that evening showed up in the
+// following month's archive. See src/lib/business-time.ts.
 function billedWindow(month: number, year: number): { start: string; end: string } {
-  const start = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`
-  const nextMonth = month === 12 ? 1 : month + 1
-  const nextYear = month === 12 ? year + 1 : year
-  const end = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00.000Z`
-  return { start, end }
+  return monthWindowUtc(year, month)
 }
 
 export async function getInvoicedRows(month?: number, year?: number): Promise<InvoicedRow[]> {
