@@ -59,15 +59,13 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
     ? report.rows
     : report.rows.filter((r) => r.subtotal !== 0 || r.total !== 0)
 
-  const anyDiagnostic = report.rows.some((r) => r.diagnosticFee !== 0)
-
   function exportCsv() {
     const header = [
       'Synergy ID', 'Tech',
       ...SUBTOTAL_BUCKETS.map((b) => BUCKET_LABEL[b]),
       'ACE labor', 'Commissioned subtotal', 'Rate', 'Commission',
       'PM bonus', 'Equipment bonus', 'Total payout',
-      'To next tier', 'Gain at next tier', 'Diagnostic (not commissioned)',
+      'To next tier', 'Gain at next tier',
     ]
     const rows = visible.map((r) => [
       r.synergyId ?? '',
@@ -82,7 +80,6 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
       r.total.toFixed(2),
       r.nextTier ? r.nextTier.amountAway.toFixed(2) : '',
       r.nextTier ? r.nextTier.gain.toFixed(2) : '',
-      r.diagnosticFee.toFixed(2),
     ] as (string | number | null)[])
 
     const csv = [header, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\n')
@@ -165,6 +162,8 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
               .map((u) => `${u.synergyId} (${formatMoney(u.amount)})`)
               .join(', ')}
             . If one of these is a technician, set their Synergy ID on the user record.
+            Known outside sales reps are already excluded from this warning, so a code
+            appearing here is genuinely unaccounted for.
           </p>
         </div>
       )}
@@ -185,14 +184,13 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
               <th className="px-3 py-2 text-right">Bonuses</th>
               <th className="px-3 py-2 text-right font-bold">Total</th>
               <th className="px-3 py-2">To next tier</th>
-              {anyDiagnostic && <th className="px-3 py-2 text-right">Diagnostic*</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={SUBTOTAL_BUCKETS.length + (anyDiagnostic ? 10 : 9)}
+                  colSpan={SUBTOTAL_BUCKETS.length + 9}
                   className="px-3 py-6 text-center text-gray-500 dark:text-gray-400"
                 >
                   No commission activity in {periodLabel(period)}.
@@ -248,11 +246,6 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
                     <span className="text-gray-400 dark:text-gray-500">—</span>
                   )}
                 </td>
-                {anyDiagnostic && (
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-400 dark:text-gray-500">
-                    {r.diagnosticFee === 0 ? '—' : formatMoney(r.diagnosticFee)}
-                  </td>
-                )}
               </tr>
             ))}
           </tbody>
@@ -278,7 +271,6 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
                   {formatMoney(report.totals.total)}
                 </td>
                 <td className="px-3 py-2" />
-                {anyDiagnostic && <td className="px-3 py-2" />}
               </tr>
             </tfoot>
           )}
@@ -299,11 +291,17 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
           the percentage. Labor is on an invoice-date basis from Synergy; ACE and bonuses
           are bucketed on approval and earn dates in Central time.
         </p>
-        {anyDiagnostic && (
+        <p>
+          Diagnostic fees are excluded: they are not a technician&rsquo;s number
+          (ruled 2026-07-31). They are still synced, so the dollars reconcile against
+          Synergy, but they never appear on a payout row.
+        </p>
+        {report.nonTechLabor !== 0 && (
           <p>
-            * Diagnostic fees are shown for visibility but are{' '}
-            <strong>not</strong> in the commissioned subtotal, because they have never
-            been on the manual workbook. Needs a ruling if that is wrong.
+            {formatMoney(report.nonTechLabor)} of service labor this period was invoiced
+            under an outside sales rep or an internal account rather than a technician,
+            so it is not on anyone&rsquo;s payout. Expected, and noted only so this
+            report and Synergy can always be reconciled to each other.
           </p>
         )}
         <p className="italic">

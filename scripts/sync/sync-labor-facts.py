@@ -119,6 +119,20 @@ PM_PROFIT_FACTOR = 0.85
 # Order types that carry service labor. 21 = warranty, 22 = non-warranty.
 ORDER_TYPES = (21, 22)
 
+# Synergy salesman codes that carry service labor but are NOT technicians, so
+# their dollars can never reach a tech payout. Verified against the ERP `sslsm`
+# master 2026-07-31 and confirmed by Caleb ("those are not tech numbers").
+# Logged at INFO rather than WARNING so the genuinely unknown case stays loud.
+# Keep in sync with KNOWN_NON_TECH_SYNERGY_IDS in
+# src/lib/commission/report-types.ts.
+KNOWN_NON_TECH_CODES = {
+    "7": "Stanley Burt, outside sales",
+    "9": "Andye Bramlett, outside sales",
+    "38": "Tommy Mayson, outside sales",
+    "200": "Tim Adams, outside sales",
+    "999": "INTERNAL / house account",
+}
+
 # invh.Status: 30 = invoice (positive), 31 = credit memo (negative).
 STATUS_CREDIT_MEMO = 31
 
@@ -363,15 +377,24 @@ def sync_period(conn, period: str, dry_run: bool, known: set[str]) -> dict:
     records = to_records(period, extracted, run_started_iso)
 
     # Salesmen the ERP attributed service labor to that CallBoard has no user
-    # for. Real case: June 2026 carried code '7' with $240 shop + $49 trip that
-    # the Phocas totals do not count. Landed anyway, but never silently.
+    # for. Split two ways so the recurring, already-explained ones do not train
+    # everyone to ignore this line.
     unknown = sorted(set(extracted) - known) if known else []
     for code in unknown:
         amounts = {k: round(v, 2) for k, v in extracted[code].items() if v}
-        log.warning(
-            f"  Unknown salesman code '{code}' has labor in {period}: {amounts}. "
-            "Not a CallBoard user, so it will not reach a payout. Map it or confirm it is out of scope."
-        )
+        if not amounts:
+            continue
+        if code in KNOWN_NON_TECH_CODES:
+            log.info(
+                f"  Non-tech code '{code}' ({KNOWN_NON_TECH_CODES[code]}) has labor in "
+                f"{period}: {amounts}. Expected -- not a technician, so no payout."
+            )
+        else:
+            log.warning(
+                f"  UNKNOWN salesman code '{code}' has labor in {period}: {amounts}. "
+                "Not a CallBoard user and not a known sales rep. If this is a technician, "
+                "set their Synergy ID on the user record or they will be underpaid."
+            )
 
     total = sum(
         v for buckets in extracted.values() for k, v in buckets.items()

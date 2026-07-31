@@ -8,6 +8,7 @@ import {
 } from '@/lib/commission/tiers'
 import {
   SUBTOTAL_BUCKETS,
+  KNOWN_NON_TECH_SYNERGY_IDS,
   type CommissionReport,
   type CommissionRow,
 } from '@/lib/commission/report-types'
@@ -33,11 +34,9 @@ export type { CommissionReport, CommissionRow } from '@/lib/commission/report-ty
 // rows 6-10. Bonuses are FLAT and added AFTER the percentage (row 14) and are
 // never part of the subtotal.
 //
-// diagnostic_fee is deliberately EXCLUDED from the subtotal: it has never been
-// on the workbook. It was $0 in June 2026 so nobody had to decide, but July
-// carries real values, so it is surfaced in its own column rather than silently
-// dropped or silently commissioned. If Caleb rules it commissionable, add it to
-// SUBTOTAL_BUCKETS and nothing else changes.
+// diagnostic_fee is EXCLUDED. Caleb ruled 2026-07-31 that diagnostic fees are
+// not commissioned because they are not the technician's number. Still synced,
+// so the dollars reconcile against Synergy, but never on a tech's payout row.
 //
 // TIMEZONE. ACE and bonus timestamps are timestamptz and MUST be bucketed
 // through business-time.ts. The labor side needs no anchoring: its period comes
@@ -192,18 +191,26 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
       // Bonuses are added AFTER the percentage, per the workbook's row 14.
       total: roundCents(commission + pmBonus + equipmentBonus),
       nextTier: distanceToNextTier(subtotal, tiers, override),
-      diagnosticFee: labor.diagnostic_fee,
     })
   }
 
   rows.sort((a, b) => (a.synergyId ?? '').localeCompare(b.synergyId ?? ''))
 
   // ----- labor attributed to codes CallBoard has no user for -----
+  // Split two ways. Known outside sales reps and INTERNAL are expected every
+  // month and reported quietly; anything else is a code nobody has accounted
+  // for, which could be a real technician, and gets a banner.
   const unmappedLabor: { synergyId: string; amount: number }[] = []
+  let nonTechLabor = 0
   for (const [synergyId, buckets] of laborBySynergy) {
     if (bySynergyId.has(synergyId)) continue
     const amount = roundCents(SUBTOTAL_BUCKETS.reduce((s, b) => s + buckets[b], 0))
-    if (amount !== 0) unmappedLabor.push({ synergyId, amount })
+    if (amount === 0) continue
+    if (KNOWN_NON_TECH_SYNERGY_IDS.has(synergyId)) {
+      nonTechLabor = roundCents(nonTechLabor + amount)
+    } else {
+      unmappedLabor.push({ synergyId, amount })
+    }
   }
   unmappedLabor.sort((a, b) => b.amount - a.amount)
 
@@ -223,6 +230,7 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
     tiers,
     totals,
     unmappedLabor,
+    nonTechLabor,
     isEmpty: (laborRes.data ?? []).length === 0,
   }
 }
