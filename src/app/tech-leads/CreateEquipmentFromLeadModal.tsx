@@ -682,7 +682,9 @@ export default function CreateEquipmentFromLeadModal({ lead, onClose, onDone }: 
               <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-400">
                 When the first PM completes, {lead.submitter?.name ?? 'the tech'} will earn a{' '}
                 <strong>${bonusAmount.toFixed(2)}</strong> bonus
-                {bonusRateForInterval(intervalMonths) === 0.5 ? ' (half rate for six-month PMs)' : ''}.
+                {bonusRateForInterval(intervalMonths) === 0.75 ? ' (75% rate for four-month PMs)'
+                  : bonusRateForInterval(intervalMonths) === 0.5 ? ' (half rate for six-month PMs)'
+                  : ''}.
               </p>
             )}
           </div>
