@@ -70,12 +70,14 @@ NOT touched by this run (a tech who no longer has activity at all) is swept by
 pulled_at. Rows are never deleted before the new ones land, so the table is
 never momentarily empty.
 
-The ERP replica lags one day. A month is only safe to LOCK after the first
-business day of the following month, which is also when the written plan says
-commission is calculated.
+The ERP replica lags one day, so a month is not complete until the following
+business day. The default run therefore covers the PREVIOUS month as well as the
+current one -- otherwise a just-closed month never receives its final day of
+invoicing and is paid short, silently. Commission is calculated on the first
+business day of the following month, per the written plan.
 
 Usage:
-    python sync-labor-facts.py                  # current month (Central)
+    python sync-labor-facts.py                  # previous + current month (Central)
     python sync-labor-facts.py --period 2026-06
     python sync-labor-facts.py --months 6       # last 6 months, oldest first
     python sync-labor-facts.py --period 2026-06 --dry-run
@@ -438,7 +440,22 @@ def main() -> int:
     elif args.months:
         periods = recent_periods(args.months)
     else:
-        periods = [current_period()]
+        # DEFAULT: previous month AND current month, oldest first.
+        #
+        # Syncing only the current month leaves a month permanently short. The
+        # ERP replica lags a day, so on the 1st the just-closed month is still
+        # missing its final business day of invoicing -- but a current-month-only
+        # run has already moved on and will never refresh it again. July 2026
+        # would have been paid ~200 invoices light, and it would have looked
+        # completely normal.
+        #
+        # Costs about a second. The sync is idempotent on
+        # (synergy_id, period, bucket), so re-running a closed month re-derives
+        # the same values rather than doubling them. Verified across 7 months:
+        # zero invoices were entered after their invoice month closed, so a
+        # re-run of a closed month is a no-op in practice and cheap insurance
+        # when it is not.
+        periods = recent_periods(2)
 
     log.info("=" * 60)
     log.info(f"Synergy labor facts sync - {len(periods)} period(s): {', '.join(periods)}")
