@@ -7,6 +7,7 @@ import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { formatMoney, formatDate } from '@/lib/format'
+import { dateRangeWindowUtc, monthKeyInZone } from '@/lib/business-time'
 import ScrollableTable from '@/components/ScrollableTable'
 
 interface Props {
@@ -14,18 +15,21 @@ interface Props {
   aceEntries: AceLaborEntryWithJoins[]
 }
 
-function firstOfMonth(year: number, monthIndex: number): string {
-  const d = new Date(Date.UTC(year, monthIndex, 1))
-  return d.toISOString().slice(0, 10)
+// Calendar-date helpers. `month` is 1-based. These produce 'YYYY-MM-DD' strings
+// for the date inputs and involve no timezone -- the zone only matters when the
+// range is turned into an instant window, which dateRangeWindowUtc does.
+function firstOfMonth(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-01`
 }
 
-function lastOfMonth(year: number, monthIndex: number): string {
-  const d = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59))
-  return d.toISOString().slice(0, 10)
+function lastOfMonth(year: number, month: number): string {
+  // Day 0 of the next month is the last day of this one.
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
 
 function toPayoutPeriod(isoDate: string): string {
-  // isoDate is YYYY-MM-DD (local/UTC-stripped); we just take the first 7.
+  // isoDate is a plain YYYY-MM-DD calendar date, so the first 7 chars are the period.
   return isoDate.slice(0, 7)
 }
 
@@ -46,10 +50,13 @@ function escapeCsv(v: string | number | null): string {
 export default function PayoutReport({ leads, aceEntries }: Props) {
   const router = useRouter()
 
-  const now = new Date()
-  // Default = previous calendar month (commission typically runs for the month just closed).
-  const defaultMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1
-  const defaultYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+  // Default = previous calendar month (commission typically runs for the month
+  // just closed). Anchored to Central, not the viewer's local zone: getMonth()
+  // reads the browser's zone on the client and UTC during SSR, which disagree
+  // for the last 5-6 hours of every month and hydrate a different default range.
+  const [currentYear, currentMonth] = monthKeyInZone(new Date()).split('-').map(Number)
+  const defaultMonth = currentMonth === 1 ? 12 : currentMonth - 1
+  const defaultYear = currentMonth === 1 ? currentYear - 1 : currentYear
   const [from, setFrom] = useState<string>(firstOfMonth(defaultYear, defaultMonth))
   const [to, setTo]     = useState<string>(lastOfMonth(defaultYear, defaultMonth))
   const [includePaid, setIncludePaid] = useState(false)
@@ -64,15 +71,17 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
   const [confirmAceMarkPaidOpen, setConfirmAceMarkPaidOpen] = useState(false)
 
   const inRange = useMemo(() => {
-    // UTC anchoring on both boundaries so the range matches the UTC dates the
-    // firstOfMonth / lastOfMonth helpers produce.
-    const fromTs = new Date(from + 'T00:00:00Z').getTime()
-    const toTs   = new Date(to   + 'T23:59:59Z').getTime()
+    // Central-anchored half-open window. The old version anchored both bounds to
+    // UTC, which put the start 5-6 hours early and dropped anything in the final
+    // sub-second of the closing day.
+    const win = dateRangeWindowUtc(from, to)
+    const fromTs = new Date(win.start).getTime()
+    const endTs = new Date(win.end).getTime()
     return leads.filter(l => {
       if (l.status !== 'earned' && !(includePaid && l.status === 'paid')) return false
       if (!l.earned_at) return false
       const t = new Date(l.earned_at).getTime()
-      return t >= fromTs && t <= toTs
+      return t >= fromTs && t < endTs
     })
   }, [leads, from, to, includePaid])
 
@@ -87,13 +96,14 @@ export default function PayoutReport({ leads, aceEntries }: Props) {
   // paid is gated by the same includePaid checkbox so the manager can see
   // the full picture without ACE living off in its own pseudo-mode.
   const aceInRange = useMemo(() => {
-    const fromTs = new Date(from + 'T00:00:00Z').getTime()
-    const toTs   = new Date(to   + 'T23:59:59Z').getTime()
+    const win = dateRangeWindowUtc(from, to)
+    const fromTs = new Date(win.start).getTime()
+    const endTs = new Date(win.end).getTime()
     return aceEntries.filter(e => {
       if (e.status !== 'approved' && !(includePaid && e.status === 'paid')) return false
       if (!e.approved_at) return false
       const t = new Date(e.approved_at).getTime()
-      return t >= fromTs && t <= toTs
+      return t >= fromTs && t < endTs
     })
   }, [aceEntries, from, to, includePaid])
 
