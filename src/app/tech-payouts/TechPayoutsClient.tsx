@@ -17,6 +17,7 @@ import PayoutReport from '../tech-leads/PayoutReport'
 import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
 import CommissionTab from './CommissionTab'
 import type { CommissionReport } from '@/lib/commission/report-types'
+import type { PayoutDrift, PayoutPeriodState } from '@/lib/payouts/period-types'
 import { formatMoney, formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
 import Tabs, { type TabItem } from '@/components/ui/Tabs'
@@ -33,6 +34,16 @@ interface Props {
   currentUserRole: UserRole | null
   commissionReport: CommissionReport
   availablePeriods: string[]
+  /** draft / locked / paid. A locked report is read from its payout_lines
+   *  snapshot rather than recomputed. */
+  periodState: PayoutPeriodState
+  /** Techs whose live subtotal has moved away from what was locked. Changes
+   *  nothing about what gets paid; it means dollars arrived after the close. */
+  drift: PayoutDrift[]
+  /** Reasons this period must not be locked yet. Empty means it is safe. */
+  lockBlockers: string[]
+  /** Worth seeing before locking, but not worth blocking on. */
+  lockWarnings: string[]
   /** Set from ?tab=commission so the period picker can round-trip through the
    *  server without the hub bouncing back to its default queue. */
   forcedTab?: TabKey
@@ -123,7 +134,7 @@ function aceTicketLink(e: AceLaborEntryWithJoins): { href: string; label: string
   return { href: '#', label: '—', customer: '—' }
 }
 
-export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId, currentUserRole, commissionReport, availablePeriods, forcedTab }: Props) {
+export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId, currentUserRole, commissionReport, availablePeriods, periodState, drift, lockBlockers, lockWarnings, forcedTab }: Props) {
   const router = useRouter()
 
   // Editing / matching a lead past `pending` is super_admin/manager only (the
@@ -291,7 +302,16 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
       />
 
       {tab === 'commission' ? (
-        <CommissionTab report={commissionReport} availablePeriods={availablePeriods} />
+        <CommissionTab
+          report={commissionReport}
+          availablePeriods={availablePeriods}
+          periodState={periodState}
+          drift={drift}
+          blockers={lockBlockers}
+          warnings={lockWarnings}
+          canLock={!!currentUserRole && RESET_ROLES.includes(currentUserRole)}
+          canUnlock={currentUserRole === 'super_admin'}
+        />
       ) : tab === 'payout' ? (
         <PayoutReport leads={typeFiltered} aceEntries={aceEntries} />
       ) : tab === 'match' ? (

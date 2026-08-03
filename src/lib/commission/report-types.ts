@@ -20,7 +20,9 @@ import type { SynergyLaborBucket } from '@/types/database'
  *  It is still synced (so the dollars exist and reconcile against Synergy) but
  *  it is not shown on a per-tech payout row either, because putting it there
  *  would imply the tech owns it. Do not add it here. */
-export const SUBTOTAL_BUCKETS: SynergyLaborBucket[] = [
+export type CommissionedBucket = Exclude<SynergyLaborBucket, 'diagnostic_fee'>
+
+export const SUBTOTAL_BUCKETS: CommissionedBucket[] = [
   'labor_shop',
   'labor_warranty',
   'trip_charge',
@@ -52,6 +54,32 @@ export const BUCKET_LABEL: Record<SynergyLaborBucket, string> = {
   diagnostic_fee: 'Diagnostic',
 }
 
+/** One approved ACE entry behind a tech's ACE column.
+ *
+ *  Carried per row for two reasons: the payout table can itemise what makes up
+ *  the number, and locking a period needs the entry ids to write payout_lines
+ *  as a manifest. Paying then walks that manifest instead of re-querying, so
+ *  nothing can drift between lock and pay. */
+export type AceDetail = {
+  id: string
+  hours: number
+  /** rate_value_at_approval, snapshotted so a settings change cannot restate. */
+  rate: number
+  value: number
+  approvedAt: string | null
+  reason: string | null
+}
+
+/** One earned lead behind a tech's bonus column. Same manifest role as AceDetail. */
+export type BonusDetail = {
+  id: string
+  leadType: string
+  customer: string | null
+  equipment: string | null
+  amount: number
+  earnedAt: string | null
+}
+
 export type CommissionRow = {
   techId: string | null
   synergyId: string | null
@@ -68,6 +96,10 @@ export type CommissionRow = {
   /** Per-bucket ERP labor for the period. */
   labor: Record<SynergyLaborBucket, number>
   aceLabor: number
+  /** The individual entries summing to aceLabor. */
+  aceEntries: AceDetail[]
+  /** The individual leads summing to pmBonus + equipmentBonus. */
+  bonusLeads: BonusDetail[]
   /** labor buckets in SUBTOTAL_BUCKETS + aceLabor. */
   subtotal: number
   rate: number

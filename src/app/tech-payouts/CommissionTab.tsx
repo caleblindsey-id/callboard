@@ -14,11 +14,29 @@ import {
   type CommissionRow,
 } from '@/lib/commission/report-types'
 import { toCsv, downloadCsv } from '@/lib/csv'
+import {
+  PERIOD_STATUS_LABEL,
+  type PayoutDrift,
+  type PayoutPeriodState,
+} from '@/lib/payouts/period-types'
 import ScrollableTable from '@/components/ScrollableTable'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface Props {
   report: CommissionReport
   availablePeriods: string[]
+  periodState: PayoutPeriodState
+  drift: PayoutDrift[]
+  blockers: string[]
+  warnings: string[]
+  canLock: boolean
+  canUnlock: boolean
+}
+
+const STATUS_CHIP: Record<string, string> = {
+  draft: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+  locked: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  paid: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
 }
 
 // Commission on billed labor, the payout bucket CallBoard has never owned.
@@ -43,14 +61,44 @@ function periodLabel(period: string): string {
   })
 }
 
-export default function CommissionTab({ report, availablePeriods }: Props) {
+export default function CommissionTab({
+  report,
+  availablePeriods,
+  periodState,
+  drift,
+  blockers,
+  warnings,
+  canLock,
+  canUnlock,
+}: Props) {
   const router = useRouter()
   const [period, setPeriod] = useState(report.period)
   const [showZero, setShowZero] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmLock, setConfirmLock] = useState(false)
+  const [confirmUnlock, setConfirmUnlock] = useState(false)
+
+  const isDraft = periodState.status === 'draft'
 
   function changePeriod(next: string) {
     setPeriod(next)
     router.push(`/tech-payouts?tab=commission&period=${next}`)
+  }
+
+  async function post(action: 'lock' | 'unlock') {
+    setBusy(true)
+    setActionError(null)
+    const res = await fetch(`/api/payouts/${period}/${action}`, { method: 'POST' })
+    setBusy(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setActionError(
+        [data.error, ...(data.blockers ?? [])].filter(Boolean).join(' ') || `Failed to ${action}.`,
+      )
+      return
+    }
+    router.refresh()
   }
 
   const visible = showZero
@@ -122,15 +170,121 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
           Show techs with no activity
         </label>
 
+        <span
+          className={`ml-auto inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_CHIP[periodState.status]}`}
+          title={
+            periodState.status === 'draft'
+              ? 'Recomputes on every load. A late invoice can still move these figures.'
+              : `Snapshotted ${periodState.lockedAt?.slice(0, 10) ?? ''}${periodState.lockedBy ? ` by ${periodState.lockedBy}` : ''}. These figures can no longer move.`
+          }
+        >
+          {PERIOD_STATUS_LABEL[periodState.status]}
+        </span>
+
         <button
           type="button"
           onClick={exportCsv}
           disabled={visible.length === 0}
-          className="ml-auto rounded-md bg-gray-900 dark:bg-gray-100 px-3 py-1.5 text-sm font-medium text-white dark:text-gray-900 disabled:opacity-40"
+          className="rounded-md bg-gray-900 dark:bg-gray-100 px-3 py-1.5 text-sm font-medium text-white dark:text-gray-900 disabled:opacity-40"
         >
           Export CSV
         </button>
+
+        {isDraft && canLock && (
+          <button
+            type="button"
+            onClick={() => setConfirmLock(true)}
+            disabled={busy || blockers.length > 0 || visible.length === 0}
+            title={blockers.length > 0 ? blockers.join(' ') : undefined}
+            className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-40"
+          >
+            {busy ? 'Locking…' : 'Lock period'}
+          </button>
+        )}
+
+        {periodState.status === 'locked' && canUnlock && (
+          <button
+            type="button"
+            onClick={() => setConfirmUnlock(true)}
+            disabled={busy}
+            className="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 disabled:opacity-40"
+          >
+            {busy ? 'Reopening…' : 'Reopen'}
+          </button>
+        )}
       </div>
+
+      {actionError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40 p-3 text-sm text-red-800 dark:text-red-200"
+        >
+          {actionError}
+        </div>
+      )}
+
+      {/* Blockers are refusals. Locking freezes money, so anything ambiguous is
+          resolved while the period is still open. */}
+      {isDraft && blockers.length > 0 && (
+        <div className="rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40 p-4 text-sm text-red-900 dark:text-red-200">
+          <p className="font-medium">This period cannot be locked yet.</p>
+          <ul className="mt-1 list-disc pl-5 space-y-1">
+            {blockers.map((b) => <li key={b}>{b}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {isDraft && warnings.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-4 text-sm text-amber-900 dark:text-amber-200">
+          <p className="font-medium">Worth a look before locking.</p>
+          <ul className="mt-1 list-disc pl-5 space-y-1">
+            {warnings.map((w) => <li key={w}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Drift changes nothing about what gets paid: a locked period pays from
+          its snapshot. It means dollars arrived after the close. */}
+      {drift.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-4 text-sm text-amber-900 dark:text-amber-200">
+          <p className="font-medium">
+            Synergy has moved since this period was locked, for {drift.length} tech
+            {drift.length === 1 ? '' : 's'}.
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {drift.map((d) => (
+              <li key={d.techId}>
+                {d.name}: locked at {formatMoney(d.lockedTotal)}, now {formatMoney(d.liveTotal)}
+                {' '}({formatMoney(d.liveTotal - d.lockedTotal)} late)
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2">
+            The figures below are the locked ones and are what gets paid. The difference belongs
+            to the next open period.
+          </p>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmLock}
+        title={`Lock ${periodLabel(period)}?`}
+        message={`This snapshots ${formatMoney(report.totals.total)} across ${visible.length} tech${visible.length === 1 ? '' : 's'} and stops the figures moving. Anything that arrives afterward falls into the next open period.`}
+        confirmLabel="Lock period"
+        loading={busy}
+        onConfirm={() => { setConfirmLock(false); void post('lock') }}
+        onCancel={() => setConfirmLock(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmUnlock}
+        title={`Reopen ${periodLabel(period)}?`}
+        message="The snapshot is discarded and the period recomputes from current data. Use this only when the period was locked too early."
+        confirmLabel="Reopen"
+        loading={busy}
+        onConfirm={() => { setConfirmUnlock(false); void post('unlock') }}
+        onCancel={() => setConfirmUnlock(false)}
+      />
 
       {/* Empty state: the sync has not run for this period */}
       {report.isEmpty && (
@@ -353,10 +507,19 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
             report and Synergy can always be reconciled to each other.
           </p>
         )}
-        <p className="italic">
-          Read-only. Figures recompute from current data on every load and no period is
-          locked yet, so a late invoice or a reopened ticket can still move them.
-        </p>
+        {isDraft ? (
+          <p className="italic">
+            This period is open. Figures recompute from current data on every load, so a late
+            invoice or a reopened ticket can still move them. Locking snapshots them.
+          </p>
+        ) : (
+          <p className="italic">
+            Locked{periodState.lockedAt ? ` ${periodState.lockedAt.slice(0, 10)}` : ''}
+            {periodState.lockedBy ? ` by ${periodState.lockedBy}` : ''}. Every figure here is read
+            from the snapshot, not recomputed, so nothing can move it.
+            {periodState.paidAt && ` Paid ${periodState.paidAt.slice(0, 10)}${periodState.paidBy ? ` by ${periodState.paidBy}` : ''}.`}
+          </p>
+        )}
       </div>
     </div>
   )

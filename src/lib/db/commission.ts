@@ -9,6 +9,8 @@ import {
 import {
   SUBTOTAL_BUCKETS,
   KNOWN_NON_TECH_SYNERGY_IDS,
+  type AceDetail,
+  type BonusDetail,
   type CommissionReport,
   type CommissionRow,
 } from '@/lib/commission/report-types'
@@ -75,13 +77,16 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
       .eq('period', period),
     supabase
       .from('ace_labor_entries')
-      .select('tech_id, hours, rate_value_at_approval, status, approved_at')
+      .select('id, tech_id, hours, rate_value_at_approval, status, approved_at, reason')
       .in('status', ['approved', 'paid'])
       .gte('approved_at', win.start)
       .lt('approved_at', win.end),
     supabase
       .from('tech_leads')
-      .select('submitted_by, lead_type, bonus_amount, status, earned_at')
+      .select(
+        'id, submitted_by, lead_type, bonus_amount, status, earned_at, ' +
+          'customer_name_text, equipment_description, make, model, customers(name)',
+      )
       .in('status', ['earned', 'paid'])
       .gte('earned_at', win.start)
       .lt('earned_at', win.end),
@@ -136,28 +141,68 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
   }
 
   // ----- ACE, keyed by user id. Billable value = hours x snapshotted rate -----
+  // Individual entries are kept, not just the sum: the payout table itemises
+  // them and locking writes one payout_lines row per entry so the period has a
+  // manifest to pay against.
   const aceByTech = new Map<string, number>()
+  const aceDetailByTech = new Map<string, AceDetail[]>()
   for (const e of (aceRes.data ?? []) as unknown as {
+    id: string
     tech_id: string
     hours: number
     rate_value_at_approval: number | null
+    approved_at: string | null
+    reason: string | null
   }[]) {
-    aceByTech.set(e.tech_id, roundCents((aceByTech.get(e.tech_id) ?? 0) + aceBillableValue(e)))
+    const value = aceBillableValue(e)
+    aceByTech.set(e.tech_id, roundCents((aceByTech.get(e.tech_id) ?? 0) + value))
+    const list = aceDetailByTech.get(e.tech_id) ?? []
+    list.push({
+      id: e.id,
+      hours: Number(e.hours ?? 0),
+      rate: Number(e.rate_value_at_approval ?? 0),
+      value,
+      approvedAt: e.approved_at,
+      reason: e.reason,
+    })
+    aceDetailByTech.set(e.tech_id, list)
   }
 
   // ----- bonuses, keyed by user id, split by lead type -----
   const pmBonusByTech = new Map<string, number>()
   const equipBonusByTech = new Map<string, number>()
+  const bonusDetailByTech = new Map<string, BonusDetail[]>()
   for (const l of (leadRes.data ?? []) as unknown as {
+    id: string
     submitted_by: string
     lead_type: string
     bonus_amount: number | null
+    earned_at: string | null
+    customer_name_text: string | null
+    equipment_description: string | null
+    make: string | null
+    model: string | null
+    // customer_name_text is only set for a lead on a customer not yet in the
+    // CRM; the normal path is this join.
+    customers: { name: string | null } | null
   }[]) {
+    const amount = roundCents(Number(l.bonus_amount ?? 0))
     const target = l.lead_type === 'pm' ? pmBonusByTech : equipBonusByTech
-    target.set(
-      l.submitted_by,
-      roundCents((target.get(l.submitted_by) ?? 0) + Number(l.bonus_amount ?? 0)),
-    )
+    target.set(l.submitted_by, roundCents((target.get(l.submitted_by) ?? 0) + amount))
+
+    const list = bonusDetailByTech.get(l.submitted_by) ?? []
+    list.push({
+      id: l.id,
+      leadType: l.lead_type,
+      customer: l.customers?.name ?? l.customer_name_text,
+      equipment:
+        l.equipment_description ||
+        [l.make, l.model].filter(Boolean).join(' ') ||
+        null,
+      amount,
+      earnedAt: l.earned_at,
+    })
+    bonusDetailByTech.set(l.submitted_by, list)
   }
 
   // ----- assemble one row per technician -----
@@ -200,6 +245,8 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
       role: u.role,
       labor,
       aceLabor,
+      aceEntries: aceDetailByTech.get(u.id) ?? [],
+      bonusLeads: bonusDetailByTech.get(u.id) ?? [],
       subtotal,
       rate,
       rateIsOverride: u.commission_eligible && override !== null,
