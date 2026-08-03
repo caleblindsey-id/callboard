@@ -12,6 +12,7 @@ import { renderPartsReadyEmail } from '@/lib/email-templates/parts-ready'
 import { sendPushToUser } from '@/lib/push/send-push'
 import { createNotification } from '@/lib/notifications/create-notification'
 import { partLabel } from '@/lib/parts'
+import { isDeliverableEmail } from '@/lib/email-deliverable'
 import type { PartRequest, PartsQueueSource } from '@/types/database'
 
 export type PartsReadyResult =
@@ -124,7 +125,7 @@ export async function sendPartsReadyNotice(
     .eq('id', techId)
     .maybeSingle()
   const techEmail = (tech as { email: string | null } | null)?.email ?? null
-  if (!techEmail) return { sent: true, messageId: null }
+  if (!isDeliverableEmail(techEmail)) return { sent: true, messageId: null }
   const techName = (tech as { name: string | null } | null)?.name ?? null
 
   const { data: settingsRows } = await supabase

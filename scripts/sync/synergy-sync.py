@@ -141,6 +141,24 @@ def supabase_upsert(table: str, records: list[dict], on_conflict: str | None = "
     return len(records)
 
 
+def supabase_patch(table: str, filters: dict[str, str], payload: dict) -> None:
+    """PATCH the rows matching `filters`, updating only the columns in `payload`.
+
+    This is a true partial UPDATE. Do NOT reach for supabase_upsert when you
+    only want to touch some columns: PostgREST's merge-duplicates re-inserts
+    the whole row, so any column omitted from the payload is sent as NULL and
+    trips its NOT NULL constraint (or silently blanks a nullable column).
+    """
+    query = "&".join(f"{k}={v}" for k, v in filters.items())
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
+    headers = supabase_headers() | {"Prefer": "return=minimal"}
+    response = requests.patch(url, json=payload, headers=headers, timeout=30)
+    if not response.ok:
+        raise RuntimeError(
+            f"Supabase PATCH to '{table}' failed [{response.status_code}]: {response.text[:500]}"
+        )
+
+
 def upsert_in_batches(records: list[dict], table: str, on_conflict: str | None = "synergy_id") -> int:
     """Upsert records in batches of BATCH_SIZE. Returns total count upserted."""
     if not records:
@@ -1275,16 +1293,45 @@ def fetch_customer_synergy_id_map() -> dict[str, int]:
 # Sync: Technicians
 # ============================================================
 
+def fetch_technician_synergy_id_map() -> dict[str, dict]:
+    """Fetch every users row carrying a synergy_id, keyed by synergy_id.
+
+    Used by sync_technicians to tell an existing technician from a new one, so
+    that CallBoard-owned columns on existing rows are never overwritten.
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    }
+    url = (
+        f"{SUPABASE_URL}/rest/v1/users"
+        "?select=synergy_id,name,email,active&synergy_id=not.is.null&limit=1000"
+    )
+    response = requests.get(url, headers=headers, timeout=30)
+    response.raise_for_status()
+    return {row["synergy_id"]: row for row in response.json() if row.get("synergy_id")}
+
+
 def sync_technicians(conn) -> int:
     log.info("--- Syncing technicians ---")
     cursor = conn.cursor()
 
     # Sales rep codes 400–450 are the service technicians in Synergy.
     # Names are stored in ALL CAPS — title-case them on import.
-    # Email in Synergy for these codes is shared/unmaintained, so we
-    # generate a synthetic unique email per code for PM Scheduler use.
-    # These accounts are not Supabase Auth users — they are assignment
-    # targets only and will never log in.
+    #
+    # Synergy owns the NAME only. email, role, and active are owned by
+    # CallBoard and must never be overwritten here:
+    #   - email: technicians DO log in, and quick-PIN login mints its session
+    #     from users.email (api/auth/pin/login). Re-asserting a synthetic
+    #     address breaks their PIN and black-holes their notifications.
+    #   - active: a technician who leaves the branch is deactivated in
+    #     CallBoard while their code lives on in sslsm. Re-asserting
+    #     active=True would silently resurrect them every night.
+    #   - role: a technician promoted to coordinator would be demoted nightly.
+    #
+    # A genuinely NEW code still gets a synthetic placeholder, because
+    # users.email is NOT NULL UNIQUE and we have no real address at that point.
+    # An admin replaces it with the real address when the person gets a login.
     cursor.execute("""
         SELECT SlsmCode, Name
         FROM sslsm
@@ -1296,22 +1343,53 @@ def sync_technicians(conn) -> int:
     rows = cursor.fetchall()
     log.info(f"  Fetched {len(rows)} technician rows from Synergy.")
 
-    technicians = []
+    existing = fetch_technician_synergy_id_map()
+
+    to_create: list[dict] = []
+    to_rename: list[tuple[str, str]] = []
+    left_deactivated: list[str] = []
+
     for row in rows:
         code = str(int(row.SlsmCode))
         name = str(row.Name).strip().title() if row.Name else f"Tech {code}"
-        email = f"tech{code}@imperialdade.com"
+        current = existing.get(code)
 
-        technicians.append({
-            "synergy_id": code,
-            "name": name,
-            "email": email,
-            "role": "technician",
-            "active": True,
-        })
+        if current is None:
+            to_create.append({
+                "synergy_id": code,
+                "name": name,
+                "email": f"tech{code}@imperialdade.com",
+                "role": "technician",
+                "active": True,
+            })
+            continue
 
-    count = upsert_in_batches(technicians, "users", on_conflict="synergy_id")
-    log.info(f"  Technicians synced: {count}")
+        # Existing row: name is the only column Synergy owns. PATCH it, and
+        # only when it actually differs, so a steady-state run writes nothing.
+        if current.get("name") != name:
+            to_rename.append((code, name))
+        if not current.get("active"):
+            left_deactivated.append(f"{name} ({code})")
+
+    count = 0
+    if to_create:
+        count += upsert_in_batches(to_create, "users", on_conflict="synergy_id")
+        log.info(f"  New technicians created: {len(to_create)}")
+    for code, name in to_rename:
+        supabase_patch("users", {"synergy_id": f"eq.{code}"}, {"name": name})
+        log.info(f"  Renamed {code} -> {name}")
+    count += len(to_rename)
+
+    if left_deactivated:
+        log.info(
+            "  Left deactivated (present in Synergy, inactive in CallBoard): "
+            + ", ".join(left_deactivated)
+        )
+
+    log.info(
+        f"  Technicians: {len(to_create)} created, {len(to_rename)} renamed, "
+        f"{len(existing)} existing left untouched."
+    )
     return count
 
 

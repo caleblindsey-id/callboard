@@ -24,6 +24,7 @@ import {
   renderServiceTicketsAssignedDigestEmail,
 } from '@/lib/email-templates/service-ticket-assigned'
 import { sendPushToUser } from '@/lib/push/send-push'
+import { isDeliverableEmail } from '@/lib/email-deliverable'
 import { createNotification } from '@/lib/notifications/create-notification'
 import type { ServicePriority } from '@/types/service-tickets'
 
@@ -74,7 +75,9 @@ async function loadTech(
     .eq('id', techId)
     .maybeSingle()
   const email = (tech as { email: string | null } | null)?.email ?? null
-  if (!email) return null
+  // A placeholder or @callboard.local address is treated the same as no address:
+  // the caller reports no_tech_email and the push + bell legs still fire.
+  if (!isDeliverableEmail(email)) return null
   return { email, name: (tech as { name: string | null } | null)?.name ?? null }
 }
 
