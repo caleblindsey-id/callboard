@@ -20,7 +20,9 @@ import type { SynergyLaborBucket } from '@/types/database'
  *  It is still synced (so the dollars exist and reconcile against Synergy) but
  *  it is not shown on a per-tech payout row either, because putting it there
  *  would imply the tech owns it. Do not add it here. */
-export const SUBTOTAL_BUCKETS: SynergyLaborBucket[] = [
+export type CommissionedBucket = Exclude<SynergyLaborBucket, 'diagnostic_fee'>
+
+export const SUBTOTAL_BUCKETS: CommissionedBucket[] = [
   'labor_shop',
   'labor_warranty',
   'trip_charge',
@@ -52,14 +54,59 @@ export const BUCKET_LABEL: Record<SynergyLaborBucket, string> = {
   diagnostic_fee: 'Diagnostic',
 }
 
+/** One approved ACE entry behind a tech's ACE column.
+ *
+ *  Carried per row for two reasons: the payout table can itemise what makes up
+ *  the number, and locking a period needs the entry ids to write payout_lines
+ *  as a manifest. Paying then walks that manifest instead of re-querying, so
+ *  nothing can drift between lock and pay. */
+export type AceDetail = {
+  id: string
+  hours: number
+  /** rate_value_at_approval, snapshotted so a settings change cannot restate. */
+  rate: number
+  value: number
+  approvedAt: string | null
+  reason: string | null
+}
+
+/** One earned lead behind a tech's bonus column. Same manifest role as AceDetail. */
+export type BonusDetail = {
+  id: string
+  leadType: string
+  customer: string | null
+  equipment: string | null
+  amount: number
+  earnedAt: string | null
+}
+
 export type CommissionRow = {
   techId: string | null
   synergyId: string | null
   name: string
+  /** Drives the rate. Eligible techs resolve through commission_tiers (or their
+   *  own override); everyone else is pinned to 0% and pays nothing, which is
+   *  what the workbook does with a hardcoded 0 in H12/K12. Toggled per user in
+   *  Settings → Rates & Billing → Commission. */
   commissionEligible: boolean
+  /** users.role. A row can be non-technician when a manager or coordinator has
+   *  ACE or bonus activity in the period — real in prod, and something that was
+   *  invisible before this row existed. */
+  role: string | null
   /** Per-bucket ERP labor for the period. */
   labor: Record<SynergyLaborBucket, number>
   aceLabor: number
+  /** Approved ACE hours for the period, whether or not they pay anything.
+   *
+   *  Tracked for EVERY tech including the non-commissioned ones: their ACE
+   *  labor earns $0 (a 0% rate on the subtotal it feeds), but the hours are
+   *  still real work done and worth seeing. Dollars alone hide that, because
+   *  for those techs the dollars are always zero. */
+  aceHours: number
+  /** The individual entries summing to aceLabor. */
+  aceEntries: AceDetail[]
+  /** The individual leads summing to pmBonus + equipmentBonus. */
+  bonusLeads: BonusDetail[]
   /** labor buckets in SUBTOTAL_BUCKETS + aceLabor. */
   subtotal: number
   rate: number
@@ -69,6 +116,8 @@ export type CommissionRow = {
   equipmentBonus: number
   /** commission + bonuses. What actually reaches the check. */
   total: number
+  /** Null when the tech is not commission-eligible: there is no next tier to
+   *  reach when the rate is pinned to zero. */
   nextTier: NextTier | null
 }
 
@@ -91,6 +140,10 @@ export type CommissionReport = {
    *  problem and not a tech's money, but reported quietly so the difference
    *  between the report's total and Synergy's is always explainable. */
   nonTechLabor: number
+  /** Rows for people who are not technicians but carry ACE or bonus activity in
+   *  this period. Split out so the payout table stays a payout table while the
+   *  dollars stay visible instead of being dropped on the floor. */
+  offRosterRows: CommissionRow[]
   /** True when no labor has been synced for the period at all. */
   isEmpty: boolean
 }

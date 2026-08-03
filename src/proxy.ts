@@ -21,7 +21,15 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/equipment\/[^/]+$/,                               // PATCH /api/equipment/[id] — techs may edit contact fields only (Save Contact on the equipment page). The route's TECH_FIELDS allowlist + the equipment_tech_field_lock trigger (migration 048) restrict the write to contact_* server-side. Anchored to one path segment so it can't match /notes or /verify siblings (feedback #61).
   /^\/api\/equipment\/[^/]+\/notes$/,                        // GET + POST /api/equipment/[id]/notes
   /^\/api\/equipment\/[^/]+\/verify$/,                       // POST /api/equipment/[id]/verify (tech confirms make/model/serial at completion)
-  /^\/api\/tech-leads(\/|$)/,                                // POST /api/tech-leads (Submit Lead modal)
+  // Scoped to the three paths /my-leads actually calls. This was a prefix match
+  // over the whole subtree, so a technician's POST to /update, /manual-match,
+  // /approve-and-email or /create-equipment-from-lead reached the route and was
+  // stopped only by the in-route role check. One layer instead of two, on a
+  // money path, and asymmetric with the ace-labor entry three lines down which
+  // was already scoped to a single UUID segment.
+  /^\/api\/tech-leads$/,                                     // POST — Submit Lead modal
+  /^\/api\/tech-leads\/[0-9a-f-]{36}$/i,                     // PATCH own lead while pending (route re-checks ownership)
+  /^\/api\/tech-leads\/[0-9a-f-]{36}\/photos$/i,             // PATCH photos on own lead
   /^\/api\/ship-to-requests(\/|$)/,                          // POST /api/ship-to-requests (request new ship-to)
   /^\/api\/feedback$/,                                       // POST /api/feedback (FAB submission — all roles)
   /^\/api\/help\/search$/,                                   // GET /api/help/search (help center search — all roles)
