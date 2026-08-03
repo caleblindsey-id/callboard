@@ -155,11 +155,16 @@ export async function getLockedReport(
         mine.filter((l) => l.source_kind === 'tech_lead').map((l) => l.source_id),
       )
 
+      const lockedEntries = r.aceEntries.filter((e) => lockedAceIds.has(e.id))
+
       return {
         ...r,
         labor,
         aceLabor,
-        aceEntries: r.aceEntries.filter((e) => lockedAceIds.has(e.id)),
+        // Hours follow the snapshot's entries, not the live window, so a
+        // locked month reports the hours it was locked with.
+        aceHours: Math.round(lockedEntries.reduce((h, e) => h + e.hours, 0) * 100) / 100,
+        aceEntries: lockedEntries,
         bonusLeads: r.bonusLeads.filter((l) => lockedLeadIds.has(l.id)),
         subtotal,
         rate,

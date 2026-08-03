@@ -22,6 +22,7 @@ function row(over: Partial<CommissionRow> = {}): CommissionRow {
       diagnostic_fee: 0,
     },
     aceLabor: 0,
+    aceHours: 0,
     aceEntries: [],
     bonusLeads: [],
     subtotal: 0,

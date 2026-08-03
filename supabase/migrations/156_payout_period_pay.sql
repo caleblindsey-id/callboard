@@ -20,6 +20,14 @@
 -- ALL OR NOTHING. Any row not in the status the manifest expects raises, and
 -- the whole transaction rolls back. There is no partially-paid period.
 
+-- ERRCODE NOTE. None of these raises may use '40001' (serialization_failure).
+-- It is in the retryable class, and the Supabase stack RETRIES it: raising
+-- NOT_UNLOCKABLE as 40001 made the request spin until the gateway gave up with
+-- a 504 instead of returning the conflict. Verified on dev 2026-08-03 -- every
+-- other code (22023, 23505, 23514, 02000) returned immediately, 40001 alone
+-- hung. Business-logic conflicts use P0001, matching confirm_match_candidate
+-- and lock_paid_lead_fields.
+
 CREATE OR REPLACE FUNCTION fn_pay_payout_period(
   p_period TEXT,
   p_user   UUID
@@ -60,7 +68,7 @@ BEGIN
 
   IF v_status <> 'locked' THEN
     RAISE EXCEPTION 'NOT_LOCKED: % is %, only a locked period can be paid', p_period, v_status
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- The manifest. Everything below settles exactly these ids and nothing else.
@@ -89,7 +97,7 @@ BEGIN
       RAISE EXCEPTION
         'LEAD_STATE_CHANGED: % of % leads were still earned; nothing has been paid',
         v_leads_paid, v_expected
-        USING ERRCODE = '40001';
+        USING ERRCODE = 'P0001';
     END IF;
   END IF;
 
@@ -112,7 +120,7 @@ BEGIN
       RAISE EXCEPTION
         'ACE_STATE_CHANGED: % of % entries were still approved; nothing has been paid',
         v_ace_paid, v_expected
-        USING ERRCODE = '40001';
+        USING ERRCODE = 'P0001';
     END IF;
   END IF;
 

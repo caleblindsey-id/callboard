@@ -109,11 +109,13 @@ export default function PayoutTab({
     ? report.rows
     : report.rows.filter((r) => r.subtotal !== 0 || r.total !== 0)
 
+  const aceHoursTotal = Math.round(visible.reduce((h, r) => h + r.aceHours, 0) * 100) / 100
+
   function exportCsv() {
     const header = [
       'Synergy ID', 'Tech', 'Commissioned',
       ...SUBTOTAL_BUCKETS.map((b) => BUCKET_LABEL[b]),
-      'ACE labor', 'Subtotal', 'Rate', 'Commission',
+      'ACE hours', 'ACE labor', 'Subtotal', 'Rate', 'Commission',
       'PM bonus', 'Equipment bonus', 'Total payout',
       'To next tier', 'Gain at next tier',
     ]
@@ -122,6 +124,7 @@ export default function PayoutTab({
       r.name,
       r.commissionEligible ? 'Yes' : 'No',
       ...SUBTOTAL_BUCKETS.map((b) => r.labor[b].toFixed(2)),
+      r.aceHours.toFixed(2),
       r.aceLabor.toFixed(2),
       r.subtotal.toFixed(2),
       formatRate(r.rate) + (r.rateIsOverride ? ' (override)' : ''),
@@ -351,6 +354,7 @@ export default function PayoutTab({
               {SUBTOTAL_BUCKETS.map((b) => (
                 <th key={b} className="px-3 py-2 text-right">{BUCKET_LABEL[b]}</th>
               ))}
+              <th className="px-3 py-2 text-right">ACE hrs</th>
               <th className="px-3 py-2 text-right">ACE</th>
               <th className="px-3 py-2 text-right font-bold">Subtotal</th>
               <th className="px-3 py-2 text-right">Rate</th>
@@ -364,7 +368,7 @@ export default function PayoutTab({
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={SUBTOTAL_BUCKETS.length + 9}
+                  colSpan={SUBTOTAL_BUCKETS.length + 10}
                   className="px-3 py-6 text-center text-gray-500 dark:text-gray-400"
                 >
                   No commission activity in {periodLabel(period)}.
@@ -405,6 +409,12 @@ export default function PayoutTab({
                     {r.labor[b] === 0 ? '—' : formatMoney(r.labor[b])}
                   </td>
                 ))}
+                <td
+                  className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400"
+                  title="Approved ACE hours. Tracked for every tech, including the non-commissioned ones whose hours pay nothing."
+                >
+                  {r.aceHours === 0 ? '—' : r.aceHours.toFixed(2)}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">
                   {r.aceLabor === 0 ? '—' : formatMoney(r.aceLabor)}
                 </td>
@@ -463,12 +473,15 @@ export default function PayoutTab({
                   commission it rides on at the same time. */}
               {isOpen && (
                 <tr key={`${key}-detail`} className="bg-gray-50 dark:bg-gray-800/40">
-                  <td colSpan={SUBTOTAL_BUCKETS.length + 9} className="px-3 py-3">
+                  <td colSpan={SUBTOTAL_BUCKETS.length + 10} className="px-3 py-3">
                     <div className="grid gap-4 sm:grid-cols-2">
                       {r.aceEntries.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            ACE labor — {formatMoney(r.aceLabor)} into the subtotal
+                            ACE labor — {r.aceHours.toFixed(2)} hrs,{' '}
+                            {r.commissionEligible
+                              ? `${formatMoney(r.aceLabor)} into the subtotal`
+                              : `${formatMoney(r.aceLabor)} recorded, pays nothing`}
                           </p>
                           <ul className="mt-1.5 space-y-1 text-xs">
                             {r.aceEntries.map((e) => (
@@ -528,8 +541,12 @@ export default function PayoutTab({
                 <td className="px-3 py-2">Totals</td>
                 <td
                   className="px-3 py-2 text-right tabular-nums"
-                  colSpan={SUBTOTAL_BUCKETS.length + 1}
+                  colSpan={SUBTOTAL_BUCKETS.length}
                 />
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {aceHoursTotal === 0 ? '' : aceHoursTotal.toFixed(2)}
+                </td>
+                <td className="px-3 py-2" />
                 <td className="px-3 py-2 text-right tabular-nums">
                   {formatMoney(report.totals.subtotal)}
                 </td>

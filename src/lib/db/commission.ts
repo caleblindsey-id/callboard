@@ -145,6 +145,7 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
   // them and locking writes one payout_lines row per entry so the period has a
   // manifest to pay against.
   const aceByTech = new Map<string, number>()
+  const aceHoursByTech = new Map<string, number>()
   const aceDetailByTech = new Map<string, AceDetail[]>()
   for (const e of (aceRes.data ?? []) as unknown as {
     id: string
@@ -155,7 +156,14 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
     reason: string | null
   }[]) {
     const value = aceBillableValue(e)
+    const hours = Number(e.hours ?? 0)
     aceByTech.set(e.tech_id, roundCents((aceByTech.get(e.tech_id) ?? 0) + value))
+    aceHoursByTech.set(
+      e.tech_id,
+      // Hours are DECIMAL(5,2); round the running sum so 0.75 x n does not
+      // accumulate binary float error into the display.
+      Math.round(((aceHoursByTech.get(e.tech_id) ?? 0) + (Number.isFinite(hours) ? hours : 0)) * 100) / 100,
+    )
     const list = aceDetailByTech.get(e.tech_id) ?? []
     list.push({
       id: e.id,
@@ -245,6 +253,7 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
       role: u.role,
       labor,
       aceLabor,
+      aceHours: aceHoursByTech.get(u.id) ?? 0,
       aceEntries: aceDetailByTech.get(u.id) ?? [],
       bonusLeads: bonusDetailByTech.get(u.id) ?? [],
       subtotal,

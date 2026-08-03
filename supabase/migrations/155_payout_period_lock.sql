@@ -32,10 +32,20 @@
 -- (`isoDate.slice(0, 7)`), with no validation and no timezone anchoring. Every
 -- row currently in prod happens to be well-formed, so these are additive.
 
+-- ERRCODE NOTE. None of these raises may use '40001' (serialization_failure).
+-- It is in the retryable class, and the Supabase stack RETRIES it: raising
+-- NOT_UNLOCKABLE as 40001 made the request spin until the gateway gave up with
+-- a 504 instead of returning the conflict. Verified on dev 2026-08-03 -- every
+-- other code (22023, 23505, 23514, 02000) returned immediately, 40001 alone
+-- hung. Business-logic conflicts use P0001, matching confirm_match_candidate
+-- and lock_paid_lead_fields.
+
+ALTER TABLE tech_leads DROP CONSTRAINT IF EXISTS tech_leads_payout_period_chk;
 ALTER TABLE tech_leads
   ADD CONSTRAINT tech_leads_payout_period_chk
   CHECK (payout_period IS NULL OR payout_period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$');
 
+ALTER TABLE ace_labor_entries DROP CONSTRAINT IF EXISTS ace_labor_entries_payout_period_chk;
 ALTER TABLE ace_labor_entries
   ADD CONSTRAINT ace_labor_entries_payout_period_chk
   CHECK (payout_period IS NULL OR payout_period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$');
@@ -115,7 +125,7 @@ BEGIN
 
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'ACE_NOT_APPROVED: entries no longer approved: %', v_bad
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- Same for leads: every bonus line must point at a lead still sitting in
@@ -127,7 +137,7 @@ BEGIN
 
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'LEAD_NOT_EARNED: leads no longer earned: %', v_bad
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- A source row may appear in exactly one period, ever. This is the structural
@@ -222,7 +232,7 @@ BEGIN
 
   IF v_status <> 'locked' THEN
     RAISE EXCEPTION 'NOT_UNLOCKABLE: % is %, only a locked period can be reopened', p_period, v_status
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- ON DELETE CASCADE clears payout_lines with it.

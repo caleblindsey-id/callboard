@@ -96,6 +96,13 @@ export type CommissionRow = {
   /** Per-bucket ERP labor for the period. */
   labor: Record<SynergyLaborBucket, number>
   aceLabor: number
+  /** Approved ACE hours for the period, whether or not they pay anything.
+   *
+   *  Tracked for EVERY tech including the non-commissioned ones: their ACE
+   *  labor earns $0 (a 0% rate on the subtotal it feeds), but the hours are
+   *  still real work done and worth seeing. Dollars alone hide that, because
+   *  for those techs the dollars are always zero. */
+  aceHours: number
   /** The individual entries summing to aceLabor. */
   aceEntries: AceDetail[]
   /** The individual leads summing to pmBonus + equipmentBonus. */
