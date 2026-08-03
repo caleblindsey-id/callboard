@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { TechLeadStatus, TechLeadType, SalesRep, UserRole } from '@/types/database'
+import { STATUS_META } from '@/lib/status-meta'
 import { RESET_ROLES } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
@@ -52,7 +53,7 @@ interface Props {
 // Pending, and the DB status literally named "pending"): ACE's own queue is
 // "ACE Review", and the manager-approved-but-awaiting-payout state is
 // "Awaiting Match" rather than "Pending" now that it's spelled out consistently
-// with the STATUS_LABEL below.
+// with the label override below.
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'pending',     label: 'Submitted Leads' },
   { key: 'pending_ace', label: 'ACE Review' },
@@ -68,19 +69,25 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'payout',      label: 'Payout' },
 ]
 
-// Display label for the per-row status badge. DB enum values stay the same;
-// this aligns with status-meta.lead except 'approved', which the payout hub
-// deliberately shows as "Awaiting Match" (matching the tab above) rather than
-// "Approved" — the point of this whole hub is leads not yet matched/paid.
-const STATUS_LABEL: Record<TechLeadStatus, string> = {
-  pending:       'Submitted',
-  approved:      'Awaiting Match',
-  match_pending: 'Match Pending',
-  rejected:      'Rejected',
-  cancelled:     'Cancelled',
-  expired:       'Expired',
-  earned:        'Earned',
-  paid:          'Paid',
+// Lead labels and badge colours come from status-meta, the app's single source
+// of truth, with ONE deliberate override: this hub exists to surface leads that
+// are not yet matched or paid, so 'approved' reads "Awaiting Match" here and
+// "Approved" everywhere else.
+//
+// That single divergence used to justify a full second copy of the label map
+// AND a second copy of the colour switch, every entry of which was character-
+// for-character identical to status-meta. That is how one vocabulary quietly
+// becomes two.
+const HUB_LABEL_OVERRIDE: Partial<Record<TechLeadStatus, string>> = {
+  approved: 'Awaiting Match',
+}
+
+function statusLabel(status: TechLeadStatus): string {
+  return HUB_LABEL_OVERRIDE[status] ?? STATUS_META.lead[status].label
+}
+
+function statusBadge(status: TechLeadStatus): string {
+  return STATUS_META.lead[status].classes
 }
 
 function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJoins[] {
@@ -92,19 +99,6 @@ function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJo
     case 'paid':     return leads.filter(l => l.status === 'paid')
     case 'closed':   return leads.filter(l => l.status === 'rejected' || l.status === 'cancelled' || l.status === 'expired')
     default:         return []
-  }
-}
-
-function statusBadge(status: TechLeadStatus): string {
-  switch (status) {
-    case 'pending':       return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-    case 'approved':      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
-    case 'match_pending': return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300'
-    case 'rejected':      return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-    case 'cancelled':     return 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-    case 'expired':       return 'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
-    case 'earned':        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-    case 'paid':          return 'bg-emerald-200 text-emerald-900 dark:bg-emerald-800/60 dark:text-emerald-200'
   }
 }
 
@@ -494,7 +488,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded-md text-xs font-medium ${statusBadge(lead.status)}`}>
-                        {STATUS_LABEL[lead.status]}
+                        {statusLabel(lead.status)}
                       </span>
                       {(lead.status === 'earned' || lead.status === 'paid') && (
                         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">

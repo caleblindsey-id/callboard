@@ -87,30 +87,6 @@ export async function getEntriesByStatus(
   return (data ?? []) as unknown as AceLaborEntryWithJoins[]
 }
 
-// Entries used by the payout report — filtered by approved_at range, optionally
-// including already-paid rows. Matches the pattern getAllLeads uses for earned_at.
-export async function getEntriesForPayoutReport(filters: {
-  from: string
-  to: string
-  includePaid: boolean
-}): Promise<AceLaborEntryWithJoins[]> {
-  const supabase = await createClient()
-  const statuses: AceLaborStatus[] = filters.includePaid
-    ? ['approved', 'paid']
-    : ['approved']
-
-  const { data, error } = await supabase
-    .from('ace_labor_entries')
-    .select(SELECT_WITH_JOINS)
-    .in('status', statuses)
-    .gte('approved_at', filters.from)
-    .lte('approved_at', filters.to)
-    .order('approved_at', { ascending: false })
-
-  if (error) throw error
-  return (data ?? []) as unknown as AceLaborEntryWithJoins[]
-}
-
 export async function getMyEntries(techId: string): Promise<AceLaborEntryWithJoins[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
