@@ -10,11 +10,15 @@
 #
 # The ERP replica lags one day, so a month is only final after the first
 # business day of the following month -- which is also when the written
-# commission plan says the month is calculated. The default run covers the
-# CURRENT month; pass -Months to backfill.
+# commission plan says the month is calculated.
+#
+# The default run therefore covers the PREVIOUS month AND the current one. A
+# current-month-only run leaves a just-closed month permanently short its final
+# day of invoicing, and it looks completely normal while being wrong. Pass
+# -Months to backfill further.
 #
 # Usage:
-#   .\run-labor-facts.ps1                # current month
+#   .\run-labor-facts.ps1                # previous + current month
 #   .\run-labor-facts.ps1 -Period 2026-06
 #   .\run-labor-facts.ps1 -Months 6      # last 6 months, oldest first
 #   .\run-labor-facts.ps1 -DryRun

@@ -70,12 +70,14 @@ NOT touched by this run (a tech who no longer has activity at all) is swept by
 pulled_at. Rows are never deleted before the new ones land, so the table is
 never momentarily empty.
 
-The ERP replica lags one day. A month is only safe to LOCK after the first
-business day of the following month, which is also when the written plan says
-commission is calculated.
+The ERP replica lags one day, so a month is not complete until the following
+business day. The default run therefore covers the PREVIOUS month as well as the
+current one -- otherwise a just-closed month never receives its final day of
+invoicing and is paid short, silently. Commission is calculated on the first
+business day of the following month, per the written plan.
 
 Usage:
-    python sync-labor-facts.py                  # current month (Central)
+    python sync-labor-facts.py                  # previous + current month (Central)
     python sync-labor-facts.py --period 2026-06
     python sync-labor-facts.py --months 6       # last 6 months, oldest first
     python sync-labor-facts.py --period 2026-06 --dry-run
@@ -118,6 +120,20 @@ PM_PROFIT_FACTOR = 0.85
 
 # Order types that carry service labor. 21 = warranty, 22 = non-warranty.
 ORDER_TYPES = (21, 22)
+
+# Synergy salesman codes that carry service labor but are NOT technicians, so
+# their dollars can never reach a tech payout. Verified against the ERP `sslsm`
+# master 2026-07-31 and confirmed by Caleb ("those are not tech numbers").
+# Logged at INFO rather than WARNING so the genuinely unknown case stays loud.
+# Keep in sync with KNOWN_NON_TECH_SYNERGY_IDS in
+# src/lib/commission/report-types.ts.
+KNOWN_NON_TECH_CODES = {
+    "7": "Stanley Burt, outside sales",
+    "9": "Andye Bramlett, outside sales",
+    "38": "Tommy Mayson, outside sales",
+    "200": "Tim Adams, outside sales",
+    "999": "INTERNAL / house account",
+}
 
 # invh.Status: 30 = invoice (positive), 31 = credit memo (negative).
 STATUS_CREDIT_MEMO = 31
@@ -363,15 +379,24 @@ def sync_period(conn, period: str, dry_run: bool, known: set[str]) -> dict:
     records = to_records(period, extracted, run_started_iso)
 
     # Salesmen the ERP attributed service labor to that CallBoard has no user
-    # for. Real case: June 2026 carried code '7' with $240 shop + $49 trip that
-    # the Phocas totals do not count. Landed anyway, but never silently.
+    # for. Split two ways so the recurring, already-explained ones do not train
+    # everyone to ignore this line.
     unknown = sorted(set(extracted) - known) if known else []
     for code in unknown:
         amounts = {k: round(v, 2) for k, v in extracted[code].items() if v}
-        log.warning(
-            f"  Unknown salesman code '{code}' has labor in {period}: {amounts}. "
-            "Not a CallBoard user, so it will not reach a payout. Map it or confirm it is out of scope."
-        )
+        if not amounts:
+            continue
+        if code in KNOWN_NON_TECH_CODES:
+            log.info(
+                f"  Non-tech code '{code}' ({KNOWN_NON_TECH_CODES[code]}) has labor in "
+                f"{period}: {amounts}. Expected -- not a technician, so no payout."
+            )
+        else:
+            log.warning(
+                f"  UNKNOWN salesman code '{code}' has labor in {period}: {amounts}. "
+                "Not a CallBoard user and not a known sales rep. If this is a technician, "
+                "set their Synergy ID on the user record or they will be underpaid."
+            )
 
     total = sum(
         v for buckets in extracted.values() for k, v in buckets.items()
@@ -415,7 +440,22 @@ def main() -> int:
     elif args.months:
         periods = recent_periods(args.months)
     else:
-        periods = [current_period()]
+        # DEFAULT: previous month AND current month, oldest first.
+        #
+        # Syncing only the current month leaves a month permanently short. The
+        # ERP replica lags a day, so on the 1st the just-closed month is still
+        # missing its final business day of invoicing -- but a current-month-only
+        # run has already moved on and will never refresh it again. July 2026
+        # would have been paid ~200 invoices light, and it would have looked
+        # completely normal.
+        #
+        # Costs about a second. The sync is idempotent on
+        # (synergy_id, period, bucket), so re-running a closed month re-derives
+        # the same values rather than doubling them. Verified across 7 months:
+        # zero invoices were entered after their invoice month closed, so a
+        # re-run of a closed month is a no-op in practice and cheap insurance
+        # when it is not.
+        periods = recent_periods(2)
 
     log.info("=" * 60)
     log.info(f"Synergy labor facts sync - {len(periods)} period(s): {', '.join(periods)}")
