@@ -66,13 +66,15 @@ export default async function TechPayoutsPage({
         salesReps={salesReps}
         currentUserId={user.id}
         currentUserRole={user.role}
-        commissionReport={commissionReport}
+        payoutReport={commissionReport}
         availablePeriods={availablePeriods}
         periodState={periodState}
         drift={drift}
         lockBlockers={isLocked ? [] : lockBlockers(liveReport)}
         lockWarnings={isLocked ? [] : lockWarnings(liveReport)}
-        forcedTab={params.tab === 'commission' ? 'commission' : undefined}
+        // ?tab=commission is the old link, still honoured so a bookmark or an
+        // in-flight email lands on the tab that replaced it.
+        forcedTab={params.tab === 'payout' || params.tab === 'commission' ? 'payout' : undefined}
       />
     </div>
   )

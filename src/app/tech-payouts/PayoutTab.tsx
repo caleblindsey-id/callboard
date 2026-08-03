@@ -61,7 +61,7 @@ function periodLabel(period: string): string {
   })
 }
 
-export default function CommissionTab({
+export default function PayoutTab({
   report,
   availablePeriods,
   periodState,
@@ -74,6 +74,9 @@ export default function CommissionTab({
   const router = useRouter()
   const [period, setPeriod] = useState(report.period)
   const [showZero, setShowZero] = useState(false)
+  /** Which tech's ACE + bonus detail is open. One at a time keeps the table
+   *  readable; the detail rows are tall. */
+  const [expanded, setExpanded] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmLock, setConfirmLock] = useState(false)
@@ -84,7 +87,7 @@ export default function CommissionTab({
 
   function changePeriod(next: string) {
     setPeriod(next)
-    router.push(`/tech-payouts?tab=commission&period=${next}`)
+    router.push(`/tech-payouts?tab=payout&period=${next}`)
   }
 
   async function post(action: 'lock' | 'unlock' | 'pay') {
@@ -132,7 +135,7 @@ export default function CommissionTab({
     // Off-roster rows ride along so the export accounts for every dollar the
     // report knows about, not just the ones on the roster table.
     downloadCsv(
-      `commission_${period}.csv`,
+      `tech-payout_${period}.csv`,
       toCsv(header, [...visible.map(toRow), ...report.offRosterRows.map(toRow)]),
     )
   }
@@ -143,13 +146,13 @@ export default function CommissionTab({
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label
-            htmlFor="commission-period"
+            htmlFor="payout-period"
             className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
           >
             Period
           </label>
           <select
-            id="commission-period"
+            id="payout-period"
             value={period}
             onChange={(e) => changePeriod(e.target.value)}
             className="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm"
@@ -368,9 +371,27 @@ export default function CommissionTab({
                 </td>
               </tr>
             )}
-            {visible.map((r) => (
-              <tr key={r.techId ?? r.synergyId ?? r.name} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+            {visible.map((r) => {
+              const key = r.techId ?? r.synergyId ?? r.name
+              const itemCount = r.aceEntries.length + r.bonusLeads.length
+              const isOpen = expanded === key
+              return (
+              <>
+              <tr key={key} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
                 <td className="px-3 py-2 whitespace-nowrap">
+                  {itemCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(isOpen ? null : key)}
+                      aria-expanded={isOpen}
+                      className="mr-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                      title={`${itemCount} ACE ${itemCount === 1 ? 'entry' : 'entries'} and lead bonus${itemCount === 1 ? '' : 'es'}`}
+                    >
+                      {isOpen ? '▾' : '▸'}
+                    </button>
+                  ) : (
+                    <span className="mr-1 inline-block w-[1ch]" />
+                  )}
                   <span className="text-gray-400 dark:text-gray-500 mr-1.5">{r.synergyId}</span>
                   {r.name}
                   {!r.commissionEligible && (
@@ -434,7 +455,72 @@ export default function CommissionTab({
                   )}
                 </td>
               </tr>
-            ))}
+
+              {/* What makes up the ACE and Bonuses columns. This is the whole
+                  reason the two reports merged: the lead and ACE detail used to
+                  live on a separate tab with its own date range and its own
+                  mark-paid button, so nobody could see a bonus and the
+                  commission it rides on at the same time. */}
+              {isOpen && (
+                <tr key={`${key}-detail`} className="bg-gray-50 dark:bg-gray-800/40">
+                  <td colSpan={SUBTOTAL_BUCKETS.length + 9} className="px-3 py-3">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {r.aceEntries.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            ACE labor — {formatMoney(r.aceLabor)} into the subtotal
+                          </p>
+                          <ul className="mt-1.5 space-y-1 text-xs">
+                            {r.aceEntries.map((e) => (
+                              <li key={e.id} className="flex justify-between gap-3">
+                                <span className="text-gray-600 dark:text-gray-400">
+                                  {e.approvedAt?.slice(0, 10) ?? '—'} · {e.hours}h @{' '}
+                                  {formatMoney(e.rate)}
+                                  {e.reason && (
+                                    <span className="text-gray-500 dark:text-gray-500"> · {e.reason}</span>
+                                  )}
+                                </span>
+                                <span className="tabular-nums whitespace-nowrap">
+                                  {formatMoney(e.value)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {r.bonusLeads.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            Lead bonuses — {formatMoney(r.pmBonus + r.equipmentBonus)}, flat, added
+                            after the percentage
+                          </p>
+                          <ul className="mt-1.5 space-y-1 text-xs">
+                            {r.bonusLeads.map((l) => (
+                              <li key={l.id} className="flex justify-between gap-3">
+                                <span className="text-gray-600 dark:text-gray-400">
+                                  {l.earnedAt?.slice(0, 10) ?? '—'} ·{' '}
+                                  {l.leadType === 'pm' ? 'PM' : 'Equipment sale'}
+                                  {l.customer && ` · ${l.customer}`}
+                                  {l.equipment && (
+                                    <span className="text-gray-500 dark:text-gray-500"> ({l.equipment})</span>
+                                  )}
+                                </span>
+                                <span className="tabular-nums whitespace-nowrap">
+                                  {formatMoney(l.amount)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </>
+              )
+            })}
           </tbody>
           {visible.length > 0 && (
             <tfoot className="bg-gray-50 dark:bg-gray-800/60 font-semibold">

@@ -33,7 +33,7 @@ export default function PipelineAndMoney({ techLeads, bonusLeaderboard, estimate
 
         {/* Tech Leads */}
         <Link
-          href="/tech-leads"
+          href="/tech-payouts"
           className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow transition-all"
         >
           <div className="flex items-center justify-between mb-3">
@@ -65,7 +65,7 @@ export default function PipelineAndMoney({ techLeads, bonusLeaderboard, estimate
             <div className="text-sm font-medium text-gray-700 dark:text-gray-200">
               Tech Lead Bonus — MTD
             </div>
-            <Link href="/tech-leads" className="text-xs text-blue-600 dark:text-blue-400">
+            <Link href="/tech-payouts" className="text-xs text-blue-600 dark:text-blue-400">
               {ACTIONS.viewAll} →
             </Link>
           </div>
