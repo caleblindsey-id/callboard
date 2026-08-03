@@ -9,6 +9,7 @@ import { sendMandrillEmail, MandrillError } from '@/lib/mandrill'
 import { renderSupplyReadyEmail } from '@/lib/email-templates/supply-ready'
 import { sendPushToUser } from '@/lib/push/send-push'
 import { createNotification } from '@/lib/notifications/create-notification'
+import { isDeliverableEmail } from '@/lib/email-deliverable'
 import type { SupplyRequestItem } from '@/types/database'
 
 export type SupplyReadyResult =
@@ -91,7 +92,7 @@ export async function sendSupplyReadyNotice(
   const { data: tech } = await supabase.from('users').select('name, email').eq('id', techId).maybeSingle()
   const techEmail = (tech as { email: string | null } | null)?.email ?? null
   const techName = (tech as { name: string | null } | null)?.name ?? null
-  if (!techEmail) return { sent: true, messageId: null }
+  if (!isDeliverableEmail(techEmail)) return { sent: true, messageId: null }
 
   const { data: settingsRows } = await supabase
     .from('settings')
