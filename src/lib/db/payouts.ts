@@ -247,6 +247,27 @@ export async function lockPayoutPeriod(
   return { ok: true, periodId: data as unknown as string, lineCount: lines.length }
 }
 
+export type PayResult =
+  | { ok: true; leadsPaid: number; acePaid: number }
+  | { ok: false; code: string; message: string }
+
+/** Settle a locked period: commission, lead bonuses, and the ACE labor that fed
+ *  the subtotal, all in one transaction against the locked manifest. */
+export async function payPayoutPeriod(period: string, userId: string): Promise<PayResult> {
+  const admin = await createAdminClient('SERVER_ONLY')
+  const { data, error } = await admin.rpc('fn_pay_payout_period', {
+    p_period: period,
+    p_user: userId,
+  })
+
+  if (error) {
+    const code = (error.message.match(/^([A-Z_]+):/) ?? [])[1] ?? 'PAY_FAILED'
+    return { ok: false, code, message: error.message }
+  }
+  const res = data as unknown as { leads_paid: number; ace_paid: number }
+  return { ok: true, leadsPaid: res?.leads_paid ?? 0, acePaid: res?.ace_paid ?? 0 }
+}
+
 export async function unlockPayoutPeriod(
   period: string,
   userId: string,

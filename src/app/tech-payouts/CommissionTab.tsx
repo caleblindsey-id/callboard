@@ -78,6 +78,7 @@ export default function CommissionTab({
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmLock, setConfirmLock] = useState(false)
   const [confirmUnlock, setConfirmUnlock] = useState(false)
+  const [confirmPay, setConfirmPay] = useState(false)
 
   const isDraft = periodState.status === 'draft'
 
@@ -86,7 +87,7 @@ export default function CommissionTab({
     router.push(`/tech-payouts?tab=commission&period=${next}`)
   }
 
-  async function post(action: 'lock' | 'unlock') {
+  async function post(action: 'lock' | 'unlock' | 'pay') {
     setBusy(true)
     setActionError(null)
     const res = await fetch(`/api/payouts/${period}/${action}`, { method: 'POST' })
@@ -212,6 +213,17 @@ export default function CommissionTab({
             {busy ? 'Reopening…' : 'Reopen'}
           </button>
         )}
+
+        {periodState.status === 'locked' && canLock && (
+          <button
+            type="button"
+            onClick={() => setConfirmPay(true)}
+            disabled={busy}
+            className="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-40"
+          >
+            {busy ? 'Paying…' : 'Mark paid'}
+          </button>
+        )}
       </div>
 
       {actionError && (
@@ -274,6 +286,16 @@ export default function CommissionTab({
         loading={busy}
         onConfirm={() => { setConfirmLock(false); void post('lock') }}
         onCancel={() => setConfirmLock(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmPay}
+        title={`Mark ${periodLabel(period)} paid?`}
+        message={`This settles ${formatMoney(report.totals.total)} and closes out every lead bonus and ACE entry in the period in one step. It cannot be undone: a paid period can no longer be reopened.`}
+        confirmLabel="Mark paid"
+        loading={busy}
+        onConfirm={() => { setConfirmPay(false); void post('pay') }}
+        onCancel={() => setConfirmPay(false)}
       />
 
       <ConfirmDialog
