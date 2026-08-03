@@ -56,7 +56,15 @@ export type CommissionRow = {
   techId: string | null
   synergyId: string | null
   name: string
+  /** Drives the rate. Eligible techs resolve through commission_tiers (or their
+   *  own override); everyone else is pinned to 0% and pays nothing, which is
+   *  what the workbook does with a hardcoded 0 in H12/K12. Toggled per user in
+   *  Settings → Rates & Billing → Commission. */
   commissionEligible: boolean
+  /** users.role. A row can be non-technician when a manager or coordinator has
+   *  ACE or bonus activity in the period — real in prod, and something that was
+   *  invisible before this row existed. */
+  role: string | null
   /** Per-bucket ERP labor for the period. */
   labor: Record<SynergyLaborBucket, number>
   aceLabor: number
@@ -69,6 +77,8 @@ export type CommissionRow = {
   equipmentBonus: number
   /** commission + bonuses. What actually reaches the check. */
   total: number
+  /** Null when the tech is not commission-eligible: there is no next tier to
+   *  reach when the rate is pinned to zero. */
   nextTier: NextTier | null
 }
 
@@ -91,6 +101,10 @@ export type CommissionReport = {
    *  problem and not a tech's money, but reported quietly so the difference
    *  between the report's total and Synergy's is always explainable. */
   nonTechLabor: number
+  /** Rows for people who are not technicians but carry ACE or bonus activity in
+   *  this period. Split out so the payout table stays a payout table while the
+   *  dollars stay visible instead of being dropped on the floor. */
+  offRosterRows: CommissionRow[]
   /** True when no labor has been synced for the period at all. */
   isEmpty: boolean
 }

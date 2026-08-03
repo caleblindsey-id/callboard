@@ -7,7 +7,13 @@ import { formatRate } from '@/lib/commission/tiers'
 // Types come from @/lib/commission/report-types, NOT @/lib/db/commission --
 // that module imports the server-only Supabase client and breaks the build when
 // pulled into a client component.
-import { BUCKET_LABEL, SUBTOTAL_BUCKETS, type CommissionReport } from '@/lib/commission/report-types'
+import {
+  BUCKET_LABEL,
+  SUBTOTAL_BUCKETS,
+  type CommissionReport,
+  type CommissionRow,
+} from '@/lib/commission/report-types'
+import { toCsv, downloadCsv } from '@/lib/csv'
 import ScrollableTable from '@/components/ScrollableTable'
 
 interface Props {
@@ -22,18 +28,10 @@ interface Props {
 // Column order deliberately mirrors the manual workbook (rows 6-10, then the
 // tiered subtotal, then row 14's flat bonuses) so Caleb can diff this against
 // the spreadsheet during changeover without re-reading a new layout.
-
-function escapeCsv(v: string | number | null): string {
-  if (v == null) return ''
-  let s = String(v)
-  // Formula-injection guard: prefix spreadsheet trigger chars so Excel/Sheets
-  // treat the value as text.
-  if (/^[=+\-@]/.test(s)) s = `'${s}`
-  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
-    return `"${s.replace(/"/g, '""')}"`
-  }
-  return s
-}
+//
+// EVERY technician is listed, including the non-commissioned ones, at 0%. The
+// workbook has always carried them that way and the report cannot tie to it
+// otherwise. Eligibility is a toggle in Settings → Rates & Billing → Commission.
 
 function periodLabel(period: string): string {
   const [y, m] = period.split('-').map(Number)
@@ -61,15 +59,16 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
 
   function exportCsv() {
     const header = [
-      'Synergy ID', 'Tech',
+      'Synergy ID', 'Tech', 'Commissioned',
       ...SUBTOTAL_BUCKETS.map((b) => BUCKET_LABEL[b]),
-      'ACE labor', 'Commissioned subtotal', 'Rate', 'Commission',
+      'ACE labor', 'Subtotal', 'Rate', 'Commission',
       'PM bonus', 'Equipment bonus', 'Total payout',
       'To next tier', 'Gain at next tier',
     ]
-    const rows = visible.map((r) => [
+    const toRow = (r: CommissionRow) => [
       r.synergyId ?? '',
       r.name,
+      r.commissionEligible ? 'Yes' : 'No',
       ...SUBTOTAL_BUCKETS.map((b) => r.labor[b].toFixed(2)),
       r.aceLabor.toFixed(2),
       r.subtotal.toFixed(2),
@@ -80,17 +79,13 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
       r.total.toFixed(2),
       r.nextTier ? r.nextTier.amountAway.toFixed(2) : '',
       r.nextTier ? r.nextTier.gain.toFixed(2) : '',
-    ] as (string | number | null)[])
-
-    const csv = [header, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\n')
-    // UTF-8 BOM so Excel on Windows detects the encoding.
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `commission_${period}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    ]
+    // Off-roster rows ride along so the export accounts for every dollar the
+    // report knows about, not just the ones on the roster table.
+    downloadCsv(
+      `commission_${period}.csv`,
+      toCsv(header, [...visible.map(toRow), ...report.offRosterRows.map(toRow)]),
+    )
   }
 
   return (
@@ -202,6 +197,11 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
                 <td className="px-3 py-2 whitespace-nowrap">
                   <span className="text-gray-400 dark:text-gray-500 mr-1.5">{r.synergyId}</span>
                   {r.name}
+                  {!r.commissionEligible && (
+                    <span className="ml-2 rounded bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      not commissioned
+                    </span>
+                  )}
                 </td>
                 {SUBTOTAL_BUCKETS.map((b) => (
                   <td key={b} className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">
@@ -215,13 +215,24 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
                   {formatMoney(r.subtotal)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {formatRate(r.rate)}
-                  {r.rateIsOverride && (
+                  {r.commissionEligible ? (
+                    <>
+                      {formatRate(r.rate)}
+                      {r.rateIsOverride && (
+                        <span
+                          className="ml-1 text-xs text-amber-600 dark:text-amber-400"
+                          title="Per-tech rate override, not the tier table"
+                        >
+                          ovr
+                        </span>
+                      )}
+                    </>
+                  ) : (
                     <span
-                      className="ml-1 text-xs text-amber-600 dark:text-amber-400"
-                      title="Per-tech rate override, not the tier table"
+                      className="text-gray-400 dark:text-gray-500"
+                      title="Not commissioned. Labor is recorded but pays nothing. Change this in Settings → Rates & Billing → Commission."
                     >
-                      ovr
+                      0%
                     </span>
                   )}
                 </td>
@@ -277,6 +288,37 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
         </table>
       </ScrollableTable>
 
+      {/* Payout activity belonging to someone who is not on the tech roster.
+          Real in prod: a manager has carried an approved ACE entry since May
+          2026 that no report has ever shown. Kept out of the table above so the
+          payout list stays a payout list, but never dropped. */}
+      {report.offRosterRows.length > 0 && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            Off-roster activity
+          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            ACE labor or lead bonuses recorded against someone who is not a technician. Worth a
+            look: either the entry belongs to a tech and was filed against the wrong person, or
+            the user should not have been able to submit it.
+          </p>
+          <ul className="mt-3 space-y-1 text-sm">
+            {report.offRosterRows.map((r) => (
+              <li key={r.techId ?? r.name} className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium text-gray-900 dark:text-gray-100">{r.name}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{r.role ?? 'no role'}</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-400">
+                  {r.aceLabor !== 0 && `${formatMoney(r.aceLabor)} ACE labor`}
+                  {r.aceLabor !== 0 && r.pmBonus + r.equipmentBonus !== 0 && ' · '}
+                  {r.pmBonus + r.equipmentBonus !== 0 &&
+                    `${formatMoney(r.pmBonus + r.equipmentBonus)} bonuses`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Footnotes that stop someone reading a number the wrong way */}
       <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
         <p>
@@ -295,6 +337,13 @@ export default function CommissionTab({ report, availablePeriods }: Props) {
           Diagnostic fees are excluded: they are not a technician&rsquo;s number
           (ruled 2026-07-31). They are still synced, so the dollars reconcile against
           Synergy, but they never appear on a payout row.
+        </p>
+        <p>
+          Techs marked <em>not commissioned</em> still have their labor recorded, at 0%, so
+          this report ties line for line to the workbook. ACE labor is part of the
+          commissioned subtotal, not a separate payment, so a non-commissioned tech earns
+          nothing on it. Lead bonuses are flat and pay either way. Change who is commissioned
+          in Settings &rarr; Rates &amp; Billing &rarr; Commission.
         </p>
         {report.nonTechLabor !== 0 && (
           <p>

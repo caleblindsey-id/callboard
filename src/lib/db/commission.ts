@@ -12,6 +12,7 @@ import {
   type CommissionReport,
   type CommissionRow,
 } from '@/lib/commission/report-types'
+import { aceBillableValue } from '@/lib/payouts/ace-value'
 import type { SynergyLaborBucket } from '@/types/database'
 
 // Shapes and labels live in @/lib/commission/report-types so the client can
@@ -67,7 +68,7 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
       .order('min_subtotal', { ascending: true }),
     supabase
       .from('users')
-      .select('id, name, synergy_id, commission_eligible, commission_rate_override'),
+      .select('id, name, role, synergy_id, commission_eligible, commission_rate_override'),
     supabase
       .from('synergy_labor_facts')
       .select('synergy_id, bucket, amount')
@@ -110,6 +111,7 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
   type UserLite = {
     id: string
     name: string | null
+    role: string | null
     synergy_id: string | null
     commission_eligible: boolean
     commission_rate_override: number | null
@@ -140,8 +142,7 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
     hours: number
     rate_value_at_approval: number | null
   }[]) {
-    const value = (Number(e.rate_value_at_approval ?? 0) || 0) * (Number(e.hours) || 0)
-    aceByTech.set(e.tech_id, roundCents((aceByTech.get(e.tech_id) ?? 0) + value))
+    aceByTech.set(e.tech_id, roundCents((aceByTech.get(e.tech_id) ?? 0) + aceBillableValue(e)))
   }
 
   // ----- bonuses, keyed by user id, split by lead type -----
@@ -159,11 +160,24 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
     )
   }
 
-  // ----- assemble one row per commission-eligible tech -----
-  const rows: CommissionRow[] = []
-  for (const u of users) {
-    if (!u.commission_eligible) continue
-
+  // ----- assemble one row per technician -----
+  //
+  // EVERY technician appears, not only the commission-eligible ones. The manual
+  // workbook has always recorded 407 Verberne and 410 Brashears at a hardcoded
+  // 0% rate: their labor is real and has to be on the sheet even though it pays
+  // nothing. Hiding them meant the report could never tie to the workbook line
+  // for line, and it kept ~$12.8k/month of July labor off screen entirely.
+  //
+  // Eligibility is now a Settings toggle (users.commission_eligible). Eligible
+  // techs resolve through commission_tiers or their own override; everyone else
+  // is pinned to 0%. Caleb, 2026-08-03: "If they are eligible for commission
+  // they fall into the standard commission matrix. If they are not commission
+  // eligible they default to zero."
+  //
+  // A non-technician with ACE or bonus activity also gets a row, but goes to
+  // offRosterRows. That is not hypothetical: a manager has carried an approved
+  // $240 ACE entry since 2026-05-26 that no report has ever shown.
+  function buildRow(u: UserLite): CommissionRow {
     const labor = (u.synergy_id && laborBySynergy.get(String(u.synergy_id).trim())) || emptyBuckets()
     const aceLabor = aceByTech.get(u.id) ?? 0
     const subtotal = roundCents(
@@ -171,30 +185,49 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
     )
 
     const override = u.commission_rate_override === null ? null : Number(u.commission_rate_override)
-    const { rate, commission } = commissionFor(subtotal, tiers, override)
+    // Ineligible pays 0% regardless of subtotal, and has no tier to reach.
+    const { rate, commission } = u.commission_eligible
+      ? commissionFor(subtotal, tiers, override)
+      : { rate: 0, commission: 0 }
     const pmBonus = pmBonusByTech.get(u.id) ?? 0
     const equipmentBonus = equipBonusByTech.get(u.id) ?? 0
 
-    rows.push({
+    return {
       techId: u.id,
       synergyId: u.synergy_id,
       name: u.name ?? '(unnamed)',
-      commissionEligible: true,
+      commissionEligible: u.commission_eligible,
+      role: u.role,
       labor,
       aceLabor,
       subtotal,
       rate,
-      rateIsOverride: override !== null,
+      rateIsOverride: u.commission_eligible && override !== null,
       commission,
       pmBonus,
       equipmentBonus,
-      // Bonuses are added AFTER the percentage, per the workbook's row 14.
+      // Bonuses are added AFTER the percentage, per the workbook's row 14. They
+      // are flat, so an ineligible tech still receives a lead bonus in full.
       total: roundCents(commission + pmBonus + equipmentBonus),
-      nextTier: distanceToNextTier(subtotal, tiers, override),
-    })
+      nextTier: u.commission_eligible ? distanceToNextTier(subtotal, tiers, override) : null,
+    }
+  }
+
+  const rows: CommissionRow[] = []
+  const offRosterRows: CommissionRow[] = []
+  for (const u of users) {
+    const isTechnician = u.role === 'technician' && !!u.synergy_id
+    const hasActivity =
+      aceByTech.has(u.id) || pmBonusByTech.has(u.id) || equipBonusByTech.has(u.id)
+    if (isTechnician) {
+      rows.push(buildRow(u))
+    } else if (hasActivity) {
+      offRosterRows.push(buildRow(u))
+    }
   }
 
   rows.sort((a, b) => (a.synergyId ?? '').localeCompare(b.synergyId ?? ''))
+  offRosterRows.sort((a, b) => a.name.localeCompare(b.name))
 
   // ----- labor attributed to codes CallBoard has no user for -----
   // Split two ways. Known outside sales reps and INTERNAL are expected every
@@ -228,9 +261,12 @@ export async function getCommissionReport(period: string): Promise<CommissionRep
     period,
     rows,
     tiers,
+    // Covers the roster table only, so the footer always sums the rows above
+    // it. Off-roster activity carries its own total in the UI.
     totals,
     unmappedLabor,
     nonTechLabor,
+    offRosterRows,
     isEmpty: (laborRes.data ?? []).length === 0,
   }
 }

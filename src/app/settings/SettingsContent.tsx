@@ -96,6 +96,9 @@ export default function SettingsContent({
           {/* Trip Charge — flat per-ticket fee for sending a tech out */}
           <TripChargeSetting initialTripCharge={tripCharge} />
 
+          {/* Commission — which techs earn the tiered commission on billed labor */}
+          <CommissionEligibilitySetting users={users} />
+
           {/* Credit Review — AR notification + release passcode */}
           <CreditReviewSetting
             initialArEmail={arEmail}
@@ -504,6 +507,200 @@ function UserTableRow({ user }: { user: UserRow }) {
             </span>
           )}
         </div>
+      </td>
+    </tr>
+  )
+}
+
+// Which technicians earn the tiered commission on billed labor.
+//
+// The columns have existed since migration 153 but had no UI, so eligibility was
+// only ever settable by hand in SQL. Every technician appears on the payout
+// report either way; this decides whether their subtotal resolves through
+// commission_tiers or is pinned to 0%. Caleb, 2026-08-03: "If they are eligible
+// for commission they fall into the standard commission matrix. If they are not
+// commission eligible they default to zero."
+function CommissionEligibilitySetting({ users }: { users: UserRow[] }) {
+  const techs = users
+    .filter((u) => u.role === 'technician')
+    .sort((a, b) => (a.synergy_id ?? '~').localeCompare(b.synergy_id ?? '~'))
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+          Commission
+        </h2>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          Commissioned techs earn on the standard tier matrix. Everyone else is recorded on the
+          payout report at 0% and earns nothing on labor. Lead bonuses are flat and still pay
+          either way.
+        </p>
+      </div>
+
+      <ScrollableTable>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+              <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Code</th>
+              <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Technician</th>
+              <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">Commissioned</th>
+              <th className="px-5 py-3 text-left font-medium text-gray-600 dark:text-gray-400">
+                Rate override
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            {techs.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-5 py-4 text-gray-500 dark:text-gray-400">
+                  No technicians yet.
+                </td>
+              </tr>
+            ) : (
+              techs.map((u) => <CommissionTechRow key={u.id} user={u} />)
+            )}
+          </tbody>
+        </table>
+      </ScrollableTable>
+
+      <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        Tiers apply to the whole subtotal, not just the amount above the threshold: under $3,000
+        earns 0%, $3,000 to $4,999.99 earns 2.5%, $5,000 to $7,499.99 earns 5%, $7,500 to
+        $9,999.99 earns 7.5%, $10,000 and up earns 10%. A rate override replaces the matrix
+        entirely for that tech.
+      </div>
+    </div>
+  )
+}
+
+function CommissionTechRow({ user }: { user: UserRow }) {
+  const router = useRouter()
+  const [savingEligible, setSavingEligible] = useState(false)
+  const [editingRate, setEditingRate] = useState(false)
+  const [savingRate, setSavingRate] = useState(false)
+  // Held as a PERCENT for typing (7.5), stored as a FRACTION (0.075).
+  const [ratePct, setRatePct] = useState(
+    user.commission_rate_override === null ? '' : String(user.commission_rate_override * 100),
+  )
+  const [error, setError] = useState<string | null>(null)
+
+  async function patchUser(body: Record<string, unknown>): Promise<boolean> {
+    setError(null)
+    const res = await fetch(`/api/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error || 'Failed to update.')
+      return false
+    }
+    return true
+  }
+
+  async function handleToggle() {
+    setSavingEligible(true)
+    const ok = await patchUser({ commission_eligible: !user.commission_eligible })
+    setSavingEligible(false)
+    if (ok) router.refresh()
+  }
+
+  async function handleSaveRate() {
+    const trimmed = ratePct.trim()
+    if (trimmed !== '') {
+      const pct = Number(trimmed)
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        setError('Enter a percent between 0 and 100, or leave blank to use the tier matrix.')
+        return
+      }
+    }
+    setSavingRate(true)
+    const ok = await patchUser({
+      // Round the division: 7.5 / 100 is 0.075 exactly, but 2.9 / 100 is not.
+      commission_rate_override: trimmed === '' ? null : Math.round(Number(trimmed) * 100) / 10000,
+    })
+    setSavingRate(false)
+    if (ok) {
+      setEditingRate(false)
+      router.refresh()
+    }
+  }
+
+  function cancelRate() {
+    setEditingRate(false)
+    setRatePct(user.commission_rate_override === null ? '' : String(user.commission_rate_override * 100))
+    setError(null)
+  }
+
+  return (
+    <tr>
+      <td className="px-5 py-3 text-gray-500 dark:text-gray-400 font-mono text-xs">
+        {user.synergy_id ?? '—'}
+      </td>
+      <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">
+        {user.name}
+        {!user.active && (
+          <span className="ml-2 text-xs font-normal text-gray-400 dark:text-gray-500">inactive</span>
+        )}
+      </td>
+      <td className="px-5 py-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={user.commission_eligible}
+            disabled={savingEligible}
+            onChange={handleToggle}
+            className="rounded border-gray-300 dark:border-gray-600 accent-slate-600 disabled:opacity-50"
+          />
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            {savingEligible ? '…' : user.commission_eligible ? 'On tier matrix' : 'Not commissioned'}
+          </span>
+        </label>
+      </td>
+      <td className="px-5 py-3">
+        {!user.commission_eligible ? (
+          <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+        ) : editingRate ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max="100"
+              value={ratePct}
+              onChange={(e) => setRatePct(e.target.value)}
+              placeholder="tiers"
+              className="w-20 rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            />
+            <span className="text-gray-500 dark:text-gray-400 text-sm">%</span>
+            <button
+              onClick={handleSaveRate}
+              disabled={savingRate}
+              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
+            >
+              {savingRate ? '...' : 'Save'}
+            </button>
+            <button onClick={cancelRate} className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditingRate(true)}
+            className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900"
+          >
+            {user.commission_rate_override === null
+              ? 'Use tier matrix'
+              : `${(user.commission_rate_override * 100).toFixed(1)}% flat`}
+          </button>
+        )}
+        {error && (
+          <div className="mt-1 text-xs text-red-600 dark:text-red-400" role="alert">
+            {error}
+          </div>
+        )}
       </td>
     </tr>
   )

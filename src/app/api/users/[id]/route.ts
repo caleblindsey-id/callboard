@@ -21,6 +21,8 @@ export async function PATCH(
       active?: boolean
       hourly_cost?: number | null
       can_create_service_tickets?: boolean
+      commission_eligible?: boolean
+      commission_rate_override?: number | null
     }
 
     const update: Record<string, unknown> = {}
@@ -57,6 +59,27 @@ export async function PATCH(
 
     if (body.can_create_service_tickets !== undefined) {
       update.can_create_service_tickets = body.can_create_service_tickets
+    }
+
+    if (body.commission_eligible !== undefined) {
+      if (typeof body.commission_eligible !== 'boolean') {
+        return NextResponse.json({ error: 'Commission eligibility must be true or false.' }, { status: 400 })
+      }
+      update.commission_eligible = body.commission_eligible
+    }
+
+    // A fraction, not a percentage: 0.075 is 7.5%. NULL means use the tier
+    // table, which is the normal case. The DB carries the same 0..1 CHECK
+    // (migration 153); this is the friendly error before it fires.
+    if (body.commission_rate_override !== undefined) {
+      const v = body.commission_rate_override
+      if (v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
+        return NextResponse.json(
+          { error: 'Rate override must be a fraction between 0 and 1, or blank to use the tier table.' },
+          { status: 400 }
+        )
+      }
+      update.commission_rate_override = v
     }
 
     if (Object.keys(update).length === 0) {
