@@ -13,6 +13,10 @@ import {
   requestToUsedLine,
   isCoveredByAgreement,
   workOrderAutoAddPatch,
+  canEditPartQuantity,
+  normalizePartQuantity,
+  validateQuantityEdits,
+  quantitySyncPatch,
 } from './parts'
 import type { PartRequest, PartUsed } from '../types/database'
 
@@ -562,4 +566,171 @@ test('the auto-added line carries the request link so the banner goes quiet', ()
   const r = autoAdd({ part })
   assert.equal(r?.line.from_request_at, '2026-07-27T12:00:00.000Z')
   assert.deepEqual(partsMissingFromWorkOrder([part], r!.value), [])
+})
+
+// ── canEditPartQuantity ──
+
+test('quantity is editable before the part is in hand', () => {
+  for (const status of ['pending_review', 'requested', 'ordered'] as const) {
+    assert.equal(canEditPartQuantity({ status }), true, status)
+  }
+})
+
+test('quantity locks once the part is in hand or cancelled', () => {
+  for (const status of ['from_stock', 'received', 'cancelled'] as const) {
+    assert.equal(canEditPartQuantity({ status }), false, status)
+  }
+})
+
+test('a cancelled flag locks the quantity whatever the status says', () => {
+  // Ghost rows from before PR #247 carry cancelled:true with a live status.
+  assert.equal(canEditPartQuantity({ status: 'requested', cancelled: true }), false)
+})
+
+// ── normalizePartQuantity ──
+
+test('accepts a whole number, as a number or a string', () => {
+  assert.deepEqual(normalizePartQuantity(3), { ok: true, value: 3 })
+  assert.deepEqual(normalizePartQuantity(' 12 '), { ok: true, value: 12 })
+})
+
+test('rejects zero, negatives, fractions, blanks and junk', () => {
+  for (const bad of [0, -1, 2.5, '', null, undefined, 'abc', NaN, Infinity]) {
+    const r = normalizePartQuantity(bad)
+    assert.equal(r.ok, false, `expected ${String(bad)} to be rejected`)
+  }
+})
+
+test('zeroing points at cancelling instead', () => {
+  const r = normalizePartQuantity(0)
+  assert.match(r.ok ? '' : r.error, /cancel/i)
+})
+
+test('rejects a quantity past the fat-finger ceiling', () => {
+  assert.equal(normalizePartQuantity(1000).ok, false)
+  assert.equal(normalizePartQuantity(999).ok, true)
+})
+
+// ── validateQuantityEdits ──
+
+test('allows a quantity change on a part still in the edit window', () => {
+  const before = manual({ status: 'requested', quantity: 3 })
+  const after = { ...before, quantity: 1 }
+  assert.equal(validateQuantityEdits([before], [after]), null)
+})
+
+test('rejects a quantity change on a received part', () => {
+  const before = manual({ status: 'received', quantity: 3 })
+  const after = { ...before, quantity: 1 }
+  assert.match(validateQuantityEdits([before], [after]) ?? '', /work order/i)
+})
+
+test('rejects a quantity change on a pulled-from-stock part', () => {
+  const before = manual({ status: 'from_stock', quantity: 3 })
+  assert.notEqual(validateQuantityEdits([before], [{ ...before, quantity: 1 }]), null)
+})
+
+test('gates on the STORED status, not the one in the payload', () => {
+  // A client that flips a received part back to 'requested' in the same payload
+  // must not thereby unlock its own quantity edit.
+  const before = manual({ status: 'received', quantity: 3 })
+  const after = { ...before, status: 'requested' as const, quantity: 1 }
+  assert.notEqual(validateQuantityEdits([before], [after]), null)
+})
+
+test('a status-only change is not a quantity edit', () => {
+  const before = manual({ status: 'ordered', quantity: 3 })
+  const after = { ...before, status: 'received' as const }
+  assert.equal(validateQuantityEdits([before], [after]), null)
+})
+
+test('validates the new quantity itself, not just the window', () => {
+  const before = manual({ status: 'requested', quantity: 3 })
+  assert.match(validateQuantityEdits([before], [{ ...before, quantity: 0 }]) ?? '', /at least 1/i)
+  assert.match(validateQuantityEdits([before], [{ ...before, quantity: 2.5 }]) ?? '', /whole number/i)
+})
+
+test('a newly appended part is not diffed against anything', () => {
+  const before = manual({ status: 'requested', quantity: 3 })
+  const added = manual({ requested_at: '2026-08-04T10:00:00.000Z', quantity: 9 })
+  assert.equal(validateQuantityEdits([before], [before, added]), null)
+})
+
+test('covers a legacy part that carries no requested_at', () => {
+  // Index-based diffing is what makes this work — an identity-keyed diff would
+  // skip the row entirely and let the edit through.
+  const before = manual({ status: 'received', quantity: 3, requested_at: undefined })
+  assert.notEqual(validateQuantityEdits([before], [{ ...before, quantity: 1 }]), null)
+})
+
+test('refuses to guess when the array has been reordered underneath', () => {
+  const a = manual({ status: 'received', quantity: 3, requested_at: '2026-08-01T00:00:00.000Z' })
+  const b = manual({ status: 'requested', quantity: 3, requested_at: '2026-08-02T00:00:00.000Z' })
+  assert.match(validateQuantityEdits([a, b], [b, a]) ?? '', /refresh/i)
+})
+
+// ── quantitySyncPatch ──
+
+function syncArgs(over: Record<string, unknown> = {}) {
+  return {
+    source: 'service' as const,
+    previous: [manual({ status: 'ordered', quantity: 3 })],
+    next: [manual({ status: 'ordered', quantity: 1 })],
+    existingUsed: [used({ quantity: 3, from_request_at: '2026-06-02T10:00:00.000Z' })],
+    ...over,
+  } as Parameters<typeof quantitySyncPatch>[0]
+}
+
+test('a changed quantity follows through to the linked work-order line', () => {
+  const patch = quantitySyncPatch(syncArgs())
+  assert.equal(patch?.parts_used?.[0].quantity, 1)
+})
+
+test('nothing to sync when the quantity did not move', () => {
+  assert.equal(quantitySyncPatch(syncArgs({ next: [manual({ status: 'ordered', quantity: 3 })] })), null)
+})
+
+test('nothing to sync when no work-order line carries the link', () => {
+  // Tier-2/tier-3 matching is deliberately NOT used here: same description and
+  // same catalog id are not enough to rewrite a billable quantity.
+  const patch = quantitySyncPatch(
+    syncArgs({ existingUsed: [used({ quantity: 3, synergy_product_id: 555 })] }),
+  )
+  assert.equal(patch, null)
+})
+
+test('leaves unrelated work-order lines alone', () => {
+  const patch = quantitySyncPatch(
+    syncArgs({
+      existingUsed: [
+        used({ quantity: 3, from_request_at: '2026-06-02T10:00:00.000Z' }),
+        used({ quantity: 7, description: 'Filter', from_request_at: '2026-01-01T00:00:00.000Z' }),
+      ],
+    }),
+  )
+  assert.equal(patch?.parts_used?.[0].quantity, 1)
+  assert.equal(patch?.parts_used?.[1].quantity, 7)
+})
+
+test('a PM part syncs on additional_parts_used too', () => {
+  const patch = quantitySyncPatch(
+    syncArgs({
+      source: 'pm',
+      existingUsed: [],
+      existingAdditional: [used({ quantity: 3, from_request_at: '2026-06-02T10:00:00.000Z' })],
+    }),
+  )
+  assert.equal(patch?.additional_parts_used?.[0].quantity, 1)
+  assert.equal(patch?.parts_used, undefined)
+})
+
+test('a service ticket never writes additional_parts_used', () => {
+  // The column is PM-only; fn_update_parts_queue ignores it on the service branch.
+  const patch = quantitySyncPatch(
+    syncArgs({
+      existingUsed: [],
+      existingAdditional: [used({ quantity: 3, from_request_at: '2026-06-02T10:00:00.000Z' })],
+    }),
+  )
+  assert.equal(patch, null)
 })

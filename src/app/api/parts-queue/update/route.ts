@@ -8,7 +8,15 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { PartRequest, PartUsed } from '@/types/database'
-import { isPartStagedReady, isFulfillingAction, workOrderAutoAddPatch, partsAllFulfilled } from '@/lib/parts'
+import {
+  isPartStagedReady,
+  isFulfillingAction,
+  workOrderAutoAddPatch,
+  partsAllFulfilled,
+  canEditPartQuantity,
+  normalizePartQuantity,
+  quantitySyncPatch,
+} from '@/lib/parts'
 import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
 import { isShippingMethod, normalizeShippingCharge, SHIPPING_NOTE_MAX_LEN } from '@/lib/shipping'
 
@@ -67,6 +75,11 @@ const PATCH_FIELDS: ReadonlySet<keyof PartRequest> = new Set([
   // audit meaning.
   'shipping_method',
   'shipping_note',
+  // A tech mistypes the count more often than anything else on a request, and
+  // the wrong number otherwise flows straight onto the PO and the invoice. Safe
+  // to patch while the part is still a request; the status gate below closes it
+  // once the part is physically in hand.
+  'quantity',
 ])
 
 const FIELD_MAX_LEN: Partial<Record<keyof PartRequest, number>> = {
@@ -79,13 +92,26 @@ const FIELD_MAX_LEN: Partial<Record<keyof PartRequest, number>> = {
   shipping_note: SHIPPING_NOTE_MAX_LEN,
 }
 
-function sanitizePatchFields(input: Partial<PartRequest> | undefined): Partial<PartRequest> {
-  if (!input) return {}
+function sanitizePatchFields(
+  input: Partial<PartRequest> | undefined,
+): { ok: true; fields: Partial<PartRequest> } | { ok: false; error: string } {
+  if (!input) return { ok: true, fields: {} }
   const out: Partial<PartRequest> = {}
   for (const key of Object.keys(input) as Array<keyof PartRequest>) {
     if (!PATCH_FIELDS.has(key)) continue
     const raw = (input as Record<string, unknown>)[key]
     if (raw === undefined) continue
+    // quantity is the only numeric patchable field, and it has to be handled
+    // before the string guard below — that guard drops a non-string silently,
+    // which for a number would mean answering 200 over an unchanged value while
+    // the UI shows a saved tick. Reject loudly instead, using the same shared
+    // validator the client and the ticket routes use.
+    if (key === 'quantity') {
+      const parsed = normalizePartQuantity(raw)
+      if (!parsed.ok) return { ok: false, error: parsed.error }
+      out.quantity = parsed.value
+      continue
+    }
     if (raw !== null && typeof raw !== 'string') continue
     // shipping_method is an enum, not free text — an unrecognized value would
     // read back as 'standard' everywhere (shippingMethodOf falls back) and so
@@ -95,7 +121,7 @@ function sanitizePatchFields(input: Partial<PartRequest> | undefined): Partial<P
     const value = typeof raw === 'string' && max ? raw.slice(0, max) : raw
     ;(out as Record<string, unknown>)[key] = value
   }
-  return out
+  return { ok: true, fields: out }
 }
 
 export async function POST(request: NextRequest) {
@@ -145,7 +171,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const safeFields = sanitizePatchFields(fields)
+    const sanitized = sanitizePatchFields(fields)
+    if (!sanitized.ok) {
+      return NextResponse.json({ error: sanitized.error }, { status: 400 })
+    }
+    const safeFields = sanitized.fields
 
     const supabase = await createClient()
     const table = tableFor(source)
@@ -312,6 +342,22 @@ export async function POST(request: NextRequest) {
     }
 
     const current = parts[part_index]
+
+    // The quantity is a request only until the part is physically in hand.
+    // After that it is a fact, and the auto-add has already copied it onto the
+    // work order, where the completion form owns it. Gated on the STORED status
+    // so a payload can never unlock its own edit.
+    if (safeFields.quantity !== undefined && !canEditPartQuantity(current)) {
+      return NextResponse.json(
+        {
+          error: current.cancelled
+            ? 'This part is cancelled. Reopen it before changing the quantity.'
+            : 'This part is already in hand. Change the quantity on the work order instead.',
+        },
+        { status: 409 }
+      )
+    }
+
     const now = new Date().toISOString()
     let next: PartRequest = { ...current, ...safeFields }
 
@@ -609,6 +655,32 @@ export async function POST(request: NextRequest) {
       if (autoAdd) {
         updatePayload[autoAdd.column] = autoAdd.value
       }
+    }
+
+    // --- Keep an already-billed line's quantity in step -------------------
+    //
+    // Usually a no-op: the edit window closes before a part is fulfilled, so
+    // there is no work-order line yet. It matters after a manager Reset, which
+    // reopens a received part's quantity for editing while leaving behind the
+    // line the auto-add already put on the work order — a stale quantity there
+    // is a billing error, not a display one.
+    //
+    // Rides the same payload for the same reason the auto-add does: the
+    // updated_at predicate inside fn_update_parts_queue IS the optimistic lock,
+    // and the completion form PUTs the whole array on autosave. Reads back
+    // whatever the auto-add just staged so the two can't clobber each other.
+    const qtySync = quantitySyncPatch({
+      source,
+      previous: parts,
+      next: updated,
+      existingUsed: (updatePayload.parts_used as PartUsed[] | undefined) ?? ticket.parts_used,
+      existingAdditional:
+        (updatePayload.additional_parts_used as PartUsed[] | undefined) ??
+        ticket.additional_parts_used,
+    })
+    if (qtySync?.parts_used) updatePayload.parts_used = qtySync.parts_used
+    if (qtySync?.additional_parts_used) {
+      updatePayload.additional_parts_used = qtySync.additional_parts_used
     }
 
     // "Whole order filled" tech notification. Stricter than parts_received above:

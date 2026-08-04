@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { PartRequest, TicketStatus } from '@/types/database'
 import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import PartQuantityField from '@/components/PartQuantityField'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
 import { normalizeShippingNote } from '@/lib/shipping'
@@ -232,6 +233,24 @@ export default function PmPartsSection({
     }
   }
 
+  /**
+   * Correct a requested quantity. Mirrors handleSavePartVendorItemCode, and
+   * sends only parts_requested — the route derives any work-order line sync
+   * itself so the two ticket types can't diverge on it.
+   */
+  async function handleSavePartQuantity(index: number, quantity: number) {
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = parts.map((p, i) => (i === index ? { ...p, quantity } : p))
+      await patchTicket({ parts_requested: updated })
+      setParts(updated)
+      router.refresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleResetPartStatus(index: number) {
     const current = parts[index].status
     const prev: PartRequest['status'] = current === 'received' ? 'ordered' : 'requested'
@@ -334,7 +353,11 @@ export default function PmPartsSection({
                     {part.product_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                     )}
-                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
+                    <PartQuantityField
+                      part={part}
+                      disabled={saving}
+                      onSave={(qty) => handleSavePartQuantity(i, qty)}
+                    />
                     {part.covered_by_agreement === true && (
                       <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                         Covered

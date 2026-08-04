@@ -1717,6 +1717,31 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
+  /**
+   * Correct a requested quantity. Read-before-write merge, same pattern as
+   * handleSavePartPo. Takes the value directly rather than through a staged
+   * setState — a quantity is committed on blur as one number, so there is no
+   * intermediate typing state worth lifting into the parent.
+   *
+   * Sends only parts_requested: the server derives any work-order line sync
+   * itself, because parts_used is tech-only on the service PATCH route and a
+   * staff request carrying it would be rejected outright.
+   */
+  async function handleSavePartQuantity(index: number, quantity: number) {
+    await apiAction(async () => {
+      const supabase = createClient()
+      const { data: latest } = await supabase
+        .from('service_tickets')
+        .select('parts_requested')
+        .eq('id', ticket.id)
+        .single()
+      const serverParts = (latest?.parts_requested ?? []) as PartRequest[]
+      const merged = serverParts.map((p, i) => (i === index ? { ...p, quantity } : p))
+      await patchTicket({ parts_requested: merged })
+      setPartsRequested(merged)
+    })
+  }
+
   async function handleResetPartStatus(index: number) {
     const current = partsRequested[index].status
     const prev: PartRequest['status'] = current === 'received' ? 'ordered' : 'requested'
@@ -2983,6 +3008,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           onSavePartVendorItemCode={handleSavePartVendorItemCode}
           onUpdatePartPo={handleUpdatePartPo}
           onSavePartPo={handleSavePartPo}
+          onSavePartQuantity={handleSavePartQuantity}
           onEquipmentVerified={handleEquipmentVerified}
           onPromoteEstimateParts={handlePromoteEstimateParts}
           onSelectCatalogPart={selectCatalogPart}

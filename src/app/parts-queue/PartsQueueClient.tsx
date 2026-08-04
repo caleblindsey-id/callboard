@@ -17,7 +17,7 @@ import {
   triagePart,
   updatePartFields,
 } from '@/lib/parts-queue'
-import { partLabel } from '@/lib/parts'
+import { partLabel, canEditPartQuantity, normalizePartQuantity } from '@/lib/parts'
 import {
   isPriorityShipping,
   normalizeShippingCharge,
@@ -732,6 +732,11 @@ export default function PartsQueueClient({
     [orderJustifyTarget, handleTriage],
   )
 
+  const handleQuantityCommit = useCallback(
+    (row: PartsQueueRow, quantity: number) => handleFieldsCommit(row, { quantity }),
+    [handleFieldsCommit],
+  )
+
   const canEditFields = tab !== 'received' && tab !== 'review'
   const canMarkOrdered = tab === 'to_order'
   const canMarkReceived = tab === 'ordered'
@@ -841,6 +846,7 @@ export default function PartsQueueClient({
           onOrder={handleOrderClick}
           onStock={(row) => void handleTriage(row, 'stock')}
           onCancel={setCancelTarget}
+          onQuantityCommit={handleQuantityCommit}
         />
       ) : tab === 'to_pull' ? (
         <ToPullTable
@@ -886,7 +892,19 @@ export default function PartsQueueClient({
                     onRevalidate={() => handleRevalidate(row)}
                     disabled={isPending}
                   />
-                  <span>Qty {row.quantity ?? 1}</span>
+                  <span className="inline-flex items-center gap-1">
+                    Qty
+                    {canEditPartQuantity(row) ? (
+                      <InlineQty
+                        value={row.quantity}
+                        disabled={isPending}
+                        warnOnCommit={orderedQtyWarning(row)}
+                        onCommit={v => handleQuantityCommit(row, v)}
+                      />
+                    ) : (
+                      row.quantity ?? 1
+                    )}
+                  </span>
                   {row.unit_price != null && <span className="tabular-nums">${row.unit_price.toFixed(2)}</span>}
                   <span>{formatDay(row.requested_at)}</span>
                   {row.assigned_technician_name && <span className="truncate">by {row.assigned_technician_name}</span>}
@@ -1122,7 +1140,18 @@ export default function PartsQueueClient({
                         disabled={isPending}
                       />
                     </td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">
+                      {canEditPartQuantity(row) ? (
+                        <InlineQty
+                          value={row.quantity}
+                          disabled={isPending}
+                          warnOnCommit={orderedQtyWarning(row)}
+                          onCommit={v => handleQuantityCommit(row, v)}
+                        />
+                      ) : (
+                        row.quantity ?? 1
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <VendorPicker
                         vendor={row.vendor}
@@ -1437,6 +1466,7 @@ function ReviewTable({
   onOrder,
   onStock,
   onCancel,
+  onQuantityCommit,
 }: {
   rows: PartsQueueRow[]
   pendingRow: string | null
@@ -1444,6 +1474,10 @@ function ReviewTable({
   onOrder: (row: PartsQueueRow) => void
   onStock: (row: PartsQueueRow) => void
   onCancel: (row: PartsQueueRow) => void
+  // Review is the tab where a wrong count is cheapest to fix — it is the last
+  // stop before the office commits to ordering or pulling stock. Quantity is
+  // deliberately editable here even though every other field on this tab is not.
+  onQuantityCommit: (row: PartsQueueRow, quantity: number) => Promise<boolean>
 }) {
   return (
     <>
@@ -1470,7 +1504,18 @@ function ReviewTable({
                 <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
               )}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                <span>Qty {row.quantity ?? 1}</span>
+                <span className="inline-flex items-center gap-1">
+                  Qty
+                  {canEditPartQuantity(row) ? (
+                    <InlineQty
+                      value={row.quantity}
+                      disabled={isPending}
+                      onCommit={v => onQuantityCommit(row, v)}
+                    />
+                  ) : (
+                    row.quantity ?? 1
+                  )}
+                </span>
                 <span className="inline-flex items-center gap-1">
                   On hand <StockBadge value={row.qty_on_hand} tone="hand" />
                 </span>
@@ -1573,7 +1618,17 @@ function ReviewTable({
                     )}
                   </td>
                   <td className="px-3 py-2"><MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} /></td>
-                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">{row.quantity ?? 1}</td>
+                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">
+                    {canEditPartQuantity(row) ? (
+                      <InlineQty
+                        value={row.quantity}
+                        disabled={isPending}
+                        onCommit={v => onQuantityCommit(row, v)}
+                      />
+                    ) : (
+                      row.quantity ?? 1
+                    )}
+                  </td>
                   <td className="px-3 py-2"><StockBadge value={row.qty_on_hand} tone="hand" /></td>
                   <td className="px-3 py-2"><StockBadge value={row.qty_on_po} tone="po" /></td>
                   <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">{row.assigned_technician_name ?? '—'}</td>
@@ -2140,6 +2195,123 @@ function InlineText({
  * Invalid input is rejected before any request goes out, using the same shared
  * validator the three server write paths use.
  */
+/**
+ * The caveat that has to ride along with a quantity change on an already-ordered
+ * part: the PO is with the vendor and nothing in CallBoard reaches it. Returns
+ * undefined for every earlier status, where there is nothing to warn about.
+ */
+function orderedQtyWarning(row: PartsQueueRow): string | undefined {
+  if (row.status !== 'ordered') return undefined
+  return row.po_number
+    ? `Qty changed after ordering — PO ${row.po_number} still shows the old count. Update it with the vendor.`
+    : 'Qty changed after ordering — the vendor PO still shows the old count. Update it with the vendor.'
+}
+
+/**
+ * Inline quantity editor for a requested part.
+ *
+ * Same never-yank / commit-on-blur / keep-the-typed-value-on-failure contract as
+ * InlineText and InlineMoney above, validated client-side through the shared
+ * normalizePartQuantity so the rules can't drift from the two server paths.
+ *
+ * `warnOnCommit` is set on the Ordered tab: the PO is already with the vendor,
+ * and changing the number here does nothing about that. The warning appears
+ * after a successful save rather than as a confirm dialog — a modal fired from
+ * a blur-commit control fights the focus it just lost.
+ */
+function InlineQty({
+  value,
+  disabled,
+  warnOnCommit,
+  onCommit,
+}: {
+  value: number | null
+  disabled: boolean
+  warnOnCommit?: string
+  onCommit: (v: number) => Promise<boolean>
+}) {
+  const asText = (v: number | null) => (v == null ? '' : String(v))
+  const [local, setLocal] = useState(asText(value))
+  const [focused, setFocused] = useState(false)
+  const [lastExternal, setLastExternal] = useState(value)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [warned, setWarned] = useState(false)
+
+  if (value !== lastExternal) {
+    setLastExternal(value)
+    if (!focused) setLocal(asText(value))
+  }
+
+  useEffect(() => {
+    if (status !== 'saved') return
+    const id = window.setTimeout(() => setStatus(s => (s === 'saved' ? 'idle' : s)), 1500)
+    return () => window.clearTimeout(id)
+  }, [status])
+
+  async function commit() {
+    setFocused(false)
+    const parsed = normalizePartQuantity(local)
+    if (!parsed.ok) {
+      setStatus('error')
+      return
+    }
+    if (parsed.value === (value ?? 1)) {
+      setStatus('idle')
+      return
+    }
+    setStatus('saving')
+    try {
+      const ok = await onCommit(parsed.value)
+      setStatus(ok ? 'saved' : 'error')
+      if (ok && warnOnCommit) setWarned(true)
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="inline-flex flex-col gap-0.5">
+      <div className="relative inline-flex items-center">
+        <input
+          type="number"
+          step="1"
+          min="1"
+          inputMode="numeric"
+          value={local}
+          onChange={e => {
+            setLocal(e.target.value)
+            if (status === 'error' || status === 'saved') setStatus('idle')
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={commit}
+          disabled={disabled}
+          aria-invalid={status === 'error'}
+          aria-label="Quantity"
+          className={`w-16 rounded-md border ${
+            status === 'error'
+              ? 'border-red-400 dark:border-red-500'
+              : warnOnCommit
+                ? 'border-amber-400 dark:border-amber-500'
+                : 'border-gray-300 dark:border-gray-600'
+          } dark:bg-gray-700 dark:text-white ${
+            status === 'idle' ? 'px-2' : 'pl-2 pr-6'
+          } py-1 text-xs text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 dark:disabled:bg-gray-900/40 disabled:text-gray-500`}
+        />
+        {status !== 'idle' && (
+          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">
+            {status === 'saving' && <RefreshCw className="h-3 w-3 animate-spin text-gray-400" aria-label="Saving" />}
+            {status === 'saved' && <Check className="h-3 w-3 text-green-600 dark:text-green-400" aria-label="Saved" />}
+            {status === 'error' && <AlertCircle className="h-3 w-3 text-red-500" aria-label="Not saved — try again" />}
+          </span>
+        )}
+      </div>
+      {warned && (
+        <span className="text-[11px] leading-tight text-amber-700 dark:text-amber-400">{warnOnCommit}</span>
+      )}
+    </div>
+  )
+}
+
 function InlineMoney({
   value,
   disabled,

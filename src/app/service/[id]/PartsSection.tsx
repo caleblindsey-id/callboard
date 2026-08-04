@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { ExternalLink, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import PartQuantityField from '@/components/PartQuantityField'
 import VendorPicker from '@/components/VendorPicker'
 import TechEquipmentDetailsPanel from './TechEquipmentDetailsPanel'
 import { partLabel } from '@/lib/parts'
@@ -75,6 +76,7 @@ interface PartsSectionProps {
   onSavePartVendorItemCode: (index: number) => Promise<void>
   onUpdatePartPo: (index: number, poNumber: string) => void
   onSavePartPo: (index: number) => Promise<void>
+  onSavePartQuantity: (index: number, quantity: number) => Promise<void>
   onEquipmentVerified: () => void
   onPromoteEstimateParts: () => Promise<void>
   onSelectCatalogPart: (p: ProductSearchResult) => void
@@ -140,6 +142,7 @@ export default function PartsSection({
   onSavePartVendorItemCode,
   onUpdatePartPo,
   onSavePartPo,
+  onSavePartQuantity,
   onEquipmentVerified,
   onPromoteEstimateParts,
   onSelectCatalogPart,
@@ -205,7 +208,11 @@ export default function PartsSection({
                       {part.product_number && isTech && (
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                       )}
-                      <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
+                      <PartQuantityField
+                        part={part}
+                        disabled={loading}
+                        onSave={(qty) => onSavePartQuantity(i, qty)}
+                      />
                       {part.po_number && isTech && (
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
                       )}
