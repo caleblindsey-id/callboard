@@ -4,7 +4,7 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 80
 summary: The team and per-technician KPI dashboards, and how to set performance targets.
-last_verified: 2026-05-28
+last_verified: 2026-08-04
 ---
 
 The **Analytics** section shows how the team and each technician are performing, and lets you set targets to measure against.
@@ -20,6 +20,14 @@ Open **Analytics**. Toggle **Weekly** or **Monthly**, and read the KPI cards:
 - **Avg Completion** days (lower is better)
 
 Below the cards, the **leaderboard** ranks technicians — sort by revenue, tickets, profit, or efficiency — and a **trend chart** shows the team over time.
+
+### Choosing a period
+
+Use the arrows either side of the month dropdown to step back and forward one period at a time — a month in **Monthly** mode, a week in **Weekly** mode. To jump further back, pick a month from the dropdown. You can't page past the current period.
+
+Switching **PM** / **Service** / **Combined** or **Weekly** / **Monthly** keeps the period you're on, and opening a technician carries it across, so you can compare a past month without losing your place.
+
+The **backlog panel** at the bottom is the exception: it always shows open work as of right now, not as of the period you've selected.
 
 ## Technician deep-dive
 

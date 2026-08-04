@@ -89,6 +89,13 @@ New `src/lib/analytics-period.ts`:
 `src/app/api/analytics/team/route.ts:5-26` and would otherwise be copied into
 both SSR pages. One home, one test file.
 
+The **API routes keep their strict 400s** rather than adopting the parser: a
+lenient fallback there would turn a typo'd param into silently wrong-period data
+instead of an error. They import the shared constants and `isValidDateKey`
+instead, so the definitions stay in one place while the response behaviour is
+unchanged. This also tightens them slightly — they previously accepted
+`2026-02-31` (regex-valid, not a real day).
+
 **All date math must use the same UTC-noon anchoring as `getMonthRange` /
 `getWeekRange`** (`src/lib/db/analytics.ts:261-283`), or the picker's label and
 the server's computed range can disagree at month edges.
@@ -141,6 +148,23 @@ drill-down's back link carries it in the other direction.
   and falls back correctly on empty input.
 - `monthOptions` ordering and labels.
 
-Manual verification: run the dev server, load `/analytics`, page back several
-months, confirm KPI/trend/prior-delta values change coherently and that the
-drill-down retains the period.
+Manual verification (done in-browser against the dev DB on 2026-08-04):
+
+- Overview defaults to August 2026 with the next arrow disabled.
+- Back arrow → July 2026; URL becomes `?period=monthly&date=2026-07-01&type=combined`
+  with no page reload; KPIs, leaderboard order and prior-deltas all move.
+- Deep link `?date=2026-03-01&type=service` renders March 2026 with Service
+  preselected, server-side.
+- Monthly → Weekly from March 2026 keeps the anchor and shows
+  "Week of Feb 23 – Mar 1, 2026"; deltas switch to "vs last week".
+- In weekly mode the back arrow steps 7 days (`2026-03-01` → `2026-02-22`),
+  not a month.
+- Clicking a technician from the July leaderboard opens the drill-down still on
+  July 2026, with matching figures; its back link returns to July.
+- No console errors or hydration warnings, including on a 9-month-back weekly
+  PM deep link.
+
+The month `<select>` could not be driven by browser automation (Chrome renders
+the popup natively, outside the page), so its selection was not clicked
+end-to-end. Its `onChange` calls the same handler the arrows use, and it renders
+the correct current value in every case above.

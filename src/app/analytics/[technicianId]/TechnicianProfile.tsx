@@ -10,8 +10,10 @@ import ScrollableTable from '@/components/ScrollableTable'
 import RevenueBreakdown from '@/components/analytics/RevenueBreakdown'
 import PeriodComparison from '@/components/analytics/PeriodComparison'
 import TargetsForm from '@/components/analytics/TargetsForm'
+import PeriodPicker from '@/components/analytics/PeriodPicker'
 import PageHeader from '@/components/ui/PageHeader'
 import SegmentedControl from '@/components/ui/SegmentedControl'
+import { analyticsQuery } from '@/lib/analytics-period'
 
 const TrendChart = dynamic(() => import('@/components/analytics/TrendChart'), {
   ssr: false,
@@ -41,16 +43,24 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
   const [data, setData] = useState<TechnicianAnalytics>(initialData)
   const [periodType, setPeriodType] = useState<PeriodType>(initialData.period.type)
   const [ticketType, setTicketType] = useState<TicketType>(initialData.ticketType)
+  // Anchor day for the selected period — see AnalyticsOverview for the rationale.
+  const [date, setDate] = useState(initialData.period.startDate)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('revenue')
   const [showTargets, setShowTargets] = useState(false)
 
-  const fetchData = useCallback(async (period: PeriodType, type: TicketType) => {
+  const fetchData = useCallback(async (period: PeriodType, type: TicketType, anchor: string) => {
+    const query = analyticsQuery({ periodType: period, date: anchor, ticketType: type })
+    // Keep the URL in step without a router navigation — this component owns its
+    // own fetching, so `router.replace` would duplicate the whole payload fetch.
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `${window.location.pathname}?${query}`)
+    }
+
     setLoading(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const res = await fetch(`/api/analytics/technician/${data.tech.id}?period=${period}&date=${today}&type=${type}`)
+      const res = await fetch(`/api/analytics/technician/${data.tech.id}?${query}`)
       if (!res.ok) {
         setError(true)
         return
@@ -67,21 +77,27 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
 
   function handlePeriodChange(period: PeriodType) {
     setPeriodType(period)
-    fetchData(period, ticketType)
+    fetchData(period, ticketType, date)
   }
 
   function handleTypeChange(type: TicketType) {
     setTicketType(type)
-    fetchData(periodType, type)
+    fetchData(periodType, type, date)
+  }
+
+  function handleDateChange(next: string) {
+    setDate(next)
+    fetchData(periodType, ticketType, next)
   }
 
   const { current, prior, yoy, targets } = data
+  const backQuery = analyticsQuery({ periodType, date, ticketType })
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <PageHeader
-        backHref="/analytics"
+        backHref={`/analytics?${backQuery}`}
         title={data.tech.name}
         subtitle={`Technician${data.tech.hourlyCost != null ? ` · Hourly cost: $${data.tech.hourlyCost.toFixed(2)}` : ''}`}
         actions={
@@ -93,6 +109,12 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
               <Target className="h-3.5 w-3.5" />
               Set Targets
             </button>
+            <PeriodPicker
+              periodType={periodType}
+              date={date}
+              onChange={handleDateChange}
+              disabled={loading}
+            />
             <SegmentedControl
               ariaLabel="Ticket type"
               options={[
@@ -121,7 +143,7 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           <p className="flex-1">Failed to load this period. The data below may be stale.</p>
           <button
             type="button"
-            onClick={() => fetchData(periodType, ticketType)}
+            onClick={() => fetchData(periodType, ticketType, date)}
             className="shrink-0 font-medium underline"
           >
             Retry
@@ -322,7 +344,7 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           periodType={periodType}
           onClose={() => {
             setShowTargets(false)
-            fetchData(periodType, ticketType)
+            fetchData(periodType, ticketType, date)
           }}
         />
       )}
