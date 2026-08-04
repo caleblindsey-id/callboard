@@ -13,6 +13,7 @@ import {
   requestToUsedLine,
   isCoveredByAgreement,
   workOrderAutoAddPatch,
+  isStagingOnlyAction,
 } from './parts'
 import type { PartRequest, PartUsed } from '../types/database'
 
@@ -438,6 +439,31 @@ test('isCoveredByAgreement treats an unset legacy flag as billable', () => {
   assert.equal(isCoveredByAgreement(manual({ covered_by_agreement: undefined })), false)
 })
 
+// ── isStagingOnlyAction (what survives the completed/billed write guard) ──
+
+test('mark_pulled is staging-only so it survives a closed parent ticket', () => {
+  assert.equal(isStagingOnlyAction('mark_pulled'), true)
+})
+
+test('every billing-affecting action stays blocked on a closed ticket', () => {
+  // The completed/billed guard exists to protect exported billing rows. Only
+  // mark_pulled may pass; widening this list needs the same side-effect audit
+  // mark_pulled got (no work-order line, no parts-ready notification).
+  for (const action of [
+    'mark_received',
+    'mark_ordered',
+    'order',
+    'pull_from_stock',
+    'patch',
+    'cancel',
+    'reopen',
+    'mark_collected',
+    'set_synergy_order',
+  ]) {
+    assert.equal(isStagingOnlyAction(action), false, `${action} must stay blocked`)
+  }
+})
+
 // ── workOrderAutoAddPatch (the auto-add decision the parts-queue route makes) ──
 
 function autoAdd(over: Record<string, unknown> = {}) {
@@ -478,6 +504,32 @@ test('non-fulfilling actions never add a line', () => {
   for (const action of ['mark_ordered', 'patch', 'cancel', 'reopen', 'mark_collected', 'order']) {
     assert.equal(autoAdd({ action }), null, `${action} must not add a work-order line`)
   }
+})
+
+test('a closed ticket never gets a work-order line, even from a real pull', () => {
+  // feedback #85: mark_pulled is allowed on a completed/billed ticket so the
+  // part can leave the To Pull queue, but that ticket's billing may already be
+  // exported to Synergy. Recording the pull must not append a billable line.
+  for (const action of ['mark_pulled', 'mark_received']) {
+    assert.equal(
+      autoAdd({
+        action,
+        part: manual({ status: 'from_stock', pulled_at: '2026-07-27T00:00:00.000Z' }),
+        ticketClosed: true,
+      }),
+      null,
+      `${action} on a closed ticket must not add a work-order line`,
+    )
+  }
+})
+
+test('ticketClosed:false still adds the line (guard is not always-on)', () => {
+  const r = autoAdd({
+    action: 'mark_pulled',
+    part: manual({ status: 'from_stock', pulled_at: '2026-07-27T00:00:00.000Z' }),
+    ticketClosed: false,
+  })
+  assert.equal(r?.column, 'parts_used')
 })
 
 test('patching an already-received part does not resurrect a deleted line', () => {

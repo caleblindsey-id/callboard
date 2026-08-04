@@ -226,6 +226,28 @@ export function isFulfillingAction(action: string): boolean {
 }
 
 /**
+ * Actions that only record warehouse staging state and so stay legal after the
+ * parent ticket is completed or billed.
+ *
+ * The completed/billed guard in /api/parts-queue/update protects billing rows
+ * that have already been exported. `mark_pulled` writes nothing but
+ * `pulled_at`/`pulled_by` on the request itself, so blocking it produced a pure
+ * dead end: a part that was used but never ticked off before the tech completed
+ * the job sits in the To Pull tab forever, and the 409 tells you to reopen the
+ * ticket — which nulls customer_signature/customer_signature_name and deletes
+ * the completion photos from Storage (feedback #85, WO-1187).
+ *
+ * This predicate governs the write guard ONLY. The side effects of a fulfilling
+ * action still have to be suppressed separately on a closed ticket: see the
+ * `ticketClosed` input to workOrderAutoAddPatch() for the work-order line, and
+ * the parts-ready notification in the route. Anything added here needs that
+ * same audit — which is why the list is one entry long.
+ */
+export function isStagingOnlyAction(action: string): boolean {
+  return action === 'mark_pulled'
+}
+
+/**
  * Decide whether a part that just changed state needs a work-order line, and
  * which array it belongs in.
  *
@@ -247,12 +269,20 @@ export function workOrderAutoAddPatch(input: {
   existingUsed: PartUsed[] | null | undefined
   existingAdditional?: PartUsed[] | null | undefined
   catalog?: PartCatalogInfo | null
+  ticketClosed?: boolean
 }): { column: 'parts_used' | 'additional_parts_used'; value: PartUsed[]; line: PartUsed } | null {
   const { source, action, part, catalog } = input
   const existingUsed = input.existingUsed ?? []
   const existingAdditional = input.existingAdditional ?? []
 
   if (!isFulfillingAction(action)) return null
+  // A completed/billed ticket's work-order lines are final — the tech signed
+  // off on that parts list and billing may already be exported to Synergy.
+  // mark_pulled is permitted on those tickets (isStagingOnlyAction) so the part
+  // can leave the To Pull queue, but recording a late pull must never append a
+  // billable line after the fact. Lives here rather than in the route so every
+  // caller inherits it. See feedback #85.
+  if (input.ticketClosed) return null
   // Stricter than fulfilledRequestedParts: a from_stock part only counts once
   // someone has physically pulled it, so a bare pull_from_stock triage can't
   // put a line on the work order before the part leaves the shelf.
