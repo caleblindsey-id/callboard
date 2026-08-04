@@ -21,7 +21,7 @@ import {
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, partsAllFulfilled, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { partsOnOrder, partsAllFulfilled, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber, validateQuantityEdits, quantitySyncPatch } from '@/lib/parts'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice, MARGIN_FLOOR, COST_FLOOR } from '@/lib/margin'
@@ -1002,6 +1002,34 @@ export async function PATCH(
       const manualError = validateNewManualPartRequests(existingParts, parts)
       if (manualError) {
         return NextResponse.json({ error: manualError }, { status: 400 })
+      }
+
+      // A quantity may only be corrected while the part is still a request
+      // (pending_review / requested / ordered). This route takes the WHOLE array
+      // from the client, so the window has to be enforced here against the
+      // stored statuses — nothing else stops a payload from rewriting the
+      // quantity of a part that is already received and already billed.
+      const qtyError = validateQuantityEdits(existingParts, parts)
+      if (qtyError) {
+        return NextResponse.json({ error: qtyError }, { status: 400 })
+      }
+
+      // Carry a changed quantity through to the work-order line it was copied
+      // to, matched on the exact from_request_at link. Reachable after a manager
+      // Reset, which reopens a received part's quantity while its billable line
+      // stays behind. Derived server-side and merged into `filtered` AFTER the
+      // allowlist filter on purpose: parts_used is tech-only on this route, so a
+      // staff PATCH carrying it is stripped to {} and 400s.
+      const qtySync = quantitySyncPatch({
+        source: 'service',
+        previous: existingParts,
+        next: parts,
+        existingUsed:
+          (filtered.parts_used as ServicePartUsed[] | undefined) ??
+          (current.parts_used as ServicePartUsed[] | null),
+      })
+      if (qtySync?.parts_used) {
+        filtered.parts_used = qtySync.parts_used as ServicePartUsed[]
       }
 
       // Lock parts on a billed ticket: a new request once it's billed lands in

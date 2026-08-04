@@ -15,7 +15,7 @@ import {
 } from '@/lib/transitions/pm'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber, validateQuantityEdits, quantitySyncPatch } from '@/lib/parts'
 import { normalizeShippingCharge } from '@/lib/shipping'
 
 // Only allow these fields to be updated via PATCH. `skip_previous_status` is
@@ -215,18 +215,50 @@ export async function PATCH(
       // pull the linked equipment row to gate on machine make/model/serial.
       const { data: existingRaw } = await supabase
         .from('pm_tickets')
-        .select('parts_requested, equipment(make, model, serial_number)')
+        .select('parts_requested, parts_used, additional_parts_used, equipment(make, model, serial_number)')
         .eq('id', id)
         .is('deleted_at', null)
         .single()
       const existing = existingRaw as unknown as {
         parts_requested: PartRequest[] | null
+        parts_used: PartUsed[] | null
+        additional_parts_used: PartUsed[] | null
         equipment: { make: string | null; model: string | null; serial_number: string | null } | null
       } | null
       const existingParts = (existing?.parts_requested ?? []) as PartRequest[]
       const manualError = validateNewManualPartRequests(existingParts, parts)
       if (manualError) {
         return NextResponse.json({ error: manualError }, { status: 400 })
+      }
+
+      // A quantity may only be corrected while the part is still a request
+      // (pending_review / requested / ordered). This route takes the WHOLE array
+      // from the client, so the window has to be enforced here against the
+      // stored statuses — nothing else stops a payload from rewriting the
+      // quantity of a part that is already received and already billed.
+      const qtyError = validateQuantityEdits(existingParts, parts)
+      if (qtyError) {
+        return NextResponse.json({ error: qtyError }, { status: 400 })
+      }
+
+      // Carry a changed quantity through to the work-order line it was copied
+      // to, matched on the exact from_request_at link. Reachable after a manager
+      // Reset, which reopens a received part's quantity while its billable line
+      // stays behind. PM splits covered parts (parts_used) from billable extras
+      // (additional_parts_used), so both arrays are in scope. Derived
+      // server-side and merged after the allowlist filter, mirroring service.
+      const qtySync = quantitySyncPatch({
+        source: 'pm',
+        previous: existingParts,
+        next: parts,
+        existingUsed: (filtered.parts_used as PartUsed[] | undefined) ?? existing?.parts_used,
+        existingAdditional:
+          (filtered.additional_parts_used as PartUsed[] | undefined) ??
+          existing?.additional_parts_used,
+      })
+      if (qtySync?.parts_used) filtered.parts_used = qtySync.parts_used
+      if (qtySync?.additional_parts_used) {
+        filtered.additional_parts_used = qtySync.additional_parts_used
       }
 
       // Machine gate: a new part request requires make/model/serial on the

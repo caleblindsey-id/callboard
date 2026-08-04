@@ -449,6 +449,172 @@ export function hasNewRequestedPart(
 }
 
 /**
+ * Statuses at which a requested quantity is still a *request* and may be
+ * corrected: before triage, after triage, and after the PO is placed.
+ *
+ * Deliberately stops short of 'from_stock' and 'received'. Once the part is
+ * physically in hand the quantity is a fact rather than an ask, and it has
+ * already been copied onto the work order, where the completion form owns it.
+ * 'cancelled' is terminal and never editable.
+ */
+export const QUANTITY_EDITABLE_STATUSES: ReadonlyArray<PartRequest['status']> = [
+  'pending_review',
+  'requested',
+  'ordered',
+]
+
+/**
+ * True when this part's quantity may still be changed.
+ *
+ * Structural rather than taking a full PartRequest so the Parts Queue can ask
+ * the same question of a `parts_order_queue` view row, which projects status
+ * and cancelled as plain columns. Same reasoning as isPartOutstanding: the
+ * queue row and the JSONB entry must never disagree about the same part.
+ */
+export function canEditPartQuantity(part: {
+  status?: string | null
+  cancelled?: boolean | null
+}): boolean {
+  if (part.cancelled) return false
+  return QUANTITY_EDITABLE_STATUSES.includes(part.status as PartRequest['status'])
+}
+
+/** Upper bound on a part quantity — a guard against a fat-fingered keypad, not a business rule. */
+export const MAX_PART_QUANTITY = 999
+
+/**
+ * Parse a user-entered quantity. Mirrors normalizeShippingCharge's contract so
+ * the client can reject bad input before any request goes out and the server can
+ * reuse the identical rule.
+ *
+ * Whole numbers only: every one of the 480 live quantities in production is a
+ * positive integer, parts are ordered by the each, and a fractional quantity
+ * would flow onto a PO and an invoice that cannot express it. Blank is a
+ * rejection rather than a clear — unlike shipping charge, there is no
+ * "no quantity" state.
+ */
+export function normalizePartQuantity(
+  value: unknown,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (value === null || value === undefined || value === '') {
+    return { ok: false, error: 'Quantity is required.' }
+  }
+  const n = typeof value === 'string' ? Number(value.trim()) : value
+  if (typeof n !== 'number' || !Number.isFinite(n)) {
+    return { ok: false, error: 'Quantity must be a number.' }
+  }
+  if (!Number.isInteger(n)) {
+    return { ok: false, error: 'Quantity must be a whole number.' }
+  }
+  if (n < 1) {
+    return { ok: false, error: 'Quantity must be at least 1. Cancel the part instead of zeroing it.' }
+  }
+  if (n > MAX_PART_QUANTITY) {
+    return { ok: false, error: `Quantity must be ${MAX_PART_QUANTITY} or less.` }
+  }
+  return { ok: true, value: n }
+}
+
+/**
+ * Server-side gate on quantity changes in an incoming parts_requested array.
+ *
+ * Both work-order PATCH routes take the whole array, so the client could send
+ * any quantity on any part — the edit window has to be enforced here, against
+ * the STORED status, not the one in the payload. Returns an error message, or
+ * null when all clear.
+ *
+ * Diffed by array position: parts are addressed by ordinal everywhere
+ * (parts_order_queue.part_index), so the array is only ever appended to or
+ * edited in place, never spliced or reordered. That also covers legacy rows
+ * with no requested_at, which an identity-keyed diff would silently skip.
+ */
+export function validateQuantityEdits(
+  previous: PartRequest[] | null | undefined,
+  incoming: PartRequest[],
+): string | null {
+  const prev = previous ?? []
+  const shared = Math.min(prev.length, incoming.length)
+  for (let i = 0; i < shared; i++) {
+    const before = prev[i]
+    const after = incoming[i]
+    // Both sides stamped, and they disagree: something reordered the array.
+    // Refuse rather than validate one part's quantity against another's status.
+    if (before.requested_at && after.requested_at && before.requested_at !== after.requested_at) {
+      return 'The parts list changed while you were editing. Refresh and try again.'
+    }
+    if (after.quantity === before.quantity) continue
+    if (!canEditPartQuantity(before)) {
+      return `"${partLabel(before) || 'This part'}" is already ${
+        before.cancelled ? 'cancelled' : 'in hand'
+      }. Change the quantity on the work order's parts used instead.`
+    }
+    const parsed = normalizePartQuantity(after.quantity)
+    if (!parsed.ok) return parsed.error
+  }
+  return null
+}
+
+/**
+ * Work-order lines whose quantity has to follow a changed request quantity.
+ *
+ * Normally a no-op: a part is edited before it is fulfilled, so no work-order
+ * line exists yet. It matters after a manager Reset — resetting a received part
+ * to 'ordered' reopens the quantity for editing while leaving behind the line
+ * the auto-add already put on the work order, and a stale quantity there is a
+ * billing error, not a display one.
+ *
+ * Matched on the exact from_request_at link ONLY. Deliberately not
+ * usedLineMatchesRequest: its synergy_product_id and description-containment
+ * tiers are tuned to over-match, which is right for warning that a part might be
+ * missing and wrong for silently rewriting a billable quantity. No exact link,
+ * no sync — the reconciliation report already surfaces those.
+ *
+ * Returns the columns to merge into the caller's single write, or null when
+ * there is nothing to do.
+ */
+export function quantitySyncPatch(input: {
+  source: 'pm' | 'service'
+  previous: PartRequest[] | null | undefined
+  next: PartRequest[]
+  existingUsed: PartUsed[] | null | undefined
+  existingAdditional?: PartUsed[] | null | undefined
+}): { parts_used?: PartUsed[]; additional_parts_used?: PartUsed[] } | null {
+  const prev = input.previous ?? []
+  const shared = Math.min(prev.length, input.next.length)
+  const moved = new Map<string, number>()
+  for (let i = 0; i < shared; i++) {
+    const before = prev[i]
+    const after = input.next[i]
+    if (!before.requested_at) continue
+    if (typeof after.quantity !== 'number' || after.quantity === before.quantity) continue
+    moved.set(before.requested_at, after.quantity)
+  }
+  if (moved.size === 0) return null
+
+  const restamp = (lines: PartUsed[] | null | undefined): PartUsed[] | null => {
+    const list = lines ?? []
+    let changed = false
+    const out = list.map((line) => {
+      const qty = line.from_request_at ? moved.get(line.from_request_at) : undefined
+      if (qty === undefined || line.quantity === qty) return line
+      changed = true
+      return { ...line, quantity: qty }
+    })
+    return changed ? out : null
+  }
+
+  const used = restamp(input.existingUsed)
+  // Service tickets have a single billable array; additional_parts_used is PM-only.
+  const additional = input.source === 'pm' ? restamp(input.existingAdditional) : null
+  if (!used && !additional) return null
+
+  const patch: { parts_used?: PartUsed[]; additional_parts_used?: PartUsed[] } = {}
+  if (used) patch.parts_used = used
+  if (additional) patch.additional_parts_used = additional
+  return patch
+}
+
+/**
  * Display label for a part line: the description, with any free-text `detail`
  * appended in-line (e.g. "SHOP SUPPLIES — rags, lubricant, fasteners").
  *
