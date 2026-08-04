@@ -6,6 +6,7 @@ import { getSalesRepsByIds } from '@/lib/db/sales-reps'
 import { getSetting } from '@/lib/db/settings'
 import { sendMandrillEmail } from '@/lib/mandrill'
 import { renderLeadToSalesRepEmail } from '@/lib/email-templates/lead-to-sales-rep'
+import { isStatusConflictError } from '@/lib/supabase/rpc-conflict'
 import type { TicketPhoto } from '@/types/database'
 
 const NOTE_MAX = 500
@@ -208,10 +209,11 @@ export async function POST(
     }
 
     // Status-guarded update via fn_approve_tech_lead_email (migration 074).
-    // The function raises STATUS_CONFLICT (40001) when the lead is no longer
-    // pending OR has already been emailed — both surface as 409 here. Email
-    // is already sent by this point, so the user sees the "email sent but
-    // already approved" message.
+    // The function raises STATUS_CONFLICT when the lead is no longer pending OR
+    // has already been emailed — both surface as 409 here. Email is already sent
+    // by this point, so the user sees the "email sent but already approved"
+    // message. Matched by name, not errcode: it raised 40001 until migration
+    // 157, which is retryable and hung the request instead of returning this.
     const { error: rpcErr } = await supabase.rpc('fn_approve_tech_lead_email', {
       p_lead_id: id,
       p_approver_id: user.id,
@@ -221,7 +223,7 @@ export async function POST(
     })
 
     if (rpcErr) {
-      if (rpcErr.code === '40001') {
+      if (isStatusConflictError(rpcErr)) {
         return NextResponse.json(
           {
             error:
