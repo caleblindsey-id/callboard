@@ -4,7 +4,7 @@ category: Office
 roles: [super_admin, manager, coordinator]
 order: 20
 summary: Work the shared queue of parts requested across all tickets — decide stock vs. order, pull or order them, bill the freight, and receive them in.
-last_verified: 2026-07-30
+last_verified: 2026-08-04
 ---
 
 The **Parts Queue** is one shared list of every part technicians have requested across all PM and service tickets. You decide whether each part comes from stock or gets ordered, then move it through to fulfilment.
@@ -32,6 +32,8 @@ Parts you sent to **To Pull** are waiting to be picked off the shelf. Each row s
 2. Pull each part, then tap **Mark Pulled**.
 
 Once every part on an order is staged, the technician is notified it's ready for pickup.
+
+If a part was taken off the shelf but nobody tapped **Mark Pulled** before the technician completed the job, you can still clear it: the row stays in **To Pull** and the button keeps working after the ticket is completed or billed. You do **not** need to reopen the ticket — reopening erases the customer's signature and completion photos. Marking a late pull only records who pulled it and when; it won't touch the work order's parts or re-notify the technician.
 
 ## Ordering a part
 
