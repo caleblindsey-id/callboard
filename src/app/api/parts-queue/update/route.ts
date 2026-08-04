@@ -11,6 +11,7 @@ import { PartRequest, PartUsed } from '@/types/database'
 import {
   isPartStagedReady,
   isFulfillingAction,
+  isStagingOnlyAction,
   workOrderAutoAddPatch,
   partsAllFulfilled,
   canEditPartQuantity,
@@ -252,7 +253,17 @@ export async function POST(request: NextRequest) {
 
     // Don't allow part mutations on already-billed/completed parent tickets —
     // those rows have been exported and post-hoc edits silently corrupt records.
-    if (ticket.status === 'billed' || ticket.status === 'completed') {
+    //
+    // Staging-only actions are the exception. A part that was pulled off the
+    // shelf but never ticked off before the tech completed the job would
+    // otherwise be stranded in the To Pull tab forever: the row is visible and
+    // the button is enabled (parts_order_queue has no parent-status filter),
+    // but the write 409s telling you to reopen the ticket — and reopening nulls
+    // the captured customer signature and deletes the completion photos. So
+    // mark_pulled passes, writing only pulled_at/pulled_by; its billing-adjacent
+    // side effects are suppressed below via ticketClosed. Feedback #85.
+    const ticketClosed = ticket.status === 'billed' || ticket.status === 'completed'
+    if (ticketClosed && !isStagingOnlyAction(action)) {
       return NextResponse.json(
         { error: `Cannot modify parts on a ${ticket.status} ticket. Reopen it first.` },
         { status: 409 }
@@ -651,6 +662,7 @@ export async function POST(request: NextRequest) {
         existingUsed: ticket.parts_used,
         existingAdditional: ticket.additional_parts_used,
         catalog,
+        ticketClosed,
       })
       if (autoAdd) {
         updatePayload[autoAdd.column] = autoAdd.value
@@ -693,8 +705,11 @@ export async function POST(request: NextRequest) {
       liveAll.length > 0 &&
       liveAll.every((p) => p.status === 'received' || (p.status === 'from_stock' && !!p.pulled_at))
     const wasNotified = ticket.parts_ready_notified_at != null
-    const shouldNotify = allStaged && !wasNotified
-    const shouldReset = !allStaged && wasNotified
+    // Never on a closed ticket: the only way to reach one here is a late
+    // mark_pulled backfill, and telling a tech their parts are staged for a job
+    // they finished days ago is noise, not news (feedback #85).
+    const shouldNotify = allStaged && !wasNotified && !ticketClosed
+    const shouldReset = !allStaged && wasNotified && !ticketClosed
 
     if (isCollect) {
       // fn_update_parts_queue bakes a manager-only role check, so a technician
