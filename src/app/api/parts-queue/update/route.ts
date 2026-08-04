@@ -20,6 +20,7 @@ import {
 } from '@/lib/parts'
 import { sendPartsReadyNotice } from '@/lib/parts/send-parts-ready-notice'
 import { isShippingMethod, normalizeShippingCharge, SHIPPING_NOTE_MAX_LEN } from '@/lib/shipping'
+import { isOptimisticLockError } from '@/lib/supabase/rpc-conflict'
 
 type Source = 'pm' | 'service'
 
@@ -285,7 +286,7 @@ export async function POST(request: NextRequest) {
         p_update_payload: { synergy_order_number: value },
       })
       if (rpcErr) {
-        if (rpcErr.code === '40001') {
+        if (isOptimisticLockError(rpcErr)) {
           return NextResponse.json(
             { error: 'This ticket was changed by someone else. Refresh and try again.' },
             { status: 409 }
@@ -326,7 +327,7 @@ export async function POST(request: NextRequest) {
         p_update_payload: { shipping_charge: parsed.value },
       })
       if (rpcErr) {
-        if (rpcErr.code === '40001') {
+        if (isOptimisticLockError(rpcErr)) {
           return NextResponse.json(
             { error: 'This ticket was changed by someone else. Refresh and try again.' },
             { status: 409 }
@@ -742,7 +743,12 @@ export async function POST(request: NextRequest) {
 
     // Optimistic-lock on updated_at via fn_update_parts_queue. If another
     // writer touched the row between our read and write, the function raises
-    // OPTIMISTIC_LOCK (40001) and we return 409 for the client to retry.
+    // OPTIMISTIC_LOCK and we return 409 for the client to retry.
+    //
+    // Matched by NAME, not by errcode. Until migration 157 this raise carried
+    // 40001 (serialization_failure), which the Supabase stack retries — so this
+    // 409 never actually reached anyone, and the single retry the client does on
+    // 409 was unreachable code. Conflicts surfaced as a ~45s 504 instead.
     const { error: rpcErr } = await supabase.rpc('fn_update_parts_queue', {
       p_source: source,
       p_ticket_id: ticket_id,
@@ -751,7 +757,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (rpcErr) {
-      if (rpcErr.code === '40001') {
+      if (isOptimisticLockError(rpcErr)) {
         return NextResponse.json(
           { error: 'This part was changed by someone else. Refresh and try again.' },
           { status: 409 }
