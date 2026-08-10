@@ -479,7 +479,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRates, tr
     // pending_review/requested/ordered still block (mirrors the server gate).
     const pendingParts = partsOnOrder(ticket.parts_requested)
     if (pendingParts.length > 0) {
-      setError(`Cannot complete: ${pendingParts.length} part(s) are not yet received or pulled from stock.`)
+      setError(`Cannot complete: ${pendingParts.length} part(s) are not yet received or marked to come from stock.`)
       return
     }
 

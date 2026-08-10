@@ -11,7 +11,7 @@ import { sendMandrillEmail, MandrillError } from '@/lib/mandrill'
 import { renderPartsReadyEmail } from '@/lib/email-templates/parts-ready'
 import { sendPushToUser } from '@/lib/push/send-push'
 import { createNotification } from '@/lib/notifications/create-notification'
-import { partLabel } from '@/lib/parts'
+import { isPartStagedReady, partLabel } from '@/lib/parts'
 import { isDeliverableEmail } from '@/lib/email-deliverable'
 import type { PartRequest, PartsQueueSource } from '@/types/database'
 
@@ -78,11 +78,12 @@ export async function sendPartsReadyNotice(
   if (!techId) return { sent: false, reason: 'no_tech' }
 
   // Staged parts only — received (from a PO) or pulled (from stock). These are
-  // the lines physically waiting for the tech at the shop.
+  // the lines physically waiting for the tech at the shop. Shares
+  // isPartStagedReady with the mark_collected guard and the auto-add so "in the
+  // tech's hands" cannot mean two different things in two files; this used to be
+  // a hand-rolled copy of the same expression.
   const parts = (ticket.parts_requested ?? []) as PartRequest[]
-  const staged = parts.filter(
-    (p) => !p.cancelled && (p.status === 'received' || (p.status === 'from_stock' && p.pulled_at)),
-  )
+  const staged = parts.filter(isPartStagedReady)
   if (staged.length === 0) return { sent: false, reason: 'no_staged_parts' }
 
   const wo = ticket.work_order_number

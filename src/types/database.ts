@@ -539,6 +539,12 @@ export type PartsQueueRow = {
   // them together, the way it already does for synergy_order_number. Numeric
   // over PostgREST can arrive as a string; the client Numbers it on write.
   shipping_charge: number | null
+  // Parent ticket's own status (migration 158) — pm_tickets.status or
+  // service_tickets.status, not the part's. The view has no parent-status filter
+  // by design, so a row outlives its ticket; this is what lets the To Pull tab
+  // tell a live pull from a stranded one. Read it through isQueueRowStranded()
+  // rather than comparing strings at the call site.
+  ticket_status: string
 }
 
 // Open SynergyERP purchase-order lines (migration 115), synced by

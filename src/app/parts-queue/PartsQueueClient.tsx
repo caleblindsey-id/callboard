@@ -17,7 +17,7 @@ import {
   triagePart,
   updatePartFields,
 } from '@/lib/parts-queue'
-import { partLabel, canEditPartQuantity, normalizePartQuantity } from '@/lib/parts'
+import { partLabel, canEditPartQuantity, isQueueRowStranded, normalizePartQuantity } from '@/lib/parts'
 import {
   isPriorityShipping,
   normalizeShippingCharge,
@@ -299,6 +299,13 @@ export default function PartsQueueClient({
   const [orderJustifyTarget, setOrderJustifyTarget] = useState<PartsQueueRow | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  // To Pull only. A stock part whose ticket closed before anyone tapped Mark
+  // Pulled stays in this tab forever — completion is not gated on pulled_at on
+  // either ticket type, deliberately, because techs can neither see this page nor
+  // run the action. Hidden by default so the tab leads with pullable work; the
+  // rows are still one click away because a late Mark Pulled is exactly how they
+  // get cleared (and still works on a closed ticket — see isStagingOnlyAction).
+  const [hideStranded, setHideStranded] = useState(true)
 
   // Refresh the cutoff every 5 min so a long-lived session doesn't silently
   // drop parts that aged out, and so the value stays stable between unrelated
@@ -338,6 +345,7 @@ export default function PartsQueueClient({
     // Tab filter
     if (tab === 'review' && r.status !== 'pending_review') return false
     if (tab === 'to_pull' && (r.status !== 'from_stock' || !!r.pulled_at)) return false
+    if (tab === 'to_pull' && hideStranded && isQueueRowStranded(r.ticket_status)) return false
     if (tab === 'to_order' && r.status !== 'requested') return false
     if (tab === 'ordered' && r.status !== 'ordered') return false
     if (tab === 'received') {
@@ -378,7 +386,19 @@ export default function PartsQueueClient({
       if (!hay.includes(q)) return false
     }
     return true
-  }, [tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter])
+  }, [tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter, hideStranded])
+
+  // Counted straight off `rows` rather than through matchesFilters: this drives
+  // the toggle's own label, so it has to stay stable while someone types in the
+  // search box — a count that moved as you searched would read as rows silently
+  // disappearing.
+  const strandedToPullCount = useMemo(
+    () =>
+      rows.filter(
+        r => !r.cancelled && r.status === 'from_stock' && !r.pulled_at && isQueueRowStranded(r.ticket_status),
+      ).length,
+    [rows],
+  )
 
   // Only offer vendors present in the rows currently visible (post every other
   // filter), so the dropdown reflects what's on the page. Always keep the
@@ -858,6 +878,9 @@ export default function PartsQueueClient({
           onExportCsv={() => exportPickList(filteredRows)}
           onExportPdf={() => handleExportPdf(filteredRows)}
           pdfPending={pdfPending}
+          strandedCount={strandedToPullCount}
+          hideStranded={hideStranded}
+          onToggleStranded={() => setHideStranded(v => !v)}
         />
       ) : (
       <>
@@ -1696,6 +1719,9 @@ function ToPullTable({
   onExportCsv,
   onExportPdf,
   pdfPending,
+  strandedCount,
+  hideStranded,
+  onToggleStranded,
 }: {
   rows: PartsQueueRow[]
   pendingRow: string | null
@@ -1705,6 +1731,9 @@ function ToPullTable({
   onExportCsv: () => void
   onExportPdf: () => void
   pdfPending: boolean
+  strandedCount: number
+  hideStranded: boolean
+  onToggleStranded: () => void
 }) {
   const exportBtn =
     'shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px] lg:min-h-0'
@@ -1738,6 +1767,24 @@ function ToPullTable({
           </button>
         </div>
       </div>
+      {strandedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>
+            {strandedCount} part{strandedCount === 1 ? '' : 's'}{' '}
+            {strandedCount === 1 ? 'belongs' : 'belong'} to a ticket that is already closed, so{' '}
+            {strandedCount === 1 ? 'it is' : 'they are'} not pullable work.
+            {hideStranded ? ' Hidden from the list and the pick list.' : ' Shown below.'}
+          </span>
+          <button
+            type="button"
+            onClick={onToggleStranded}
+            className="font-medium underline underline-offset-2 hover:no-underline"
+          >
+            {hideStranded ? 'Show them' : 'Hide them'}
+          </button>
+        </div>
+      )}
       {/* Mobile cards */}
       <div className="lg:hidden space-y-3">
         {rows.length === 0 ? (
@@ -1749,6 +1796,7 @@ function ToPullTable({
             const key = rowKey(row)
             const isPending = pendingRow === key
             const isFlashed = flashedRow === key
+            const isStranded = isQueueRowStranded(row.ticket_status)
             return (
               <div
                 key={key}
@@ -1764,6 +1812,11 @@ function ToPullTable({
                     </p>
                   }
                 />
+                {isStranded && (
+                  <div>
+                    <TicketStatusBadge ticketStatus={row.ticket_status} />
+                  </div>
+                )}
                 {(row.machine_make || row.machine_model || row.machine_serial) && (
                   <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
                 )}
@@ -1786,10 +1839,14 @@ function ToPullTable({
                   </button>
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={isPending || isStranded}
                     onClick={() => onReturnToReview(row)}
-                    title="Return to Review — re-triage stock vs. order"
-                    className="p-3 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                    title={
+                      isStranded
+                        ? 'Not available: the ticket is closed, so re-triaging would be rejected. Mark Pulled to clear the row.'
+                        : 'Return to Review — re-triage stock vs. order'
+                    }
+                    className="p-3 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Undo2 className="h-5 w-5" />
                   </button>
@@ -1823,13 +1880,14 @@ function ToPullTable({
               <th scope="col" className={TH_CLS}>Machine</th>
               <th scope="col" className={TH_CLS}>Qty</th>
               <th scope="col" className={TH_CLS}>Requested by</th>
+              <th scope="col" className={TH_CLS}>Ticket</th>
               <th scope="col" className={TH_RIGHT_CLS}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nothing waiting to be pulled.
                 </td>
               </tr>
@@ -1838,6 +1896,10 @@ function ToPullTable({
                 const key = rowKey(row)
                 const isPending = pendingRow === key
                 const isFlashed = flashedRow === key
+                // Return to Review is not staging-only, so the route's ticketClosed
+                // guard 409s it on a closed ticket. Disable rather than let the
+                // click fail.
+                const isStranded = isQueueRowStranded(row.ticket_status)
                 return (
                   <tr
                     key={key}
@@ -1855,6 +1917,7 @@ function ToPullTable({
                     <td className="px-3 py-2"><MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} /></td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">{row.quantity ?? 1}</td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">{row.assigned_technician_name ?? '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap"><TicketStatusBadge ticketStatus={row.ticket_status} /></td>
                     <td className="px-3 py-2 whitespace-nowrap text-right">
                       <div className="flex items-center gap-1 justify-end">
                         <button
@@ -1869,10 +1932,14 @@ function ToPullTable({
                         </button>
                         <button
                           type="button"
-                          disabled={isPending}
+                          disabled={isPending || isStranded}
                           onClick={() => onReturnToReview(row)}
-                          title="Return to Review — re-triage stock vs. order"
-                          className="p-1 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                          title={
+                            isStranded
+                              ? 'Not available: the ticket is closed, so re-triaging would be rejected. Mark Pulled to clear the row.'
+                              : 'Return to Review — re-triage stock vs. order'
+                          }
+                          className="p-1 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           <Undo2 className="h-4 w-4" />
                         </button>
@@ -1989,6 +2056,22 @@ function MachineCell({
         </div>
       )}
     </div>
+  )
+}
+
+// Parent ticket state for a queue row (migration 158). Renders only when the
+// ticket is closed: on a live row it would be noise, and "no badge" is already
+// the overwhelmingly common case the eye should skip past.
+function TicketStatusBadge({ ticketStatus }: { ticketStatus: string | null | undefined }) {
+  if (!isQueueRowStranded(ticketStatus)) return null
+  const label = (ticketStatus ?? '').replace(/_/g, ' ')
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium capitalize bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+      title="This ticket is already closed, so nobody is waiting on this pull. Mark Pulled still works and will clear the row."
+    >
+      {label}
+    </span>
   )
 }
 
