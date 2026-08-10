@@ -32,6 +32,7 @@ import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-
 import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 import { notifyApprove } from '@/lib/service-tickets/notify-approve'
 import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
+import { SERVICE_STATUS } from '@/lib/constants/service-status'
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -517,6 +518,30 @@ export async function PATCH(
       // Techs can't complete via PATCH (must use /complete endpoint)
       if (isTechnician(user.role) && techCannotComplete(nextStatus)) {
         return NextResponse.json({ error: 'Use the complete endpoint to submit ticket completion' }, { status: 403 })
+      }
+
+      // Nobody else can either. This used to block technicians ONLY, which left
+      // every staff role a side door around POST /complete and everything it
+      // enforces: the customer signature, the equipment make/model/serial
+      // verification, the un-triaged parts gate, the 15% parts margin floor, and
+      // the collected-stamp sweep. A manager PATCHing {status:'completed'} landed
+      // straight in updateServiceTicket with none of it run.
+      //
+      // Mirrors the PM route, which has always answered 422 here. Service needs
+      // no billed -> completed exception the way PM does for its re-export reset:
+      // SERVICE_VALID_TRANSITIONS.billed is ['open','approved'], so that edge
+      // does not exist on this side.
+      //
+      // Verified unreachable from the app before adding: no client builds a
+      // service status control off SERVICE_VALID_TRANSITIONS (it is consumed
+      // server-side by canTransition only), the Complete Job button posts to
+      // /complete, and the billing export/unexport/mark-billed routes write the
+      // table directly rather than through this PATCH.
+      if (nextStatus === SERVICE_STATUS.COMPLETED) {
+        return NextResponse.json(
+          { error: 'Use POST /api/service-tickets/[id]/complete to mark a ticket complete' },
+          { status: 422 }
+        )
       }
 
       // Manual approve/decline requires a note for the record. The customer-

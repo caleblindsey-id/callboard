@@ -702,9 +702,7 @@ export async function POST(request: NextRequest) {
     // transition into fully-staged, and reset the flag if the order later falls
     // back out (a part added/reopened) so a re-fill notifies again.
     const liveAll = updated.filter((p) => !p.cancelled)
-    const allStaged =
-      liveAll.length > 0 &&
-      liveAll.every((p) => p.status === 'received' || (p.status === 'from_stock' && !!p.pulled_at))
+    const allStaged = liveAll.length > 0 && liveAll.every(isPartStagedReady)
     const wasNotified = ticket.parts_ready_notified_at != null
     // Never on a closed ticket: the only way to reach one here is a late
     // mark_pulled backfill, and telling a tech their parts are staged for a job

@@ -14,6 +14,7 @@ import {
   isCoveredByAgreement,
   workOrderAutoAddPatch,
   isStagingOnlyAction,
+  isQueueRowStranded,
   canEditPartQuantity,
   normalizePartQuantity,
   validateQuantityEdits,
@@ -785,4 +786,36 @@ test('a service ticket never writes additional_parts_used', () => {
     }),
   )
   assert.equal(patch, null)
+})
+
+// ── isQueueRowStranded ──
+
+test('a queue row on a closed ticket is stranded', () => {
+  // 'completed' and 'billed' are the pair the parts-queue write guard uses for
+  // ticketClosed. If these two ever disagree the To Pull badge would promise
+  // something the server contradicts.
+  for (const s of ['completed', 'billed', 'declined', 'canceled', 'skipped']) {
+    assert.equal(isQueueRowStranded(s), true, s)
+  }
+})
+
+test('a queue row on a live ticket is not stranded', () => {
+  for (const s of ['open', 'estimated', 'approved', 'in_progress', 'unassigned', 'assigned', 'skip_requested']) {
+    assert.equal(isQueueRowStranded(s), false, s)
+  }
+})
+
+test('a missing ticket status is not treated as stranded', () => {
+  // Fail open: hiding a row because the status did not come back would take
+  // real pullable work off the pick list, which is worse than showing one row
+  // too many.
+  assert.equal(isQueueRowStranded(null), false)
+  assert.equal(isQueueRowStranded(undefined), false)
+  assert.equal(isQueueRowStranded(''), false)
+})
+
+test('an unrecognized ticket status is not treated as stranded', () => {
+  // Same reasoning: a status this predicate has never heard of is not evidence
+  // the ticket is closed.
+  assert.equal(isQueueRowStranded('some_future_status'), false)
 })

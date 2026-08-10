@@ -202,7 +202,11 @@ export async function POST(
     const pendingParts = partsOnOrder(current.parts_requested as PartRequest[] | null)
     if (pendingParts.length > 0) {
       return NextResponse.json(
-        { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received or pulled from stock.` },
+        // "pulled from stock" here means the office TRIAGED it to stock, not that
+        // anyone physically pulled it: partsOnOrder accepts status 'from_stock'
+        // whatever pulled_at says. Worded to match, because the old text promised
+        // a check this gate has never made.
+        { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received or marked to come from stock.` },
         { status: 400 }
       )
     }

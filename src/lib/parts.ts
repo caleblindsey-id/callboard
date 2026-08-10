@@ -37,7 +37,14 @@ export function isPartOutstanding(part: {
  * (non-cancelled) part is received or pulled from stock.
  *
  * Single source of truth for the `service_tickets.parts_received` column, which
- * gates service completion and drives the board's waiting-on-parts filter. It is
+ * gates the Start Work action and drives the board's waiting-on-parts filter.
+ *
+ * It does NOT gate service completion, whatever an earlier version of this
+ * comment claimed — that gate is partsAwaitingReview() in
+ * api/service-tickets/[id]/complete, scoped to 'pending_review' alone, and
+ * nothing on the completion path reads parts_received at all. The wrong claim
+ * here is the likely source of the equally wrong line in the office help guide.
+ * It is
  * the exact complement of partsOnOrder(), and is written that way on purpose: the
  * column used to be derived by hand at each write site, and the copies drifted —
  * `api/service-tickets/[id]` required every live part to be 'received' while
@@ -245,6 +252,36 @@ export function isFulfillingAction(action: string): boolean {
  */
 export function isStagingOnlyAction(action: string): boolean {
   return action === 'mark_pulled'
+}
+
+/**
+ * True when a Parts Queue row's PARENT TICKET is closed, so the row is stranded:
+ * still sitting in a work tab, but attached to a job nobody is going back to.
+ *
+ * The To Pull tab is where this bites. Neither ticket type gates completion on
+ * `pulled_at` — service gates on partsAwaitingReview ('pending_review' only), and
+ * PM's partsOnOrder accepts 'from_stock' whatever pulled_at says — so a stock
+ * part can and does outlive its ticket. Measured on prod when this shipped: 5 of
+ * the 7 rows in To Pull were on closed tickets. A tab that is mostly noise is a
+ * tab people stop trusting, which is the actual failure this labels.
+ *
+ * Takes the status string rather than a row so the queue view, the tests, and any
+ * future caller reading a ticket directly all share one definition.
+ *
+ * 'completed' and 'billed' are deliberately the same pair the write guard in
+ * /api/parts-queue/update uses for `ticketClosed`. If those two ever disagree the
+ * UI would badge a row the server still accepts writes on, or worse the reverse.
+ * The others are terminal states a queue row should never be waiting on either.
+ */
+export function isQueueRowStranded(ticketStatus: string | null | undefined): boolean {
+  if (!ticketStatus) return false
+  return (
+    ticketStatus === 'completed' ||
+    ticketStatus === 'billed' ||
+    ticketStatus === 'declined' ||
+    ticketStatus === 'canceled' ||
+    ticketStatus === 'skipped'
+  )
 }
 
 /**
