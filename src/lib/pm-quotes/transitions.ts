@@ -29,3 +29,9 @@ export const OPEN_QUOTE_STATUSES: PmQuoteStatus[] = ['draft', 'sent']
 
 /** The one status that satisfies the start-work gate. */
 export const AUTHORIZING_QUOTE_STATUS: PmQuoteStatus = 'accepted'
+
+/**
+ * How long a quote approval link stays live. Matches the service estimate's
+ * 7-day window so customers see one consistent rule.
+ */
+export const QUOTE_TOKEN_TTL_DAYS = 7

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Download } from 'lucide-react'
+import { FileText, Download, Link2, Check } from 'lucide-react'
 import type { PmQuoteWithJoins } from '@/lib/db/pm-quotes'
 import type { PmQuoteStatus } from '@/types/database'
 import { QUOTE_VALID_TRANSITIONS } from '@/lib/pm-quotes/transitions'
@@ -36,6 +36,7 @@ export default function PmQuotesClient({ quotes }: PmQuotesClientProps) {
   const router = useRouter()
   const [tab, setTab] = useState<'open' | PmQuoteStatus>('open')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const counts = useMemo(() => {
@@ -75,6 +76,21 @@ export default function PmQuotesClient({ quotes }: PmQuotesClientProps) {
       setError(err instanceof Error ? err.message : 'Could not download the quote')
     } finally {
       setBusyId(null)
+    }
+  }
+
+  // Round 1 of delivery is manual: the office copies the link into whatever
+  // channel the customer already uses. Sending from CallBoard is a later round,
+  // and some accounts have no email address on file at all.
+  async function handleCopyLink(quote: PmQuoteWithJoins) {
+    if (!quote.approval_token) return
+    const url = `${window.location.origin}/q/${quote.approval_token}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiedId(quote.id)
+      setTimeout(() => setCopiedId((id) => (id === quote.id ? null : id)), 2000)
+    } catch {
+      setError(`Could not copy automatically. The link is ${url}`)
     }
   }
 
@@ -182,6 +198,22 @@ export default function PmQuotesClient({ quotes }: PmQuotesClientProps) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
+                          {q.status === 'sent' && q.approval_token && (
+                            <button
+                              onClick={() => handleCopyLink(q)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              {copiedId === q.id ? (
+                                <>
+                                  <Check className="h-3.5 w-3.5" /> Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Link2 className="h-3.5 w-3.5" /> Link
+                                </>
+                              )}
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDownload(q)}
                             disabled={busy}

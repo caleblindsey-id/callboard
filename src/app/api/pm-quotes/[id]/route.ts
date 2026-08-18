@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
 import type { PmQuoteStatus, PmQuoteUpdate } from '@/types/database'
-import { QUOTE_VALID_TRANSITIONS, canTransitionQuote } from '@/lib/pm-quotes/transitions'
+import {
+  QUOTE_VALID_TRANSITIONS,
+  canTransitionQuote,
+  QUOTE_TOKEN_TTL_DAYS,
+} from '@/lib/pm-quotes/transitions'
 
 // ============================================================
 // PATCH /api/pm-quotes/[id] — office-side status and field edits.
@@ -70,7 +75,20 @@ export async function PATCH(
       }
 
       update.status = next
-      if (next === 'sent') update.sent_at = new Date().toISOString()
+      if (next === 'sent') {
+        update.sent_at = new Date().toISOString()
+        // Mint a fresh approval link every time the quote is sent, including a
+        // re-send after a decline, so an old link can never resurrect a quote
+        // the customer already answered. 12-char base64url, the same shape as
+        // the service estimate and credit review tokens: a UUID in a
+        // customer-facing URL reads as spam.
+        update.approval_token = randomBytes(9).toString('base64url')
+        update.approval_token_expires_at = new Date(
+          Date.now() + QUOTE_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
+        ).toISOString()
+        update.declined_at = null
+        update.decline_reason = null
+      }
       if (next === 'accepted') update.accepted_at = new Date().toISOString()
       if (next === 'declined') {
         update.declined_at = new Date().toISOString()

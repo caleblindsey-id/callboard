@@ -8,6 +8,7 @@ import {
   isResetTransition,
   technicianForbiddenTarget,
   isCreditGatedTarget,
+  isWorkStartTransition,
 } from './pm'
 
 const ALL_STATUSES: TicketStatus[] = [
@@ -97,4 +98,19 @@ test('isCreditGatedTarget: in_progress/completed/billed only', () => {
   assert.equal(isCreditGatedTarget('assigned'), false)
   assert.equal(isCreditGatedTarget('skipped'), false)
   assert.equal(isCreditGatedTarget('skip_requested'), false)
+})
+
+test('isWorkStartTransition: only the first move into in_progress', () => {
+  assert.equal(isWorkStartTransition('unassigned', 'in_progress'), true)
+  assert.equal(isWorkStartTransition('assigned', 'in_progress'), true)
+
+  // Manager reopens and skip denials are work that already happened; gating
+  // them would strand tickets instead of preventing unauthorized work.
+  assert.equal(isWorkStartTransition('completed', 'in_progress'), false)
+  assert.equal(isWorkStartTransition('billed', 'in_progress'), false)
+  assert.equal(isWorkStartTransition('skip_requested', 'in_progress'), false)
+
+  // Assignment itself is never a work start.
+  assert.equal(isWorkStartTransition('unassigned', 'assigned'), false)
+  assert.equal(isWorkStartTransition('assigned', 'skipped'), false)
 })

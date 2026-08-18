@@ -13,6 +13,7 @@ import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
 import { partsOnOrder, stampCollectedOnStaged } from '@/lib/parts'
 import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
+import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isLaborRateType } from '@/lib/labor-rate-type'
@@ -183,6 +184,22 @@ export async function POST(
         },
         { status: 423 }
       )
+    }
+
+    // PM-quote gate. This route is the reason the gate cannot live in the PATCH
+    // route alone: completion does NOT require in_progress first (the only
+    // status it rejects outright is 'billed', just below), so a tech can
+    // complete straight from 'assigned' and never cross the assigned ->
+    // in_progress edge the PATCH route guards. Without this check the gate
+    // would be trivially bypassable.
+    //
+    // Already-completed tickets are exempt: re-completion is idempotent and
+    // blocking it would strand work that is already done.
+    if (current.status !== 'completed') {
+      const quoteGate = await isTicketQuoteGated(id)
+      if (quoteGate) {
+        return NextResponse.json({ error: quoteGate.message }, { status: 409 })
+      }
     }
 
     // status='completed' is idempotent (no-op inside the RPC), status='billed'
