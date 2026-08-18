@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const BOOLEAN_FIELDS = ['active', 'show_pricing_on_pm_pdf'] as const
+const BOOLEAN_FIELDS = ['active', 'show_pricing_on_pm_pdf', 'pm_quote_required'] as const
 const NUMBER_FIELDS = ['auto_approve_threshold'] as const
 // Nullable numeric overrides: null clears the override (revert to global rate).
 const NULLABLE_NUMBER_FIELDS = [

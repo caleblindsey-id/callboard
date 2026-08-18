@@ -13,6 +13,7 @@ import {
   Package,
   PackageSearch,
   FileText,
+  FileSignature,
   BarChart3,
   Settings,
   LogOut,
@@ -56,6 +57,7 @@ const officeGroups: NavGroup[] = [
     key: 'queues',
     label: 'Queues',
     items: [
+      { label: 'PM Quotes', icon: FileSignature, route: '/pm-quotes' },
       { label: 'Estimate Follow-Up', icon: FileClock, route: '/estimate-queue' },
       { label: 'Declined Estimates', icon: FileX, route: '/declined-queue' },
       { label: 'Warranty Claims', icon: ShieldCheck, route: '/warranty-queue' },

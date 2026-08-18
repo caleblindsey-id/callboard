@@ -9,6 +9,7 @@ import ScrollableTable from '@/components/ScrollableTable'
 import CreditHoldBadge from '@/components/CreditHoldBadge'
 import ActiveToggle from './ActiveToggle'
 import ShowPricingToggle from './ShowPricingToggle'
+import PmQuoteRequiredToggle from './PmQuoteRequiredToggle'
 import AutoApproveThresholdInput from './AutoApproveThresholdInput'
 import SpecialLaborRatesInput from './SpecialLaborRatesInput'
 import AuditHistorySection from '@/components/AuditHistorySection'
@@ -92,6 +93,13 @@ export default async function CustomerDetailPage({
           <ShowPricingToggle
             customerId={customer.id}
             showPricing={customer.show_pricing_on_pm_pdf}
+          />
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <PmQuoteRequiredToggle
+            customerId={customer.id}
+            pmQuoteRequired={customer.pm_quote_required}
           />
         </div>
 

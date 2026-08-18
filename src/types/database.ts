@@ -584,6 +584,10 @@ export type CustomerRow = {
   po_required: boolean
   active: boolean
   show_pricing_on_pm_pdf: boolean
+  // Opt-in: this account will not authorize scheduled PM work without a written
+  // price (migration 159). Drives the Quote Needed badge and the start-work
+  // gate; does NOT restrict who can build a quote.
+  pm_quote_required: boolean
   auto_approve_threshold: number
   // Per-customer negotiated/bid labor rate overrides (migration 088). NULL =
   // use the global rate (settings) for that labor_rate_type. Customer-billing
@@ -713,6 +717,66 @@ export type PmScheduleRow = {
   billing_type: BillingType | null
   flat_rate: number | null
   active: boolean
+  created_at: string
+}
+
+// ============================================================
+// PM quotes (migration 159)
+//
+// A quote covers one or more PM work orders for a single customer. Every line
+// SNAPSHOTS the price and equipment description as of build time, because
+// pm_schedules.flat_rate is editable and a customer who accepted $200.00 must
+// keep being owed $200.00.
+// ============================================================
+
+export const PM_QUOTE_STATUSES = [
+  'draft',
+  'sent',
+  'accepted',
+  'declined',
+  'expired',
+  'void',
+] as const
+export type PmQuoteStatus = (typeof PM_QUOTE_STATUSES)[number]
+
+export type PmQuoteRow = {
+  id: string
+  quote_number: number
+  customer_id: number
+  status: PmQuoteStatus
+  subtotal: number
+  notes: string | null
+  valid_until: string | null
+  approval_token: string | null
+  approval_token_expires_at: string | null
+  sent_at: string | null
+  accepted_at: string | null
+  declined_at: string | null
+  decline_reason: string | null
+  // Captured from the customer at acceptance and pushed onto the quoted
+  // tickets. The point of the feature for PO-required accounts.
+  po_number: string | null
+  signature: string | null
+  signature_name: string | null
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type PmQuoteLineRow = {
+  id: string
+  quote_id: string
+  pm_ticket_id: string
+  work_order_number: number | null
+  equipment_label: string | null
+  equipment_description: string | null
+  serial_number: string | null
+  interval_months: number | null
+  billing_type: string | null
+  amount: number
+  scope_note: string | null
+  sort_order: number
   created_at: string
 }
 
@@ -1021,6 +1085,39 @@ export type EquipmentLocationHistoryRow = {
 // ============================================================
 
 type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
+
+export type PmQuoteInsert = MakeOptional<
+  Omit<PmQuoteRow, 'id' | 'quote_number' | 'created_at' | 'updated_at'>,
+  | 'status'
+  | 'subtotal'
+  | 'notes'
+  | 'valid_until'
+  | 'approval_token'
+  | 'approval_token_expires_at'
+  | 'sent_at'
+  | 'accepted_at'
+  | 'declined_at'
+  | 'decline_reason'
+  | 'po_number'
+  | 'signature'
+  | 'signature_name'
+  | 'created_by_id'
+  | 'deleted_at'
+>
+export type PmQuoteUpdate = Partial<Omit<PmQuoteRow, 'id' | 'quote_number' | 'created_at'>>
+
+export type PmQuoteLineInsert = MakeOptional<
+  Omit<PmQuoteLineRow, 'id' | 'created_at'>,
+  | 'work_order_number'
+  | 'equipment_label'
+  | 'equipment_description'
+  | 'serial_number'
+  | 'interval_months'
+  | 'billing_type'
+  | 'scope_note'
+  | 'sort_order'
+>
+export type PmQuoteLineUpdate = Partial<Omit<PmQuoteLineRow, 'id' | 'created_at'>>
 
 // ============================================================
 // Insert types (omit auto-generated fields, optional for DB defaults)
@@ -1667,6 +1764,48 @@ export interface Database {
           Pick<SynergyLaborFactRow, 'synergy_id' | 'period' | 'bucket' | 'amount'>
         Update: Partial<Omit<SynergyLaborFactRow, 'id' | 'created_at' | 'updated_at'>>
         Relationships: []
+      }
+      pm_quotes: {
+        Row: PmQuoteRow
+        Insert: PmQuoteInsert
+        Update: PmQuoteUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'pm_quotes_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'pm_quotes_created_by_id_fkey'
+            columns: ['created_by_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      pm_quote_lines: {
+        Row: PmQuoteLineRow
+        Insert: PmQuoteLineInsert
+        Update: PmQuoteLineUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'pm_quote_lines_quote_id_fkey'
+            columns: ['quote_id']
+            isOneToOne: false
+            referencedRelation: 'pm_quotes'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'pm_quote_lines_pm_ticket_id_fkey'
+            columns: ['pm_ticket_id']
+            isOneToOne: false
+            referencedRelation: 'pm_tickets'
+            referencedColumns: ['id']
+          },
+        ]
       }
       tech_leads: {
         Row: TechLeadRow
