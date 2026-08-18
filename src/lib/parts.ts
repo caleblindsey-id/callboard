@@ -666,3 +666,24 @@ export function partLabel(
   const detail = (part.detail ?? '').trim()
   return detail ? `${desc} — ${detail}` : desc
 }
+
+/**
+ * Customer-facing form of a stored part description.
+ *
+ * `equipment.default_products` and the ticket parts arrays store descriptions
+ * with the internal Synergy item number baked into the front of the string
+ * ("444000400 - PREVENTATIVE MAINTENANCE"), because that is what the product
+ * picker writes. Internal screens want it; a document a customer reads does
+ * not, so this strips the leading code and collapses the double spaces that
+ * come through with some catalog rows.
+ *
+ * Only a leading run of 6+ digits followed by a hyphen is treated as a code,
+ * so a description that legitimately starts with a short number ("3M PAD") is
+ * left alone.
+ */
+export function customerPartDescription(description: string | null | undefined): string {
+  return (description ?? '')
+    .replace(/^\s*\d{6,}\s*-\s*/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}

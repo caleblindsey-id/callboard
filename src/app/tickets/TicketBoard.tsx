@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw } from 'lucide-react'
+import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw, FileText } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
@@ -382,6 +382,7 @@ export default function TicketBoard({
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [quoting, setQuoting] = useState(false)
   // Instant, in-current-view search over the loaded month/overdue lists. Local
   // (not URL-backed) to match this board's existing local-filter model.
   const [search, setSearch] = useState('')
@@ -521,6 +522,39 @@ export default function TicketBoard({
     if (ids.size === 0) return
     setSkipSource(source)
     setSkipOpen(true)
+  }
+
+  // Customer-facing PM quote across the selected work orders. The route
+  // enforces one customer per quote and rejects non-flat-rate schedules, so a
+  // bad selection surfaces as a message here rather than a wrong price on a
+  // customer document.
+  async function handleQuoteSelected(source: 'month' | 'overdue') {
+    const ids = source === 'overdue' ? overdueSelected : selected
+    if (ids.size === 0) return
+    setQuoting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/tickets/quote-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: Array.from(ids) }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(data.error ?? `Server error ${res.status}`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'PM-Quote.pdf'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate the quote')
+    } finally {
+      setQuoting(false)
+    }
   }
 
   function handleSkipDone() {
@@ -707,6 +741,14 @@ export default function TicketBoard({
               className="flex-1 sm:flex-none px-3 py-2.5 sm:py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
             >
               {bulkLoading ? 'Processing...' : 'Skip Selected'}
+            </button>
+            <button
+              onClick={() => handleQuoteSelected(skipSource)}
+              disabled={bulkLoading || quoting}
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              <FileText className="h-4 w-4" />
+              {quoting ? 'Building...' : 'Quote'}
             </button>
             <button
               onClick={() => setBulkDeleteOpen(true)}
