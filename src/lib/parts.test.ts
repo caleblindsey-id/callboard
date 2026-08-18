@@ -2,7 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   validateNewManualPartRequests,
-  customerPartDescription,
   hasNewRequestedPart,
   findPartMissingSynergyItemNumber,
   partsAwaitingReview,
@@ -819,26 +818,4 @@ test('an unrecognized ticket status is not treated as stranded', () => {
   // Same reasoning: a status this predicate has never heard of is not evidence
   // the ticket is closed.
   assert.equal(isQueueRowStranded('some_future_status'), false)
-})
-
-test('customerPartDescription strips the leading Synergy item code', () => {
-  assert.equal(
-    customerPartDescription('444000400 - PREVENTATIVE MAINTENANCE'),
-    'PREVENTATIVE MAINTENANCE'
-  )
-  assert.equal(
-    customerPartDescription('146400016 - FRONT SQUEEGEE BLADE  T300 1203954 4040849'),
-    'FRONT SQUEEGEE BLADE T300 1203954 4040849'
-  )
-})
-
-test('customerPartDescription leaves a short leading number alone', () => {
-  assert.equal(customerPartDescription('3M PAD 5100'), '3M PAD 5100')
-  assert.equal(customerPartDescription('  SHOP SUPPLIES  '), 'SHOP SUPPLIES')
-})
-
-test('customerPartDescription handles null and empty input', () => {
-  assert.equal(customerPartDescription(null), '')
-  assert.equal(customerPartDescription(undefined), '')
-  assert.equal(customerPartDescription(''), '')
 })

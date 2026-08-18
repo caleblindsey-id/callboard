@@ -12,7 +12,6 @@ import { getSetting } from '@/lib/db/settings'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
 import { INTERVAL_OPTIONS, MONTHS } from '@/lib/pm-schedule-options'
-import { customerPartDescription } from '@/lib/parts'
 import { formatOneLineAddress } from '@/lib/utils/address'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -32,11 +31,6 @@ interface RawShipTo {
   city: string | null
   state: string | null
   zip: string | null
-}
-
-interface RawDefaultProduct {
-  description?: string | null
-  quantity?: number | null
 }
 
 interface RawQuoteTicket {
@@ -64,7 +58,6 @@ interface RawQuoteTicket {
     serial_number: string | null
     description: string | null
     location_on_site: string | null
-    default_products: RawDefaultProduct[] | null
     contact_name: string | null
     contact_phone: string | null
     ship_to_locations: RawShipTo | null
@@ -119,7 +112,7 @@ export async function POST(request: NextRequest) {
         year,
         customer_id,
         customers(name, account_number, ar_terms, billing_address, billing_city, billing_state, billing_zip, po_required, tax_rate, tax_exempt),
-        equipment(make, model, serial_number, description, location_on_site, default_products, contact_name, contact_phone, ship_to_locations(name, address, city, state, zip)),
+        equipment(make, model, serial_number, description, location_on_site, contact_name, contact_phone, ship_to_locations(name, address, city, state, zip)),
         ticket_ship_to:ship_to_locations(name, address, city, state, zip),
         pm_schedules(billing_type, flat_rate, interval_months)
       `)
@@ -190,18 +183,6 @@ export async function POST(request: NextRequest) {
 
     const subtotal = Math.round(lines.reduce((sum, l) => sum + l.amount, 0) * 100) / 100
 
-    // Covered scope: the parts seeded onto each PM from the equipment profile.
-    // Deduped across work orders since the same PM kit repeats per machine.
-    const includedScope = Array.from(
-      new Set(
-        sorted.flatMap((t) =>
-          (t.equipment?.default_products ?? [])
-            .map((p) => customerPartDescription(p?.description))
-            .filter((d): d is string => !!d)
-        )
-      )
-    )
-
     // The ticket-level ship-to is a snapshot and wins over the equipment's
     // current one (migration 049). Fall back to the equipment's, then to none.
     const shipTo = sorted[0].ticket_ship_to ?? sorted[0].equipment?.ship_to_locations ?? null
@@ -238,7 +219,6 @@ export async function POST(request: NextRequest) {
       arTerms: customer.ar_terms,
       poRequired: !!customer.po_required,
       lines,
-      includedScope,
       subtotal,
       taxExempt: !!customer.tax_exempt,
     }

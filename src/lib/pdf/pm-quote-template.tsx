@@ -49,8 +49,6 @@ export interface PmQuoteData {
   arTerms: string | null
   poRequired: boolean
   lines: PmQuoteLine[]
-  /** Deduped default-product descriptions covered by the flat rate. */
-  includedScope: string[]
   subtotal: number
   taxExempt: boolean
 }
@@ -153,18 +151,6 @@ const styles = StyleSheet.create({
     fontSize: 7.5,
     color: '#777777',
     marginTop: 1,
-  },
-
-  // Scope list
-  scopeItem: {
-    color: '#444444',
-    marginBottom: 1,
-  },
-  scopeNote: {
-    fontSize: 7.5,
-    color: '#888888',
-    marginTop: 4,
-    fontStyle: 'italic',
   },
 
   // Totals
@@ -353,22 +339,6 @@ export function PmQuoteDocument({
             <Text style={styles.totalValue}>{money(quote.subtotal)}</Text>
           </View>
         </View>
-
-        {/* Included scope */}
-        {quote.includedScope.length > 0 && (
-          <>
-            <Text style={styles.sectionLabel}>Included With Each Preventative Maintenance</Text>
-            {quote.includedScope.map((item, idx) => (
-              <Text key={idx} style={styles.scopeItem}>
-                {`•  ${item}`}
-              </Text>
-            ))}
-            <Text style={styles.scopeNote}>
-              Labor, travel, and the items listed above are covered by the flat rate shown for each
-              work order.
-            </Text>
-          </>
-        )}
 
         {/* Terms */}
         <Text style={styles.sectionLabel}>Terms</Text>
