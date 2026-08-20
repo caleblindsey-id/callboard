@@ -6,6 +6,22 @@
 // tested at all. Keeping these free of server imports is what makes the
 // dedupe and subject regression guards possible.
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
+
+/**
+ * Structural Supabase client the digest passes down into the db layer.
+ *
+ * The cron passes a service-role admin client; the preview and test-send
+ * routes pass a session client. Both satisfy this.
+ *
+ * It lives here rather than in sections.ts so the db layer can import it
+ * without pulling in sections.ts, which imports fetchers.ts, which imports
+ * the db layer. Type-only imports would not break at runtime, but there is
+ * no reason to build the cycle in the first place.
+ */
+export type DigestDb = SupabaseClient<Database>
+
 export type DigestOwner = 'service' | 'billing' | 'ar'
 
 export const KEY_PREFIXES = ['svc', 'pm', 'cust', 'lead', 'shipto', 'part'] as const

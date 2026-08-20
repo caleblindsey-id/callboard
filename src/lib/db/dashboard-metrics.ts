@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import type { TicketStatus } from '@/types/database'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
 
@@ -130,8 +131,21 @@ export async function getMtdRevenue(technicianId?: string): Promise<MtdRevenue> 
 
 // --- Alert: Credit Hold count -------------------------------------------
 
-export async function getCreditHoldCount(): Promise<number> {
-  const supabase = await createClient()
+export type CreditHoldCustomer = {
+  id: number
+  name: string | null
+  account_number: string | null
+  open_ticket_count: number
+}
+
+/**
+ * Customers on credit hold that still have open work. The dashboard card wants
+ * only the count and the morning digest wants the rows, so the definition lives
+ * here once and both read it. Splitting them is how the digest drifted from the
+ * app everywhere else.
+ */
+export async function getCreditHoldCustomers(db?: DigestDb): Promise<CreditHoldCustomer[]> {
+  const supabase = db ?? (await createClient())
 
   const [pmRes, svcRes] = await Promise.all([
     supabase
@@ -148,21 +162,30 @@ export async function getCreditHoldCount(): Promise<number> {
   if (pmRes.error) throw pmRes.error
   if (svcRes.error) throw svcRes.error
 
-  const activeCustomerIds = new Set<number>()
-  for (const r of (pmRes.data ?? []) as { customer_id: number | null }[]) {
-    if (r.customer_id != null) activeCustomerIds.add(r.customer_id)
+  const openCountByCustomer = new Map<number, number>()
+  const bump = (id: number | null) => {
+    if (id == null) return
+    openCountByCustomer.set(id, (openCountByCustomer.get(id) ?? 0) + 1)
   }
-  for (const r of (svcRes.data ?? []) as { customer_id: number }[]) activeCustomerIds.add(r.customer_id)
+  for (const r of (pmRes.data ?? []) as { customer_id: number | null }[]) bump(r.customer_id)
+  for (const r of (svcRes.data ?? []) as { customer_id: number }[]) bump(r.customer_id)
 
-  if (activeCustomerIds.size === 0) return 0
+  if (openCountByCustomer.size === 0) return []
 
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('customers')
-    .select('id', { count: 'exact', head: true })
+    .select('id, name, account_number')
     .eq('credit_hold', true)
-    .in('id', Array.from(activeCustomerIds))
+    .in('id', Array.from(openCountByCustomer.keys()))
   if (error) throw error
-  return count ?? 0
+
+  return ((data ?? []) as { id: number; name: string | null; account_number: string | null }[]).map(
+    (c) => ({ ...c, open_ticket_count: openCountByCustomer.get(c.id) ?? 0 })
+  )
+}
+
+export async function getCreditHoldCount(db?: DigestDb): Promise<number> {
+  return (await getCreditHoldCustomers(db)).length
 }
 
 // --- Alert: Stale Estimates ---------------------------------------------

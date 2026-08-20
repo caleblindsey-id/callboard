@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import type { ServiceTicketType } from '@/types/service-tickets'
 
 // A service estimate awaiting a customer decision — a ticket in the 'estimated'
@@ -67,8 +68,8 @@ function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
   return null
 }
 
-export async function getEstimateQueue(): Promise<EstimateQueueRow[]> {
-  const supabase = await createClient()
+export async function getEstimateQueue(db?: DigestDb): Promise<EstimateQueueRow[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')

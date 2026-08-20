@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import { PmTicketRow, PmTicketUpdate, TicketStatus, PartUsed, TicketPhoto, BillingType, CreditReviewStatus } from '@/types/database'
 import { OVERDUE_ELIGIBLE_STATUSES } from '@/lib/overdue'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
@@ -69,8 +70,8 @@ export async function getTickets(filters?: {
   now?: Date
   includeDeleted?: boolean
   deletedOnly?: boolean
-}): Promise<TicketWithJoins[]> {
-  const supabase = await createClient()
+}, db?: DigestDb): Promise<TicketWithJoins[]> {
+  const supabase = db ?? (await createClient())
 
   let query = supabase
     .from('pm_tickets')
@@ -145,9 +146,10 @@ export async function getTickets(filters?: {
 // month/year are optional and narrow the list only when both are supplied.
 export async function getBillingTickets(
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<TicketWithJoins[]> {
-  const supabase = await createClient()
+  const supabase = db ?? (await createClient())
 
   let query = supabase
     .from('pm_tickets')

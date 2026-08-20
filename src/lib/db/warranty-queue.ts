@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 
 // The vendor-credit worklist for warranty repairs. A warranty/partial-warranty
 // ticket isn't billed when the work is done — the branch files a claim with the
@@ -73,8 +74,8 @@ const SELECT = `id, work_order_number, status, billing_type, completed_at,
    customers(name),
    equipment(make, model, serial_number)`
 
-export async function getWarrantyQueue(): Promise<WarrantyQueueRow[]> {
-  const supabase = await createClient()
+export async function getWarrantyQueue(db?: DigestDb): Promise<WarrantyQueueRow[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')

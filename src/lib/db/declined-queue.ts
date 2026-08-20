@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 
 // A declined service estimate the office still needs to act on — a ticket in the
 // 'declined' state that a manager hasn't marked handled (decline_resolved_at IS
@@ -42,8 +43,8 @@ function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
   return null
 }
 
-export async function getDeclinedQueue(): Promise<DeclinedQueueRow[]> {
-  const supabase = await createClient()
+export async function getDeclinedQueue(db?: DigestDb): Promise<DeclinedQueueRow[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')

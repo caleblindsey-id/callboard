@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import { partsMissingFromWorkOrder } from '@/lib/parts'
 import type { PartRequest, PartUsed, PartsQueueRow, PartsQueueSource } from '@/types/database'
 
@@ -60,8 +61,8 @@ export async function getPoDueDates(
   return map
 }
 
-export async function getPartsQueue(): Promise<PartsQueueRow[]> {
-  const supabase = await createClient()
+export async function getPartsQueue(db?: DigestDb): Promise<PartsQueueRow[]> {
+  const supabase = db ?? (await createClient())
   const { data, error } = await supabase
     .from('parts_order_queue')
     .select(QUEUE_COLUMNS)
