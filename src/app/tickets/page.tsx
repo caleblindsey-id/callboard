@@ -1,4 +1,5 @@
 import { getTickets } from '@/lib/db/tickets'
+import { getAcceptedQuoteTicketIds } from '@/lib/db/pm-quotes'
 import { getUsers } from '@/lib/db/users'
 import { getCurrentUser, isTechnician, MANAGER_ROLES } from '@/lib/auth'
 import { TicketStatus } from '@/types/database'
@@ -82,6 +83,17 @@ export default async function TicketsPage({
     fetchError = true
   }
 
+  // Quote coverage for the Quote Needed badge. One batched lookup over every
+  // ticket on screen rather than a per-row query, and only for tickets whose
+  // customer actually opted in — most accounts never need a quote, so this is
+  // usually an empty set and a skipped round trip.
+  const quoteRequiredTicketIds = [...monthTickets, ...overdueTickets]
+    .filter((t) => t.customers?.pm_quote_required)
+    .map((t) => t.id)
+  const quotedTicketIds = quoteRequiredTicketIds.length
+    ? await getAcceptedQuoteTicketIds(quoteRequiredTicketIds)
+    : new Set<string>()
+
   return (
     <div className="p-6 space-y-6">
       {fetchError && (
@@ -107,6 +119,7 @@ export default async function TicketsPage({
         skipRequestedMode={skipRequestedMode}
         needsReviewMode={needsReviewMode}
         deletedMode={deletedMode}
+        quotedTicketIds={Array.from(quotedTicketIds)}
       />
     </div>
   )

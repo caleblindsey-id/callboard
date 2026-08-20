@@ -98,6 +98,10 @@ interface TicketActionsProps {
   // without a round trip (feedback #76).
   laborRates: Record<LaborRateType, number>
   tripChargeRate: number
+  // Server-resolved PM-quote block reason, or null when work may start. Passed
+  // as a string rather than fetched here so technicians never need read access
+  // to pm_quotes (and so never see customer pricing).
+  quoteBlockReason?: string | null
 }
 
 
@@ -198,7 +202,7 @@ function forceTransitionsFor(status: TicketStatus): TicketStatus[] {
   return (VALID_TRANSITIONS[status] ?? []).filter(t => t !== 'completed')
 }
 
-export default function TicketActions({ ticket, userRole, userId, laborRates, tripChargeRate }: TicketActionsProps) {
+export default function TicketActions({ ticket, userRole, userId, laborRates, tripChargeRate, quoteBlockReason = null }: TicketActionsProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -1064,6 +1068,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRates, tr
         error={error}
         loading={loading}
         onStart={handleStart}
+        startBlockedReason={quoteBlockReason}
         isTech={isTech}
         skipRequestOpen={skipRequestOpen}
         onOpenSkipRequest={() => setSkipRequestOpen(true)}
@@ -1281,6 +1286,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRates, tr
         isTech={isTech}
         loading={loading}
         onStartWork={handleStart}
+        startBlockedReason={quoteBlockReason}
         onOpenSkipRequest={() => setSkipRequestOpen(true)}
       />
       {/* Sits above the completion panel rather than inside it — PM had no

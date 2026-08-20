@@ -8,11 +8,13 @@ import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/dat
 import { EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import {
   canTransition,
+  isWorkStartTransition,
   isReopenTransition,
   isResetTransition,
   technicianForbiddenTarget,
   isCreditGatedTarget,
 } from '@/lib/transitions/pm'
+import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber, validateQuantityEdits, quantitySyncPatch } from '@/lib/parts'
@@ -336,6 +338,18 @@ export async function PATCH(
             },
             { status: 423 }
           )
+        }
+      }
+
+      // PM-quote gate: an opt-in customer must have an ACCEPTED quote before
+      // work starts. Only the first move into in_progress is blocked, so the
+      // office can still assign and route ahead of the paperwork. Sits beside
+      // the credit gate above because it is the same shape of question: may
+      // this work begin at all?
+      if (isWorkStartTransition(currentStatus, nextStatus)) {
+        const quoteGate = await isTicketQuoteGated(id)
+        if (quoteGate) {
+          return NextResponse.json({ error: quoteGate.message }, { status: 409 })
         }
       }
 

@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import StatusBadge from '@/components/StatusBadge'
+import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
 import BackButton from '@/components/BackButton'
 import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import TicketActions from './TicketActions'
@@ -102,6 +103,15 @@ export default async function TicketDetailPage({
     reviews.find((r) => r.status === 'pending' || r.status === 'blocked') ??
     reviews.find((r) => r.status === 'released') ??
     null
+
+  // PM-quote gate. Resolved here on the server and handed down as a plain
+  // string so technicians never need read access to pm_quotes (and so never
+  // see customer pricing). Only the statuses that can still start work are
+  // worth a lookup.
+  const quoteGate =
+    ticket.status === 'unassigned' || ticket.status === 'assigned'
+      ? await isTicketQuoteGated(ticket.id)
+      : null
 
   const equipmentLabel = [ticket.equipment?.make, ticket.equipment?.model]
     .filter(Boolean)
@@ -393,12 +403,32 @@ export default async function TicketDetailPage({
             userId={user?.id ?? null}
           />
 
+          {quoteGate && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 rounded-lg px-4 py-3">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                Waiting on an accepted quote
+              </p>
+              <p className="text-sm text-amber-800 dark:text-amber-300 mt-0.5">
+                {quoteGate.message}
+              </p>
+              {isManager && (
+                <Link
+                  href="/pm-quotes"
+                  className="inline-block mt-2 text-sm font-medium text-amber-900 dark:text-amber-200 underline"
+                >
+                  Open PM Quotes
+                </Link>
+              )}
+            </div>
+          )}
+
           <TicketActions
             ticket={ticket}
             userRole={user?.role ?? null}
             userId={user?.id ?? null}
             laborRates={laborRates}
             tripChargeRate={tripChargeRate}
+            quoteBlockReason={quoteGate?.message ?? null}
           />
         </>
       )}

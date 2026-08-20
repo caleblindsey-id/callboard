@@ -43,3 +43,20 @@ export function technicianForbiddenTarget(to: TicketStatus): boolean {
 export function isCreditGatedTarget(to: TicketStatus): boolean {
   return CREDIT_GATED_PM_TARGETS.includes(to)
 }
+
+/**
+ * Starting work for the first time: unassigned/assigned -> in_progress.
+ *
+ * This is the edge the PM-quote gate blocks for customers who require an
+ * accepted quote. Assignment is deliberately still allowed, so the office can
+ * plan a route before the paperwork clears.
+ *
+ * The manager paths back INTO in_progress are excluded on purpose:
+ * completed -> in_progress and billed -> in_progress are reopens of work that
+ * already happened, and skip_requested -> in_progress is a manager denying a
+ * skip on a ticket that was already started. Blocking those would strand
+ * tickets rather than prevent unauthorized work.
+ */
+export function isWorkStartTransition(from: TicketStatus, to: TicketStatus): boolean {
+  return to === 'in_progress' && (from === 'unassigned' || from === 'assigned')
+}
