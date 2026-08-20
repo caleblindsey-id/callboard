@@ -17,6 +17,7 @@ const ALLOWED_KEYS = new Set([
   'service_phone',
   'ar_email',
   'warranty_reminder_email',
+  'morning_digest_email',
   'pickup_address',
   'pickup_hours',
 ])

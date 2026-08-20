@@ -17,7 +17,7 @@ export default async function SettingsPage({
   await requireRole('super_admin')
   const params = (await searchParams) ?? {}
   const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab
-  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, warrantyReminderEmail, pickupAddress, pickupHours, passcodeHash, salesReps, supplyCatalog] = await Promise.all([
+  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, warrantyReminderEmail, morningDigestEmail, pickupAddress, pickupHours, passcodeHash, salesReps, supplyCatalog] = await Promise.all([
     getUsers(),
     getSyncLog(),
     getSetting('labor_rate_per_hour'),
@@ -29,6 +29,7 @@ export default async function SettingsPage({
     getSetting('service_phone'),
     getSetting('ar_email'),
     getSetting('warranty_reminder_email'),
+    getSetting('morning_digest_email'),
     getSetting('pickup_address'),
     getSetting('pickup_hours'),
     getSetting('credit_hold_release_passcode_hash'),
@@ -56,6 +57,7 @@ export default async function SettingsPage({
         servicePhone={servicePhone ?? ''}
         arEmail={arEmail ?? ''}
         warrantyReminderEmail={warrantyReminderEmail ?? ''}
+        morningDigestEmail={morningDigestEmail ?? ''}
         pickupAddress={pickupAddress ?? ''}
         pickupHours={pickupHours ?? ''}
         passcodeConfigured={Boolean(passcodeHash && passcodeHash.length > 0)}
