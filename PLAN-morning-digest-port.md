@@ -186,4 +186,25 @@ On a normal weekday after Round 5: at 8:00 AM Central, Ken, Caleb, Tim and Tamar
 
 ## History
 
-(Empty. Move each round here with its SHA and date as it ships.)
+**SHIPPED 2026-08-21.** Delivered as two PRs rather than five sequential rounds, because the port was built before this plan was found (it was committed here the day before and not read). PR #280 reconciled the differences.
+
+| | |
+|---|---|
+| `0afde6f` | PR #279, the port: 13 sections, cron route, template, Settings, parity harness |
+| `8e355b1` | PR #280, realignment with this plan |
+
+**Followed as written:** reuse `src/lib/db` definitions, settings-based recipients, distinct-entity dedupe with the six key prefixes, failure-aware subject, empty sections omitted, `server-only` kept out of the pure modules, `createAdminClient('SERVER_ONLY')`, route-local `getSetting`, `parseEmailList` from `credit-review-crypto`, both settings allowlists, no seed migration, from-name "Caleb Lindsey (via CallBoard)" with a new optional `replyTo` on `sendMandrillEmail`, weekday guard in the handler, `warranty-credit-remind` retired, straight swap after one proven send.
+
+**Changed from this plan, deliberately:**
+
+- **Cron hours are 13:00Z and 14:00Z, not 12:00Z and 13:00Z.** 8 AM Central is UTC-5 in summer and UTC-6 in winter, so the specified pair covers 7 AM and 8 AM in summer but 6 AM and 7 AM in winter, and the digest would have gone silent from November to March. A test walks all 365 days of 2026 including both DST transitions.
+- **Round 1 row-helpers were not all added.** Instead every reused `src/lib/db` function gained an optional trailing `DigestDb`, so existing call sites are untouched and there is still exactly one definition per queue. `getShipToRequestsByStatus` and `getCreditHoldCustomers` were extracted as the plan intended.
+- **`getWarrantyToFile()` was not created.** `getWarrantyQueue` was extended instead, which is what surfaced WO 699.
+
+**Found while executing:**
+
+- **WO 699**: warranty work completed 2026-05-22 and invoiced as Synergy 950933 with no vendor claim ever filed. Hidden because `getWarrantyQueue` gated on `status='completed'` and the ticket had moved to `billed`. `/warranty-queue` now has a "Billed, never claimed" bucket.
+- **Round 1's bug confirmed live**: `getReadyToBillCounts()` service leg card 32 vs `/billing` Ready to Export tab 21, fixed.
+- **Open gap**: retiring `warranty-credit-remind` left `awaiting_credit` chasing with no home. Zero such claims at cutover and that cron never sent (no settings row), but real if warranty volume grows.
+
+**Parity at cutover:** 13 sections executed, 0 errors, 12 matched the Python exactly. The single delta was warranty (4 vs 2) and both dropped tickets were `open`/`in_progress` work with nothing yet to file.
