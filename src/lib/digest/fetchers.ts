@@ -280,24 +280,37 @@ export async function shipToRequestsPending(db: DigestDb): Promise<DigestRow[]> 
 }
 
 /**
- * Warranty claims still to file with the vendor.
+ * Warranty claims still needing a vendor claim filed.
  *
  * Reuses the app's own definition, which is the whole point of the port:
- * commit e099f9f fixed this section for being narrower than CallBoard's. Note
- * getWarrantyQueue covers partial_warranty and the Python did not, so this
- * count is EXPECTED to come in higher at cutover.
+ * commit e099f9f fixed this section for being narrower than CallBoard's.
+ *
+ * Two buckets qualify. 'to_file' is the normal case, completed work with no
+ * claim yet. 'billed_unclaimed' is the anomaly the 2026-08-21 parity check
+ * surfaced: a ticket already invoiced to the customer with no claim ever
+ * filed, which the app's queue had been hiding because it gated on
+ * status='completed'. Those are the expensive ones, so they sort first.
+ *
+ * Deliberately NOT filtered to completed-only. The Python used
+ * status NOT IN (canceled, declined), which also swept in open and in_progress
+ * warranty tickets. Those are correctly excluded here: work that is not
+ * finished has nothing to file with a vendor yet.
  */
 export async function warrantyToFile(db: DigestDb): Promise<DigestRow[]> {
   const rows = await getWarrantyQueue(db)
   return rows
-    .filter((r) => r.bucket === 'to_file')
+    .filter((r) => r.bucket === 'to_file' || r.bucket === 'billed_unclaimed')
+    .sort((a, b) => Number(b.bucket === 'billed_unclaimed') - Number(a.bucket === 'billed_unclaimed'))
     .map((r) => ({
       entityKey: entityKey('svc', r.id),
       title: wo(r.work_order_number),
       subtitle: r.customer_name,
-      meta: age(r.days_since_completed, `since completed, ${r.warranty_vendor ?? 'no vendor set'}`),
+      meta:
+        r.bucket === 'billed_unclaimed'
+          ? age(r.days_since_completed, 'since completed, already invoiced with no claim on file')
+          : age(r.days_since_completed, `since completed, ${r.warranty_vendor ?? 'no vendor set'}`),
       deepLink: `/service/${r.id}`,
-      badge: badge('To file', AR),
+      badge: badge(r.bucket === 'billed_unclaimed' ? 'Billed, no claim' : 'To file', AR),
     }))
 }
 
