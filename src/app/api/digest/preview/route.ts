@@ -7,7 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { BUSINESS_TIME_ZONE } from '@/lib/business-time'
 import { runSections, getSetting, digestDateLabel } from '@/lib/digest/run'
 import type { DigestDb } from '@/lib/digest/types'
-import { renderMorningDigestEmail } from '@/lib/email-templates/morning-digest'
+import { renderManagerDigestEmail } from '@/lib/email-templates/manager-digest'
 
 // Renders today's real digest as HTML in the browser, for a super_admin only.
 // Nothing is sent.
@@ -31,7 +31,7 @@ export async function GET() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '') ?? ''
   const companyName = (await getSetting(db, 'company_name')) ?? 'CallBoard'
 
-  const email = renderMorningDigestEmail({
+  const email = renderManagerDigestEmail({
     results,
     appUrl,
     companyName,

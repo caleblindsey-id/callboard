@@ -9,7 +9,7 @@ import { BUSINESS_TIME_ZONE } from '@/lib/business-time'
 import { dedupedCount } from '@/lib/digest/dedupe'
 import { runSections, sectionStatuses, getSetting, digestDateLabel } from '@/lib/digest/run'
 import type { DigestDb } from '@/lib/digest/types'
-import { renderMorningDigestEmail } from '@/lib/email-templates/morning-digest'
+import { renderManagerDigestEmail } from '@/lib/email-templates/manager-digest'
 
 // Sends today's real digest to the logged-in super_admin and nobody else.
 // Subject is prefixed [TEST] so it can never be mistaken for the real 8 AM
@@ -40,7 +40,7 @@ export async function POST() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '') ?? ''
   const companyName = (await getSetting(db, 'company_name')) ?? 'CallBoard'
 
-  const email = renderMorningDigestEmail({
+  const email = renderManagerDigestEmail({
     results,
     appUrl,
     companyName,
@@ -54,7 +54,7 @@ export async function POST() {
       subject: email.subject,
       html: email.html,
       text: email.text,
-      tags: ['morning-digest-test'],
+      tags: ['manager-digest-test'],
     })
 
     // Preview and dev deployments run with outbound disabled: sendMandrillEmail

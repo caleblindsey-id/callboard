@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldRunNow, localHourIn } from './should-run'
+import { shouldRunNow, localHourIn, isBusinessWeekday } from './should-run'
 
 // Two weekday cron entries fire (13:00Z and 14:00Z) and exactly one must do
 // work, year round. Every assertion is an absolute UTC instant so these hold
@@ -55,6 +55,26 @@ test('exactly one send per day across the whole year', () => {
     d.setUTCDate(d.getUTCDate() + 1)
   }
   assert.equal(checked, 365)
+})
+
+// The cron expression already restricts the schedule to weekdays. This guard is
+// for the manual path: a curl with the secret must not mail the branch on a
+// Saturday.
+test('isBusinessWeekday: a normal Friday and Monday are weekdays', () => {
+  assert.equal(isBusinessWeekday(new Date('2026-08-21T13:00:00Z'), CENTRAL), true) // Friday
+  assert.equal(isBusinessWeekday(new Date('2026-08-24T13:00:00Z'), CENTRAL), true) // Monday
+})
+
+test('isBusinessWeekday: Saturday and Sunday are not', () => {
+  assert.equal(isBusinessWeekday(new Date('2026-08-22T13:00:00Z'), CENTRAL), false)
+  assert.equal(isBusinessWeekday(new Date('2026-08-23T13:00:00Z'), CENTRAL), false)
+})
+
+test('isBusinessWeekday resolves in Central, not UTC', () => {
+  // 2026-08-22T02:00Z is Saturday in UTC but still Friday 9 PM in Central.
+  assert.equal(isBusinessWeekday(new Date('2026-08-22T02:00:00Z'), CENTRAL), true)
+  // 2026-08-24T02:00Z is Monday in UTC but still Sunday 9 PM in Central.
+  assert.equal(isBusinessWeekday(new Date('2026-08-24T02:00:00Z'), CENTRAL), false)
 })
 
 test('localHourIn renders midnight as 0, not 24', () => {

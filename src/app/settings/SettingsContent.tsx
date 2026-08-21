@@ -47,8 +47,8 @@ interface SettingsContentProps {
   serviceEmail: string
   servicePhone: string
   arEmail: string
-  warrantyReminderEmail: string
-  morningDigestEmail: string
+  managerDigestTo: string
+  managerDigestCc: string
   pickupAddress: string
   pickupHours: string
   passcodeConfigured: boolean
@@ -69,8 +69,8 @@ export default function SettingsContent({
   serviceEmail,
   servicePhone,
   arEmail,
-  warrantyReminderEmail,
-  morningDigestEmail,
+  managerDigestTo,
+  managerDigestCc,
   pickupAddress,
   pickupHours,
   passcodeConfigured,
@@ -124,11 +124,8 @@ export default function SettingsContent({
             initialHours={pickupHours}
           />
 
-          {/* Warranty Reminders — weekly digest of claims still needing office action */}
-          <WarrantyRemindersSetting initialEmail={warrantyReminderEmail} />
-
-          {/* Morning Digest — weekday 8 AM action queues, one email to the branch */}
-          <MorningDigestSetting initialEmail={morningDigestEmail} />
+          {/* Manager Digest — weekday 8 AM action queues, one email to the branch */}
+          <ManagerDigestSetting initialTo={managerDigestTo} initialCc={managerDigestCc} />
         </>
       )}
 
@@ -1042,102 +1039,52 @@ function PickupNotificationsSetting({
   )
 }
 
-function WarrantyRemindersSetting({ initialEmail }: { initialEmail: string }) {
-  const [email, setEmail] = useState(initialEmail)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleSave() {
-    setSaving(true)
-    setSaved(false)
-    setError(null)
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'warranty_reminder_email', value: email }),
-      })
-      if (res.ok) {
-        setSaved(true)
-      } else {
-        const data = await res.json().catch(() => ({}))
-        setError(data.error ?? 'Failed to save warranty reminder email.')
-      }
-    } catch {
-      setError('Could not save warranty reminder email.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-          Warranty Reminders
-        </h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Every Monday morning, a digest of warranty claims still waiting on office action
-          (unfiled claims and claims awaiting a vendor credit) is emailed here.
-        </p>
-      </div>
-      <div className="px-5 py-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Reminder email(s)
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="text"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setSaved(false) }}
-            placeholder="service@example.com, office@example.com"
-            className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-          />
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-          {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
-          {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
-        </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Separate multiple addresses with commas. Leave blank to turn the weekly digest off.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function MorningDigestSetting({ initialEmail }: { initialEmail: string }) {
-  const [email, setEmail] = useState(initialEmail)
+function ManagerDigestSetting({
+  initialTo,
+  initialCc,
+}: {
+  initialTo: string
+  initialCc: string
+}) {
+  const [to, setTo] = useState(initialTo)
+  const [cc, setCc] = useState(initialCc)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
 
+  async function saveKey(key: string, value: string): Promise<string | null> {
+    const res = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value }),
+    })
+    if (res.ok) return null
+    const data = await res.json().catch(() => ({}))
+    return data.error ?? `Failed to save ${key}.`
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaved(false)
     setError(null)
     try {
-      const res = await fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'morning_digest_email', value: email }),
-      })
-      if (res.ok) {
-        setSaved(true)
-      } else {
-        const data = await res.json().catch(() => ({}))
-        setError(data.error ?? 'Failed to save morning digest recipients.')
+      // To is saved first: if the CC write fails, the digest is still correctly
+      // addressed rather than left pointing at nobody.
+      const toErr = await saveKey('manager_digest_to', to)
+      if (toErr) {
+        setError(toErr)
+        return
       }
+      const ccErr = await saveKey('manager_digest_cc', cc)
+      if (ccErr) {
+        setError(ccErr)
+        return
+      }
+      setSaved(true)
     } catch {
-      setError('Could not save morning digest recipients.')
+      setError('Could not save the digest recipients.')
     } finally {
       setSaving(false)
     }
@@ -1172,30 +1119,54 @@ function MorningDigestSetting({ initialEmail }: { initialEmail: string }) {
     }
   }
 
+  const inputClass =
+    'w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500'
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
       <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-          Morning Digest
+          Manager Digest
         </h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
           Every weekday at 8:00 AM, one email lists the branch action queues grouped by who owns
           them: service execution, office and billing, then customer chases and account blocks.
-          Empty queues are left out.
+          Empty queues are left out. It also covers warranty claims waiting to be filed, which
+          used to be a separate weekly email.
         </p>
       </div>
-      <div className="px-5 py-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Digest recipients
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="px-5 py-4 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            To
+          </label>
           <input
             type="text"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setSaved(false) }}
-            placeholder="manager@example.com, office@example.com"
-            className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            value={to}
+            onChange={(e) => { setTo(e.target.value); setSaved(false) }}
+            placeholder="manager@example.com"
+            className={inputClass}
           />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Who owns the queues. Leave blank to turn the digest off.
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Copy to
+          </label>
+          <input
+            type="text"
+            value={cc}
+            onChange={(e) => { setCc(e.target.value); setSaved(false) }}
+            placeholder="office@example.com, owner@example.com"
+            className={inputClass}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Separate multiple addresses with commas. Everyone sees the full recipient list.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={handleSave}
             disabled={saving}
@@ -1206,11 +1177,7 @@ function MorningDigestSetting({ initialEmail }: { initialEmail: string }) {
           {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
           {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Separate multiple addresses with commas. The first address receives the digest and the
-          rest are copied. Leave blank to turn the digest off.
-        </p>
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
           <button
             onClick={handleTestSend}
             disabled={testing}
@@ -1222,9 +1189,9 @@ function MorningDigestSetting({ initialEmail }: { initialEmail: string }) {
             <span className="text-sm text-gray-600 dark:text-gray-300">{testResult}</span>
           )}
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           The test goes only to your own address and is subject-prefixed [TEST]. It ignores the
-          recipient list above, so it is safe to run at any time.
+          recipients above, so it is safe to run at any time.
         </p>
       </div>
     </div>
