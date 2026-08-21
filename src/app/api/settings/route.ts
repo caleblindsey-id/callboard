@@ -31,7 +31,7 @@ const NUMERIC_RATE_KEYS = new Set([
 
 // Keys holding a comma/semicolon/whitespace-separated email list. A non-empty
 // value must parse to at least one plausible address.
-const EMAIL_LIST_KEYS = new Set(['ar_email', 'warranty_reminder_email'])
+const EMAIL_LIST_KEYS = new Set(['ar_email', 'warranty_reminder_email', 'morning_digest_email'])
 
 const VALUE_MAX_LEN = 500
 
