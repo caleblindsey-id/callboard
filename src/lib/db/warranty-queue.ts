@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 
 // The vendor-credit worklist for warranty repairs. A warranty/partial-warranty
 // ticket isn't billed when the work is done — the branch files a claim with the
@@ -9,7 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 // it's billed (which the credit gate only allows after the credit is logged).
 // Mirrors declined-queue.ts / estimate-queue.ts.
 
-export type WarrantyBucket = 'to_file' | 'awaiting_credit' | 'received'
+export type WarrantyBucket = 'to_file' | 'awaiting_credit' | 'received' | 'billed_unclaimed'
 
 export type WarrantyQueueRow = {
   id: string
@@ -60,6 +61,11 @@ function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
 }
 
 function bucketOf(r: RawRow): WarrantyBucket {
+  // A 'billed' ticket only reaches this queue when no claim was ever filed
+  // (see the status filter in getWarrantyQueue). The customer has already been
+  // invoiced and the vendor credit behind the work was never claimed, so the
+  // money is simply gone unless someone chases it.
+  if (r.status === 'billed') return 'billed_unclaimed'
   if (r.warranty_credit_received_at) return 'received'
   if (r.warranty_claim_submitted_at) return 'awaiting_credit'
   return 'to_file'
@@ -73,14 +79,23 @@ const SELECT = `id, work_order_number, status, billing_type, completed_at,
    customers(name),
    equipment(make, model, serial_number)`
 
-export async function getWarrantyQueue(): Promise<WarrantyQueueRow[]> {
-  const supabase = await createClient()
+export async function getWarrantyQueue(db?: DigestDb): Promise<WarrantyQueueRow[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')
     .select(SELECT)
     .in('billing_type', ['warranty', 'partial_warranty'])
-    .eq('status', 'completed')
+    // Completed warranty work at any stage of the credit lifecycle, PLUS the
+    // anomaly: a ticket already billed to the customer with no vendor claim
+    // ever filed. Gating on status='completed' alone hid those entirely, and
+    // they are the worst case the queue exists to catch, because the revenue
+    // is already recognised and the offsetting credit never will be.
+    //
+    // The billed leg MUST stay server-side. Selecting all billed warranty
+    // tickets and dropping the claimed ones in JS would pull every historical
+    // warranty ticket the branch has ever invoiced.
+    .or('status.eq.completed,and(status.eq.billed,warranty_claim_submitted_at.is.null)')
     .is('deleted_at', null)
     .order('completed_at', { ascending: true, nullsFirst: true })
 
@@ -136,7 +151,11 @@ export type WarrantyClaimCounts = {
   toFile: number
   awaitingCredit: number
   received: number
-  // Actionable = the claims still needing office work (file or chase the credit).
+  // Billed to the customer with no vendor claim ever filed. Not part of the
+  // normal lifecycle; each one is lost credit until someone chases it.
+  billedUnclaimed: number
+  // Actionable = the claims still needing office work (file, chase the credit,
+  // or recover a credit that was never claimed before billing).
   actionable: number
 }
 
@@ -144,23 +163,31 @@ export type WarrantyClaimCounts = {
 export async function getWarrantyClaimCounts(): Promise<WarrantyClaimCounts> {
   const supabase = await createClient()
 
-  const base = () =>
+  const base = (status: 'completed' | 'billed') =>
     supabase
       .from('service_tickets')
       .select('id', { count: 'exact', head: true })
       .in('billing_type', ['warranty', 'partial_warranty'])
-      .eq('status', 'completed')
+      .eq('status', status)
       .is('deleted_at', null)
 
-  const [toFileRes, awaitingRes, receivedRes] = await Promise.all([
-    base().is('warranty_claim_submitted_at', null).is('warranty_credit_received_at', null),
-    base().not('warranty_claim_submitted_at', 'is', null).is('warranty_credit_received_at', null),
-    base().not('warranty_credit_received_at', 'is', null),
+  const [toFileRes, awaitingRes, receivedRes, billedUnclaimedRes] = await Promise.all([
+    base('completed').is('warranty_claim_submitted_at', null).is('warranty_credit_received_at', null),
+    base('completed').not('warranty_claim_submitted_at', 'is', null).is('warranty_credit_received_at', null),
+    base('completed').not('warranty_credit_received_at', 'is', null),
+    base('billed').is('warranty_claim_submitted_at', null),
   ])
 
   const toFile = toFileRes.count ?? 0
   const awaitingCredit = awaitingRes.count ?? 0
   const received = receivedRes.count ?? 0
+  const billedUnclaimed = billedUnclaimedRes.count ?? 0
 
-  return { toFile, awaitingCredit, received, actionable: toFile + awaitingCredit }
+  return {
+    toFile,
+    awaitingCredit,
+    received,
+    billedUnclaimed,
+    actionable: toFile + awaitingCredit + billedUnclaimed,
+  }
 }

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import type { TechLeadRow } from '@/types/database'
 
 // Lead joined with the bits of customer / tech / equipment the UI needs to render
@@ -39,8 +40,8 @@ export async function getMyLeads(technicianId: string): Promise<TechLeadWithJoin
 // `earnedBetween` in particular was the server-side version of a filter the old
 // payout report re-implemented in the browser. Removed rather than left as a
 // second, subtly different, way to ask the same question.
-export async function getAllLeads(): Promise<TechLeadWithJoins[]> {
-  const supabase = await createClient()
+export async function getAllLeads(db?: DigestDb): Promise<TechLeadWithJoins[]> {
+  const supabase = db ?? (await createClient())
   const { data, error } = await supabase
     .from('tech_leads')
     .select(SELECT_WITH_JOINS)

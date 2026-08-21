@@ -48,6 +48,7 @@ interface SettingsContentProps {
   servicePhone: string
   arEmail: string
   warrantyReminderEmail: string
+  morningDigestEmail: string
   pickupAddress: string
   pickupHours: string
   passcodeConfigured: boolean
@@ -69,6 +70,7 @@ export default function SettingsContent({
   servicePhone,
   arEmail,
   warrantyReminderEmail,
+  morningDigestEmail,
   pickupAddress,
   pickupHours,
   passcodeConfigured,
@@ -124,6 +126,9 @@ export default function SettingsContent({
 
           {/* Warranty Reminders — weekly digest of claims still needing office action */}
           <WarrantyRemindersSetting initialEmail={warrantyReminderEmail} />
+
+          {/* Morning Digest — weekday 8 AM action queues, one email to the branch */}
+          <MorningDigestSetting initialEmail={morningDigestEmail} />
         </>
       )}
 
@@ -1101,6 +1106,125 @@ function WarrantyRemindersSetting({ initialEmail }: { initialEmail: string }) {
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
           Separate multiple addresses with commas. Leave blank to turn the weekly digest off.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function MorningDigestSetting({ initialEmail }: { initialEmail: string }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    setError(null)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'morning_digest_email', value: email }),
+      })
+      if (res.ok) {
+        setSaved(true)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'Failed to save morning digest recipients.')
+      }
+    } catch {
+      setError('Could not save morning digest recipients.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Sends the real digest to you and nobody else. This is the verification step
+  // for any rendering change: open it in the client the recipients actually use,
+  // because a browser preview looks correct even when the Word engine has
+  // collapsed every chip and fallen back to Times.
+  async function handleTestSend() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/digest/test-send', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setTestResult(data.error ?? 'Test send failed.')
+      } else if (data.sent) {
+        setTestResult(
+          `Sent to ${data.sentTo}. ${data.distinctCount} items` +
+            (data.failedCount > 0 ? `, ${data.failedCount} sections could not load.` : '.')
+        )
+      } else if (data.reason === 'outbound_disabled') {
+        setTestResult('Outbound email is disabled in this environment, so nothing was sent.')
+      } else {
+        setTestResult('Nothing was sent.')
+      }
+    } catch {
+      setTestResult('Could not reach the test send endpoint.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+          Morning Digest
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Every weekday at 8:00 AM, one email lists the branch action queues grouped by who owns
+          them: service execution, office and billing, then customer chases and account blocks.
+          Empty queues are left out.
+        </p>
+      </div>
+      <div className="px-5 py-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Digest recipients
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); setSaved(false) }}
+            placeholder="manager@example.com, office@example.com"
+            className="w-full max-w-md rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          />
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+          {error && <span className="text-sm text-red-600 font-medium">{error}</span>}
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Separate multiple addresses with commas. The first address receives the digest and the
+          rest are copied. Leave blank to turn the digest off.
+        </p>
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleTestSend}
+            disabled={testing}
+            className="px-4 py-2 text-sm font-medium text-slate-800 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+          >
+            {testing ? 'Sending...' : 'Send a test to me'}
+          </button>
+          {testResult && (
+            <span className="text-sm text-gray-600 dark:text-gray-300">{testResult}</span>
+          )}
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          The test goes only to your own address and is subject-prefixed [TEST]. It ignores the
+          recipient list above, so it is safe to run at any time.
         </p>
       </div>
     </div>

@@ -9,6 +9,9 @@ export default async function WarrantyClaimsSection() {
   const parts: string[] = []
   if (counts.toFile > 0) parts.push(`${counts.toFile} to file`)
   if (counts.awaitingCredit > 0) parts.push(`${counts.awaitingCredit} awaiting credit`)
+  // Counted in `actionable`, so it has to be named here too or the headline
+  // number would exceed what the subtitle accounts for.
+  if (counts.billedUnclaimed > 0) parts.push(`${counts.billedUnclaimed} billed with no claim`)
 
   return (
     <QueueStatCard

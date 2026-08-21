@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import { isPartOutstanding } from '@/lib/parts'
 import type {
   ServiceTicketRow,
@@ -15,7 +16,10 @@ import type { LaborRateType } from '@/types/database'
 // --- List service tickets with filters ---
 
 interface ServiceTicketFilters {
-  status?: ServiceTicketStatus
+  // A single status, or a set of them. The set form backs worklists that span
+  // several open statuses (the morning digest's idle queue) without forcing a
+  // caller to re-derive this function's joins and soft-delete scoping.
+  status?: ServiceTicketStatus | readonly ServiceTicketStatus[]
   technicianId?: string
   customerId?: number
   priority?: ServicePriority
@@ -91,8 +95,8 @@ export function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFi
   return q as unknown as Q
 }
 
-export async function getServiceTickets(filters?: ServiceTicketFilters): Promise<ServiceTicketWithJoins[]> {
-  const supabase = await createClient()
+export async function getServiceTickets(filters?: ServiceTicketFilters, db?: DigestDb): Promise<ServiceTicketWithJoins[]> {
+  const supabase = db ?? (await createClient())
 
   // Listing query: only select columns the board renders. Avoids pulling
   // large JSONB blobs (estimate_parts, parts_requested, customer_signature,
@@ -134,7 +138,9 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       .eq('customers.po_required', true)
       .or('po_number.is.null,po_number.eq.')
   } else if (filters?.status) {
-    query = query.eq('status', filters.status)
+    query = Array.isArray(filters.status)
+      ? query.in('status', filters.status as ServiceTicketStatus[])
+      : query.eq('status', filters.status as ServiceTicketStatus)
   }
   query = applyServiceTicketFilters(query, filters)
 
@@ -435,9 +441,10 @@ export type ServiceBillingTicket = {
 async function getServiceBillingByExported(
   exported: boolean,
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<ServiceBillingTicket[]> {
-  const supabase = await createClient()
+  const supabase = db ?? (await createClient())
 
   let query = supabase
     .from('service_tickets')
@@ -474,18 +481,20 @@ async function getServiceBillingByExported(
 // "Ready to Export" — completed service tickets not yet exported.
 export function getServiceBillingTickets(
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<ServiceBillingTicket[]> {
-  return getServiceBillingByExported(false, month, year)
+  return getServiceBillingByExported(false, month, year, db)
 }
 
 // "Awaiting Invoice #" — exported tickets where the coordinator keys the Synergy
 // invoice # and marks billed (mirrors getPmAwaitingInvoiceTickets).
 export function getServiceAwaitingInvoiceTickets(
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<ServiceBillingTicket[]> {
-  return getServiceBillingByExported(true, month, year)
+  return getServiceBillingByExported(true, month, year, db)
 }
 
 // --- Get service tickets for equipment (for unified service history) ---
@@ -727,8 +736,8 @@ export type PoFollowUpQueueTicket = {
   assigned_technician: { name: string } | null
 }
 
-export async function getPoFollowUpQueue(): Promise<PoFollowUpQueueTicket[]> {
-  const supabase = await createClient()
+export async function getPoFollowUpQueue(db?: DigestDb): Promise<PoFollowUpQueueTicket[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')

@@ -28,6 +28,12 @@ const BUCKETS: { key: WarrantyBucket; title: string; blurb: string }[] = [
   { key: 'to_file', title: 'To file', blurb: 'Warranty work is done — file the claim with the vendor.' },
   { key: 'awaiting_credit', title: 'Awaiting credit', blurb: 'Claim filed — waiting on the vendor credit.' },
   { key: 'received', title: 'Credit received', blurb: 'Credit logged — ready to bill and close.' },
+  {
+    key: 'billed_unclaimed',
+    title: 'Billed, never claimed',
+    blurb:
+      'Invoiced to the customer with no vendor claim on file — the credit is lost unless it is chased.',
+  },
 ]
 
 export default function WarrantyQueueClient({ rows }: { rows: WarrantyQueueRow[] }) {
@@ -47,7 +53,12 @@ export default function WarrantyQueueClient({ rows }: { rows: WarrantyQueueRow[]
   }, [rows, query])
 
   const byBucket = useMemo(() => {
-    const m: Record<WarrantyBucket, WarrantyQueueRow[]> = { to_file: [], awaiting_credit: [], received: [] }
+    const m: Record<WarrantyBucket, WarrantyQueueRow[]> = {
+      to_file: [],
+      awaiting_credit: [],
+      received: [],
+      billed_unclaimed: [],
+    }
     for (const r of filtered) m[r.bucket].push(r)
     return m
   }, [filtered])
@@ -134,6 +145,11 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
     }
   }
 
+  // A billed-but-never-claimed ticket needs exactly the same action as a
+  // to-file one: record the vendor and claim number so the credit can still
+  // be chased. The only difference is that the customer was already invoiced.
+  const isFiling = row.bucket === 'to_file' || row.bucket === 'billed_unclaimed'
+
   const aging =
     row.bucket === 'awaiting_credit'
       ? agingBadge(row.days_since_submitted)
@@ -178,7 +194,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
       }
       actions={
         <>
-          {row.bucket === 'to_file' && (
+          {isFiling && (
             <button
               onClick={() => setOpen((v) => !v)}
               className="px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
@@ -206,7 +222,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
         </>
       }
       expanded={
-        open && (row.bucket === 'to_file' || row.bucket === 'awaiting_credit') ? (
+        open && (isFiling || row.bucket === 'awaiting_credit') ? (
           <>
             {error && (
               <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
@@ -220,7 +236,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
               <Field label="Claim / RMA #">
                 <input value={claimNumber} onChange={(e) => setClaimNumber(e.target.value)} className={inputCls} placeholder="Vendor reference" />
               </Field>
-              {row.bucket === 'to_file' ? (
+              {isFiling ? (
                 <Field label="Expected credit">
                   <input type="number" step="0.01" min="0" value={creditExpected} onChange={(e) => setCreditExpected(e.target.value)} className={inputCls} placeholder="0.00" />
                 </Field>
@@ -237,7 +253,7 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
               >
                 Cancel
               </button>
-              {row.bucket === 'to_file' ? (
+              {isFiling ? (
                 <button
                   onClick={() => post(
                     { action: 'file', vendor, claim_number: claimNumber, credit_expected: creditExpected || null },

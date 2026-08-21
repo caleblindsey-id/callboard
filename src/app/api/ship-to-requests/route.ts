@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getShipToRequestsByStatus } from '@/lib/db/ship-to-requests'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 
 const STAFF_ROLES = ['manager', 'coordinator', 'super_admin'] as const
@@ -134,24 +135,9 @@ export async function GET(request: NextRequest) {
     }
     const status = rawStatus as 'pending' | 'resolved' | 'dismissed'
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
-      .from('ship_to_requests')
-      .select(`
-        *,
-        customer:customers(id, name),
-        requested_by_user:users!requested_by(name),
-        equipment(id, make, model, serial_number)
-      `)
-      .eq('status', status)
-      .order('requested_at', { ascending: false }) as { data: unknown[] | null; error: { message: string } | null }
+    const requests = await getShipToRequestsByStatus(status)
 
-    if (error) {
-      console.error('ship-to-requests GET error:', error)
-      return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
-    }
-
-    return NextResponse.json({ requests: data ?? [] })
+    return NextResponse.json({ requests })
   } catch (err) {
     console.error('ship-to-requests GET error:', err)
     return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
