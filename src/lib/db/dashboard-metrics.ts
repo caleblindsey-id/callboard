@@ -340,7 +340,14 @@ export async function getReadyToBillCounts(): Promise<ReadyToBillCounts> {
       .from('service_tickets')
       .select('billing_amount')
       .is('deleted_at', null)
-      .eq('status', 'completed'),
+      .eq('status', 'completed')
+      // service_tickets.billing_exported arrived in migration 106, AFTER this
+      // card was written, and the service leg was never updated while the PM
+      // leg above always had it. So the dashboard counted tickets the office
+      // had already exported and disagreed with the /billing Ready to Export
+      // tab, which reads getServiceBillingByExported(false). Measured against
+      // prod on 2026-08-21: card 32, tab 21.
+      .eq('billing_exported', false),
   ])
   if (pmRes.error) throw pmRes.error
   if (svcRes.error) throw svcRes.error

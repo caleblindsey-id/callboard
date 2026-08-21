@@ -17,6 +17,23 @@ export function shouldRunNow(now: Date, timeZone: string, targetHour = 8): boole
   return localHourIn(now, timeZone) === targetHour
 }
 
+/**
+ * Weekday in the BUSINESS timezone, not UTC.
+ *
+ * The cron expression already restricts the schedule to 1-5, so this exists for
+ * the manual path: `vercel crons run`, or a curl with the secret, must not be
+ * able to mail the branch on a Saturday.
+ *
+ * It has to resolve through the business timezone rather than getUTCDay(),
+ * because the digest's 14:00Z winter fire is still Friday in UTC when it is
+ * Friday in Central, but a naive UTC check at other hours would disagree near
+ * midnight.
+ */
+export function isBusinessWeekday(now: Date, timeZone: string): boolean {
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(now)
+  return weekday !== 'Sat' && weekday !== 'Sun'
+}
+
 export function localHourIn(now: Date, timeZone: string): number {
   const hour = new Intl.DateTimeFormat('en-US', {
     timeZone,

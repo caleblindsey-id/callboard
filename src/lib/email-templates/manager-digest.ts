@@ -34,7 +34,7 @@ const LINE = '#e4e4e7'
 const NAVY = '#0f172a'
 const GROUND = '#f4f4f5'
 
-export type MorningDigestInput = {
+export type ManagerDigestInput = {
   results: SectionResult[]
   appUrl: string
   dateLabel: string
@@ -48,7 +48,7 @@ export type EmailTemplate = {
   text: string
 }
 
-export function renderMorningDigestEmail(input: MorningDigestInput): EmailTemplate {
+export function renderManagerDigestEmail(input: ManagerDigestInput): EmailTemplate {
   const { results, appUrl, dateLabel, companyName, isTest } = input
   const base = appUrl.replace(/\/$/, '')
 

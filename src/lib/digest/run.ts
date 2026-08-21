@@ -24,7 +24,7 @@ export async function runSections(db: DigestDb): Promise<SectionResult[]> {
       try {
         return { ok: true, sectionKey: section.key, rows: await section.fetch(db) }
       } catch (err) {
-        console.error(`morning-digest: section ${section.key} failed`, err)
+        console.error(`manager-digest: section ${section.key} failed`, err)
         return {
           ok: false,
           sectionKey: section.key,

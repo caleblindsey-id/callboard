@@ -24,6 +24,11 @@ export type SendMandrillEmailInput = {
   // Customer-facing sends (e.g. pickup-ready) override this with a recognizable
   // branch name so the recipient doesn't see the internal tool name.
   fromName?: string
+  // Per-send Reply-To. Maps to Mandrill's headers['Reply-To']. Used where the
+  // send is nominally from a person rather than the tool (the manager digest
+  // replaced an email that used to arrive from Caleb's own mailbox), so a reply
+  // reaches a human instead of the unattended from-address.
+  replyTo?: string
 }
 
 export type SendMandrillEmailResult = {
@@ -85,6 +90,7 @@ export async function sendMandrillEmail(
       // breaks when that host is DNS-blocked (e.g. the Imperial Dade network)
       // and invites link scanners to pre-click/burn single-use tokens.
       track_clicks: false,
+      ...(input.replyTo ? { headers: { 'Reply-To': input.replyTo } } : {}),
       tags: input.tags ?? [],
       metadata: input.metadata ?? {},
     },
