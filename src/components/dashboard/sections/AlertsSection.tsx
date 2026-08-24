@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertOctagon, AlertTriangle, ChevronRight, Flag, Clock, Award, ShieldAlert, ShoppingCart } from 'lucide-react'
+import { AlertOctagon, AlertTriangle, ChevronRight, Flag, Clock, Award, ShieldAlert, ShoppingCart, MapPinPlus } from 'lucide-react'
 import ZoneHeader from '@/components/dashboard/ZoneHeader'
 import {
   getOverdueTicketCount,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/db/dashboard-metrics'
 import { getCreditReviewCounts } from '@/lib/db/credit-reviews'
 import { getPendingSupplyRequestCount } from '@/lib/db/supply-requests'
+import { getPendingShipToRequestCount } from '@/lib/db/ship-to-requests'
 
 export default async function AlertsSection() {
   const [
@@ -22,6 +23,7 @@ export default async function AlertsSection() {
     pendingPayoutApprovalsCount,
     creditReviewCounts,
     supplyRequestCount,
+    shipToRequestCount,
   ] = await Promise.all([
     getOverdueTicketCount(),
     getSkipRequestedCount(),
@@ -30,6 +32,7 @@ export default async function AlertsSection() {
     getPendingPayoutApprovalsCount(),
     getCreditReviewCounts(),
     getPendingSupplyRequestCount(),
+    getPendingShipToRequestCount(),
   ])
 
   const creditReviewOpen = creditReviewCounts.pending + creditReviewCounts.blocked
@@ -41,7 +44,8 @@ export default async function AlertsSection() {
     staleEstimatesCount > 0 ||
     pendingPayoutApprovalsCount > 0 ||
     creditReviewOpen > 0 ||
-    supplyRequestCount > 0
+    supplyRequestCount > 0 ||
+    shipToRequestCount > 0
 
   if (!hasAlerts) return null
 
@@ -235,6 +239,33 @@ export default async function AlertsSection() {
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
                   {supplyRequestCount}
+                </span>
+                <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {shipToRequestCount > 0 && (
+          <Link
+            href="/ship-to-requests"
+            className="block bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 p-4 hover:border-amber-300 dark:hover:border-amber-700 hover:shadow transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <MapPinPlus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                    Ship-To Requests
+                  </span>
+                </div>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+                  Addresses techs need that are not in Synergy yet. Add the location and close them out.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
+                  {shipToRequestCount}
                 </span>
                 <ChevronRight className="h-5 w-5 text-amber-400 dark:text-amber-500" />
               </div>

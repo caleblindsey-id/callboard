@@ -1059,6 +1059,8 @@ export type ShipToRequestRow = {
   customer_id: number
   requested_by: string
   pm_ticket_id: string | null
+  // Added by migration 084; a request can originate from either ticket kind.
+  service_ticket_id: string | null
   equipment_id: string | null
   note: string
   status: ShipToRequestStatus
@@ -1880,7 +1882,12 @@ export interface Database {
       ship_to_requests: {
         Row: ShipToRequestRow
         Insert: Pick<ShipToRequestRow, 'customer_id' | 'requested_by' | 'note'> &
-          Partial<Pick<ShipToRequestRow, 'pm_ticket_id' | 'equipment_id' | 'status'>>
+          Partial<
+            Pick<
+              ShipToRequestRow,
+              'pm_ticket_id' | 'service_ticket_id' | 'equipment_id' | 'status'
+            >
+          >
         Update: Partial<Omit<ShipToRequestRow, 'id' | 'requested_at'>>
         Relationships: []
       }
