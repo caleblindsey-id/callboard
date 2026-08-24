@@ -274,7 +274,7 @@ export async function shipToRequestsPending(db: DigestDb): Promise<DigestRow[]> 
     title: r.customer?.name ?? 'Unknown customer',
     subtitle: r.note || 'No address detail given',
     meta: age(daysSince(r.requested_at), `waiting, from ${r.requested_by_user?.name ?? 'a tech'}`),
-    deepLink: '/customers',
+    deepLink: '/ship-to-requests',
     badge: badge('Pending', AR),
   }))
 }

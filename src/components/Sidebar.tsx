@@ -31,6 +31,7 @@ import {
   ChevronRight,
   SprayCan,
   ShoppingCart,
+  MapPinPlus,
   type LucideIcon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -65,6 +66,7 @@ const officeGroups: NavGroup[] = [
       { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
       { label: 'Supply Requests', icon: ShoppingCart, route: '/supply-requests' },
       { label: 'Ready for Pickup', icon: PackageCheck, route: '/pickup-queue' },
+      { label: 'Ship-To Requests', icon: MapPinPlus, route: '/ship-to-requests' },
     ],
   },
   {

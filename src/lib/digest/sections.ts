@@ -146,7 +146,7 @@ export const SECTIONS: readonly DigestSection[] = [
     owner: 'ar',
     title: 'Ship-to requests',
     action: 'add the address in Synergy',
-    viewAllPath: '/customers',
+    viewAllPath: '/ship-to-requests',
     keyPrefixes: ['shipto'],
     fetch: f.shipToRequestsPending,
   },
