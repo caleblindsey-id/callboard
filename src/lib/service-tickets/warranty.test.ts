@@ -34,52 +34,9 @@ test('warrantyBillingBlock: denied clears the gate', () => {
   assert.equal(warrantyBillingBlock({ warranty_review_status: 'denied' }), null)
 })
 
-test('warrantyBillingBlock: null status with no legacy flag clears the gate', () => {
+test('warrantyBillingBlock: null status never blocks (Round 7: no billing_type fallback)', () => {
   assert.equal(warrantyBillingBlock({ warranty_review_status: null }), null)
   assert.equal(warrantyBillingBlock({}), null)
-})
-
-test('warrantyBillingBlock: legacy billing_type=warranty without credit is awaiting_credit', () => {
-  assert.equal(
-    warrantyBillingBlock({ warranty_review_status: null, billing_type: 'warranty' }),
-    'awaiting_credit',
-  )
-})
-
-test('warrantyBillingBlock: legacy billing_type=warranty with credit clears the gate', () => {
-  assert.equal(
-    warrantyBillingBlock({
-      warranty_review_status: null,
-      billing_type: 'warranty',
-      warranty_credit_received_at: '2026-08-01T00:00:00Z',
-    }),
-    null,
-  )
-})
-
-test('warrantyBillingBlock: legacy billing_type=partial_warranty without credit is awaiting_credit', () => {
-  assert.equal(
-    warrantyBillingBlock({ warranty_review_status: null, billing_type: 'partial_warranty' }),
-    'awaiting_credit',
-  )
-})
-
-test('warrantyBillingBlock: legacy billing_type=non_warranty clears the gate', () => {
-  assert.equal(
-    warrantyBillingBlock({ warranty_review_status: null, billing_type: 'non_warranty' }),
-    null,
-  )
-})
-
-test('warrantyBillingBlock: a set review status wins over a legacy billing_type', () => {
-  assert.equal(
-    warrantyBillingBlock({
-      warranty_review_status: 'verified',
-      warranty_credit_received_at: '2026-08-01T00:00:00Z',
-      billing_type: 'warranty',
-    }),
-    null,
-  )
 })
 
 // --- computeCustomerBillAmount ---

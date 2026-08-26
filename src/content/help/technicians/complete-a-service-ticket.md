@@ -20,7 +20,6 @@ A service ticket is reactive repair work — the customer called with a problem,
 
 ## Step 2 — Record the work
 
-- **Billing Type** — **Non-Warranty**, **Warranty**, or **Partial Warranty**. A repair is usually keyed **Non-Warranty** at intake and only turns out to be a warranty claim once you're on the machine, so correct it here before you submit. **Warranty** charges the customer nothing at all. **Partial Warranty** zeroes only the parts you tick — your labor, the trip charge, and the remaining parts still bill as normal. Picking either one adds a **Warranty** checkbox to every row under *Parts Used*; tick the parts the vendor is covering.
 - **Labor Type** — the rate your hours are billed at: **Standard**, **Industrial**, or **Vacuum**. Each option shows its $/hr, and the billing summary below updates as soon as you change it. It starts on whatever the office keyed at intake, so if the machine is actually an industrial unit (a heated pressure washer, say), switch it here before you submit — otherwise the job bills at the standard rate.
 - **Hours Worked** *(required)* — your labor time on this repair.
 - **Parts Used** — add each part with quantity. This is what gets billed, so prices show here. If you already requested parts through the Parts Queue and they've come in (received or pulled from stock), tap **Copy Requested Parts** to add them here instead of retyping them.
@@ -42,5 +41,5 @@ Tap **Mark Complete**. CallBoard checks that your hours are valid and — on fie
 
 - **It won't let me complete.** Check the message at the top — usually a missing signature/name on a field ticket, invalid hours, or a part that hasn't been received yet.
 - **The numbers look like the estimate, not what I actually did.** They are — they were copied from the approved estimate. Edit them to match your real hours and parts before submitting.
-- **This turned out to be warranty work.** Change **Billing Type** in Step 2 before you mark it complete — **Warranty** if the vendor covers the whole repair, or **Partial Warranty** with the covered parts ticked if they only cover some of them. The office files the claim with the vendor and holds the ticket until that credit lands.
+- **This turned out to be warranty work.** Flag it in the **Warranty** box on the ticket (see [Flag a warranty repair](/help/technicians/flag-a-warranty-repair)), any time from assignment through completion. You still write the ticket up at full price; the office verifies coverage and handles the vendor claim and the customer's net amount from there.
 - **The labor rate is wrong for this machine.** Change **Labor Type** in Step 2 — the billing total updates immediately and the new rate is saved when you mark the job complete. You can also set it earlier, on the estimate.

@@ -10,8 +10,9 @@ export interface WhatsNewUpdate {
 }
 
 export const LATEST_UPDATE: WhatsNewUpdate | null = {
-  id: '2026-06-08-pm-billing-gate',
-  headline: 'Change: exporting a PM no longer marks it billed — enter its Synergy invoice number, then tap Mark Billed.',
-  href: '/help/managers/billing',
+  id: '2026-08-26-warranty-review-lifecycle',
+  headline:
+    'Change: warranty is now a flag-and-verify flow. Techs flag a repair on the ticket; the billing type picker is gone. Office verifies from the Warranty Claims queue.',
+  href: '/help/managers/file-a-warranty-claim',
   cta: 'See how',
 }

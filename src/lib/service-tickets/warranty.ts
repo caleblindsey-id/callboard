@@ -23,9 +23,6 @@ export const WARRANTY_REVIEW_STATUS_LABELS: Record<WarrantyReviewStatus, string>
 export type WarrantyGateFields = {
   warranty_review_status?: WarrantyReviewStatus | null
   warranty_credit_received_at?: string | null
-  // Legacy leg: pre-redesign rows that never got a review status backfilled.
-  // Remove after the 161 sweep is live.
-  billing_type?: string | null
 }
 
 export type WarrantyBlockReason = 'pending_review' | 'awaiting_credit' | null
@@ -34,21 +31,28 @@ export type WarrantyBlockReason = 'pending_review' | 'awaiting_credit' | null
  * Whether a ticket is blocked from billing on warranty grounds, and why.
  * `requested` means coverage is still undecided, so the ticket can't be
  * invoiced at all. `verified` without a received credit means it can be
- * invoiced but the office still owes the vendor a reconcile. Legacy rows
- * (no review status, but billing_type flags them as warranty/partial) fall
- * back to the pre-redesign awaiting-credit gate until they're backfilled.
+ * invoiced but the office still owes the vendor a reconcile. The 161 sweep
+ * guaranteed every pre-redesign row got a review status backfilled, so a
+ * null status never falls back to billing_type here (Round 7).
  */
 export function warrantyBillingBlock(t: WarrantyGateFields): WarrantyBlockReason {
   if (t.warranty_review_status === 'requested') return 'pending_review'
   if (t.warranty_review_status === 'verified') {
     return t.warranty_credit_received_at ? null : 'awaiting_credit'
   }
-  if (t.warranty_review_status == null) {
-    const legacyWarranty = t.billing_type === 'warranty' || t.billing_type === 'partial_warranty'
-    if (legacyWarranty && !t.warranty_credit_received_at) return 'awaiting_credit'
-  }
-  // denied, or verified+credited, or null status with no legacy warranty flag
+  // denied, or verified+credited, or null status
   return null
+}
+
+// --- Legacy display ---
+
+// billing_type is frozen (migration 161) and no longer drives any behavior —
+// it exists purely as a historical label for rows completed before the
+// review lifecycle. Used by the billing and invoiced-archive screens only.
+export const LEGACY_BILLING_TYPE_LABELS: Record<string, string> = {
+  non_warranty: 'T&M',
+  warranty: 'Warranty (legacy)',
+  partial_warranty: 'Partial Warranty (legacy)',
 }
 
 // --- Customer bill amount ---

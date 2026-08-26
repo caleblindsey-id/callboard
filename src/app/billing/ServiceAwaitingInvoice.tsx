@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
-import { warrantyBillingBlock } from '@/lib/service-tickets/warranty'
+import { warrantyBillingBlock, LEGACY_BILLING_TYPE_LABELS } from '@/lib/service-tickets/warranty'
 import BillingNotesDrawer from './BillingNotesDrawer'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
@@ -20,12 +20,6 @@ import InlineEditCell from './InlineEditCell'
 // Rendered UNDER the service "Ready to Export" list; the month picker on that list
 // drives both queries, so this component intentionally has no picker of its own.
 // Mirrors PmAwaitingInvoice.
-
-const BILLING_TYPE_LABELS: Record<string, string> = {
-  non_warranty: 'T&M',
-  warranty: 'Warranty',
-  partial_warranty: 'Partial Warranty',
-}
 
 interface ServiceAwaitingInvoiceProps {
   tickets: ServiceBillingTicket[]
@@ -96,7 +90,7 @@ const SERVICE_INVOICE_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, Servic
   technician: t => t.assigned_technician?.name,
   billing: t => customerAmount(t),
   ticketType: t => t.ticket_type,
-  type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
+  type: t => LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
   completed: t => t.completed_at,
 }
 
@@ -529,7 +523,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                         <div className="mt-0.5 flex items-center gap-2">
                           <TicketTypeBadge type={t.ticket_type} />
                           <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                            {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                           </span>
                           {pill && (
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pill.className}`}>
@@ -649,7 +643,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                           <TicketTypeBadge type={t.ticket_type} />
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                          {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                          {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                           {pill && (
                             <span className="block text-xs font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap">
                               {pill.label}
