@@ -290,6 +290,8 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
       created_by:users!service_tickets_created_by_id_fkey ( name ),
       deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
+      warranty_review_requested_by:users!service_tickets_warranty_review_requested_by_id_fkey ( name ),
+      warranty_review_decided_by:users!service_tickets_warranty_review_decided_by_id_fkey ( name ),
       credit_reviews ( id, status, block_reason, decided_by_name )
     `)
     .eq('id', id)
