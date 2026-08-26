@@ -276,7 +276,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, warranty_review_status, warranty_credit_received_at, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, shipping_charge, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, warranty_review_status, warranty_credit_received_at, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, shipping_charge, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -577,12 +577,9 @@ export async function PATCH(
         // --- Hard block: warranty work isn't billed until the office has
         // verified coverage and, if covered, the vendor credit has landed.
         // See src/lib/service-tickets/warranty.ts for the review lifecycle.
-        const billingType =
-          (filtered.billing_type as string | undefined) ?? current.billing_type ?? 'non_warranty'
         const warrantyBlock = warrantyBillingBlock({
           warranty_review_status: current.warranty_review_status as WarrantyReviewStatus | null,
           warranty_credit_received_at: current.warranty_credit_received_at,
-          billing_type: billingType,
         })
         if (warrantyBlock === 'pending_review') {
           return NextResponse.json(

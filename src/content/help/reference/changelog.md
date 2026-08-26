@@ -11,8 +11,8 @@ The latest updates to CallBoard, newest first.
 
 ## August 2026
 
-- **Warranty claims have a guide** — the full lifecycle, from filing with the vendor through logging the credit and clearing the billing block, is written up at [File a warranty claim and log the vendor credit](/help/managers/file-a-warranty-claim).
-- **The morning digest now chases warranty credits** — a new **Warranty credits to chase** section lists claims already filed with a vendor that haven't been credited back, aged from the day they were filed. Previously only claims still needing to be filed were surfaced.
+- **Warranty is now a review lifecycle, not a billing type.** Techs flag a repair for warranty from a **Warranty** box on the ticket, any time between assignment and completion, with a note. The office verifies coverage there too: labor covered, per part covered, vendor, and vendor labor rate, or denies with a reason. Every ticket completes at full price regardless of the verdict; once verified, the claim moves through the **Warranty Claims** queue (file, chase, log the credit) and the vendor credit is now reconciled line by line against the actual covered parts and labor. Billing unlocks once the verdict is recorded and, if covered, the credit is logged, and the customer's invoice shows the net amount after coverage. See [File a warranty claim and log the vendor credit](/help/managers/file-a-warranty-claim) and [Flag a warranty repair](/help/technicians/flag-a-warranty-repair).
+- **The morning digest now chases warranty reviews too.** A new **Warranty reviews to verify** section lists tickets a tech flagged that nobody has verified or denied yet, alongside the existing **Warranty credits to chase** section for claims filed with a vendor that haven't been credited back.
 
 ## June 2026
 

@@ -15,6 +15,10 @@ export type InvoicedRow = {
   synergy_order_number: string | null
   synergy_invoice_number: string | null
   billing_amount: number | null
+  // What the customer actually paid, post-coverage. Service only -- PM
+  // tickets carry no warranty concept, so this stays null for those rows and
+  // the display falls back to billing_amount.
+  customer_bill_amount: number | null
   completed_at: string | null
   billed_at: string | null
 }
@@ -25,6 +29,7 @@ type ServiceBilledRaw = {
   synergy_order_number: string | null
   synergy_invoice_number: string | null
   billing_amount: number | null
+  customer_bill_amount: number | null
   completed_at: string | null
   billed_at: string | null
   customers: { name: string | null; account_number: string | null } | null
@@ -60,7 +65,7 @@ export async function getInvoicedRows(month?: number, year?: number): Promise<In
     .from('service_tickets')
     .select(`
       id, work_order_number, synergy_order_number, synergy_invoice_number,
-      billing_amount, completed_at, billed_at,
+      billing_amount, customer_bill_amount, completed_at, billed_at,
       customers ( name, account_number )
     `)
     .eq('status', 'billed')
@@ -94,6 +99,7 @@ export async function getInvoicedRows(month?: number, year?: number): Promise<In
     synergy_order_number: t.synergy_order_number,
     synergy_invoice_number: t.synergy_invoice_number,
     billing_amount: t.billing_amount,
+    customer_bill_amount: t.customer_bill_amount,
     completed_at: t.completed_at,
     billed_at: t.billed_at,
   }))
@@ -107,6 +113,7 @@ export async function getInvoicedRows(month?: number, year?: number): Promise<In
     synergy_order_number: t.synergy_order_number,
     synergy_invoice_number: t.synergy_invoice_number,
     billing_amount: t.billing_amount,
+    customer_bill_amount: null,
     completed_at: t.completed_date,
     billed_at: t.billed_at,
   }))

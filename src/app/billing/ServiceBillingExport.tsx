@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
+import { LEGACY_BILLING_TYPE_LABELS } from '@/lib/service-tickets/warranty'
 import BillingNotesDrawer from './BillingNotesDrawer'
 import InlineEditCell from './InlineEditCell'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
@@ -25,12 +26,6 @@ const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
-
-const BILLING_TYPE_LABELS: Record<string, string> = {
-  non_warranty: 'T&M',
-  warranty: 'Warranty',
-  partial_warranty: 'Partial Warranty',
-}
 
 // A ticket is blocked from export when its customer requires a PO but none is on
 // the ticket yet — mirrors the PM Ready-to-Export gate in BillingExport.tsx.
@@ -71,7 +66,7 @@ const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, Servic
   technician: t => t.assigned_technician?.name,
   billing: t => customerAmount(t),
   ticketType: t => t.ticket_type,
-  type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
+  type: t => LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
   completed: t => t.completed_at,
 }
 
@@ -403,7 +398,7 @@ export default function ServiceBillingExport({
                     <div className="mt-0.5 flex items-center gap-2">
                       <TicketTypeBadge type={t.ticket_type} />
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                        {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                         {t.work_order_number != null ? ` · WO#${t.work_order_number}` : ''}
                       </span>
                     </div>
@@ -486,7 +481,7 @@ export default function ServiceBillingExport({
                         <TicketTypeBadge type={t.ticket_type} />
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                        {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {formatDateShort(t.completed_at)}

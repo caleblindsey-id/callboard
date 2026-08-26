@@ -18,7 +18,7 @@ import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
 
 // Every fetcher is a thin adapter over a src/lib/db function, so the digest and
-// the queue page it points at are the same query. Nine of the fourteen are
+// the queue page it points at are the same query. Nine of the fifteen are
 // three-line maps because the shared row types already carry customer_name,
 // equipment_label and a days_since_* field.
 //
@@ -277,6 +277,33 @@ export async function shipToRequestsPending(db: DigestDb): Promise<DigestRow[]> 
     deepLink: '/ship-to-requests',
     badge: badge('Pending', AR),
   }))
+}
+
+/**
+ * Warranty flags waiting on office review: a tech flagged possible coverage
+ * and nobody has verified or denied it yet, so the ticket can't be billed
+ * until someone does. Rides alongside the ticket's normal active work
+ * (open/estimated/approved/in_progress/completed) -- catching the flag while
+ * the job is still moving is the whole point, not just after it completes.
+ */
+export async function warrantyToReview(db: DigestDb): Promise<DigestRow[]> {
+  const rows = await getWarrantyQueue(db)
+  return rows
+    .filter((r) => r.bucket === 'to_review')
+    // Oldest request first. A null request date sorts last: it means the
+    // stamp is missing, not that the flag is fresh.
+    .sort((a, b) => (b.days_since_requested ?? -1) - (a.days_since_requested ?? -1))
+    .map((r) => ({
+      entityKey: entityKey('svc', r.id),
+      title: wo(r.work_order_number),
+      subtitle: r.customer_name,
+      meta:
+        r.days_since_requested === null
+          ? 'requested, age unknown'
+          : `requested ${r.days_since_requested}d ago`,
+      deepLink: `/service/${r.id}`,
+      badge: badge(r.status, AR),
+    }))
 }
 
 /**

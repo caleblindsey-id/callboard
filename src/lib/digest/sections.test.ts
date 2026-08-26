@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { SECTIONS, OWNER_BLOCKS, TOP_N } from './sections'
 import { KEY_PREFIXES } from './types'
 
-test('all fourteen sections are registered', () => {
-  assert.equal(SECTIONS.length, 14)
+test('all fifteen sections are registered', () => {
+  assert.equal(SECTIONS.length, 15)
 })
 
 test('section keys are unique', () => {

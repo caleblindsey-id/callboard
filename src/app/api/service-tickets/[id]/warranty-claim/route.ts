@@ -74,7 +74,7 @@ export async function POST(
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
       .select(
-        'id, status, billing_type, warranty_review_status, deleted_at, hours_worked, warranty_labor_covered, warranty_vendor_labor_rate, warranty_labor_credit_amount, parts_used, shipping_charge, diagnostic_charge, diagnostic_invoice_number, billing_amount, warranty_claim_submitted_at'
+        'id, status, warranty_review_status, deleted_at, hours_worked, warranty_labor_covered, warranty_vendor_labor_rate, warranty_labor_credit_amount, parts_used, shipping_charge, diagnostic_charge, diagnostic_invoice_number, billing_amount, warranty_claim_submitted_at'
       )
       .eq('id', id)
       .single()
@@ -84,12 +84,7 @@ export async function POST(
     if (current.deleted_at) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
-    const isLegacyWarranty =
-      current.warranty_review_status == null &&
-      (current.billing_type === 'warranty' || current.billing_type === 'partial_warranty')
-    // Legacy leg for Round 7 removal: should be unreachable post-160-backfill,
-    // but kept belt-and-braces until that's confirmed clean.
-    if (current.warranty_review_status !== 'verified' && !isLegacyWarranty) {
+    if (current.warranty_review_status !== 'verified') {
       return NextResponse.json({ error: 'This ticket has no verified warranty review.' }, { status: 400 })
     }
 

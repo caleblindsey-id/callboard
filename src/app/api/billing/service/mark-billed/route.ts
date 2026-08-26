@@ -21,7 +21,6 @@ type ServiceTicketBillingRow = {
   ticket_type: string | null
   awaiting_pickup: boolean | null
   ready_for_pickup_at: string | null
-  billing_type: string | null
   warranty_review_status: WarrantyReviewStatus | null
   warranty_credit_received_at: string | null
   customers: { name: string; po_required: boolean } | null
@@ -63,7 +62,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id, work_order_number, status, billing_exported, synergy_invoice_number, po_number,
         ticket_type, awaiting_pickup, ready_for_pickup_at,
-        billing_type, warranty_review_status, warranty_credit_received_at,
+        warranty_review_status, warranty_credit_received_at,
         customers ( name, po_required )
       `)
       .is('deleted_at', null)
@@ -113,7 +112,6 @@ export async function POST(request: NextRequest) {
       const block = warrantyBillingBlock({
         warranty_review_status: t.warranty_review_status,
         warranty_credit_received_at: t.warranty_credit_received_at,
-        billing_type: t.billing_type,
       })
       if (block === 'pending_review') pendingReview.push(t)
       else if (block === 'awaiting_credit') awaitingCredit.push(t)
