@@ -4,11 +4,8 @@ import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import SignaturePad from '@/components/SignaturePad'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import ServicePhotosSection, { PhotoWithPreview } from './ServicePhotosSection'
-import { CardSection, billingTypeLabels } from './detail-ui'
-import type {
-  ServiceTicketDetail as ServiceTicketDetailType,
-  ServiceBillingType,
-} from '@/types/service-tickets'
+import { CardSection } from './detail-ui'
+import type { ServiceTicketDetail as ServiceTicketDetailType } from '@/types/service-tickets'
 
 interface CompletionSectionProps {
   ticket: ServiceTicketDetailType
@@ -34,8 +31,6 @@ interface CompletionSectionProps {
   equipmentToVerify: ServiceTicketDetailType['equipment'] | null
   onEquipmentVerified: () => void
   // Completion form state — owned by the parent (auto-save + submit read it)
-  billingType: ServiceBillingType
-  setBillingType: (v: ServiceBillingType) => void
   laborRateType: string
   setLaborRateType: (v: string) => void
   hoursWorked: string
@@ -104,8 +99,6 @@ export default function CompletionSection({
   completionOpen,
   equipmentToVerify,
   onEquipmentVerified,
-  billingType,
-  setBillingType,
   laborRateType,
   setLaborRateType,
   hoursWorked,
@@ -169,31 +162,6 @@ export default function CompletionSection({
             done before marking complete.
           </div>
         )}
-
-        {/* Warranty confirmation — a repair often turns out to be a warranty
-            claim once the tech is on the machine, but the ticket was keyed
-            non-warranty. Confirm/correct it here at completion. Warranty
-            bills the customer $0 and routes the ticket to the vendor-credit
-            worklist. Saved just before the job is marked complete. */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Billing Type
-          </label>
-          <select
-            value={billingType}
-            onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
-            className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-          >
-            <option value="non_warranty">Non-Warranty</option>
-            <option value="warranty">Warranty (no charge to customer)</option>
-            <option value="partial_warranty">Partial Warranty</option>
-          </select>
-          {billingType !== ticket.billing_type && (
-            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-              Changed to {billingTypeLabels[billingType] ?? billingType} — saved when you complete the job.
-            </p>
-          )}
-        </div>
 
         {/* Labor Type — the rate class the labor is billed at. A job often turns
             out to be an industrial unit (heated pressure washer) once the tech
@@ -336,7 +304,9 @@ export default function CompletionSection({
               parts={completionParts}
               setParts={setCompletionParts}
               showPricing={true}
-              showWarranty={billingType === 'warranty' || billingType === 'partial_warranty'}
+              // Warranty coverage is office-owned via the review lifecycle now
+              // (WarrantyReviewPanel) — the tech no longer flags parts here.
+              showWarranty={false}
               label=""
               allowPriceOverride={isStaff}
               allowPriceEdit={isTech}
@@ -353,7 +323,7 @@ export default function CompletionSection({
             </div>
             {completionParts.length > 0 && (
               <div className="flex justify-between">
-                <span>Parts {ticket.billing_type === 'warranty' ? '(warranty — $0)' : ''}</span>
+                <span>Parts</span>
                 <span>${partsTotal.toFixed(2)}</span>
               </div>
             )}

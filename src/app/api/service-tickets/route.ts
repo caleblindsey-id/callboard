@@ -27,10 +27,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ticket_type must be inside or outside' }, { status: 400 })
     }
 
-    if (body.billing_type && !['non_warranty', 'warranty', 'partial_warranty'].includes(body.billing_type)) {
-      return NextResponse.json({ error: 'Invalid billing_type' }, { status: 400 })
-    }
-
     if (body.priority && !['emergency', 'standard', 'low'].includes(body.priority)) {
       return NextResponse.json({ error: 'Invalid priority' }, { status: 400 })
     }
@@ -104,7 +100,6 @@ export async function POST(request: NextRequest) {
       // keyed by the office. Coerce defensively (mirrors the self-assignment
       // override above); the service_tickets_tech_insert RLS policy also enforces it.
       ticket_type: isTechnician(user.role) ? 'outside' : ticket_type,
-      billing_type: body.billing_type || 'non_warranty',
       priority: body.priority || 'standard',
       problem_description,
       contact_name: body.contact_name || null,
@@ -122,19 +117,6 @@ export async function POST(request: NextRequest) {
         ? String(body.diagnostic_invoice_number).trim() || null
         : null,
       labor_rate_type: body.labor_rate_type,
-      // TRANSITION SHIM (remove in Round 4): a ticket created straight into
-      // billing_type='warranty'|'partial_warranty' via the old field has no
-      // review row yet, and the queue/gate are now keyed off review status —
-      // so auto-stamp it as a verified review at creation.
-      ...(body.billing_type === 'warranty' || body.billing_type === 'partial_warranty'
-        ? {
-            warranty_review_status: 'verified' as const,
-            warranty_review_decided_at: new Date().toISOString(),
-            warranty_review_decided_by_id: user.id,
-            warranty_labor_covered: body.billing_type === 'warranty',
-            warranty_review_decision_note: 'Auto-stamped from billing type (transition shim)',
-          }
-        : {}),
     }
 
     const { data, error } = await supabase
