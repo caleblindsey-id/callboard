@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 
 // A unit that's been repaired + invoiced and is physically waiting in the shop
 // for the customer to collect. Built from service_tickets where
@@ -64,8 +65,8 @@ function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
   return null
 }
 
-export async function getPickupQueue(): Promise<PickupQueueRow[]> {
-  const supabase = await createClient()
+export async function getPickupQueue(db?: DigestDb): Promise<PickupQueueRow[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')

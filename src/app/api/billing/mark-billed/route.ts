@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
         id, work_order_number, status, billing_exported, synergy_invoice_number,
         customers ( name )
       `)
+      .is('deleted_at', null)
       .in('id', ticketIds as string[])
 
     if (fetchError) {
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
       .from('pm_tickets')
       .update({ status: 'billed', billed_at: new Date().toISOString() })
       .in('id', ticketIds as string[])
+      .is('deleted_at', null)
       .eq('status', 'completed')
       .eq('billing_exported', true)
       .select('id')

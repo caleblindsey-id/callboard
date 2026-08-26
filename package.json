@@ -8,8 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts",
-    "check:migrations": "node scripts/check-migration-drift.mjs"
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "check:migrations": "node scripts/check-migration-drift.mjs",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",

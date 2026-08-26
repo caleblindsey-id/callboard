@@ -24,10 +24,17 @@ export type ServiceTicketType = 'inside' | 'outside'
 
 export type ServicePriority = 'emergency' | 'standard' | 'low'
 
+// Warranty review lifecycle (migration 160). requested = awaiting office
+// verification, verified = coverage confirmed, denied = bills full price.
+export type WarrantyReviewStatus = 'requested' | 'verified' | 'denied'
+
 // --- Extended PartUsed with warranty flag ---
 
 export interface ServicePartUsed extends PartUsed {
   warranty_covered?: boolean
+  // Actual amount the vendor credited for this line at reconcile (migration
+  // 160). Internal only, never shown to the customer.
+  vendor_credit_amount?: number | null
 }
 
 // --- Row Types ---
@@ -104,6 +111,11 @@ export type ServiceTicketRow = {
   // trip_charge (migration 105, flat dollars) is retained but no longer read.
   trip_charge: number | null
   trip_charge_qty: number | null
+  // Inbound freight billed to the customer (migration 148, feedback #80). Flat
+  // dollars; NULL = none charged, distinct from an explicit 0. Entered by the
+  // office at PO time in the Parts Queue, correctable on the ticket until
+  // billed. Sits beside trip_charge in every total and on every PDF.
+  shipping_charge: number | null
   diagnostic_invoice_number: string | null
   // Verified-existence stamp for the diagnostic invoice # (migration 137).
   // Written only by the nightly Synergy validator; gates the estimate-surface
@@ -168,6 +180,23 @@ export type ServiceTicketRow = {
   warranty_credit_received_at: string | null
   warranty_credit_received_by_id: string | null
   warranty_credit_amount: number | null
+  // Warranty review lifecycle (migration 160): replaces billing_type as the
+  // source of truth for whether a ticket is covered. requested = awaiting
+  // office verification, verified = coverage confirmed, denied = bills full
+  // price. billing_type is frozen going forward; see lib/service-tickets/warranty.ts.
+  warranty_review_status: WarrantyReviewStatus | null
+  warranty_review_requested_at: string | null
+  warranty_review_requested_by_id: string | null
+  warranty_review_note: string | null
+  warranty_review_decided_at: string | null
+  warranty_review_decided_by_id: string | null
+  warranty_review_decision_note: string | null
+  // Vendor's warranty labor rate, entered by the office to suggest the
+  // expected credit; actual labor credit is entered at line-level reconcile.
+  warranty_vendor_labor_rate: number | null
+  warranty_labor_credit_amount: number | null
+  // Final customer total after warranty coverage. NULL = same as billing_amount.
+  customer_bill_amount: number | null
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string
@@ -220,6 +249,14 @@ export type ServiceTicketWithJoins = ServiceTicketRow & {
   assigned_technician: { name: string } | null
   deleted_by: { name: string } | null
   credit_reviews: { status: CreditReviewStatus }[] | null
+  // Live (non-cancelled) part counts backing the board's readiness chip, mirroring
+  // the detail page's "N of M still pending". Optional because only GET
+  // /api/service-tickets populates them, and only for the approved / in_progress
+  // rows on the page — the parts_order_queue view they come from carries a status
+  // gate that makes it an invalid source for earlier stages. Absent means "not
+  // asked for", which is why the chip checks status rather than these being set.
+  parts_pending?: number
+  parts_total?: number
 }
 
 export type ServiceTicketDetail = ServiceTicketRow & {
@@ -259,6 +296,8 @@ export type ServiceTicketDetail = ServiceTicketRow & {
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
   deleted_by: { name: string } | null
+  warranty_review_requested_by: { name: string } | null
+  warranty_review_decided_by: { name: string } | null
   credit_reviews: { id: string; status: CreditReviewStatus; block_reason: string | null; decided_by_name: string | null }[] | null
 }
 

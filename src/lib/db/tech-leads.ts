@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import type { TechLeadRow, TechLeadStatus } from '@/types/database'
+import type { DigestDb } from '@/lib/digest/types'
+import type { TechLeadRow } from '@/types/database'
 
 // Lead joined with the bits of customer / tech / equipment the UI needs to render
 // a row without a second round-trip.
@@ -31,30 +32,20 @@ export async function getMyLeads(technicianId: string): Promise<TechLeadWithJoin
   return (data ?? []) as unknown as TechLeadWithJoins[]
 }
 
-export async function getAllLeads(filters?: {
-  status?: TechLeadStatus | TechLeadStatus[]
-  earnedBetween?: { from: string; to: string }
-}): Promise<TechLeadWithJoins[]> {
-  const supabase = await createClient()
-  let query = supabase
+// Every lead, newest first. Deliberately unfiltered: the payout hub partitions
+// them client-side across its lifecycle tabs, and there are 34 rows.
+//
+// This used to take a `filters` argument with `status` and `earnedBetween`
+// branches. Nothing ever passed one -- the sole caller calls it bare -- and
+// `earnedBetween` in particular was the server-side version of a filter the old
+// payout report re-implemented in the browser. Removed rather than left as a
+// second, subtly different, way to ask the same question.
+export async function getAllLeads(db?: DigestDb): Promise<TechLeadWithJoins[]> {
+  const supabase = db ?? (await createClient())
+  const { data, error } = await supabase
     .from('tech_leads')
     .select(SELECT_WITH_JOINS)
     .order('submitted_at', { ascending: false })
-
-  if (filters?.status) {
-    if (Array.isArray(filters.status)) {
-      query = query.in('status', filters.status)
-    } else {
-      query = query.eq('status', filters.status)
-    }
-  }
-  if (filters?.earnedBetween) {
-    query = query
-      .gte('earned_at', filters.earnedBetween.from)
-      .lte('earned_at', filters.earnedBetween.to)
-  }
-
-  const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as TechLeadWithJoins[]
 }

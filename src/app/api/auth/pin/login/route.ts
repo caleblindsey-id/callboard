@@ -71,13 +71,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Incorrect PIN.' }, { status: 401 })
     }
 
-    // PIN correct. Confirm the account is still active and grab the email for minting.
+    // PIN correct. Confirm the account is still active.
     const { data: userRow } = await admin
       .from('users')
-      .select('email, active, must_change_password')
+      .select('active, must_change_password')
       .eq('id', user_id)
       .single()
-    if (!userRow || !userRow.active || !userRow.email) {
+    if (!userRow || !userRow.active) {
       return NextResponse.json({ error: 'Incorrect PIN.' }, { status: 401 })
     }
 
@@ -98,11 +98,23 @@ export async function POST(request: NextRequest) {
       .update({ failed_attempts: 0, locked_until: null, last_used_at: new Date().toISOString() })
       .eq('id', row.id)
 
-    // Mint a session: generate a single-use magic-link OTP for this user, then
-    // verify it on the SSR server client so Set-Cookie lands on the response.
+    // Mint against the address on the AUTH record, resolved by id -- never
+    // users.email. That column is a mutable profile field the Synergy sync also
+    // writes, and generateLink({type:'magiclink'}) CREATES an account for an
+    // address it doesn't recognise. When the two drifted apart, every tech's PIN
+    // silently minted a session for an auto-created shadow identity with no
+    // profile, which the proxy then rejected as not_provisioned. Resolving by id
+    // makes the mint independent of profile drift.
+    const { data: authUser, error: authUserError } = await admin.auth.admin.getUserById(user_id)
+    const authEmail = authUser?.user?.email
+    if (authUserError || !authEmail) {
+      console.error('PIN login could not resolve auth identity:', authUserError)
+      return NextResponse.json({ error: 'Could not sign you in. Please use your password.' }, { status: 500 })
+    }
+
     const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
       type: 'magiclink',
-      email: userRow.email,
+      email: authEmail,
     })
     if (linkError || !linkData?.properties?.email_otp) {
       console.error('PIN login generateLink failed:', linkError)
@@ -110,13 +122,24 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient()
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email: userRow.email,
+    const { data: verified, error: verifyError } = await supabase.auth.verifyOtp({
+      email: authEmail,
       token: linkData.properties.email_otp,
       type: 'magiclink',
     })
     if (verifyError) {
       console.error('PIN login verifyOtp failed:', verifyError)
+      return NextResponse.json({ error: 'Could not sign you in. Please use your password.' }, { status: 500 })
+    }
+
+    // Belt and braces: never hand back a session for anyone but the PIN's owner.
+    // Without this, an email pointing at another user's auth record would sign
+    // the tech in AS that person.
+    if (verified?.user?.id !== user_id) {
+      console.error(
+        `PIN login identity mismatch: pin owner ${user_id} but session minted for ${verified?.user?.id}`
+      )
+      await supabase.auth.signOut()
       return NextResponse.json({ error: 'Could not sign you in. Please use your password.' }, { status: 500 })
     }
 

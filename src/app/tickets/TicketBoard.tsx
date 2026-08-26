@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw } from 'lucide-react'
+import { ChevronRight, ChevronDown, AlertOctagon, AlertTriangle, Flag, Trash2, RotateCcw, FileText, FileSignature } from 'lucide-react'
 import { TicketWithJoins } from '@/lib/db/tickets'
 import { displayCreditReviewStatus } from '@/lib/credit-review-status'
 import { UserRow, TicketStatus, MANAGER_ROLES } from '@/types/database'
@@ -75,6 +75,8 @@ interface TicketBoardProps {
   skipRequestedMode?: boolean
   needsReviewMode?: boolean
   deletedMode?: boolean
+  /** Ticket ids already covered by an accepted quote. */
+  quotedTicketIds?: string[]
 }
 
 interface TicketListProps {
@@ -88,6 +90,22 @@ interface TicketListProps {
   deletedMode?: boolean
   onRestore?: (id: string) => void
   restoringId?: string | null
+  needsQuote?: (ticket: TicketWithJoins) => boolean
+}
+
+// Only rendered for customers who opted in via customers.pm_quote_required.
+// A ticket is "covered" when an accepted quote includes it; until then the
+// office needs to see that work cannot start.
+function QuoteNeededBadge() {
+  return (
+    <span
+      title="This customer requires an accepted quote before work can start"
+      className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+    >
+      <FileSignature className="h-3 w-3" />
+      Quote Needed
+    </span>
+  )
 }
 
 function LocationBlock({ ticket }: { ticket: TicketWithJoins }) {
@@ -121,6 +139,7 @@ function TicketList({
   deletedMode = false,
   onRestore,
   restoringId,
+  needsQuote,
 }: TicketListProps) {
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     TicketWithJoins,
@@ -165,6 +184,7 @@ function TicketList({
                     const cr = displayCreditReviewStatus(ticket.credit_reviews)
                     return cr ? <CreditReviewBadge status={cr} /> : null
                   })()}
+                  {needsQuote?.(ticket) && <QuoteNeededBadge />}
                   {deletedMode && (
                     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                       <Trash2 className="h-3 w-3" /> Deleted
@@ -289,6 +309,7 @@ function TicketList({
                         const cr = displayCreditReviewStatus(ticket.credit_reviews)
                         return cr ? <CreditReviewBadge status={cr} /> : null
                       })()}
+                      {needsQuote?.(ticket) && <QuoteNeededBadge />}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
@@ -354,9 +375,14 @@ export default function TicketBoard({
   skipRequestedMode = false,
   needsReviewMode = false,
   deletedMode = false,
+  quotedTicketIds = [],
 }: TicketBoardProps) {
   const isManager = !!userRole && MANAGER_ROLES.includes(userRole)
   const router = useRouter()
+  // Opt-in accounts only, and only until an accepted quote covers the ticket.
+  const quotedSet = useMemo(() => new Set(quotedTicketIds), [quotedTicketIds])
+  const needsQuote = (ticket: TicketWithJoins) =>
+    !!ticket.customers?.pm_quote_required && !quotedSet.has(ticket.id)
   const thisYear = new Date().getFullYear()
 
   const [month, setMonth] = useState(currentMonth)
@@ -382,6 +408,7 @@ export default function TicketBoard({
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [quoting, setQuoting] = useState(false)
   // Instant, in-current-view search over the loaded month/overdue lists. Local
   // (not URL-backed) to match this board's existing local-filter model.
   const [search, setSearch] = useState('')
@@ -521,6 +548,56 @@ export default function TicketBoard({
     if (ids.size === 0) return
     setSkipSource(source)
     setSkipOpen(true)
+  }
+
+  // Customer-facing PM quote across the selected work orders. Creating the
+  // record first is what makes the price a snapshot: the PDF renders from
+  // pm_quote_lines, so a later edit to pm_schedules.flat_rate cannot change
+  // what the customer was quoted. The create route enforces one customer per
+  // quote and rejects non-flat-rate schedules, so a bad selection surfaces as
+  // a message here rather than a wrong price on a customer document.
+  async function handleQuoteSelected(source: 'month' | 'overdue') {
+    const ids = source === 'overdue' ? overdueSelected : selected
+    if (ids.size === 0) return
+    setQuoting(true)
+    setError(null)
+    try {
+      const createRes = await fetch('/api/pm-quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: Array.from(ids) }),
+      })
+      if (!createRes.ok) {
+        const data = await createRes.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(data.error ?? `Server error ${createRes.status}`)
+      }
+      const { id, quote_number: quoteNumber } = await createRes.json()
+
+      const pdfRes = await fetch(`/api/pm-quotes/${id}/pdf`, { method: 'POST' })
+      if (!pdfRes.ok) {
+        const data = await pdfRes.json().catch(() => ({ error: 'Unknown error' }))
+        // The quote itself was saved, so point at it rather than implying the
+        // whole action failed.
+        throw new Error(
+          `${data.error ?? 'Could not render the PDF'}. Quote Q-${quoteNumber} was saved; open it from Quotes to retry.`
+        )
+      }
+      const blob = await pdfRes.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Q-${quoteNumber}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      setSelected(new Set())
+      setOverdueSelected(new Set())
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate the quote')
+    } finally {
+      setQuoting(false)
+    }
   }
 
   function handleSkipDone() {
@@ -709,6 +786,14 @@ export default function TicketBoard({
               {bulkLoading ? 'Processing...' : 'Skip Selected'}
             </button>
             <button
+              onClick={() => handleQuoteSelected(skipSource)}
+              disabled={bulkLoading || quoting}
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
+            >
+              <FileText className="h-4 w-4" />
+              {quoting ? 'Building...' : 'Quote'}
+            </button>
+            <button
               onClick={() => setBulkDeleteOpen(true)}
               disabled={bulkLoading || bulkDeleting}
               className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors min-h-[44px] sm:min-h-0"
@@ -757,6 +842,7 @@ export default function TicketBoard({
               }}
               showOverdueBadges
               emptyMessage={search ? 'No overdue tickets match your search.' : 'No overdue tickets.'}
+              needsQuote={needsQuote}
             />
           )}
         </div>
@@ -778,6 +864,7 @@ export default function TicketBoard({
               toggleAll()
             }}
             emptyMessage={search ? 'No tickets match your search.' : deletedMode ? 'No deleted tickets for the selected filters.' : 'No tickets found for the selected filters.'}
+            needsQuote={needsQuote}
             deletedMode={deletedMode}
             onRestore={handleRestore}
             restoringId={restoringId}

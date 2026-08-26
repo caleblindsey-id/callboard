@@ -3,9 +3,17 @@
 import Link from 'next/link'
 import { ExternalLink, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import PartQuantityField from '@/components/PartQuantityField'
 import VendorPicker from '@/components/VendorPicker'
 import TechEquipmentDetailsPanel from './TechEquipmentDetailsPanel'
 import { partLabel } from '@/lib/parts'
+import {
+  SHIPPING_METHODS,
+  SHIPPING_NOTE_MAX_LEN,
+  isPriorityShipping,
+  shippingMethodLabel,
+  type ShippingMethod,
+} from '@/lib/shipping'
 import { formatDate } from '@/lib/format'
 import type { ProductSearchResult, UseProductSearchReturn } from '@/lib/hooks/useProductSearch'
 import { Badge, CardSection, SynergyNumberField } from './detail-ui'
@@ -48,6 +56,10 @@ interface PartsSectionProps {
   setNewPartVendorCode: (v: string) => void
   newPartPrice: string
   setNewPartPrice: (v: string) => void
+  newPartShippingMethod: ShippingMethod
+  setNewPartShippingMethod: (v: ShippingMethod) => void
+  newPartShippingNote: string
+  setNewPartShippingNote: (v: string) => void
   newPartSynergyProductId: number | null
   newPartIsCatalog: boolean
   addPartReady: boolean
@@ -64,6 +76,7 @@ interface PartsSectionProps {
   onSavePartVendorItemCode: (index: number) => Promise<void>
   onUpdatePartPo: (index: number, poNumber: string) => void
   onSavePartPo: (index: number) => Promise<void>
+  onSavePartQuantity: (index: number, quantity: number) => Promise<void>
   onEquipmentVerified: () => void
   onPromoteEstimateParts: () => Promise<void>
   onSelectCatalogPart: (p: ProductSearchResult) => void
@@ -111,6 +124,10 @@ export default function PartsSection({
   setNewPartVendorCode,
   newPartPrice,
   setNewPartPrice,
+  newPartShippingMethod,
+  setNewPartShippingMethod,
+  newPartShippingNote,
+  setNewPartShippingNote,
   newPartSynergyProductId,
   newPartIsCatalog,
   addPartReady,
@@ -125,6 +142,7 @@ export default function PartsSection({
   onSavePartVendorItemCode,
   onUpdatePartPo,
   onSavePartPo,
+  onSavePartQuantity,
   onEquipmentVerified,
   onPromoteEstimateParts,
   onSelectCatalogPart,
@@ -190,13 +208,28 @@ export default function PartsSection({
                       {part.product_number && isTech && (
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                       )}
-                      <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
+                      <PartQuantityField
+                        part={part}
+                        disabled={loading}
+                        onSave={(qty) => onSavePartQuantity(i, qty)}
+                      />
                       {part.po_number && isTech && (
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">PO: {part.po_number}</span>
                       )}
                       {!part.cancelled && poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`] && (
                         <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
                           Est. arrival {formatDate(poDueDates[`${part.po_number ?? ''}|${part.product_number ?? ''}`])}
+                        </div>
+                      )}
+                      {/* Rush requests only. A "Standard" chip on every line
+                          would be noise, and noise is how a real rush gets
+                          missed. */}
+                      {!part.cancelled && isPriorityShipping(part) && (
+                        <div className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 font-medium">
+                          {shippingMethodLabel(part.shipping_method)} requested
+                          {part.shipping_note ? (
+                            <span className="font-normal text-gray-500 dark:text-gray-400"> — {part.shipping_note}</span>
+                          ) : null}
                         </div>
                       )}
                       {part.cancelled && part.cancel_reason && (
@@ -454,6 +487,53 @@ export default function PartsSection({
                 placeholder={newPartIsCatalog ? 'Price to charge customer (optional; enter 0 if warranty)' : 'Price to charge customer (required; enter 0 if warranty)'}
                 className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
               />
+              {/* Requested shipping speed (feedback #80). Never required —
+                  Standard is the default and the right answer for most parts,
+                  so this doesn't touch the addPartReady gate. The note field
+                  only appears on a rush: a carrier instruction on a ground
+                  order is noise the buyer doesn't need. */}
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                  Shipping
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {SHIPPING_METHODS.map((method) => {
+                    const selected = newPartShippingMethod === method
+                    return (
+                      <button
+                        key={method}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setNewPartShippingMethod(method)
+                          // Back to ground clears the note, so a stale
+                          // "overnight — customer pays" can't ride along.
+                          if (method === 'standard') setNewPartShippingNote('')
+                        }}
+                        className={`flex-1 min-w-[96px] rounded-md border px-3 min-h-[44px] sm:min-h-[34px] text-sm font-medium transition-colors ${
+                          selected
+                            ? method === 'standard'
+                              ? 'border-gray-400 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                              : 'border-amber-500 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
+                            : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {shippingMethodLabel(method)}
+                      </button>
+                    )
+                  })}
+                </div>
+                {newPartShippingMethod !== 'standard' && (
+                  <input
+                    type="text"
+                    value={newPartShippingNote}
+                    onChange={(e) => setNewPartShippingNote(e.target.value)}
+                    maxLength={SHIPPING_NOTE_MAX_LEN}
+                    placeholder="Shipping note, e.g. customer's UPS account (optional)"
+                    className="mt-2 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  />
+                )}
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={onAddPartRequest}

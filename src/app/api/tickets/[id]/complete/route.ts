@@ -13,8 +13,10 @@ import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
 import { partsOnOrder, stampCollectedOnStaged } from '@/lib/parts'
 import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
+import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
+import { isLaborRateType } from '@/lib/labor-rate-type'
 
 interface CompleteTicketBody {
   completedDate: string
@@ -30,6 +32,7 @@ interface CompleteTicketBody {
   billingContactPhone?: string
   additionalPartsUsed?: PartUsed[]
   additionalHoursWorked?: number
+  laborRateType?: 'standard' | 'industrial' | 'vacuum'
   tripChargeQty?: number
   machineHours: number
   dateCode: string
@@ -52,9 +55,16 @@ export async function POST(
       completedDate, hoursWorked, partsUsed, completionNotes,
       customerSignature, customerSignatureName, photos, poNumber,
       billingContactName, billingContactEmail, billingContactPhone,
-      additionalPartsUsed, additionalHoursWorked, tripChargeQty: tripChargeQtyIn, machineHours, dateCode,
+      additionalPartsUsed, additionalHoursWorked, laborRateType: laborRateTypeIn, tripChargeQty: tripChargeQtyIn, machineHours, dateCode,
       aceLabor,
     } = body
+
+    // Optional labor rate type override for the Additional Work (non-PM) labor
+    // line. Reject anything outside the known set before it reaches billing math
+    // or the DB CHECK constraint (feedback #76).
+    if (laborRateTypeIn !== undefined && !isLaborRateType(laborRateTypeIn)) {
+      return NextResponse.json({ error: 'Invalid labor rate type' }, { status: 400 })
+    }
 
     // Validate ACE labor payload if provided.
     if (aceLabor != null) {
@@ -148,7 +158,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('pm_tickets')
-      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
+      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, shipping_charge, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -176,6 +186,22 @@ export async function POST(
       )
     }
 
+    // PM-quote gate. This route is the reason the gate cannot live in the PATCH
+    // route alone: completion does NOT require in_progress first (the only
+    // status it rejects outright is 'billed', just below), so a tech can
+    // complete straight from 'assigned' and never cross the assigned ->
+    // in_progress edge the PATCH route guards. Without this check the gate
+    // would be trivially bypassable.
+    //
+    // Already-completed tickets are exempt: re-completion is idempotent and
+    // blocking it would strand work that is already done.
+    if (current.status !== 'completed') {
+      const quoteGate = await isTicketQuoteGated(id)
+      if (quoteGate) {
+        return NextResponse.json({ error: quoteGate.message }, { status: 409 })
+      }
+    }
+
     // status='completed' is idempotent (no-op inside the RPC), status='billed'
     // raises ALREADY_BILLED -> 409. We still 409 on 'billed' here pre-RPC for
     // a clearer early-exit message, but completed is allowed through so the
@@ -193,7 +219,11 @@ export async function POST(
     const pendingParts = partsOnOrder(current.parts_requested as PartRequest[] | null)
     if (pendingParts.length > 0) {
       return NextResponse.json(
-        { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received or pulled from stock.` },
+        // "pulled from stock" here means the office TRIAGED it to stock, not that
+        // anyone physically pulled it: partsOnOrder accepts status 'from_stock'
+        // whatever pulled_at says. Worded to match, because the old text promised
+        // a check this gate has never made.
+        { error: `Cannot complete: ${pendingParts.length} part(s) are not yet received or marked to come from stock.` },
         { status: 400 }
       )
     }
@@ -230,13 +260,24 @@ export async function POST(
     const tripQty = isNonNegativeNumber(tripChargeQtyIn)
       ? tripChargeQtyIn
       : ((current.trip_charge_qty as number | null) ?? 0)
+
+    // The completer's rate-type pick wins (they may have switched it on the
+    // form without waiting for the 3s autosave); else the stored ticket value
+    // (feedback #76). Used for both the additional-labor billing math and the
+    // ACE payout below, and persisted onto the row.
+    const laborRateType = (laborRateTypeIn ?? current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum'
+
     const { billingAmount: finalBillingAmount, finalAdditionalParts } = await computePmBilling(supabase, {
       customerId: current.customer_id,
-      laborRateType: current.labor_rate_type ?? 'standard',
+      laborRateType,
       flatRate,
       additionalHours: finalAdditionalHours,
       additionalParts: additionalPartsUsed ?? [],
       tripQty,
+      // Office-set freight off the ticket column (feedback #80). Read from the
+      // stored row, never the request body — this route is tech-reachable and
+      // freight pricing stays office-owned.
+      shippingCharge: current.shipping_charge as number | null,
     })
 
     // Snapshot the customer's pricing-visibility flag onto the ticket so future
@@ -251,7 +292,19 @@ export async function POST(
     const completedMonth = completionDate.getUTCMonth() + 1
     const completedYear = completionDate.getUTCFullYear()
 
-    const laborRateType = (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum'
+    // Persist the chosen rate type onto the row so the stored value can't drift
+    // from the billed amount if the completer switched it just before hitting
+    // Complete (before autosave landed). The completion RPC below doesn't touch
+    // this column, so writing it here first is safe (feedback #76).
+    if (laborRateTypeIn !== undefined && laborRateType !== (current.labor_rate_type ?? 'standard')) {
+      const { error: rateErr } = await supabase
+        .from('pm_tickets')
+        .update({ labor_rate_type: laborRateType })
+        .eq('id', id)
+      if (rateErr) {
+        return NextResponse.json({ error: 'Failed to update labor rate type' }, { status: 500 })
+      }
+    }
 
     // All writes — ACE upsert (if provided), ticket completion update, and
     // optional month/year slide + anchor update — flow through a single

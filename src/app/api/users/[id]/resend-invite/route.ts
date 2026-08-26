@@ -22,21 +22,30 @@ export async function POST(
     const admin = await createAdminClient('ADMIN_ONLY')
     const { data: user, error } = await admin
       .from('users')
-      .select('email, name, active')
+      .select('name, active')
       .eq('id', id)
       .single()
 
     if (error || !user) {
       return NextResponse.json({ error: 'User not found.' }, { status: 404 })
     }
-    if (!user.email) {
-      return NextResponse.json({ error: 'This user has no email on file.' }, { status: 400 })
-    }
     if (user.active === false) {
       return NextResponse.json({ error: 'This user is deactivated.' }, { status: 400 })
     }
 
-    await sendUserInviteEmail({ email: user.email, name: user.name })
+    // Resolve the address from the AUTH record, not the profile row. The recovery
+    // link is minted against auth, so using users.email meant that whenever the two
+    // drifted this button 500'd with no explanation of why.
+    const { data: authUser, error: authUserError } = await admin.auth.admin.getUserById(id)
+    const email = authUser?.user?.email
+    if (authUserError || !email) {
+      return NextResponse.json(
+        { error: 'This user has no sign-in account yet, so there is nothing to resend.' },
+        { status: 400 },
+      )
+    }
+
+    await sendUserInviteEmail({ email, name: user.name })
 
     return NextResponse.json({ sent: true })
   } catch (err) {

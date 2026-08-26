@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, MANAGER_ROLES } from '@/lib/auth'
-import { getTechnicianAnalytics, stripTechCostFieldsForCoordinator } from '@/lib/db/analytics'
+import { getTechnicianAnalytics, stripTechCostFieldsForCoordinator, type TicketType } from '@/lib/db/analytics'
+import { ANALYTICS_TICKET_TYPES, isValidDateKey, todayKey } from '@/lib/analytics-period'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export async function GET(
   request: NextRequest,
@@ -23,12 +23,16 @@ export async function GET(
     if (periodParam !== 'weekly' && periodParam !== 'monthly') {
       return NextResponse.json({ error: 'Invalid period' }, { status: 400 })
     }
-    const date = request.nextUrl.searchParams.get('date') ?? new Date().toISOString().split('T')[0]
-    if (!DATE_RE.test(date)) {
+    const date = request.nextUrl.searchParams.get('date') ?? todayKey()
+    if (!isValidDateKey(date)) {
       return NextResponse.json({ error: 'Invalid date — must be YYYY-MM-DD' }, { status: 400 })
     }
+    const typeParam = (request.nextUrl.searchParams.get('type') ?? 'combined') as TicketType
+    if (!ANALYTICS_TICKET_TYPES.includes(typeParam)) {
+      return NextResponse.json({ error: 'Invalid type — must be pm, service, or combined' }, { status: 400 })
+    }
 
-    const raw = await getTechnicianAnalytics(id, periodParam, date)
+    const raw = await getTechnicianAnalytics(id, periodParam, date, typeParam)
     const data = stripTechCostFieldsForCoordinator(raw, user.role)
     return NextResponse.json(data)
   } catch (err) {

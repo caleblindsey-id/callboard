@@ -34,6 +34,11 @@ interface EstimateData {
   laborRate: number
   parts: EstimatePart[]
   tripCharge: number
+  // Inbound freight (feedback #80); 0 when none. Like diagnosticCharge below,
+  // this is NOT part of estimate_amount — freight is only known once the PO is
+  // placed, which happens after approval — so it is a display-time line, and
+  // estimateTotal passed in already includes it.
+  shippingCharge: number
   // Diagnostic fee as a signed display line (lib/service-tickets/diagnostic.ts):
   // 0 = none. diagnosticCredited → already invoiced + verified, renders as a
   // negative credit. estimateTotal passed in already includes the signed value.
@@ -315,6 +320,16 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
             </View>
           )}
 
+          {/* Shipping line — freight on special-ordered parts */}
+          {estimate.shippingCharge > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.colDescription}>Shipping</Text>
+              <Text style={styles.colQty}></Text>
+              <Text style={styles.colPrice}></Text>
+              <Text style={styles.colTotal}>{money(estimate.shippingCharge)}</Text>
+            </View>
+          )}
+
           {/* Diagnostic fee line — credit when already invoiced + verified */}
           {estimate.diagnosticCharge > 0 && (
             <View style={styles.tableRow}>
@@ -350,6 +365,12 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Trip Charge:</Text>
               <Text style={styles.summaryValue}>{money(estimate.tripCharge)}</Text>
+            </View>
+          )}
+          {estimate.shippingCharge > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Shipping:</Text>
+              <Text style={styles.summaryValue}>{money(estimate.shippingCharge)}</Text>
             </View>
           )}
           {estimate.diagnosticCharge > 0 && (

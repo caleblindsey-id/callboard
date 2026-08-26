@@ -11,6 +11,8 @@ export interface TicketNextStepBarProps {
   isTech: boolean
   loading: boolean
   onStartWork: () => void
+  /** Non-null when a gate blocks starting work; disables the button. */
+  startBlockedReason?: string | null
   onOpenSkipRequest: () => void
 }
 
@@ -33,6 +35,7 @@ export default function TicketNextStepBar({
   isTech,
   loading,
   onStartWork,
+  startBlockedReason = null,
   onOpenSkipRequest,
 }: TicketNextStepBarProps) {
   const { nextActor, blocker, enteredAt } = deriveWorkflowProps(ticket)
@@ -49,7 +52,8 @@ export default function TicketNextStepBar({
         {(ticket.status === 'unassigned' || ticket.status === 'assigned') && (
           <button
             onClick={onStartWork}
-            disabled={loading}
+            disabled={loading || !!startBlockedReason}
+            title={startBlockedReason ?? undefined}
             className="px-5 py-3 text-sm font-semibold text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
           >
             {loading ? 'Starting...' : 'Start Work'}

@@ -64,10 +64,12 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
   const sentQ = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .not('estimated_at', 'is', null)
   const approvedQ = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .not('estimate_approved_at', 'is', null)
   // Row-fetch queries carry an explicit generous limit: PostgREST silently caps
   // un-limited selects at 1,000 rows, which would undercount without a signal.
@@ -122,6 +124,7 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
   const filedQ = supabase
     .from('service_tickets')
     .select('warranty_claim_submitted_at, warranty_credit_received_at, warranty_credit_amount', { count: 'exact' })
+    .is('deleted_at', null)
     .not('warranty_claim_submitted_at', 'is', null)
     .limit(10_000)
   const outstandingQ = supabase
@@ -162,6 +165,7 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
   const overridesQ = supabase
     .from('service_tickets')
     .select('margin_override_by, margin_override_at')
+    .is('deleted_at', null)
     .not('margin_override_at', 'is', null)
     .limit(10_000)
   const overridesRes = await (cutoff ? overridesQ.gte('margin_override_at', cutoff) : overridesQ)

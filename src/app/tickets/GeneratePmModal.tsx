@@ -25,6 +25,7 @@ interface GenerateResult {
   pendingReview: number
   flagged: number
   creditReviewNotEmailed: number
+  notifiedTechs: number
 }
 
 interface GeneratePmModalProps {
@@ -107,6 +108,7 @@ export default function GeneratePmModal({
         pendingReview: data.pendingReview ?? 0,
         flagged: data.flagged ?? 0,
         creditReviewNotEmailed: data.creditReviewNotEmailed ?? 0,
+        notifiedTechs: data.notifiedTechs ?? 0,
       })
     } finally {
       setSubmitting(false)
@@ -148,6 +150,9 @@ export default function GeneratePmModal({
                 Created {result.created} ticket{result.created === 1 ? '' : 's'}.
                 {result.pendingReview > 0 && (
                   <> {result.pendingReview} sent to AR for credit review.</>
+                )}
+                {result.notifiedTechs > 0 && (
+                  <> Notified {result.notifiedTechs} tech{result.notifiedTechs === 1 ? '' : 's'}.</>
                 )}
               </p>
             </div>

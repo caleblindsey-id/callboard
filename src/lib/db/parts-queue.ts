@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
+import type { DigestDb } from '@/lib/digest/types'
+import { partsMissingFromWorkOrder } from '@/lib/parts'
+import type { PartRequest, PartUsed, PartsQueueRow, PartsQueueSource } from '@/types/database'
 
 // Columns the queue page actually renders. customer_id and assigned_technician_id
 // are present on the view but never displayed — keeping them out of the wire
@@ -19,7 +21,9 @@ const QUEUE_COLUMNS = `
   covered_by_agreement,
   qty_on_hand, qty_on_po,
   triaged_by, triaged_at, triage_reason, qoh_at_triage, qopo_at_triage,
-  pulled_at, pulled_by, bin_location, po_due_date
+  pulled_at, pulled_by, bin_location, po_due_date,
+  shipping_method, shipping_note, shipping_charge,
+  ticket_status
 `
 
 // Estimated arrival dates for a ticket's ordered parts, keyed
@@ -57,8 +61,8 @@ export async function getPoDueDates(
   return map
 }
 
-export async function getPartsQueue(): Promise<PartsQueueRow[]> {
-  const supabase = await createClient()
+export async function getPartsQueue(db?: DigestDb): Promise<PartsQueueRow[]> {
+  const supabase = db ?? (await createClient())
   const { data, error } = await supabase
     .from('parts_order_queue')
     .select(QUEUE_COLUMNS)
@@ -150,6 +154,9 @@ function flattenParts(rows: TicketPartsRow[], source: PartsQueueSource): MyPartR
       // Mirror the parts_order_queue view rule: hide service parts still awaiting
       // an estimate decision (pending_review or requested) until the estimate is
       // approved — uncommitted estimates aren't actionable yet. PM parts always show.
+      // The view extends the same rule to declined/canceled tickets (migration
+      // 147); no branch for that is needed here because the query above drops
+      // those tickets wholesale.
       if (
         source === 'service' &&
         (status === 'requested' || status === 'pending_review') &&
@@ -200,6 +207,7 @@ export async function getMyPartsQueue(userId: string): Promise<MyPartRow[]> {
       .from('service_tickets')
       .select('id, work_order_number, status, parts_requested, customers(name), equipment_make, equipment_model, equipment_serial_number, equipment(make, model, serial_number)')
       .eq('assigned_technician_id', userId)
+      .is('deleted_at', null)
       // Service parts drop off the tech queue at completion (parity with PM
       // above), not at billing — once the work is done the tech is finished
       // with them. Mirrors getPartsReadyForPickupCount / getPartsOnOrderCount.
@@ -213,4 +221,131 @@ export async function getMyPartsQueue(userId: string): Promise<MyPartRow[]> {
     ...flattenParts((pmResult.data ?? []) as unknown as TicketPartsRow[], 'pm'),
     ...flattenParts((serviceResult.data ?? []) as unknown as TicketPartsRow[], 'service'),
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Office reconciliation: fulfilled parts that never reached the work order
+//
+// The standing answer to "is this still happening". parts_requested is
+// procurement; parts_used / additional_parts_used are the billable work order,
+// and only the latter reaches billing, the work-order PDF, and the billing
+// export. Parts are now auto-added on fulfillment, but a tech can still delete
+// a line, a legacy part predates the auto-add, and the completion form can race
+// it — so the office needs a list, not just a per-ticket banner.
+//
+// Reads the ticket tables directly rather than parts_order_queue for the same
+// reason getMyPartsQueue does: the view carries no work-order lines at all, and
+// its PM branch has no parent-status filter. Scope is open + completed-not-yet-
+// billed tickets, i.e. everything still fixable before the invoice goes out.
+// Already-billed history is the one-time report's job, not this page's.
+// ---------------------------------------------------------------------------
+
+export type MissingWorkOrderPartRow = {
+  source: PartsQueueSource
+  ticket_id: string
+  work_order_number: number | null
+  ticket_status: string
+  part_index: number
+  customer_name: string | null
+  assigned_technician_name: string | null
+  description: string | null
+  detail: string | null
+  product_number: string | null
+  quantity: number | null
+  unit_price: number | null
+  /** quantity x unit_price — what the customer was not charged. */
+  extended_value: number
+  status: PartRequest['status']
+  covered_by_agreement: boolean | null
+  requested_at: string | null
+  received_at: string | null
+  pulled_at: string | null
+}
+
+type MissingScanRow = {
+  id: string
+  work_order_number: number | null
+  status: string
+  parts_requested: PartRequest[] | null
+  parts_used: PartUsed[] | null
+  additional_parts_used?: PartUsed[] | null
+  customers: { name: string } | null
+  users: { name: string } | null
+}
+
+function scanMissing(
+  rows: MissingScanRow[],
+  source: PartsQueueSource,
+): MissingWorkOrderPartRow[] {
+  const out: MissingWorkOrderPartRow[] = []
+  for (const ticket of rows) {
+    const requested = Array.isArray(ticket.parts_requested) ? ticket.parts_requested : []
+    // Shared matcher — the same one the server-side auto-add and the tech-facing
+    // banner use, so the office list can't disagree with what the tech was shown.
+    const missing = partsMissingFromWorkOrder(
+      requested,
+      ticket.parts_used,
+      source === 'pm' ? ticket.additional_parts_used : null,
+    )
+    for (const part of missing) {
+      const qty = part.quantity ?? 0
+      const price = typeof part.unit_price === 'number' ? part.unit_price : 0
+      out.push({
+        source,
+        ticket_id: ticket.id,
+        work_order_number: ticket.work_order_number,
+        ticket_status: ticket.status,
+        // Ordinal in parts_requested — the addressing convention the Parts Queue
+        // and the "not used" write both rely on.
+        part_index: requested.indexOf(part),
+        customer_name: ticket.customers?.name ?? null,
+        assigned_technician_name: ticket.users?.name ?? null,
+        description: part.description ?? null,
+        detail: part.detail ?? null,
+        product_number: part.product_number ?? null,
+        quantity: qty,
+        unit_price: price,
+        extended_value: qty * price,
+        status: part.status,
+        covered_by_agreement: part.covered_by_agreement ?? null,
+        requested_at: part.requested_at ?? null,
+        received_at: part.received_at ?? null,
+        pulled_at: part.pulled_at ?? null,
+      })
+    }
+  }
+  return out
+}
+
+export async function getPartsMissingFromWorkOrder(): Promise<MissingWorkOrderPartRow[]> {
+  const supabase = await createClient()
+
+  // Two literal selects, not one interpolated string: additional_parts_used is
+  // PM-only and supabase-js parses the select literal at the type level.
+  // deleted_at IS NULL on both — soft-deleted tickets keep their pre-delete
+  // status and RLS does not hide them, so an unguarded scan double-counts.
+  const [pmResult, serviceResult] = await Promise.all([
+    supabase
+      .from('pm_tickets')
+      .select(
+        'id, work_order_number, status, parts_requested, parts_used, additional_parts_used, customers(name), users!pm_tickets_assigned_technician_id_fkey(name)',
+      )
+      .is('deleted_at', null)
+      .not('status', 'in', '("billed","skipped")'),
+    supabase
+      .from('service_tickets')
+      .select(
+        'id, work_order_number, status, parts_requested, parts_used, customers(name), users!service_tickets_assigned_technician_id_fkey(name)',
+      )
+      .is('deleted_at', null)
+      .not('status', 'in', '("billed","declined","canceled")'),
+  ])
+
+  if (pmResult.error) throw pmResult.error
+  if (serviceResult.error) throw serviceResult.error
+
+  return [
+    ...scanMissing((pmResult.data ?? []) as unknown as MissingScanRow[], 'pm'),
+    ...scanMissing((serviceResult.data ?? []) as unknown as MissingScanRow[], 'service'),
+  ].sort((a, b) => b.extended_value - a.extended_value)
 }

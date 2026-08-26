@@ -19,17 +19,21 @@ import {
   billingGateSatisfied,
 } from '@/lib/transitions/service'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
+import { warrantyBillingBlock, WarrantyReviewStatus } from '@/lib/service-tickets/warranty'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { partsOnOrder, partsAllFulfilled, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber, validateQuantityEdits, quantitySyncPatch } from '@/lib/parts'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, minPrice, MARGIN_FLOOR, COST_FLOOR } from '@/lib/margin'
+import { normalizeShippingCharge } from '@/lib/shipping'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
 import { notifyTechOfAssignment } from '@/lib/service-tickets/notify-assignment'
 import { recordEquipmentEstimate } from '@/lib/service-tickets/record-equipment-estimate'
 import { notifyDecline } from '@/lib/service-tickets/notify-decline'
 import { notifyApprove } from '@/lib/service-tickets/notify-approve'
+import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
+import { SERVICE_STATUS } from '@/lib/constants/service-status'
 
 // Fields staff (manager/coordinator) can update
 const STAFF_ALLOWED_FIELDS = [
@@ -63,6 +67,13 @@ const STAFF_ALLOWED_FIELDS = [
   'billing_amount',
   'diagnostic_charge',
   'trip_charge_qty',
+  // Inbound freight billed to the customer (feedback #80). STAFF-ONLY on
+  // purpose: the number comes off the vendor's freight quote at PO time, which
+  // only the buyer sees. Deliberately absent from TECH_ALLOWED_FIELDS below —
+  // a tech setting what the customer pays for freight is a pricing decision,
+  // and the tech-facing price controls they DO have (trip_charge_qty, part
+  // prices) are all quantity or catalog-bounded.
+  'shipping_charge',
   'diagnostic_invoice_number',
   'po_number',
   'awaiting_pickup',
@@ -126,6 +137,14 @@ const TECH_ALLOWED_FIELDS = [
   'contact_name',
   'contact_email',
   'contact_phone',
+  // The tech on the machine is the one who knows it's a heated pressure washer
+  // (industrial) rather than a standard unit, and they never see the staff-only
+  // Assignment card — so without this they had no way to set the rate class at
+  // any stage and the job silently billed at the standard rate (feedback #83).
+  // Only the rate CLASS; the dollar value per class stays office-controlled in
+  // Settings, same split as trip_charge_qty. The tech ownership check below
+  // scopes this to their own ticket.
+  'labor_rate_type',
 ] as const
 
 export async function GET(
@@ -177,8 +196,7 @@ export async function PATCH(
       Object.entries(raw).filter(([key]) => allowedFields.includes(key))
     )
 
-    if (filtered.labor_rate_type !== undefined &&
-        !['standard', 'industrial', 'vacuum'].includes(filtered.labor_rate_type as string)) {
+    if (filtered.labor_rate_type !== undefined && !isLaborRateType(filtered.labor_rate_type)) {
       return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
     }
 
@@ -215,6 +233,18 @@ export async function PATCH(
       if (typeof tq !== 'number' || !Number.isFinite(tq) || tq < 0) {
         return NextResponse.json({ error: 'trip_charge_qty must be a non-negative number' }, { status: 400 })
       }
+    }
+
+    // shipping_charge validation (null clears it back to "no freight charged",
+    // which is deliberately distinct from an explicit 0). Shared validator with
+    // the parts-queue set_shipping_charge action so the two write paths can't
+    // disagree about what's acceptable.
+    if (filtered.shipping_charge !== undefined) {
+      const sc = normalizeShippingCharge(filtered.shipping_charge)
+      if (!sc.ok) {
+        return NextResponse.json({ error: sc.error }, { status: 400 })
+      }
+      filtered.shipping_charge = sc.value
     }
 
     // estimate_labor_hours validation
@@ -258,7 +288,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, warranty_review_status, warranty_credit_received_at, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, shipping_charge, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -269,6 +299,48 @@ export async function PATCH(
     // Techs can only update their own assigned tickets
     if (isTechnician(user.role) && current.assigned_technician_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // TRANSITION SHIM (remove in Round 4): staff/techs can still write
+    // billing_type='warranty'|'partial_warranty' via the old field until the
+    // billing-type UI is retired. A ticket that's never been through the new
+    // review flow (warranty_review_status still null) would otherwise be
+    // invisible to the queue/gate, which are now keyed off review status —
+    // so auto-stamp it as a verified review on the spot.
+    if (
+      (filtered.billing_type === 'warranty' || filtered.billing_type === 'partial_warranty') &&
+      current.warranty_review_status == null
+    ) {
+      const now = new Date().toISOString()
+      filtered.warranty_review_status = 'verified'
+      filtered.warranty_review_decided_at = now
+      filtered.warranty_review_decided_by_id = user.id
+      filtered.warranty_labor_covered = filtered.billing_type === 'warranty'
+      filtered.warranty_review_decision_note = 'Auto-stamped from billing type (transition shim)'
+    }
+
+    // Freight is a TERM of billing_amount, and billing_amount is computed once,
+    // server-side, at completion. Accepting a shipping_charge edit afterwards
+    // would store a number that no total anywhere reflects — the PDF and the
+    // invoice would silently disagree with the column. Reject instead, and say
+    // what to do about it. Reopening re-runs the completion math, which picks
+    // the new freight up correctly.
+    //
+    // Not a practical constraint in the normal flow: parts must be RECEIVED
+    // before a service ticket can complete, and the vendor's freight lands with
+    // the goods — so the number is knowable well before this point. The
+    // mark-ordered prompt exists to make sure it is actually captured there.
+    if (
+      filtered.shipping_charge !== undefined &&
+      (current.status === 'completed' || current.status === 'billed') &&
+      (filtered.shipping_charge ?? null) !== (current.shipping_charge ?? null)
+    ) {
+      return NextResponse.json(
+        {
+          error: `Cannot change the shipping charge on a ${current.status} ticket — its total is already final. Reopen the ticket to change it.`,
+        },
+        { status: 409 },
+      )
     }
 
     // Manager-only below-floor override. Read from the raw body (it's not a
@@ -467,6 +539,30 @@ export async function PATCH(
         return NextResponse.json({ error: 'Use the complete endpoint to submit ticket completion' }, { status: 403 })
       }
 
+      // Nobody else can either. This used to block technicians ONLY, which left
+      // every staff role a side door around POST /complete and everything it
+      // enforces: the customer signature, the equipment make/model/serial
+      // verification, the un-triaged parts gate, the 15% parts margin floor, and
+      // the collected-stamp sweep. A manager PATCHing {status:'completed'} landed
+      // straight in updateServiceTicket with none of it run.
+      //
+      // Mirrors the PM route, which has always answered 422 here. Service needs
+      // no billed -> completed exception the way PM does for its re-export reset:
+      // SERVICE_VALID_TRANSITIONS.billed is ['open','approved'], so that edge
+      // does not exist on this side.
+      //
+      // Verified unreachable from the app before adding: no client builds a
+      // service status control off SERVICE_VALID_TRANSITIONS (it is consumed
+      // server-side by canTransition only), the Complete Job button posts to
+      // /complete, and the billing export/unexport/mark-billed routes write the
+      // table directly rather than through this PATCH.
+      if (nextStatus === SERVICE_STATUS.COMPLETED) {
+        return NextResponse.json(
+          { error: 'Use POST /api/service-tickets/[id]/complete to mark a ticket complete' },
+          { status: 422 }
+        )
+      }
+
       // Manual approve/decline requires a note for the record. The customer-
       // facing /api/approve/[token] route is the only path that's allowed to
       // transition an estimated ticket without a note. Auto-approval (under
@@ -519,28 +615,27 @@ export async function PATCH(
           }
         }
 
-        // --- Hard block: warranty work isn't billed until the vendor credit
-        // lands. A warranty/partial-warranty repair files a claim with the
-        // vendor and waits for the credit that offsets covered parts; billing
-        // before that closes the claim prematurely. Cleared by logging the
-        // credit on the warranty-claims worklist (warranty_credit_received_at).
+        // --- Hard block: warranty work isn't billed until the office has
+        // verified coverage and, if covered, the vendor credit has landed.
+        // See src/lib/service-tickets/warranty.ts for the review lifecycle.
         const billingType =
           (filtered.billing_type as string | undefined) ?? current.billing_type ?? 'non_warranty'
-        if (billingType === 'warranty' || billingType === 'partial_warranty') {
-          const creditReceived = filtered.warranty_credit_received_at ?? null
-          if (!creditReceived) {
-            const { data: full } = await supabase
-              .from('service_tickets')
-              .select('warranty_credit_received_at')
-              .eq('id', id)
-              .single()
-            if (!full?.warranty_credit_received_at) {
-              return NextResponse.json(
-                { error: 'Vendor credit not yet received — log the warranty credit before billing this ticket.' },
-                { status: 400 }
-              )
-            }
-          }
+        const warrantyBlock = warrantyBillingBlock({
+          warranty_review_status: current.warranty_review_status as WarrantyReviewStatus | null,
+          warranty_credit_received_at: current.warranty_credit_received_at,
+          billing_type: billingType,
+        })
+        if (warrantyBlock === 'pending_review') {
+          return NextResponse.json(
+            { error: 'Warranty review pending — record the coverage verdict before billing this ticket.' },
+            { status: 400 }
+          )
+        }
+        if (warrantyBlock === 'awaiting_credit') {
+          return NextResponse.json(
+            { error: 'Vendor credit not yet received — log the warranty credit before billing this ticket.' },
+            { status: 400 }
+          )
         }
 
         // --- Hard block: a PO-required customer can't be billed without a PO ---
@@ -826,7 +921,7 @@ export async function PATCH(
       filtered.labor_rate_type !== undefined
 
     if (estimateInputsChanged) {
-      const rateType = (filtered.labor_rate_type as string | undefined) ?? current.labor_rate_type ?? 'standard'
+      const rateType = resolveLaborRateType(filtered.labor_rate_type, current.labor_rate_type)
       const laborRate = await getCustomerLaborRate(current.customer_id, rateType)
 
       // Use the new value if supplied, otherwise fall back to the existing
@@ -875,6 +970,14 @@ export async function PATCH(
         ? 0
         : effectiveTripChargeQty(tripQtyRaw, current.ticket_type as string) * await getTripChargeRate()
 
+      // Freight is deliberately NOT part of estimate_amount, exactly like the
+      // diagnostic fee. Both are known only AFTER the quote: freight arrives
+      // with the vendor's PO, which is placed once the customer has already
+      // approved. Folding it in would mean silently rewriting an approved
+      // figure after the fact, and — because this recompute only fires when an
+      // estimate INPUT changes — a later freight edit would leave the stored
+      // amount stale while the PDF still derived its trip-charge line from it.
+      // Both estimate surfaces add it as a display-time line instead.
       const total = laborTotal + partsTotal + tripCharge
 
       filtered.estimate_amount = total
@@ -944,6 +1047,45 @@ export async function PATCH(
         return NextResponse.json({ error: manualError }, { status: 400 })
       }
 
+      // A quantity may only be corrected while the part is still a request
+      // (pending_review / requested / ordered). This route takes the WHOLE array
+      // from the client, so the window has to be enforced here against the
+      // stored statuses — nothing else stops a payload from rewriting the
+      // quantity of a part that is already received and already billed.
+      const qtyError = validateQuantityEdits(existingParts, parts)
+      if (qtyError) {
+        return NextResponse.json({ error: qtyError }, { status: 400 })
+      }
+
+      // Carry a changed quantity through to the work-order line it was copied
+      // to, matched on the exact from_request_at link. Reachable after a manager
+      // Reset, which reopens a received part's quantity while its billable line
+      // stays behind. Derived server-side and merged into `filtered` AFTER the
+      // allowlist filter on purpose: parts_used is tech-only on this route, so a
+      // staff PATCH carrying it is stripped to {} and 400s.
+      const qtySync = quantitySyncPatch({
+        source: 'service',
+        previous: existingParts,
+        next: parts,
+        existingUsed:
+          (filtered.parts_used as ServicePartUsed[] | undefined) ??
+          (current.parts_used as ServicePartUsed[] | null),
+      })
+      if (qtySync?.parts_used) {
+        filtered.parts_used = qtySync.parts_used as ServicePartUsed[]
+      }
+
+      // Lock parts on a billed ticket: a new request once it's billed lands in
+      // the office Parts Queue with nothing left to bill against, and orphans
+      // there. Reopen the ticket first. Editing/receiving existing parts (same
+      // count) is still allowed.
+      if (current.status === 'billed' && parts.length > existingParts.length) {
+        return NextResponse.json(
+          { error: 'This ticket is billed. Reopen it before adding new parts.' },
+          { status: 409 }
+        )
+      }
+
       // Machine gate: a new part request requires make/model/serial on the
       // ticket. Service resolves inline equipment_* COALESCE'd over the linked
       // equipment row (mirrors the parts_order_queue view).
@@ -967,12 +1109,10 @@ export async function PATCH(
           )
         }
       }
-      // parts_received: ignore cancelled parts. Without this filter, a single
-      // cancelled part keeps parts_received=false forever (since cancelled parts
-      // retain their pre-cancel status, never 'received').
-      const live = parts.filter((p: PartRequest) => !p.cancelled)
-      const allReceived = live.length > 0 && live.every((p: PartRequest) => p.status === 'received')
-      filtered.parts_received = allReceived
+      // Shared with api/parts-queue/update so the two writers of this column can
+      // never disagree. This route used to require every live part to be
+      // 'received', excluding from_stock, which is the drift migration 146 cleans up.
+      filtered.parts_received = partsAllFulfilled(parts)
     }
 
     // Validate equipment_id belongs to this ticket's customer (prevents cross-customer linking)

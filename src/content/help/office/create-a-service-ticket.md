@@ -4,7 +4,7 @@ category: Office
 roles: [super_admin, manager, coordinator]
 order: 10
 summary: Open a repair ticket, build an itemized estimate, and send it to the customer for approval.
-last_verified: 2026-05-28
+last_verified: 2026-07-30
 ---
 
 When a customer calls with a problem, you open a service ticket, optionally build an estimate, and send it to them to approve before work begins.
@@ -29,6 +29,7 @@ When a customer calls with a problem, you open a service ticket, optionally buil
 
 Open the new ticket. While it's **Open**, build the estimate:
 
+- **Labor Rate Type** — Standard / Industrial / Vacuum, each showing its $/hr. Corrects the class keyed at intake (an industrial unit such as a heated pressure washer bills higher). **Technicians can change this too** — the tech on the machine is often the one who spots the misclassification.
 - **Estimated Labor Hours** — multiplied by the labor rate.
 - **Parts** — add each line with quantity, price, and a warranty checkbox (warranty parts count as $0). Each row has a **Request Part** button that drops it into the [Parts Queue](/help/office/order-parts) so sourcing can start right away.
 - **Diagnosis Notes** — **these are shown to the customer** on the approval page. Keep internal commentary out.

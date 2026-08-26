@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { UserRole } from '@/types/database'
+import { UserRole, LaborRateType } from '@/types/database'
 import VerifyEquipmentPanel from '@/components/VerifyEquipmentPanel'
 import SignaturePad from '@/components/SignaturePad'
 import InlineError from '@/components/ui/InlineError'
@@ -36,6 +36,8 @@ export interface InProgressPanelProps {
   setAdditionalHoursWorked: (v: string) => void
   additionalLaborTotal: number
   laborRate: number
+  laborRateType: LaborRateType
+  setLaborRateType: (v: LaborRateType) => void
   isTech: boolean
   tripChargeQty: string
   setTripChargeQty: (v: string) => void
@@ -130,6 +132,8 @@ export default function InProgressPanel({
   setAdditionalHoursWorked,
   additionalLaborTotal,
   laborRate,
+  laborRateType,
+  setLaborRateType,
   isTech,
   tripChargeQty,
   setTripChargeQty,
@@ -296,6 +300,26 @@ export default function InProgressPanel({
               Additional Work — Not Covered Under Agreement
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Labor and parts beyond the PM agreement</p>
+
+            {/* Labor Type — the rate this additional (non-PM) labor is billed at.
+                The covered PM work is flat-rate under agreement, so this only
+                drives the Additional Labor line + ACE payout (feedback #76). */}
+            <div className="mb-3">
+              <label htmlFor="additionalLaborRateType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Labor Type
+              </label>
+              <select
+                id="additionalLaborRateType"
+                value={laborRateType}
+                onChange={(e) => setLaborRateType(e.target.value as LaborRateType)}
+                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm text-gray-900 w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              >
+                <option value="standard">Standard</option>
+                <option value="industrial">Industrial</option>
+                <option value="vacuum">Vacuum</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Rate applied to the additional labor hours below.</p>
+            </div>
 
             {/* Additional Labor Hours */}
             <div className="mb-3">

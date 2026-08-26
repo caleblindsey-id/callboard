@@ -8,14 +8,17 @@ import { PartRequest, PartUsed, PmTicketUpdate, TicketStatus } from '@/types/dat
 import { EMPTY_COMPLETION_FIELDS } from '@/lib/ticket-transitions'
 import {
   canTransition,
+  isWorkStartTransition,
   isReopenTransition,
   isResetTransition,
   technicianForbiddenTarget,
   isCreditGatedTarget,
 } from '@/lib/transitions/pm'
+import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
-import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber } from '@/lib/parts'
+import { partsOnOrder, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber, validateQuantityEdits, quantitySyncPatch } from '@/lib/parts'
+import { normalizeShippingCharge } from '@/lib/shipping'
 
 // Only allow these fields to be updated via PATCH. `skip_previous_status` is
 // intentionally excluded — it's set server-side inside the skip-request branch
@@ -30,6 +33,9 @@ const ALLOWED_FIELDS = [
   'parts_used',
   'billing_amount',
   'trip_charge_qty',
+  // Inbound freight billed to the customer (migration 148, feedback #80).
+  // Validated as a non-negative number below, same as the service route.
+  'shipping_charge',
   'photos',
   'po_number',
   'billing_contact_name',
@@ -37,6 +43,9 @@ const ALLOWED_FIELDS = [
   'billing_contact_phone',
   'additional_parts_used',
   'additional_hours_worked',
+  // Drives the rate on the Additional Work (non-PM) labor line; a tech can
+  // switch it on the completion form (feedback #76).
+  'labor_rate_type',
   'skip_reason',
   'skip_reason_category',
   'skip_recommended_month',
@@ -66,6 +75,7 @@ const TECH_ALLOWED_FIELDS = [
   'billing_contact_phone',
   'additional_parts_used',
   'additional_hours_worked',
+  'labor_rate_type',
   'skip_reason',
   'skip_reason_category',
   'skip_recommended_month',
@@ -124,6 +134,39 @@ export async function PATCH(
       }
     }
 
+    // shipping_charge validation (feedback #80). null clears it back to "no
+    // freight charged", which is distinct from an explicit 0. Same shared
+    // validator the service route and the parts-queue action use.
+    if (filtered.shipping_charge !== undefined) {
+      const sc = normalizeShippingCharge(filtered.shipping_charge)
+      if (!sc.ok) {
+        return NextResponse.json({ error: sc.error }, { status: 400 })
+      }
+      filtered.shipping_charge = sc.value
+
+      // Freight is a term of billing_amount, which is computed once at
+      // completion. Storing a change afterwards would leave a number no total
+      // reflects. Mirrors the identical guard on the service route.
+      const { data: currentRow } = await supabase
+        .from('pm_tickets')
+        .select('status, shipping_charge')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .single()
+      const status = currentRow?.status as string | undefined
+      if (
+        (status === 'completed' || status === 'billed') &&
+        sc.value !== ((currentRow?.shipping_charge as number | null) ?? null)
+      ) {
+        return NextResponse.json(
+          {
+            error: `Cannot change the shipping charge on a ${status} ticket — its total is already final. Reopen the ticket to change it.`,
+          },
+          { status: 409 },
+        )
+      }
+    }
+
     // PM parts always have unit_price zeroed (inventory tracking only). Mirror
     // the /complete route's invariant so PATCH can't smuggle priced PM parts.
     if (filtered.parts_used !== undefined && Array.isArray(filtered.parts_used)) {
@@ -131,6 +174,14 @@ export async function PATCH(
         ...p,
         unit_price: 0,
       }))
+    }
+
+    // labor_rate_type must be one of the known types — otherwise the DB CHECK
+    // constraint would reject it as an opaque 500 (feedback #76).
+    if (filtered.labor_rate_type !== undefined) {
+      if (!['standard', 'industrial', 'vacuum'].includes(filtered.labor_rate_type as string)) {
+        return NextResponse.json({ error: 'Invalid labor rate type' }, { status: 400 })
+      }
     }
 
     // photos validation: scoped to this ticket id, known image type only.
@@ -166,18 +217,50 @@ export async function PATCH(
       // pull the linked equipment row to gate on machine make/model/serial.
       const { data: existingRaw } = await supabase
         .from('pm_tickets')
-        .select('parts_requested, equipment(make, model, serial_number)')
+        .select('parts_requested, parts_used, additional_parts_used, equipment(make, model, serial_number)')
         .eq('id', id)
         .is('deleted_at', null)
         .single()
       const existing = existingRaw as unknown as {
         parts_requested: PartRequest[] | null
+        parts_used: PartUsed[] | null
+        additional_parts_used: PartUsed[] | null
         equipment: { make: string | null; model: string | null; serial_number: string | null } | null
       } | null
       const existingParts = (existing?.parts_requested ?? []) as PartRequest[]
       const manualError = validateNewManualPartRequests(existingParts, parts)
       if (manualError) {
         return NextResponse.json({ error: manualError }, { status: 400 })
+      }
+
+      // A quantity may only be corrected while the part is still a request
+      // (pending_review / requested / ordered). This route takes the WHOLE array
+      // from the client, so the window has to be enforced here against the
+      // stored statuses — nothing else stops a payload from rewriting the
+      // quantity of a part that is already received and already billed.
+      const qtyError = validateQuantityEdits(existingParts, parts)
+      if (qtyError) {
+        return NextResponse.json({ error: qtyError }, { status: 400 })
+      }
+
+      // Carry a changed quantity through to the work-order line it was copied
+      // to, matched on the exact from_request_at link. Reachable after a manager
+      // Reset, which reopens a received part's quantity while its billable line
+      // stays behind. PM splits covered parts (parts_used) from billable extras
+      // (additional_parts_used), so both arrays are in scope. Derived
+      // server-side and merged after the allowlist filter, mirroring service.
+      const qtySync = quantitySyncPatch({
+        source: 'pm',
+        previous: existingParts,
+        next: parts,
+        existingUsed: (filtered.parts_used as PartUsed[] | undefined) ?? existing?.parts_used,
+        existingAdditional:
+          (filtered.additional_parts_used as PartUsed[] | undefined) ??
+          existing?.additional_parts_used,
+      })
+      if (qtySync?.parts_used) filtered.parts_used = qtySync.parts_used
+      if (qtySync?.additional_parts_used) {
+        filtered.additional_parts_used = qtySync.additional_parts_used
       }
 
       // Machine gate: a new part request requires make/model/serial on the
@@ -255,6 +338,18 @@ export async function PATCH(
             },
             { status: 423 }
           )
+        }
+      }
+
+      // PM-quote gate: an opt-in customer must have an ACCEPTED quote before
+      // work starts. Only the first move into in_progress is blocked, so the
+      // office can still assign and route ahead of the paperwork. Sits beside
+      // the credit gate above because it is the same shape of question: may
+      // this work begin at all?
+      if (isWorkStartTransition(currentStatus, nextStatus)) {
+        const quoteGate = await isTicketQuoteGated(id)
+        if (quoteGate) {
+          return NextResponse.json({ error: quoteGate.message }, { status: 409 })
         }
       }
 

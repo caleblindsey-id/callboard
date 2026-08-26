@@ -3,6 +3,7 @@ import { APP_NAME } from '@/lib/branding'
 import type { BillingTicket, PartLine } from '@/types/billing'
 import { partLabel } from '@/lib/parts'
 import { computePartsTax } from '@/lib/tax'
+import { shippingChargeAmount } from '@/lib/shipping'
 import { PdfHeader, PdfFooter } from '@/lib/pdf/chrome'
 
 // ============================================================
@@ -225,6 +226,7 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
   // additional (out-of-contract) parts are tangible goods. Display-only: TOTAL
   // AMOUNT DUE stays pre-tax (= the figure keyed into Synergy).
   const taxAmount = computePartsTax(additionalPartsTotal, (ticket.taxRatePercent ?? 0) / 100)
+  const shippingCharge = shippingChargeAmount(ticket.shippingCharge)
 
   const equipmentLine = [ticket.equipmentMake, ticket.equipmentModel]
     .filter(Boolean)
@@ -419,6 +421,16 @@ function TicketSection({ ticket }: { ticket: BillingTicket }) {
       {/* GRAND TOTAL — TOTAL AMOUNT DUE stays pre-tax (the Synergy-keying figure);
           sales tax + customer total shown below for the customer's reference. */}
       <View style={styles.summaryBlock}>
+        {/* Freight on special-ordered parts, already inside the total below.
+            Called out separately so the coordinator can see what part of the
+            amount due is shipping rather than parts or labor. Untaxed, like
+            labor and the trip charge (see src/lib/tax.ts). */}
+        {shippingCharge > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Shipping:</Text>
+            <Text style={styles.summaryValue}>{fmt(shippingCharge)}</Text>
+          </View>
+        )}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>TOTAL AMOUNT DUE:</Text>
           <Text style={styles.totalValue}>

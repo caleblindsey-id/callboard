@@ -21,12 +21,14 @@ export async function GET(request: NextRequest) {
       priority?: ServicePriority
       ticketType?: ServiceTicketType
       waitingOnParts?: boolean
+      ready?: boolean
     } = {}
 
     if (searchParams.get('technicianId')) filters.technicianId = searchParams.get('technicianId')!
     if (searchParams.get('priority')) filters.priority = searchParams.get('priority') as ServicePriority
     if (searchParams.get('ticketType')) filters.ticketType = searchParams.get('ticketType') as ServiceTicketType
     if (searchParams.get('waitingOnParts') === 'true') filters.waitingOnParts = true
+    if (searchParams.get('ready') === 'true') filters.ready = true
 
     // Techs only see their own tickets (RLS enforces this too) — scope counts to match.
     if (isTechnician(user.role)) {

@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
+import { isPartOutstanding } from '@/lib/parts'
 import type {
   ServiceTicketRow,
   ServiceTicketWithJoins,
@@ -8,18 +10,30 @@ import type {
   ServiceTicketType,
   ServiceBillingType,
   PartRequest,
+  WarrantyReviewStatus,
 } from '@/types/service-tickets'
+import type { LaborRateType } from '@/types/database'
 
 // --- List service tickets with filters ---
 
 interface ServiceTicketFilters {
-  status?: ServiceTicketStatus
+  // A single status, or a set of them. The set form backs worklists that span
+  // several open statuses (the morning digest's idle queue) without forcing a
+  // caller to re-derive this function's joins and soft-delete scoping.
+  status?: ServiceTicketStatus | readonly ServiceTicketStatus[]
   technicianId?: string
   customerId?: number
   priority?: ServicePriority
   ticketType?: ServiceTicketType
   billingType?: ServiceBillingType
   waitingOnParts?: boolean
+  // The complement of waitingOnParts: nothing outstanding on the parts side, so
+  // the work can actually be dispatched. Powers the Approved tab's "Ready to
+  // start" filter (feedback #79 — half that queue is blocked on parts and the
+  // board gave no signal which half). Deliberately NOT credit-aware: "has no open
+  // credit review" is an anti-join PostgREST can't express, and filtering it
+  // client-side would silently cap the result at the first page.
+  ready?: boolean
   // Completed tickets for PO-required customers that still have no customer PO on
   // file — the "waiting on PO" worklist. Forces status='completed' and requires
   // an inner customers join (see getServiceTickets), so it's handled there rather
@@ -42,7 +56,10 @@ interface ServiceTicketFilters {
 // and soft-delete predicates) keeps the board's list and tab counts from
 // drifting apart. Status is intentionally NOT applied here — the list applies
 // its single status filter and the counts helper iterates every status separately.
-function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters): Q {
+// Exported for src/lib/db/service-tickets.test.ts, which pins the parts
+// predicates by recording the filters this emits. Not intended for callers —
+// the query helpers below apply it themselves.
+export function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters): Q {
   // The Supabase builder is chainable but its generics make a typed pass-through
   // awkward; cast to a minimal chainable shape, reassign, and return as Q.
   let q = query as unknown as {
@@ -50,14 +67,24 @@ function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters):
     neq(column: string, value: unknown): typeof q
     is(column: string, value: unknown): typeof q
     not(column: string, operator: string, value: unknown): typeof q
+    or(filters: string): typeof q
   }
   if (filters?.technicianId) q = q.eq('assigned_technician_id', filters.technicianId)
   if (filters?.customerId) q = q.eq('customer_id', filters.customerId)
   if (filters?.priority) q = q.eq('priority', filters.priority)
   if (filters?.ticketType) q = q.eq('ticket_type', filters.ticketType)
   if (filters?.billingType) q = q.eq('billing_type', filters.billingType)
+  // waitingOnParts and ready are exact complements over the same two columns.
+  // The `parts_requested <> '[]'` half of waiting (and its `= '[]'` mirror in
+  // ready) is load-bearing rather than redundant: parts_received defaults to
+  // false and a ticket that never requested a part never runs the derivation, so
+  // without it a brand-new ticket would be reported "waiting on parts" from birth.
+  // Passing both is contradictory and correctly matches nothing.
   if (filters?.waitingOnParts) {
     q = q.eq('parts_received', false).neq('parts_requested', '[]' as unknown as PartRequest[])
+  }
+  if (filters?.ready) {
+    q = q.or('parts_received.eq.true,parts_requested.eq.[]')
   }
   // Soft-delete scoping. Default hides deleted tickets from every board/count
   // surface; the manager-only "Deleted" view opts in via deletedOnly.
@@ -69,8 +96,8 @@ function applyServiceTicketFilters<Q>(query: Q, filters?: ServiceTicketFilters):
   return q as unknown as Q
 }
 
-export async function getServiceTickets(filters?: ServiceTicketFilters): Promise<ServiceTicketWithJoins[]> {
-  const supabase = await createClient()
+export async function getServiceTickets(filters?: ServiceTicketFilters, db?: DigestDb): Promise<ServiceTicketWithJoins[]> {
+  const supabase = db ?? (await createClient())
 
   // Listing query: only select columns the board renders. Avoids pulling
   // large JSONB blobs (estimate_parts, parts_requested, customer_signature,
@@ -112,7 +139,9 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
       .eq('customers.po_required', true)
       .or('po_number.is.null,po_number.eq.')
   } else if (filters?.status) {
-    query = query.eq('status', filters.status)
+    query = Array.isArray(filters.status)
+      ? query.in('status', filters.status as ServiceTicketStatus[])
+      : query.eq('status', filters.status as ServiceTicketStatus)
   }
   query = applyServiceTicketFilters(query, filters)
 
@@ -128,6 +157,71 @@ export async function getServiceTickets(filters?: ServiceTicketFilters): Promise
   // 082), which isn't in the generated database.ts types yet, so the inferred row type
   // can't resolve the join. Cast through `unknown` — same pattern as applyServiceTicketFilters.
   return data as unknown as ServiceTicketWithJoins[]
+}
+
+// --- Per-ticket parts counts for the board's readiness chip ---
+
+export type ServicePartsCount = { pending: number; total: number }
+
+/**
+ * Live part counts per ticket, keyed by ticket id, for the chip's "N of M".
+ *
+ * Reads the parts_order_queue view rather than the tickets' parts_requested
+ * JSONB: the board's list select deliberately omits that blob to keep large
+ * JSONB off the wire, and re-adding it to render a two-number chip would undo
+ * that. The view already explodes each part into a row with status + cancelled
+ * projected as columns.
+ *
+ * ONLY valid for approved / in_progress tickets. The view's service branch hides
+ * requested + pending_review parts while a ticket is open or estimated
+ * (migration 102) and now also while it is declined or canceled (migration 147),
+ * so at those stages it under-reports and the caller must not ask. Cancelled
+ * parts leave the denominator, matching the detail page, where they stay visible
+ * but struck through.
+ *
+ * Soft deletes: the view projects no deleted_at, so this cannot filter on one.
+ * It doesn't need to, twice over — the view itself now excludes soft-deleted
+ * tickets (migration 147), and ticketIds always arrive from an already-guarded
+ * list query. Flagged explicitly because npm test's guard only inspects direct
+ * service_tickets reads and would not catch a regression here (AGENTS.md).
+ */
+export async function getServicePartsCounts(
+  ticketIds: string[]
+): Promise<Record<string, ServicePartsCount>> {
+  if (ticketIds.length === 0) return {}
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('parts_order_queue')
+    .select('ticket_id, status, cancelled')
+    .eq('source', 'service')
+    .in('ticket_id', ticketIds)
+
+  if (error) throw error
+  return tallyServicePartRows(data ?? [])
+}
+
+/**
+ * Fold exploded part rows into per-ticket {pending, total}. Pure so the counting
+ * rule is testable without a database — the same reason workOrderAutoAddPatch is
+ * split from its route.
+ *
+ * Cancelled parts are dropped before counting, so they leave both the numerator
+ * and the denominator: the chip reads "Parts 1 of 2" on a ticket whose third
+ * part was cancelled, matching livePartsRequested on the detail page.
+ */
+export function tallyServicePartRows(
+  rows: Array<{ ticket_id: string | null; status: string | null; cancelled: boolean | null }>
+): Record<string, ServicePartsCount> {
+  const counts: Record<string, ServicePartsCount> = {}
+  for (const row of rows) {
+    if (row.cancelled || !row.ticket_id) continue
+    const entry = counts[row.ticket_id] ?? { pending: 0, total: 0 }
+    entry.total += 1
+    if (isPartOutstanding(row)) entry.pending += 1
+    counts[row.ticket_id] = entry
+  }
+  return counts
 }
 
 // --- Service ticket counts grouped by status (service board tabs) ---
@@ -197,6 +291,8 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
       created_by:users!service_tickets_created_by_id_fkey ( name ),
       deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
+      warranty_review_requested_by:users!service_tickets_warranty_review_requested_by_id_fkey ( name ),
+      warranty_review_decided_by:users!service_tickets_warranty_review_decided_by_id_fkey ( name ),
       credit_reviews ( id, status, block_reason, decided_by_name )
     `)
     .eq('id', id)
@@ -247,6 +343,11 @@ export async function completeServiceTicket(
     warranty_labor_covered?: boolean
     machine_hours?: number | null
     date_code?: string | null
+    // Rate class the labor was actually billed at. Only present when the
+    // completer changed it on the completion form (feedback #83); persisted in
+    // the same UPDATE as the billing_amount computed from it, so the stored
+    // rate type and the stored dollar figure can never disagree.
+    labor_rate_type?: LaborRateType
     // Optional manager below-floor approval stamp (migration 126). Only present
     // when a manager approved a below-floor price during this completion.
     margin_override_by?: string
@@ -271,6 +372,7 @@ export async function completeServiceTicket(
       warranty_labor_covered: data.warranty_labor_covered ?? false,
       machine_hours: data.machine_hours ?? null,
       date_code: data.date_code ?? null,
+      ...(data.labor_rate_type ? { labor_rate_type: data.labor_rate_type } : {}),
       ...(data.margin_override_by
         ? {
             margin_override_by: data.margin_override_by,
@@ -309,6 +411,7 @@ export type ServiceBillingTicket = {
   synergy_order_number: string | null
   synergy_invoice_number: string | null
   warranty_credit_received_at: string | null
+  warranty_review_status: WarrantyReviewStatus | null
   completed_at: string | null
   customer_id: number | null
   service_address: string | null
@@ -342,16 +445,17 @@ export type ServiceBillingTicket = {
 async function getServiceBillingByExported(
   exported: boolean,
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<ServiceBillingTicket[]> {
-  const supabase = await createClient()
+  const supabase = db ?? (await createClient())
 
   let query = supabase
     .from('service_tickets')
     .select(`
       id, work_order_number, status, ticket_type, billing_type, billing_amount, hours_worked,
       billing_exported, po_number, synergy_order_number, synergy_invoice_number,
-      warranty_credit_received_at, completed_at,
+      warranty_credit_received_at, warranty_review_status, completed_at,
       customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
       customers ( name, account_number, po_required, ar_terms, credit_hold, tax_rate, tax_exempt ),
@@ -381,18 +485,20 @@ async function getServiceBillingByExported(
 // "Ready to Export" — completed service tickets not yet exported.
 export function getServiceBillingTickets(
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<ServiceBillingTicket[]> {
-  return getServiceBillingByExported(false, month, year)
+  return getServiceBillingByExported(false, month, year, db)
 }
 
 // "Awaiting Invoice #" — exported tickets where the coordinator keys the Synergy
 // invoice # and marks billed (mirrors getPmAwaitingInvoiceTickets).
 export function getServiceAwaitingInvoiceTickets(
   month?: number,
-  year?: number
+  year?: number,
+  db?: DigestDb
 ): Promise<ServiceBillingTicket[]> {
-  return getServiceBillingByExported(true, month, year)
+  return getServiceBillingByExported(true, month, year, db)
 }
 
 // --- Get service tickets for equipment (for unified service history) ---
@@ -634,8 +740,8 @@ export type PoFollowUpQueueTicket = {
   assigned_technician: { name: string } | null
 }
 
-export async function getPoFollowUpQueue(): Promise<PoFollowUpQueueTicket[]> {
-  const supabase = await createClient()
+export async function getPoFollowUpQueue(db?: DigestDb): Promise<PoFollowUpQueueTicket[]> {
+  const supabase = db ?? (await createClient())
 
   const { data, error } = await supabase
     .from('service_tickets')

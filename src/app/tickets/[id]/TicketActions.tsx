@@ -3,14 +3,21 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { TicketDetail } from '@/lib/db/tickets'
-import { PartRequest, PartUsed, TicketPhoto, UserRole, TicketStatus } from '@/types/database'
+import { PartRequest, PartUsed, TicketPhoto, UserRole, TicketStatus, LaborRateType } from '@/types/database'
 import { VALID_TRANSITIONS } from '@/lib/ticket-transitions'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/image-utils'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import type { SkipRequestPayload } from './SkipRequestForm'
-import { partsOnOrder } from '@/lib/parts'
+import {
+  partsOnOrder,
+  fulfilledRequestedParts,
+  isCoveredByAgreement,
+  partsMissingFromWorkOrder,
+  requestToUsedLine,
+} from '@/lib/parts'
+import MissingFromWorkOrderNotice from '@/components/parts/MissingFromWorkOrderNotice'
 import { calcNextServiceMonth } from '@/lib/utils/schedule'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import TicketNextStepBar from './TicketNextStepBar'
@@ -48,6 +55,14 @@ export interface PartEntry {
   requiresDetail?: boolean
   // Free-text "what were the supplies". Optional.
   detail?: string
+  // Link back to the originating part request (that request's requested_at),
+  // set when the line was seeded from a request or auto-added on fulfillment.
+  // Must survive this round-trip: the completion form rehydrates from the saved
+  // arrays and PUTs them back wholesale, so dropping it here would strip the
+  // exact link off every auto-added line the first time a tech saves, silently
+  // demoting partsMissingFromWorkOrder() to description guessing. Never edited
+  // in the UI.
+  fromRequestAt?: string | null
 }
 
 // Local (localStorage) safety net for the in_progress completion form — the
@@ -64,6 +79,7 @@ interface PmCompletionDraft {
   pmParts: PartEntry[]
   additionalParts: PartEntry[]
   additionalHoursWorked: string
+  laborRateType: LaborRateType
   tripChargeQty: string
   billingContactName: string
   billingContactEmail: string
@@ -77,8 +93,15 @@ interface TicketActionsProps {
   ticket: TicketDetail
   userRole: UserRole | null
   userId: string | null
-  laborRate: number
+  // All three per-customer labor rates, so the tech can switch the Additional
+  // Work labor type on the completion form and see the per-hour figure update
+  // without a round trip (feedback #76).
+  laborRates: Record<LaborRateType, number>
   tripChargeRate: number
+  // Server-resolved PM-quote block reason, or null when work may start. Passed
+  // as a string rather than fetched here so technicians never need read access
+  // to pm_quotes (and so never see customer pricing).
+  quoteBlockReason?: string | null
 }
 
 
@@ -97,6 +120,8 @@ function partsFromSaved(saved: PartUsed[]): PartEntry[] {
     // requiresDetail never fires again on rehydrate).
     requiresDetail: !!p.requires_detail,
     detail: p.detail ?? '',
+    // Preserve the auto-add link across the form round-trip (see PartEntry).
+    fromRequestAt: p.from_request_at ?? null,
   }))
 }
 
@@ -122,16 +147,16 @@ function partsFromDefaults(defaults: { synergy_product_id: number; quantity: num
 // deleted instead of silently re-seeding (and re-billing) on reopen.
 
 function partRequestToEntry(r: PartRequest): PartEntry {
+  // Built through the shared requestToUsedLine() so the seed and the
+  // fulfillment auto-add produce identical lines — including from_request_at,
+  // which is what lets partsMissingFromWorkOrder() tell a seeded part from a
+  // missing one exactly rather than by comparing descriptions.
+  //
   // unit_price MUST carry through for billable manual parts: a manual part has
   // no synergy_product_id, so the completion server falls back to this
-  // submitted price (drop it and the part silently bills $0).
-  return partsFromSaved([{
-    synergy_product_id: r.synergy_product_id ?? null,
-    description: r.description,
-    quantity: r.quantity,
-    unit_price: r.unit_price ?? 0,
-    detail: r.detail,
-  }])[0]
+  // submitted price (drop it and the part silently bills $0). requestToUsedLine
+  // keeps the request's price when there's no catalog price to override it.
+  return partsFromSaved([requestToUsedLine(r)])[0]
 }
 
 function partsFromRequested(reqs: PartRequest[]): PartEntry[] {
@@ -162,6 +187,10 @@ function toPartUsed(entries: PartEntry[]): PartUsed[] {
     // Persist only when meaningful so non-flagged parts stay lean.
     ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
     ...(p.requiresDetail ? { requires_detail: true } : {}),
+    // Keep the auto-add link across the form round-trip. This function PUTs the
+    // whole array back, so omitting it would strip the exact request link off
+    // every line the first time a tech saves the completion form.
+    ...(p.fromRequestAt ? { from_request_at: p.fromRequestAt } : {}),
   }))
 }
 
@@ -173,7 +202,7 @@ function forceTransitionsFor(status: TicketStatus): TicketStatus[] {
   return (VALID_TRANSITIONS[status] ?? []).filter(t => t !== 'completed')
 }
 
-export default function TicketActions({ ticket, userRole, userId, laborRate, tripChargeRate }: TicketActionsProps) {
+export default function TicketActions({ ticket, userRole, userId, laborRates, tripChargeRate, quoteBlockReason = null }: TicketActionsProps) {
   const router = useRouter()
   const pathname = usePathname()
 
@@ -229,11 +258,9 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   // completion billing split. from_stock is billable to the customer just like a
   // received part, so it must be included or a pulled-from-stock part goes
   // uncharged.
-  const requestedReceived = (ticket.parts_requested ?? []).filter(
-    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled,
-  )
-  const requestedCovered = requestedReceived.filter((r) => r.covered_by_agreement === true)
-  const requestedBillable = requestedReceived.filter((r) => r.covered_by_agreement !== true)
+  const requestedReceived = fulfilledRequestedParts(ticket.parts_requested)
+  const requestedCovered = requestedReceived.filter(isCoveredByAgreement)
+  const requestedBillable = requestedReceived.filter((r) => !isCoveredByAgreement(r))
   const completionSeeded = ticket.completion_seeded_at != null
 
   // PM parts (covered): saved draft once seeded; else equipment defaults +
@@ -261,6 +288,17 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   const [tripChargeQty, setTripChargeQty] = useState(
     String(ticket.trip_charge_qty != null ? ticket.trip_charge_qty : 0)
   )
+
+  // Labor rate type for the Additional Work section. A PM is flat-rate under
+  // agreement, so this drives only the additional (non-PM) labor line + the ACE
+  // payout — never the covered PM work. Seeded from the ticket's creation-time
+  // type; the tech can switch it here when the extra work is billed at a
+  // different rate (feedback #76). `laborRate` is derived live from the
+  // pre-fetched per-customer rates so the "@ $/hr" figure updates instantly.
+  const [laborRateType, setLaborRateType] = useState<LaborRateType>(
+    (ticket.labor_rate_type ?? 'standard') as LaborRateType
+  )
+  const laborRate = laborRates[laborRateType] ?? laborRates.standard
 
   const [machineHours, setMachineHours] = useState(
     ticket.machine_hours != null ? String(ticket.machine_hours) : ''
@@ -445,7 +483,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     // pending_review/requested/ordered still block (mirrors the server gate).
     const pendingParts = partsOnOrder(ticket.parts_requested)
     if (pendingParts.length > 0) {
-      setError(`Cannot complete: ${pendingParts.length} part(s) are not yet received or pulled from stock.`)
+      setError(`Cannot complete: ${pendingParts.length} part(s) are not yet received or marked to come from stock.`)
       return
     }
 
@@ -461,6 +499,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
           partsUsed: toPartUsed(pmParts),
           additionalPartsUsed: toPartUsed(additionalParts),
           additionalHoursWorked: parseFloat(additionalHoursWorked) || 0,
+          laborRateType,
           tripChargeQty: tripChargeQtyNum,
           completionNotes,
           billingAmount: grandTotal,
@@ -502,6 +541,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     parts_used: pmParts.length > 0 ? toPartUsed(pmParts) : null,
     additional_parts_used: additionalParts.length > 0 ? toPartUsed(additionalParts) : [],
     additional_hours_worked: parseFloat(additionalHoursWorked) || null,
+    labor_rate_type: laborRateType,
     trip_charge_qty: tripChargeQtyNum,
     photos: photos.map(({ storage_path, uploaded_at }) => ({ storage_path, uploaded_at })),
     billing_contact_name: billingContactName || null,
@@ -528,12 +568,12 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
   // ticket id so switching tickets never cross-restores another WO's draft.
   const pmCompletionDraftState = useMemo<PmCompletionDraft>(() => ({
     completedDate, hoursWorked, machineHours, dateCode, completionNotes,
-    pmParts, additionalParts, additionalHoursWorked, tripChargeQty,
+    pmParts, additionalParts, additionalHoursWorked, laborRateType, tripChargeQty,
     billingContactName, billingContactEmail, billingContactPhone,
     aceLaborOpen, aceHours, aceReason,
   }), [
     completedDate, hoursWorked, machineHours, dateCode, completionNotes,
-    pmParts, additionalParts, additionalHoursWorked, tripChargeQty,
+    pmParts, additionalParts, additionalHoursWorked, laborRateType, tripChargeQty,
     billingContactName, billingContactEmail, billingContactPhone,
     aceLaborOpen, aceHours, aceReason,
   ])
@@ -575,6 +615,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         setAdditionalParts(draft.additionalParts.map((p) => ({ ...p, searchOpen: false, searching: false })))
       }
       setAdditionalHoursWorked(draft.additionalHoursWorked ?? '')
+      if (draft.laborRateType) setLaborRateType(draft.laborRateType)
       setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
       setBillingContactName(draft.billingContactName ?? '')
       setBillingContactEmail(draft.billingContactEmail ?? '')
@@ -677,7 +718,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedDate, hoursWorked, machineHours, dateCode, completionNotes, pmParts, additionalParts, additionalHoursWorked, billingContactName, billingContactEmail, billingContactPhone, photos])
+  }, [completedDate, hoursWorked, machineHours, dateCode, completionNotes, pmParts, additionalParts, additionalHoursWorked, laborRateType, billingContactName, billingContactEmail, billingContactPhone, photos])
 
   // Keep the unmount-flush closure pointing at the latest state. Refreshed
   // every render so the captured saveProgress sees current field values.
@@ -1027,6 +1068,7 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         error={error}
         loading={loading}
         onStart={handleStart}
+        startBlockedReason={quoteBlockReason}
         isTech={isTech}
         skipRequestOpen={skipRequestOpen}
         onOpenSkipRequest={() => setSkipRequestOpen(true)}
@@ -1067,6 +1109,8 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         setAdditionalHoursWorked={setAdditionalHoursWorked}
         additionalLaborTotal={additionalLaborTotal}
         laborRate={laborRate}
+        laborRateType={laborRateType}
+        setLaborRateType={setLaborRateType}
         isTech={isTech}
         tripChargeQty={tripChargeQty}
         setTripChargeQty={setTripChargeQty}
@@ -1180,6 +1224,61 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
     )
   }
 
+  // Fulfilled parts (received / pulled from stock) that never reached the work
+  // order. While the job is open we diff against the LIVE form state, so a line
+  // the tech deletes reappears here immediately; once completed/billed we diff
+  // against what was actually saved. Same shared matcher the server-side
+  // auto-add and the office report use.
+  const isCompletionOpen = ticket.status === 'in_progress'
+  const missingWorkOrderParts = partsMissingFromWorkOrder(
+    ticket.parts_requested,
+    isCompletionOpen ? toPartUsed(pmParts) : ticket.parts_used,
+    isCompletionOpen ? toPartUsed(additionalParts) : ticket.additional_parts_used,
+  )
+  // Paired with their position in parts_requested — the "not used" write
+  // addresses parts by array ordinal (same convention as the Parts Queue).
+  const missingWorkOrderItems = missingWorkOrderParts.map((part) => ({
+    part,
+    index: (ticket.parts_requested ?? []).indexOf(part),
+  }))
+
+  // Copy the missing parts into the right completion section. Covered-by-
+  // agreement goes to PM Service (forced to $0 at completion), everything else
+  // to Additional Work (billable) — the same split as the seed above, via the
+  // shared predicate, so the banner can't route a part differently than the
+  // auto-add would have.
+  function handleAddMissingToWorkOrder() {
+    const covered = missingWorkOrderParts.filter(isCoveredByAgreement)
+    const billable = missingWorkOrderParts.filter((p) => !isCoveredByAgreement(p))
+    if (covered.length > 0) setPmParts((prev) => [...prev, ...partsFromRequested(covered)])
+    if (billable.length > 0) {
+      setAdditionalParts((prev) => [...prev, ...partsFromRequested(billable)])
+    }
+  }
+
+  // Record that a fulfilled part was deliberately not used. Soft-flag in place
+  // (never splice) — the Parts Queue addresses parts by array ordinal, so
+  // removing an element strands its reference to every later part.
+  async function handleExcludePartFromWorkOrder(index: number, reason: string) {
+    const now = new Date().toISOString()
+    const updated = (ticket.parts_requested ?? []).map((p, i) =>
+      i === index
+        ? { ...p, wo_excluded_at: now, wo_excluded_by: userId ?? undefined, wo_exclude_reason: reason }
+        : p,
+    )
+    const res = await fetch(`/api/tickets/${ticket.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts_requested: updated }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? 'Failed to update part')
+      return
+    }
+    router.refresh()
+  }
+
   return (
     <>
       <TicketNextStepBar
@@ -1187,8 +1286,21 @@ export default function TicketActions({ ticket, userRole, userId, laborRate, tri
         isTech={isTech}
         loading={loading}
         onStartWork={handleStart}
+        startBlockedReason={quoteBlockReason}
         onOpenSkipRequest={() => setSkipRequestOpen(true)}
       />
+      {/* Sits above the completion panel rather than inside it — PM had no
+          equivalent of the service "Copy Requested Parts" button at all, so a
+          part that arrived after completion_seeded_at was stamped had no way
+          back onto the work order. Warn only; Complete stays enabled. */}
+      {(isCompletionOpen || ticket.status === 'completed' || ticket.status === 'billed') && (
+        <MissingFromWorkOrderNotice
+          items={missingWorkOrderItems}
+          onAdd={isCompletionOpen ? handleAddMissingToWorkOrder : undefined}
+          onExclude={isCompletionOpen ? handleExcludePartFromWorkOrder : undefined}
+          busy={loading || saving}
+        />
+      )}
       {panel}
     </>
   )

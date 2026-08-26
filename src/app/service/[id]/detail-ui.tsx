@@ -39,7 +39,18 @@ export function InfoField({ label, children }: { label: string; children: React.
   return (
     <div>
       <span className="text-gray-500 dark:text-gray-400 text-sm">{label}</span>
-      <p className="text-gray-900 dark:text-white font-medium text-sm">{children}</p>
+      {/* A <div>, not a <p>. Callers pass block-level children — the Equipment
+          field renders RegisterEquipmentPanel (a <div> that itself contains a
+          <p>), and the Ship-To field renders a Change-location block. A <div>
+          inside a <p> is invalid HTML: the browser auto-closes the <p> while
+          parsing, so the server HTML and the client tree disagree and React
+          throws a hydration mismatch that can blank the surrounding subtree.
+          This was latent for a long time because the affected fields only
+          rendered after a client-side interaction; it surfaced the moment a
+          sibling started server-rendering. Purely presentational either way:
+          the classes carry all the styling and Tailwind Preflight zeroes the
+          <p> margin, so this renders identically. */}
+      <div className="text-gray-900 dark:text-white font-medium text-sm">{children}</div>
     </div>
   )
 }

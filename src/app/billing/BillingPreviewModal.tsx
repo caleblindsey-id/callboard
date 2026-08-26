@@ -2,6 +2,7 @@
 
 import { TicketWithJoins } from '@/lib/db/tickets'
 import type { PartUsed } from '@/types/database'
+import { partsMissingFromWorkOrder } from '@/lib/parts'
 import Modal from '@/components/ui/Modal'
 import { formatDateShort } from '@/lib/format'
 
@@ -20,6 +21,9 @@ interface BillingPreviewModalProps {
  *   - any used-part is missing a Synergy product match (client-side null check
  *     only; the server-side resolver still runs at PDF time — this is a soft
  *     visual flag, not a hard gate).
+ *   - a part the branch actually received or pulled from stock never made it
+ *     onto the work order, so it is about to be exported unbilled. This is the
+ *     last gate before the money leaves: after export it is a credit memo.
  */
 function ticketIsFlagged(t: TicketWithJoins): { flagged: boolean; reasons: string[] } {
   const reasons: string[] = []
@@ -33,6 +37,14 @@ function ticketIsFlagged(t: TicketWithJoins): { flagged: boolean; reasons: strin
   )
   if (unmatched.length > 0) {
     reasons.push(`${unmatched.length} unmatched part${unmatched.length === 1 ? '' : 's'}`)
+  }
+  // Shared matcher — same predicate as the tech-facing banner and the office
+  // "Parts Not on a Work Order" page, so the three can't disagree.
+  const missing = partsMissingFromWorkOrder(t.parts_requested, partsUsed, additional)
+  if (missing.length > 0) {
+    reasons.push(
+      `${missing.length} fulfilled part${missing.length === 1 ? '' : 's'} not on the work order`
+    )
   }
   return { flagged: reasons.length > 0, reasons }
 }

@@ -125,6 +125,9 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   // Debounced customer search
   useEffect(() => {
     if (!customerSearch.trim()) {
+      // Deliberate reset-on-input-change; see "Lint:
+      // react-hooks/set-state-in-effect" in AGENTS.md.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCustomerResults([])
       setComboOpen(false)
       return
@@ -167,6 +170,10 @@ export default function CreateTicketModal({ open, onClose }: CreateTicketModalPr
   // up-front — instead we filter post-fetch so a restored draft can keep its
   // selection if the equipment is still valid for the chosen customer.
   useEffect(() => {
+    // The clear-then-filter-post-fetch order is load-bearing for draft
+    // restoration, per the comment above. See "Lint:
+    // react-hooks/set-state-in-effect" in AGENTS.md.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEquipment([])
     setEquipmentLoaded(false)
     if (!customerId) {

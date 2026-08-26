@@ -3,15 +3,21 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { TechLeadStatus, TechLeadType, SalesRep } from '@/types/database'
+import type { TechLeadStatus, TechLeadType, SalesRep, UserRole } from '@/types/database'
+import { STATUS_META } from '@/lib/status-meta'
+import { RESET_ROLES } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
 import type { AceLaborEntryWithJoins } from '@/lib/db/ace-labor'
 import type { CandidateWithLead } from '@/lib/db/equipment-sale-candidates'
 import { tierLabel } from '@/lib/tech-leads/bonus-tiers'
-import LeadReviewModal from '../tech-leads/LeadReviewModal'
-import CreateEquipmentFromLeadModal from '../tech-leads/CreateEquipmentFromLeadModal'
-import PayoutReport from '../tech-leads/PayoutReport'
-import MatchCandidatesTab from '../tech-leads/MatchCandidatesTab'
+import LeadReviewModal from './LeadReviewModal'
+import CreateEquipmentFromLeadModal from './CreateEquipmentFromLeadModal'
+import ManualMatchModal from './ManualMatchModal'
+import SubmitLeadModal from '../my-leads/SubmitLeadModal'
+import MatchCandidatesTab from './MatchCandidatesTab'
+import PayoutTab from './PayoutTab'
+import type { CommissionReport } from '@/lib/commission/report-types'
+import type { PayoutDrift, PayoutPeriodState } from '@/lib/payouts/period-types'
 import { formatMoney, formatDate } from '@/lib/format'
 import ScrollableTable from '@/components/ScrollableTable'
 import Tabs, { type TabItem } from '@/components/ui/Tabs'
@@ -25,13 +31,29 @@ interface Props {
   aceEntries: AceLaborEntryWithJoins[]
   salesReps: SalesRep[]
   currentUserId: string
+  currentUserRole: UserRole | null
+  payoutReport: CommissionReport
+  availablePeriods: string[]
+  /** draft / locked / paid. A locked report is read from its payout_lines
+   *  snapshot rather than recomputed. */
+  periodState: PayoutPeriodState
+  /** Techs whose live subtotal has moved away from what was locked. Changes
+   *  nothing about what gets paid; it means dollars arrived after the close. */
+  drift: PayoutDrift[]
+  /** Reasons this period must not be locked yet. Empty means it is safe. */
+  lockBlockers: string[]
+  /** Worth seeing before locking, but not worth blocking on. */
+  lockWarnings: string[]
+  /** Set from ?tab=payout so the period picker can round-trip through the
+   *  server without the hub bouncing back to its default queue. */
+  forcedTab?: TabKey
 }
 
 // Tab wording kills the triple "pending" the old labels carried (Pending ACE,
 // Pending, and the DB status literally named "pending"): ACE's own queue is
 // "ACE Review", and the manager-approved-but-awaiting-payout state is
 // "Awaiting Match" rather than "Pending" now that it's spelled out consistently
-// with the STATUS_LABEL below.
+// with the label override below.
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'pending',     label: 'Submitted Leads' },
   { key: 'pending_ace', label: 'ACE Review' },
@@ -40,22 +62,32 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'earned',      label: 'Earned (unpaid)' },
   { key: 'paid',        label: 'Paid' },
   { key: 'closed',      label: 'Rejected / Cancelled / Expired' },
-  { key: 'payout',      label: 'Payout Report' },
+  // One Payout tab. It used to be two -- a "Payout Report" over leads and ACE
+  // and a separate "Commission" report -- reading the same two tables through
+  // different date maths, with different rounding and two mark-paid buttons
+  // that did not know about each other.
+  { key: 'payout',      label: 'Payout' },
 ]
 
-// Display label for the per-row status badge. DB enum values stay the same;
-// this aligns with status-meta.lead except 'approved', which the payout hub
-// deliberately shows as "Awaiting Match" (matching the tab above) rather than
-// "Approved" — the point of this whole hub is leads not yet matched/paid.
-const STATUS_LABEL: Record<TechLeadStatus, string> = {
-  pending:       'Submitted',
-  approved:      'Awaiting Match',
-  match_pending: 'Match Pending',
-  rejected:      'Rejected',
-  cancelled:     'Cancelled',
-  expired:       'Expired',
-  earned:        'Earned',
-  paid:          'Paid',
+// Lead labels and badge colours come from status-meta, the app's single source
+// of truth, with ONE deliberate override: this hub exists to surface leads that
+// are not yet matched or paid, so 'approved' reads "Awaiting Match" here and
+// "Approved" everywhere else.
+//
+// That single divergence used to justify a full second copy of the label map
+// AND a second copy of the colour switch, every entry of which was character-
+// for-character identical to status-meta. That is how one vocabulary quietly
+// becomes two.
+const HUB_LABEL_OVERRIDE: Partial<Record<TechLeadStatus, string>> = {
+  approved: 'Awaiting Match',
+}
+
+function statusLabel(status: TechLeadStatus): string {
+  return HUB_LABEL_OVERRIDE[status] ?? STATUS_META.lead[status].label
+}
+
+function statusBadge(status: TechLeadStatus): string {
+  return STATUS_META.lead[status].classes
 }
 
 function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJoins[] {
@@ -67,19 +99,6 @@ function partitionByTab(leads: TechLeadWithJoins[], tab: TabKey): TechLeadWithJo
     case 'paid':     return leads.filter(l => l.status === 'paid')
     case 'closed':   return leads.filter(l => l.status === 'rejected' || l.status === 'cancelled' || l.status === 'expired')
     default:         return []
-  }
-}
-
-function statusBadge(status: TechLeadStatus): string {
-  switch (status) {
-    case 'pending':       return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-    case 'approved':      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
-    case 'match_pending': return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300'
-    case 'rejected':      return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-    case 'cancelled':     return 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-    case 'expired':       return 'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
-    case 'earned':        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-    case 'paid':          return 'bg-emerald-200 text-emerald-900 dark:bg-emerald-800/60 dark:text-emerald-200'
   }
 }
 
@@ -111,23 +130,33 @@ function aceTicketLink(e: AceLaborEntryWithJoins): { href: string; label: string
   return { href: '#', label: '—', customer: '—' }
 }
 
-export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId }: Props) {
+export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries, salesReps, currentUserId, currentUserRole, payoutReport, availablePeriods, periodState, drift, lockBlockers, lockWarnings, forcedTab }: Props) {
   const router = useRouter()
+
+  // Editing / matching a lead past `pending` is super_admin/manager only (the
+  // routes enforce RESET_ROLES). Coordinators can view the hub but not act on
+  // awaiting-match leads, so hide those buttons rather than let them 409/403.
+  const canActPastPending = !!currentUserRole && RESET_ROLES.includes(currentUserRole)
 
   const pendingLeadsCount = useMemo(() => leads.filter(l => l.status === 'pending').length, [leads])
   const pendingAceCount   = useMemo(() => aceEntries.filter(e => e.status === 'pending').length, [aceEntries])
 
-  // Default tab: whichever Pending queue has more items; tie or both zero → Payout Report.
+  // Default tab: whichever Pending queue has more items; tie or both zero → Payout.
+  // forcedTab wins when the URL asked for one, so changing the payout period
+  // (a server round-trip) does not bounce back to a queue tab.
   const initialTab: TabKey = useMemo(() => {
+    if (forcedTab) return forcedTab
     if (pendingLeadsCount === 0 && pendingAceCount === 0) return 'payout'
     if (pendingAceCount > pendingLeadsCount) return 'pending_ace'
     return 'pending'
-  }, [pendingLeadsCount, pendingAceCount])
+  }, [forcedTab, pendingLeadsCount, pendingAceCount])
 
   const [tab, setTab] = useState<TabKey>(initialTab)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [reviewLead, setReviewLead] = useState<TechLeadWithJoins | null>(null)
   const [equipLead, setEquipLead] = useState<TechLeadWithJoins | null>(null)
+  const [editLead, setEditLead] = useState<TechLeadWithJoins | null>(null)
+  const [matchLead, setMatchLead] = useState<TechLeadWithJoins | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rejectingAceId, setRejectingAceId] = useState<string | null>(null)
@@ -269,7 +298,16 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
       />
 
       {tab === 'payout' ? (
-        <PayoutReport leads={typeFiltered} aceEntries={aceEntries} />
+        <PayoutTab
+          report={payoutReport}
+          availablePeriods={availablePeriods}
+          periodState={periodState}
+          drift={drift}
+          blockers={lockBlockers}
+          warnings={lockWarnings}
+          canLock={!!currentUserRole && RESET_ROLES.includes(currentUserRole)}
+          canUnlock={currentUserRole === 'super_admin'}
+        />
       ) : tab === 'match' ? (
         <MatchCandidatesTab
           leads={filtered}
@@ -450,7 +488,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded-md text-xs font-medium ${statusBadge(lead.status)}`}>
-                        {STATUS_LABEL[lead.status]}
+                        {statusLabel(lead.status)}
                       </span>
                       {(lead.status === 'earned' || lead.status === 'paid') && (
                         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
@@ -473,6 +511,14 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {lead.status === 'pending' && (
                         <div className="flex gap-2 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setEditLead(lead)}
+                            disabled={isBusy}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                          >
+                            Edit
+                          </button>
                           <button
                             type="button"
                             onClick={() => setReviewLead(lead)}
@@ -519,18 +565,40 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                         </div>
                       )}
                       {lead.status === 'approved' && isEquipmentSale && (
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex flex-col items-end gap-1.5">
                           <span className="text-xs text-gray-500 dark:text-gray-400 italic">
                             Waiting on Synergy sale
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCancel(lead)}
-                            disabled={isBusy}
-                            className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
+                          <div className="flex gap-2 justify-end">
+                            {canActPastPending && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditLead(lead)}
+                                  disabled={isBusy}
+                                  className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMatchLead(lead)}
+                                  disabled={isBusy}
+                                  className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md disabled:opacity-50"
+                                >
+                                  Match sale
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleCancel(lead)}
+                              disabled={isBusy}
+                              className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
                       )}
                     </td>
@@ -548,11 +616,22 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
         onClose={() => setReviewLead(null)}
         onDone={() => { setReviewLead(null); router.refresh() }}
         onApprovedPm={(lead) => { setReviewLead(null); setEquipLead(lead); router.refresh() }}
+        onEdit={(lead) => { setReviewLead(null); setEditLead(lead) }}
       />
       <CreateEquipmentFromLeadModal
         lead={equipLead}
         onClose={() => setEquipLead(null)}
         onDone={() => { setEquipLead(null); router.refresh() }}
+      />
+      <SubmitLeadModal
+        open={editLead !== null}
+        lead={editLead}
+        onClose={() => setEditLead(null)}
+      />
+      <ManualMatchModal
+        lead={matchLead}
+        onClose={() => setMatchLead(null)}
+        onDone={() => { setMatchLead(null); router.refresh() }}
       />
     </>
   )

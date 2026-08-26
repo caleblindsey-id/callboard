@@ -8,7 +8,21 @@ import UnblockCreditPanel from '@/components/UnblockCreditPanel'
 import ReadOnlyPhotos from '@/components/ReadOnlyPhotos'
 import { PartEntry, partsFromSaved, toServicePartUsed } from '@/components/service/PartsEntryList'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
-import { partLabel, partsOnOrder } from '@/lib/parts'
+import {
+  partLabel,
+  partsOnOrder,
+  partsAllFulfilled,
+  partsAwaitingReview,
+  partsMissingFromWorkOrder,
+  requestToUsedLine,
+} from '@/lib/parts'
+import {
+  isShippingMethod,
+  normalizeShippingNote,
+  shippingChargeAmount,
+  type ShippingMethod,
+} from '@/lib/shipping'
+import MissingFromWorkOrderNotice from '@/components/parts/MissingFromWorkOrderNotice'
 import { computePartsTax } from '@/lib/tax'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import WorkflowStatusCard from '@/components/WorkflowStatusCard'
@@ -20,6 +34,7 @@ import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { getStatusMeta } from '@/lib/status-meta'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
+import WarrantyReviewPanel from './WarrantyReviewPanel'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import type { LineViolation } from '@/lib/margin'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
@@ -70,6 +85,10 @@ interface ServiceTicketDetailProps {
 // fields are out of scope (Round 9 targets the completion form only).
 interface ServiceCompletionDraft {
   billingType: ServiceBillingType
+  // Same lifecycle as billingType: picked on the completion form and only sent
+  // when the job is marked complete, so it isn't covered by the server autosave
+  // and would otherwise be lost on a mid-completion refresh (feedback #83).
+  laborRateType: string
   hoursWorked: string
   tripChargeQty: string
   machineHours: string
@@ -79,6 +98,31 @@ interface ServiceCompletionDraft {
   aceLaborOpen: boolean
   aceHours: string
   aceReason: string
+}
+
+// Local (localStorage) safety net for the "+ Request Part" order-entry form.
+// Unlike the completion form there is NO server autosave for these fields — a
+// part request lives only in React state until "Add Part" appends it to
+// parts_requested — so this draft is the only thing that keeps a half-entered
+// request from vanishing on a refresh or a backgrounded mobile PWA mid-entry
+// (feedback #73). Cleared on Add or Cancel via resetAddPartForm; restores
+// silently, mirroring the completion draft.
+interface PartsRequestDraft {
+  showAddPart: boolean
+  newPartDesc: string
+  newPartQty: string
+  newPartNumber: string
+  newPartVendorItemCode: string
+  newPartVendor: string
+  newPartVendorCode: string
+  newPartPrice: string
+  newPartSynergyProductId: number | null
+  // Requested shipping speed + carrier note (feedback #80). In the draft for the
+  // same reason every other field is: a tech who picks "next day", backgrounds
+  // the PWA, and comes back must not silently lose the rush — the part would be
+  // ordered ground and nobody would know the request had ever been made.
+  newPartShippingMethod: ShippingMethod
+  newPartShippingNote: string
 }
 
 const priorityConfig: Record<string, { label: string; classes: string }> = {
@@ -378,26 +422,6 @@ function MarginOverrideModal({ violations, onSubmit, onCancel }: MarginOverrideM
   )
 }
 
-// Requested parts eligible to copy onto the completed work order — fulfilled
-// (received, or pulled from stock) and not cancelled. Mirrors the PM ticket
-// completion-seed filter (TicketActions.tsx requestedReceived) so both ticket
-// types treat "fulfilled" the same way; unlike PM, this is copied on demand
-// via a button rather than auto-seeded (service tickets have no
-// completion_seeded_at guard to stop a re-seed from resurrecting a part the
-// tech deliberately removed).
-function fulfilledRequestedParts(requested: PartRequest[]): PartRequest[] {
-  return requested.filter(
-    (r) => (r.status === 'received' || r.status === 'from_stock') && !r.cancelled
-  )
-}
-
-// Dedupe key for a requested part vs an already-added completion part:
-// Synergy item # when catalog-linked, else the normalized description.
-function partDedupeKey(p: { synergyProductId?: number | null; synergy_product_id?: number | null; description: string }): string {
-  const id = p.synergyProductId ?? p.synergy_product_id
-  return id != null ? `id:${id}` : `desc:${p.description.trim().toLowerCase()}`
-}
-
 export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, laborRates, tripChargeRate, taxRatePercent, poDueDates = {}, canEmailEstimate = false }: ServiceTicketDetailProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -487,6 +511,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const [newPartVendor, setNewPartVendor] = useState('')
   const [newPartVendorCode, setNewPartVendorCode] = useState('')
   const [newPartPrice, setNewPartPrice] = useState('')
+  // Shipping speed the tech is asking the office to order at, plus an optional
+  // carrier instruction. Defaults to 'standard' — the overwhelming majority of
+  // requests, and the behaviour every pre-feature request already had.
+  const [newPartShippingMethod, setNewPartShippingMethod] = useState<ShippingMethod>('standard')
+  const [newPartShippingNote, setNewPartShippingNote] = useState('')
   // Set when the description is matched to a Synergy catalog item — links the
   // request to the product (exempts it from the manual vendor/price gate) and
   // prefills item #, price, vendor, and vendor part # from the catalog.
@@ -513,24 +542,49 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       ? partsFromSaved(ticket.parts_used)
       : []
   )
-  // Fulfilled requested parts not yet copied onto the work order — backs the
-  // "Copy Requested Parts" button below. Recomputed on every render so a part
-  // that arrives (or gets copied) updates the button immediately.
-  const copyableRequestedParts = fulfilledRequestedParts(partsRequested).filter(
-    (r) => !completionParts.some((p) => partDedupeKey(p) === partDedupeKey(r))
+  // Fulfilled requested parts not yet on the work order — backs both the "Copy
+  // Requested Parts" button and the missing-parts banner. Recomputed on every
+  // render (not seeded into state) so a part that arrives, gets auto-added, or
+  // gets copied updates the UI immediately. This is deliberately computed from
+  // the LIVE completion-form parts rather than the saved array: if the tech
+  // deletes an auto-added line, it reappears here straight away.
+  //
+  // Uses the shared matcher so the banner, the server-side auto-add, and the
+  // office reconciliation report can never disagree about whether a part is
+  // missing.
+  const copyableRequestedParts = partsMissingFromWorkOrder(
+    partsRequested,
+    toServicePartUsed(completionParts)
   )
+  // Paired with their position in parts_requested — the "not used" write
+  // addresses parts by array ordinal (same convention as the Parts Queue).
+  const missingWorkOrderItems = copyableRequestedParts.map((part) => ({
+    part,
+    index: partsRequested.indexOf(part),
+  }))
   function handleCopyRequestedParts() {
-    const converted = partsFromSaved(
-      copyableRequestedParts.map((r) => ({
-        synergy_product_id: r.synergy_product_id ?? null,
-        description: r.description,
-        quantity: r.quantity,
-        unit_price: r.unit_price ?? 0,
-        detail: r.detail,
-        product_number: r.product_number,
-      }))
-    )
+    const converted = partsFromSaved(copyableRequestedParts.map((r) => requestToUsedLine(r)))
     setCompletionParts((prev) => [...prev, ...converted])
+    // Open the completion card if it's collapsed. The parts persist either way
+    // (the completion autosave runs whenever the ticket is in_progress, not only
+    // when this card is open), but adding a line the tech can't see reads as the
+    // button having done nothing.
+    setShowCompletionForm(true)
+  }
+  // Record that a fulfilled part was deliberately not used. Soft-flag in place
+  // (never splice) — the Parts Queue addresses parts by array ordinal, so
+  // removing an element strands the queue's reference to every later part.
+  async function handleExcludePartFromWorkOrder(index: number, reason: string) {
+    const now = new Date().toISOString()
+    const updatedParts = partsRequested.map((p, i) =>
+      i === index
+        ? { ...p, wo_excluded_at: now, wo_excluded_by: userId, wo_exclude_reason: reason }
+        : p
+    )
+    await apiAction(async () => {
+      await patchTicket({ parts_requested: updatedParts })
+      setPartsRequested(updatedParts)
+    })
   }
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
@@ -771,8 +825,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         estimate_labor_hours: hours,
         estimate_parts: toServicePartUsed(estimateParts),
         diagnosis_notes: diagnosisNotes || null,
-        // Staff-only field — server re-resolves and snapshots estimate_labor_rate from it.
-        ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
+        // Server re-resolves and snapshots estimate_labor_rate from this. Now
+        // tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; the
+        // server allowlist is the authority on who may write it. Same fix as
+        // trip_charge_qty below: gating it on isStaff here silently dropped a
+        // tech's rate-class pick on submit (feedback #83).
+        labor_rate_type: estimateRateType,
         // Trip charge qty lives inline under labor hours; persist it with the estimate.
         // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; the server
         // allowlist is the authority on who may write it. Gating it on isStaff here
@@ -1088,8 +1146,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         diagnosis_notes: diagnosisNotes || null,
         estimate_labor_hours: parseFloat(estimateLaborHours) || null,
         estimate_parts: estimateParts.length > 0 ? toServicePartUsed(estimateParts) : [],
-        // Staff-only field — server filters it out for techs.
-        ...(isStaff ? { labor_rate_type: estimateRateType } : {}),
+        // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; server allowlist gates it.
+        labor_rate_type: estimateRateType,
         // Tech-writable (in TECH_ALLOWED_FIELDS) — send unconditionally; server allowlist gates it.
         trip_charge_qty: parseFloat(tripChargeQty) || 0,
       }
@@ -1223,10 +1281,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // mid-completion doesn't lose the form on refresh. Keyed by ticket id, and
   // only enabled during the completion phase (not the estimate builder).
   const serviceCompletionDraftState = useMemo<ServiceCompletionDraft>(() => ({
-    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    billingType, laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
     completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
   }), [
-    billingType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    billingType, laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
     completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
   ])
 
@@ -1251,6 +1309,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       const serverLastSaved = new Date(ticket.updated_at).getTime()
       if (!Number.isFinite(lastEditedAt) || lastEditedAt <= serverLastSaved) return
       if (draft.billingType) setBillingType(draft.billingType)
+      if (draft.laborRateType) setLaborRateType(draft.laborRateType)
       setHoursWorked(draft.hoursWorked ?? '')
       setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
       setMachineHours(draft.machineHours ?? '')
@@ -1309,6 +1368,15 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       // the To-Order queue. Service parts stay hidden until the estimate is approved.
       status: 'pending_review',
       requested_at: new Date().toISOString(),
+      // Speed picked on this estimate row (feedback #80). Read here, at the
+      // moment the row becomes a real request — the entry itself never persists
+      // it, since estimate_parts is the customer's quote, not a purchase order.
+      ...(entry.shippingMethod && entry.shippingMethod !== 'standard'
+        ? { shipping_method: entry.shippingMethod }
+        : {}),
+      ...(normalizeShippingNote(entry.shippingNote)
+        ? { shipping_note: normalizeShippingNote(entry.shippingNote) }
+        : {}),
     }
     const updatedRequests = [...partsRequested, newPart]
     await apiAction(async () => {
@@ -1378,6 +1446,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       unit_price: Number.isFinite(ep.unit_price) ? ep.unit_price : undefined,
       status: 'pending_review',
       requested_at: nowIso,
+      // No shipping_method here, and that is deliberate rather than an
+      // oversight: this promotes rows off the SAVED estimate_parts array, which
+      // stores the customer's quote and carries no procurement fields. Every
+      // promoted part therefore lands as standard ground — the behaviour this
+      // button already had. A rush is set per-row with the Request button, or
+      // patched by the office in the Parts Queue.
     }))
     const updatedRequests = [...partsRequested, ...newParts]
     await apiAction(async () => {
@@ -1420,6 +1494,71 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       !!newPartVendorItemCode.trim() &&
       newPartPriceValid
 
+  // Draft persistence for the parts-order request form (feedback #73). These
+  // fields have no server autosave — they're local until "Add Part" appends to
+  // parts_requested — so this localStorage draft is the only thing that keeps a
+  // half-entered request from vanishing on a refresh or a backgrounded PWA.
+  // Enabled whenever the request form can actually be shown (any pre-completion
+  // status with the machine identified — mirrors the PartsSection gate), and
+  // cleared on Add or Cancel via resetAddPartForm below. Restores silently, the
+  // same way the completion draft above does.
+  const partsRequestDraftState = useMemo<PartsRequestDraft>(() => ({
+    showAddPart,
+    newPartDesc, newPartQty, newPartNumber, newPartVendorItemCode,
+    newPartVendor, newPartVendorCode, newPartPrice, newPartSynergyProductId,
+    newPartShippingMethod, newPartShippingNote,
+  }), [
+    showAddPart,
+    newPartDesc, newPartQty, newPartNumber, newPartVendorItemCode,
+    newPartVendor, newPartVendorCode, newPartPrice, newPartSynergyProductId,
+    newPartShippingMethod, newPartShippingNote,
+  ])
+
+  const { clearDraft: clearPartsRequestDraft } = useFormDraft<PartsRequestDraft>({
+    key: `service-parts-request-${ticket.id}`,
+    state: partsRequestDraftState,
+    enabled:
+      ticket.status !== 'completed' &&
+      ticket.status !== 'billed' &&
+      ticket.status !== 'canceled' &&
+      machineComplete,
+    // Only persist/restore once a field carries real content — a bare open form
+    // (or a lone default qty) must not write a phantom draft or auto-expand.
+    isMeaningful: (s) =>
+      Boolean(
+        s.newPartDesc.trim() ||
+        s.newPartNumber.trim() ||
+        s.newPartVendorItemCode.trim() ||
+        s.newPartVendor.trim() ||
+        s.newPartPrice.trim() ||
+        s.newPartSynergyProductId != null ||
+        // A typed carrier instruction is real content. The method PICKER is
+        // deliberately not listed: it always holds a value ('standard' by
+        // default), so keying off it would make every freshly-opened form look
+        // meaningful and write a phantom draft.
+        (s.newPartShippingNote ?? '').trim()
+      ),
+    onRestore: (draft) => {
+      setNewPartDesc(draft.newPartDesc ?? '')
+      setNewPartQty(draft.newPartQty || '1')
+      setNewPartNumber(draft.newPartNumber ?? '')
+      setNewPartVendorItemCode(draft.newPartVendorItemCode ?? '')
+      setNewPartVendor(draft.newPartVendor ?? '')
+      setNewPartVendorCode(draft.newPartVendorCode ?? '')
+      setNewPartPrice(draft.newPartPrice ?? '')
+      setNewPartSynergyProductId(draft.newPartSynergyProductId ?? null)
+      // Drafts written before this feature have no shipping keys — fall back to
+      // the same 'standard' default a fresh form starts at.
+      setNewPartShippingMethod(
+        isShippingMethod(draft.newPartShippingMethod) ? draft.newPartShippingMethod : 'standard',
+      )
+      setNewPartShippingNote(draft.newPartShippingNote ?? '')
+      // Reopen the form so the restored fields are visible (gated on
+      // isMeaningful, so an empty form never auto-expands).
+      setShowAddPart(true)
+    },
+  })
+
   // Prefill the request from a picked Synergy catalog item: description, item #,
   // price, vendor (+ vendor_code), and vendor part #. Locks the description to a
   // chip until cleared. Loaded cost is never fetched — tech-facing search omits it.
@@ -1457,7 +1596,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     setNewPartVendorCode('')
     setNewPartPrice('')
     setNewPartSynergyProductId(null)
+    setNewPartShippingMethod('standard')
+    setNewPartShippingNote('')
     partSearch.clear()
+    // Drop the saved draft — runs on both "Add Part" (committed) and "Cancel"
+    // (discarded), so a persisted request never outlives the entry it backed.
+    clearPartsRequestDraft()
   }
 
   async function handleAddPartRequest() {
@@ -1474,6 +1618,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       // New requests enter the office Review step (stock-vs-order triage) first.
       status: 'pending_review',
       requested_at: new Date().toISOString(),
+      // Only persist a non-default speed, so a standard-ground request stays as
+      // lean on the JSONB as it was before this feature (and reads back through
+      // the same absent -> 'standard' path as every legacy row).
+      ...(newPartShippingMethod !== 'standard' ? { shipping_method: newPartShippingMethod } : {}),
+      ...(normalizeShippingNote(newPartShippingNote)
+        ? { shipping_note: normalizeShippingNote(newPartShippingNote) }
+        : {}),
     }
     const updatedParts = [...partsRequested, newPart]
     await apiAction(async () => {
@@ -1567,6 +1718,31 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     })
   }
 
+  /**
+   * Correct a requested quantity. Read-before-write merge, same pattern as
+   * handleSavePartPo. Takes the value directly rather than through a staged
+   * setState — a quantity is committed on blur as one number, so there is no
+   * intermediate typing state worth lifting into the parent.
+   *
+   * Sends only parts_requested: the server derives any work-order line sync
+   * itself, because parts_used is tech-only on the service PATCH route and a
+   * staff request carrying it would be rejected outright.
+   */
+  async function handleSavePartQuantity(index: number, quantity: number) {
+    await apiAction(async () => {
+      const supabase = createClient()
+      const { data: latest } = await supabase
+        .from('service_tickets')
+        .select('parts_requested')
+        .eq('id', ticket.id)
+        .single()
+      const serverParts = (latest?.parts_requested ?? []) as PartRequest[]
+      const merged = serverParts.map((p, i) => (i === index ? { ...p, quantity } : p))
+      await patchTicket({ parts_requested: merged })
+      setPartsRequested(merged)
+    })
+  }
+
   async function handleResetPartStatus(index: number) {
     const current = partsRequested[index].status
     const prev: PartRequest['status'] = current === 'received' ? 'ordered' : 'requested'
@@ -1590,7 +1766,20 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     const now = new Date().toISOString()
     const updatedParts = partsRequested.map((p, i) =>
       i === index
-        ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId }
+        ? {
+            ...p,
+            cancelled: true,
+            // Stamp the terminal status too, not just the flag. The parts-queue
+            // `cancel` action does this (PR #247); this in-ticket path bypasses
+            // that route entirely and used to leave status at its pre-delete
+            // value, re-creating the contradictory "cancelled but pending_review"
+            // rows that #247 cleaned up. Inert either way — every tab, count and
+            // gate reads the `cancelled` flag — but the JSONB should not lie.
+            status: 'cancelled' as const,
+            cancel_reason: 'Removed from ticket',
+            cancelled_at: now,
+            cancelled_by: userId,
+          }
         : p
     )
     await apiAction(async () => {
@@ -1626,6 +1815,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
 
   async function handleComplete(e: React.FormEvent) {
     e.preventDefault()
+
+    if (reviewPartsCount > 0) {
+      failValidation(
+        `${reviewPartsCount} part(s) are awaiting Parts Queue review. Triage or remove them before completing.`
+      )
+      return
+    }
 
     if (needsEquipmentVerify) {
       failValidation('Verify the equipment details above before completing.')
@@ -1666,6 +1862,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       const res = await requestWithMarginOverride(`/api/service-tickets/${ticket.id}/complete`, 'POST', {
         completed_at: new Date().toISOString(),
         hours_worked: hours,
+        // Rate class the completer picked on the form. Sent with the completion
+        // rather than PATCHed first (like billing_type above) so the stored
+        // labor_rate_type and the billing_amount computed from it land in the
+        // same UPDATE and can't disagree (feedback #83).
+        labor_rate_type: laborRateType,
         trip_charge_qty: parseFloat(tripChargeQty) || 0,
         parts_used: toServicePartUsed(completionParts),
         completion_notes: completionNotes || null,
@@ -1801,10 +2002,18 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const partsWaitingCount = partsOnOrderList.length
   const partsReceivedCount = livePartsRequested.length - partsWaitingCount
   const allPartsReceived = livePartsRequested.length > 0 && partsWaitingCount === 0
+  // Un-triaged parts block completion server-side (complete/route.ts). Mirror it
+  // here so the tech sees why Complete is unavailable instead of hitting a 409.
+  const reviewPartsCount = partsAwaitingReview(partsRequested).length
   const partsTotal = completionParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
-  const laborTotal = (parseFloat(hoursWorked) || 0) * laborRate
+  // Completion labor rate follows the rate class selected on the completion
+  // form, not just the type stored at page load, so the on-screen billing
+  // preview matches what /complete will compute (feedback #83). All three
+  // customer-resolved rates are already on the client via laborRates.
+  const effectiveLaborRate = laborRates?.[laborRateType] ?? laborRate
+  const laborTotal = (parseFloat(hoursWorked) || 0) * effectiveLaborRate
   // Trip charge billed (0 on full-warranty tickets, matching the server).
   // Billed trip charge = trips × per-trip rate (0 on full-warranty tickets).
   const tripChargeQtyNum = parseFloat(tripChargeQty) || 0
@@ -1816,7 +2025,14 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const signedDiagnosticNum = String(ticket.diagnostic_invoice_number ?? '').trim()
     ? -diagnosticChargeNum
     : diagnosticChargeNum
-  const billingTotal = ticket.billing_type === 'warranty' ? 0 : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum
+  // Inbound freight (feedback #80) — office-set on the ticket, so it's read
+  // straight off the row rather than from any form field. 0 on full-warranty,
+  // matching how the complete route computed billing_amount.
+  const shippingChargeNum =
+    ticket.billing_type === 'warranty' ? 0 : shippingChargeAmount(ticket.shipping_charge)
+  const billingTotal = ticket.billing_type === 'warranty'
+    ? 0
+    : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum + shippingChargeNum
   // Sales tax (parts only, display-only) — mirrors the work-order PDF so the
   // on-screen total matches what the customer sees. 0 on warranty (no parts billed).
   const taxRateFraction = (taxRatePercent ?? 0) / 100
@@ -1829,6 +2045,8 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   const estPartsTotal = estimateParts
     .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
+  // Mirrors the server's estimate recompute exactly — which excludes freight,
+  // for the same reason it excludes the diagnostic fee (see the PATCH route).
   const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal + tripChargeNum
   const estTaxAmount = ticket.billing_type === 'warranty' ? 0 : computePartsTax(estPartsTotal, taxRateFraction)
 
@@ -1920,7 +2138,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // visibility AND suppress the WorkflowStatusCard "Next:" line when the
   // viewer has a button (so we don't show "Next: Build the estimate" right
   // above a "Build Estimate" button).
-  const partsBlocking = livePartsRequested.length > 0 && !allPartsReceived
+  // Same predicate as the server-side parts_received column and the board's
+  // readiness chip, so Start Work here can't contradict what the board claims.
+  // (Identical to the old `livePartsRequested.length > 0 && !allPartsReceived`:
+  // the length guard cancelled out. allPartsReceived keeps its own guard because
+  // it drives display, where "all received" on a part-less ticket reads wrong.)
+  const partsBlocking = !partsAllFulfilled(partsRequested)
   // Pending parts that withhold Start Work, grouped by label for the
   // blocked-state callout (feedback #71). Before this, an approved ticket with
   // parts still pending simply hid the Start Work button, so a tech had no idea
@@ -2176,6 +2399,33 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           </div>
         </Card>
       )}
+
+      {/* Warranty review lifecycle (migration 160, round 2). Single mount
+          point for both roles: the panel itself decides what to render for a
+          tech vs. staff, and for the not-flagged/flagged states. All state and
+          fetch logic lives inside the panel so this file barely changes as
+          the redesign continues. */}
+      <WarrantyReviewPanel
+        ticketId={ticket.id}
+        status={ticket.status}
+        assignedTechnicianId={ticket.assigned_technician_id}
+        isTech={isTech}
+        isStaff={isStaff}
+        userId={userId}
+        warrantyReviewStatus={ticket.warranty_review_status}
+        warrantyReviewRequestedAt={ticket.warranty_review_requested_at}
+        warrantyReviewRequestedById={ticket.warranty_review_requested_by_id}
+        warrantyReviewNote={ticket.warranty_review_note}
+        warrantyReviewDecidedAt={ticket.warranty_review_decided_at}
+        warrantyReviewDecisionNote={ticket.warranty_review_decision_note}
+        warrantyLaborCovered={ticket.warranty_labor_covered}
+        warrantyVendor={ticket.warranty_vendor}
+        warrantyVendorLaborRate={ticket.warranty_vendor_labor_rate}
+        requesterName={ticket.warranty_review_requested_by?.name ?? null}
+        deciderName={ticket.warranty_review_decided_by?.name ?? null}
+        partsUsed={ticket.parts_used ?? []}
+        estimateParts={ticket.estimate_parts ?? []}
+      />
 
       {/* Request More Info note — surfaced prominently when the manager has
           sent the estimate back. Visible to anyone viewing the ticket so
@@ -2768,6 +3018,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           setNewPartVendorCode={setNewPartVendorCode}
           newPartPrice={newPartPrice}
           setNewPartPrice={setNewPartPrice}
+          newPartShippingMethod={newPartShippingMethod}
+          setNewPartShippingMethod={setNewPartShippingMethod}
+          newPartShippingNote={newPartShippingNote}
+          setNewPartShippingNote={setNewPartShippingNote}
           newPartSynergyProductId={newPartSynergyProductId}
           newPartIsCatalog={newPartIsCatalog}
           addPartReady={addPartReady}
@@ -2782,6 +3036,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           onSavePartVendorItemCode={handleSavePartVendorItemCode}
           onUpdatePartPo={handleUpdatePartPo}
           onSavePartPo={handleSavePartPo}
+          onSavePartQuantity={handleSavePartQuantity}
           onEquipmentVerified={handleEquipmentVerified}
           onPromoteEstimateParts={handlePromoteEstimateParts}
           onSelectCatalogPart={selectCatalogPart}
@@ -2795,6 +3050,33 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       {/* ── Section 7: Completion Form ──
           Collapsible — opens by default in_progress; on mobile it's also the
           only open section. */}
+      {/* Parts the branch bought or pulled that never made it onto the work
+          order. Sits ABOVE the completion card, not inside its collapsed
+          "Parts Used" details — the buried Copy button is exactly why these
+          were being missed. Warn only: the Complete button stays enabled.
+          Deliberately NOT gated on showCompletionForm: gating it there would
+          hide the warning until the tech opens the completion card, which is
+          the same "you only see it if you go looking" failure the buried Copy
+          button had. Matches the PM side, which shows it for the whole
+          in-progress phase. The completion autosave is likewise keyed on
+          in_progress, so Add persists whether or not the card is open.
+
+          `onAdd` is tech-only because `parts_used` is in TECH_ALLOWED_FIELDS and
+          NOT the staff allowlist (see api/service-tickets/[id]/route.ts) — the
+          completion form is a technician flow. Offering staff a button whose
+          PATCH comes back 400 "No recognized fields" is worse than not offering
+          it. Staff still see the warning and can still mark a part not-used,
+          which writes parts_requested (allowed for both roles), and the office
+          has the full list on /parts-queue/not-on-work-order. */}
+      {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
+        <MissingFromWorkOrderNotice
+          items={missingWorkOrderItems}
+          onAdd={isTech ? handleCopyRequestedParts : undefined}
+          onExclude={handleExcludePartFromWorkOrder}
+          busy={loading || saving}
+        />
+      )}
+
       {ticket.status === SERVICE_STATUS.IN_PROGRESS && showCompletionForm && (
         <div ref={completionCardRef}>
         <CompletionSection
@@ -2806,13 +3088,16 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           saveSuccess={saveSuccess}
           localSavedVisible={localSavedVisible}
           taxRatePercent={taxRatePercent}
-          laborRate={laborRate}
+          laborRate={effectiveLaborRate}
+          laborRates={laborRates}
           tripChargeRate={tripChargeRate}
           completionOpen={completionOpen}
           equipmentToVerify={equipmentToVerify}
           onEquipmentVerified={handleEquipmentVerified}
           billingType={billingType}
           setBillingType={setBillingType}
+          laborRateType={laborRateType}
+          setLaborRateType={setLaborRateType}
           hoursWorked={hoursWorked}
           setHoursWorked={setHoursWorked}
           tripChargeQty={tripChargeQty}
@@ -2841,6 +3126,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           onError={setError}
           laborTotal={laborTotal}
           partsTotal={partsTotal}
+          shippingChargeNum={shippingChargeNum}
           billingTotal={billingTotal}
           billTaxAmount={billTaxAmount}
           tripChargeNum={tripChargeNum}
@@ -2903,6 +3189,11 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 </InfoField>
               ) : null
             })()}
+            {ticket.shipping_charge != null && (
+              <InfoField label="Shipping">
+                ${Number(ticket.shipping_charge).toFixed(2)}
+              </InfoField>
+            )}
             {ticket.diagnostic_charge != null && (
               <InfoField label="Diagnostic Charge">
                 ${ticket.diagnostic_charge.toFixed(2)}
@@ -2938,6 +3229,13 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               </div>
             </div>
           )}
+
+          {/* Fulfilled parts that never reached the work order. Read-only here:
+              the ticket is done, so this is the office's cue that the invoice
+              went out light, not something the tech can still fix in place. */}
+          <div className="mt-4">
+            <MissingFromWorkOrderNotice items={missingWorkOrderItems} />
+          </div>
 
           {/* Completion notes */}
           {ticket.completion_notes && (
@@ -3153,7 +3451,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               {loading ? 'Starting...' : 'Start Work'}
             </button>
           )}
-          {ticket.status === SERVICE_STATUS.IN_PROGRESS && (
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && reviewPartsCount > 0 && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              {reviewPartsCount} part{reviewPartsCount === 1 ? ' is' : 's are'} awaiting Parts Queue review. Triage or remove {reviewPartsCount === 1 ? 'it' : 'them'} before completing this ticket.
+            </div>
+          )}
+          {ticket.status === SERVICE_STATUS.IN_PROGRESS && reviewPartsCount === 0 && (
             <button
               type="button"
               onClick={() => setShowCompletionForm(true)}

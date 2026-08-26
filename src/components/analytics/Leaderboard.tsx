@@ -12,6 +12,12 @@ interface LeaderboardProps {
   techRows: TechRow[]
   activeSort: SortMetric
   onSortChange: (sort: SortMetric) => void
+  /**
+   * Serialised `period/date/type` appended to each drill-down href so opening a
+   * technician keeps the period the viewer is looking at instead of snapping
+   * back to the current month.
+   */
+  query?: string
 }
 
 function getSortValue(row: TechRow, sort: SortMetric): number {
@@ -65,8 +71,9 @@ function TargetBadge({ percent }: { percent: number | null }) {
   )
 }
 
-export default function Leaderboard({ techRows, activeSort, onSortChange }: LeaderboardProps) {
+export default function Leaderboard({ techRows, activeSort, onSortChange, query }: LeaderboardProps) {
   const sorted = [...techRows].sort((a, b) => getSortValue(b, activeSort) - getSortValue(a, activeSort))
+  const suffix = query ? `?${query}` : ''
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -125,7 +132,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
                   </td>
                   <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">
                     {row.name}
-                    <RowLink href={`/analytics/${row.id}`} label={`View profile for ${row.name}`} />
+                    <RowLink href={`/analytics/${row.id}${suffix}`} label={`View profile for ${row.name}`} />
                   </td>
                   <td className="px-3 py-3 text-right text-gray-900 dark:text-white">{row.ticketsCompleted}</td>
                   <td className="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">
@@ -171,7 +178,7 @@ export default function Leaderboard({ techRows, activeSort, onSortChange }: Lead
           return (
             <Link
               key={row.id}
-              href={`/analytics/${row.id}`}
+              href={`/analytics/${row.id}${suffix}`}
               className={`block px-4 py-3 active:bg-gray-50 dark:active:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-inset ${belowTarget ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
             >
               <div className="flex items-center justify-between mb-2">

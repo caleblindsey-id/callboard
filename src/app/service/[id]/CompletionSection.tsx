@@ -23,7 +23,11 @@ interface CompletionSectionProps {
   // precedence when both are true.
   localSavedVisible: boolean
   taxRatePercent: number
+  // Rate for the CURRENTLY SELECTED labor type (the parent resolves it from
+  // laborRates), so the summary below matches what /complete will compute.
   laborRate: number
+  // All three customer-resolved rates, for the Labor Type option labels.
+  laborRates: Record<string, number>
   tripChargeRate: number
   completionOpen: boolean
   // Verify-first equipment gate (same panel as the estimate builder)
@@ -32,6 +36,8 @@ interface CompletionSectionProps {
   // Completion form state — owned by the parent (auto-save + submit read it)
   billingType: ServiceBillingType
   setBillingType: (v: ServiceBillingType) => void
+  laborRateType: string
+  setLaborRateType: (v: string) => void
   hoursWorked: string
   setHoursWorked: (v: string) => void
   tripChargeQty: string
@@ -64,6 +70,8 @@ interface CompletionSectionProps {
   // Derived billing math — computed in the parent
   laborTotal: number
   partsTotal: number
+  // Office-set inbound freight, already 0'd for warranty by the parent.
+  shippingChargeNum: number
   billingTotal: number
   billTaxAmount: number
   tripChargeNum: number
@@ -91,12 +99,15 @@ export default function CompletionSection({
   localSavedVisible,
   taxRatePercent,
   laborRate,
+  laborRates,
   tripChargeRate,
   completionOpen,
   equipmentToVerify,
   onEquipmentVerified,
   billingType,
   setBillingType,
+  laborRateType,
+  setLaborRateType,
   hoursWorked,
   setHoursWorked,
   tripChargeQty,
@@ -125,6 +136,7 @@ export default function CompletionSection({
   onError,
   laborTotal,
   partsTotal,
+  shippingChargeNum,
   billingTotal,
   billTaxAmount,
   tripChargeNum,
@@ -179,6 +191,36 @@ export default function CompletionSection({
           {billingType !== ticket.billing_type && (
             <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
               Changed to {billingTypeLabels[billingType] ?? billingType} — saved when you complete the job.
+            </p>
+          )}
+        </div>
+
+        {/* Labor Type — the rate class the labor is billed at. A job often turns
+            out to be an industrial unit (heated pressure washer) once the tech
+            is on the machine, but it was keyed standard at intake. Previously
+            the only controls for this sat in the staff-only Assignment card and
+            estimate builder, so a technician had no way to correct it at any
+            stage and the job silently billed at the standard rate (feedback
+            #83). Mirrors the PM completion panel (feedback #76). Sent with the
+            completion, so the stored type and the billing_amount derived from
+            it land together. */}
+        <div>
+          <label htmlFor="completionLaborRateType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Labor Type
+          </label>
+          <select
+            id="completionLaborRateType"
+            value={laborRateType}
+            onChange={(e) => setLaborRateType(e.target.value)}
+            className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            <option value="standard">Standard — ${(laborRates.standard ?? 0).toFixed(2)}/hr</option>
+            <option value="industrial">Industrial — ${(laborRates.industrial ?? 0).toFixed(2)}/hr</option>
+            <option value="vacuum">Vacuum — ${(laborRates.vacuum ?? 0).toFixed(2)}/hr</option>
+          </select>
+          {laborRateType !== (ticket.labor_rate_type ?? 'standard') && (
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+              Changed — the labor rate below updates when you complete the job.
             </p>
           )}
         </div>
@@ -319,6 +361,15 @@ export default function CompletionSection({
               <div className="flex justify-between">
                 <span>Trip: {tripChargeQtyNum} × ${tripChargeRate.toFixed(2)}</span>
                 <span>${tripChargeNum.toFixed(2)}</span>
+              </div>
+            )}
+            {/* Freight set by the office at PO time (feedback #80). Read-only
+                here — the tech is seeing what the customer will be billed, not
+                setting it. */}
+            {shippingChargeNum > 0 && (
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span>${shippingChargeNum.toFixed(2)}</span>
               </div>
             )}
           </div>

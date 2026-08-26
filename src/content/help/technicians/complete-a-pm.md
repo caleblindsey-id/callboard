@@ -4,7 +4,7 @@ category: Technicians
 roles: [super_admin, manager, coordinator, technician]
 order: 10
 summary: Start a preventive-maintenance ticket, fill out the work order, and submit it with a signature.
-last_verified: 2026-05-27
+last_verified: 2026-07-14
 ---
 
 This is the core of a technician's day: opening a preventive-maintenance ticket, doing the work, and recording it so it can be billed. CallBoard saves your progress as you go, so you won't lose anything if you get interrupted.
@@ -39,7 +39,8 @@ This is the work **covered under the maintenance agreement**. The parts that com
 
 Use this **only** for work *beyond* the agreement that the customer should be charged for:
 
-- **Additional Labor Hours** — extra time beyond the PM, billed at the shop labor rate.
+- **Labor Type** — the rate this additional labor is billed at: **Standard**, **Industrial**, or **Vacuum**. It defaults to the ticket's rate, but you can change it here if the extra work should be billed at a different rate. This only affects the additional labor below — the covered PM work is always the flat agreement rate.
+- **Additional Labor Hours** — extra time beyond the PM. The `@ $/hr` figure next to it updates to match the Labor Type you picked.
 - **Additional Parts** — search for and add any parts used. Pricing **is** shown here because it's billable.
 
 As you add additional work, a running **Grand Total** appears at the bottom (PM flat rate + any additional work). Taxes are not included in this total.

@@ -4,6 +4,7 @@ import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/lib/auth'
 import { generatePmTickets, groupPendingReviewsByCustomer } from '@/lib/pm-generation'
 import { enqueueCreditReviewsForCustomer } from '@/lib/credit-review'
+import { notifyTechsOfGeneratedPms } from '@/lib/pm-tickets/notify-generated'
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,6 +75,22 @@ export async function POST(request: NextRequest) {
       else unemailedCustomers++
     }
 
+    // Tell each tech their month is ready. Best-effort and fully contained: the
+    // tickets are already committed, so a notification failure must never turn
+    // a successful generation into an error the manager sees.
+    let notifiedTechs = 0
+    try {
+      notifiedTechs = await notifyTechsOfGeneratedPms({
+        // result.tickets, NOT result.created. created is a count, tickets is
+        // the PmTicketRow[] of rows actually inserted this run.
+        created: result.tickets,
+        month,
+        year,
+      })
+    } catch (err) {
+      console.error('tickets/generate: tech notification failed', err)
+    }
+
     return NextResponse.json({
       created: result.created,
       skipped: result.skipped,
@@ -82,6 +99,7 @@ export async function POST(request: NextRequest) {
       pendingReviewCustomers: byCustomer.size,
       creditReviewEmailed: emailedCustomers,
       creditReviewNotEmailed: unemailedCustomers,
+      notifiedTechs,
       tickets: result.tickets,
     })
   } catch (err) {

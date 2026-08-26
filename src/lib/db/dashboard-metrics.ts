@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { DigestDb } from '@/lib/digest/types'
 import type { TicketStatus } from '@/types/database'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
 
@@ -50,6 +51,7 @@ export async function getOpenWorkCounts(technicianId?: string): Promise<OpenWork
   let svcQ = supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .in('status', OPEN_SERVICE_STATUSES)
 
   if (technicianId) {
@@ -75,6 +77,7 @@ export async function getPendingApproval(): Promise<PendingApproval> {
   const { data, error } = await supabase
     .from('service_tickets')
     .select('estimate_amount')
+    .is('deleted_at', null)
     .eq('status', 'estimated')
 
   if (error) throw error
@@ -105,6 +108,7 @@ export async function getMtdRevenue(technicianId?: string): Promise<MtdRevenue> 
   let svcQ = supabase
     .from('service_tickets')
     .select('billing_amount')
+    .is('deleted_at', null)
     .in('status', ['completed', 'billed'])
     .gte('completed_at', start)
     .lt('completed_at', end)
@@ -127,8 +131,21 @@ export async function getMtdRevenue(technicianId?: string): Promise<MtdRevenue> 
 
 // --- Alert: Credit Hold count -------------------------------------------
 
-export async function getCreditHoldCount(): Promise<number> {
-  const supabase = await createClient()
+export type CreditHoldCustomer = {
+  id: number
+  name: string | null
+  account_number: string | null
+  open_ticket_count: number
+}
+
+/**
+ * Customers on credit hold that still have open work. The dashboard card wants
+ * only the count and the morning digest wants the rows, so the definition lives
+ * here once and both read it. Splitting them is how the digest drifted from the
+ * app everywhere else.
+ */
+export async function getCreditHoldCustomers(db?: DigestDb): Promise<CreditHoldCustomer[]> {
+  const supabase = db ?? (await createClient())
 
   const [pmRes, svcRes] = await Promise.all([
     supabase
@@ -139,26 +156,36 @@ export async function getCreditHoldCount(): Promise<number> {
     supabase
       .from('service_tickets')
       .select('customer_id')
+      .is('deleted_at', null)
       .in('status', OPEN_SERVICE_STATUSES),
   ])
   if (pmRes.error) throw pmRes.error
   if (svcRes.error) throw svcRes.error
 
-  const activeCustomerIds = new Set<number>()
-  for (const r of (pmRes.data ?? []) as { customer_id: number | null }[]) {
-    if (r.customer_id != null) activeCustomerIds.add(r.customer_id)
+  const openCountByCustomer = new Map<number, number>()
+  const bump = (id: number | null) => {
+    if (id == null) return
+    openCountByCustomer.set(id, (openCountByCustomer.get(id) ?? 0) + 1)
   }
-  for (const r of (svcRes.data ?? []) as { customer_id: number }[]) activeCustomerIds.add(r.customer_id)
+  for (const r of (pmRes.data ?? []) as { customer_id: number | null }[]) bump(r.customer_id)
+  for (const r of (svcRes.data ?? []) as { customer_id: number }[]) bump(r.customer_id)
 
-  if (activeCustomerIds.size === 0) return 0
+  if (openCountByCustomer.size === 0) return []
 
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('customers')
-    .select('id', { count: 'exact', head: true })
+    .select('id, name, account_number')
     .eq('credit_hold', true)
-    .in('id', Array.from(activeCustomerIds))
+    .in('id', Array.from(openCountByCustomer.keys()))
   if (error) throw error
-  return count ?? 0
+
+  return ((data ?? []) as { id: number; name: string | null; account_number: string | null }[]).map(
+    (c) => ({ ...c, open_ticket_count: openCountByCustomer.get(c.id) ?? 0 })
+  )
+}
+
+export async function getCreditHoldCount(db?: DigestDb): Promise<number> {
+  return (await getCreditHoldCustomers(db)).length
 }
 
 // --- Alert: Stale Estimates ---------------------------------------------
@@ -171,6 +198,7 @@ export async function getStaleEstimatesCount(daysThreshold = 14): Promise<number
   const { count, error } = await supabase
     .from('service_tickets')
     .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .eq('status', 'estimated')
     .lt('created_at', cutoff)
 
@@ -188,10 +216,12 @@ export async function getEstimatesPipeline(): Promise<EstimatesPipeline> {
     supabase
       .from('service_tickets')
       .select('estimate_amount')
+      .is('deleted_at', null)
       .eq('status', 'estimated'),
     supabase
       .from('service_tickets')
       .select('estimate_amount')
+      .is('deleted_at', null)
       .in('status', ['approved', 'in_progress', 'completed', 'billed'])
       .gte('estimate_approved_at', start)
       .lt('estimate_approved_at', end),
@@ -309,7 +339,15 @@ export async function getReadyToBillCounts(): Promise<ReadyToBillCounts> {
     supabase
       .from('service_tickets')
       .select('billing_amount')
-      .eq('status', 'completed'),
+      .is('deleted_at', null)
+      .eq('status', 'completed')
+      // service_tickets.billing_exported arrived in migration 106, AFTER this
+      // card was written, and the service leg was never updated while the PM
+      // leg above always had it. So the dashboard counted tickets the office
+      // had already exported and disagreed with the /billing Ready to Export
+      // tab, which reads getServiceBillingByExported(false). Measured against
+      // prod on 2026-08-21: card 32, tab 21.
+      .eq('billing_exported', false),
   ])
   if (pmRes.error) throw pmRes.error
   if (svcRes.error) throw svcRes.error
@@ -342,6 +380,7 @@ export async function getReadyForPickupCounts(): Promise<ReadyForPickupCounts> {
   const { data, error } = await supabase
     .from('service_tickets')
     .select('ready_for_pickup_at, pickup_notified_at, pickup_called_at, contact_email, equipment(contact_email)')
+    .is('deleted_at', null)
     .eq('awaiting_pickup', true)
     .is('picked_up_at', null)
   if (error) throw error

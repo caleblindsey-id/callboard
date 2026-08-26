@@ -1,8 +1,29 @@
+// Purchasing/Reorder module row shapes (migration 142) live in their own file
+// (kept separate from the PM/service unions below) — imported here only so the
+// Tables map below can reference them for a typed supabase.from(...) client.
+import type {
+  ReorderSessionRow,
+  ReorderSessionInsert,
+  ReorderSessionUpdate,
+  ReorderLineRow,
+  ReorderLineInsert,
+  ReorderLineUpdate,
+  ReorderSessionVendorRow,
+  ReorderSessionVendorInsert,
+  ReorderSessionVendorUpdate,
+  InvReorderRow,
+  InvVendorRow,
+  InvBinRow,
+} from './reorder'
+// Requested shipping speed on a part (feedback #80). The method list, labels,
+// and validators live in src/lib/shipping.ts so every consumer shares one copy.
+import type { ShippingMethod } from '../lib/shipping'
+
 // ============================================================
 // Enums
 // ============================================================
 
-export type UserRole = 'super_admin' | 'manager' | 'coordinator' | 'technician'
+export type UserRole = 'super_admin' | 'manager' | 'coordinator' | 'technician' | 'purchasing'
 
 // Role group constants — importable by both server and client code
 export const MANAGER_ROLES: UserRole[] = ['super_admin', 'manager', 'coordinator']
@@ -12,6 +33,10 @@ export const ADMIN_ROLES: UserRole[] = ['super_admin']
 // coordinators. Distinct from RESET_ROLES despite the same membership today —
 // the two are gated by different intent and may diverge.
 export const AUDIT_ROLES: UserRole[] = ['super_admin', 'manager']
+// Purchasing/Reorder module access (migration 142). Deliberately its own role
+// rather than folded into MANAGER_ROLES/RESET_ROLES — a purchasing agent gets
+// exactly this module, not manager-wide privileges.
+export const PURCHASING_ROLES: UserRole[] = ['super_admin', 'manager', 'purchasing']
 
 export type TicketStatus = 'unassigned' | 'assigned' | 'in_progress' | 'completed' | 'billed' | 'skipped' | 'skip_requested'
 
@@ -37,10 +62,12 @@ export type EquipmentSaleTier =
 
 export type EquipmentSaleCandidateStatus = 'pending' | 'confirmed' | 'dismissed'
 
-// Schedule interval_months values that earn a lead bonus: 1/2/3 (monthly,
-// bi-monthly, quarterly) earn the full first-PM flat rate; 6 (semi-annual) earns
-// half. See @/lib/tech-leads/pm-bonus and migration 094 for the per-interval rate.
-export const BONUS_ELIGIBLE_INTERVAL_MONTHS = [1, 2, 3, 6] as const
+// The PM interval -> bonus rate mapping used to be stated a THIRD time here, as
+// BONUS_ELIGIBLE_INTERVAL_MONTHS, with a comment admitting it had no callers.
+// Removed: a copy of a rule that enforces nothing is a copy that can silently
+// drift out of agreement with the two that matter. The rule lives in
+// src/lib/tech-leads/pm-bonus.ts (previews, tested) and in the earn trigger
+// (authoritative, migration 151).
 
 export type SyncType = 'customers' | 'contacts' | 'products' | 'full'
 
@@ -72,6 +99,101 @@ export type AceLaborEntry = {
   payout_period: string | null
   updated_by_id: string | null
   created_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ---------------------------------------------------------------------------
+// Commission (migration 153). Tech payouts Rounds 2-4.
+// ---------------------------------------------------------------------------
+
+/** Effective-dated commission rate band. Half-open [min_subtotal, max_subtotal),
+ *  max null = unbounded. The rate applies to the WHOLE subtotal, so boundaries
+ *  are cliffs -- see src/lib/commission/tiers.ts. */
+export type CommissionTierRow = {
+  id: string
+  effective_from: string
+  min_subtotal: number
+  max_subtotal: number | null
+  /** Fraction, not percent: 0.025 = 2.5%. */
+  rate: number
+  notes: string | null
+  created_by_id: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PayoutPeriodStatus = 'draft' | 'locked' | 'paid'
+
+/** One payout month. `period` is Central-anchored 'YYYY-MM' -- derive it with
+ *  monthKeyInZone from src/lib/business-time.ts, never toISOString().slice(). */
+export type PayoutPeriodRow = {
+  id: string
+  period: string
+  status: PayoutPeriodStatus
+  locked_at: string | null
+  locked_by_id: string | null
+  paid_at: string | null
+  paid_by_id: string | null
+  notes: string | null
+  created_by_id: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** `basis` feeds the tiered subtotal, `commission` is the computed tier payout,
+ *  `bonus` is flat and added AFTER the percentage. A CHECK constraint keeps kind
+ *  and category consistent so a bonus can never inflate the subtotal. */
+export type PayoutLineKind = 'basis' | 'commission' | 'bonus'
+
+export type PayoutLineCategory =
+  | 'labor_shop' | 'labor_warranty' | 'trip_charge' | 'pm_labor' | 'ace_labor'
+  | 'commission'
+  | 'pm_bonus' | 'equipment_bonus'
+
+export type PayoutLineSourceKind =
+  | 'pm_ticket' | 'service_ticket' | 'ace_labor_entry' | 'tech_lead'
+  | 'synergy_invoice' | 'manual'
+
+export type PayoutLineRow = {
+  id: string
+  payout_period_id: string
+  tech_id: string
+  kind: PayoutLineKind
+  category: PayoutLineCategory
+  /** Signed. Negative for credit memos and reversals. */
+  amount: number
+  source_kind: PayoutLineSourceKind | null
+  source_id: string | null
+  source_ref: string | null
+  /** Snapshotted at lock. Never re-derive a locked line from the tier table. */
+  rate_at_lock: number | null
+  basis_subtotal_at_lock: number | null
+  note: string | null
+  created_by_id: string | null
+  updated_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Buckets mirror the Round 1 ProdCode split. NOTE: `diagnostic_fee` is
+ *  captured but is NOT part of the commissioned subtotal -- it was never on the
+ *  manual workbook. See src/lib/db/commission.ts. */
+export type SynergyLaborBucket =
+  | 'labor_shop' | 'labor_warranty' | 'trip_charge' | 'pm_labor' | 'diagnostic_fee'
+
+export type SynergyLaborFactRow = {
+  id: string
+  /** The sslsm code (401-411, 444). Deliberately NOT a FK to users. */
+  synergy_id: string
+  period: string
+  bucket: SynergyLaborBucket
+  amount: number
+  /** 0.85 on pm_labor rows: "PM Profit Est." is a flat parts allowance. */
+  pm_factor_applied: number | null
+  pulled_at: string
   created_at: string
   updated_at: string
 }
@@ -172,6 +294,16 @@ export interface PartUsed {
   vendor_item_code?: string
   vendor?: string
   vendor_code?: string
+  // Link back to the originating PartRequest, set to that request's
+  // `requested_at`. The two JSONB arrays share no id, so this is the only exact
+  // key tying a work-order line to the part request that produced it — it lets
+  // partsMissingFromWorkOrder() tell "already on the WO" from "never added"
+  // without guessing at descriptions. Stamped by the auto-add on fulfillment
+  // (parts-queue mark_received / mark_pulled / pull_from_stock) and by the
+  // manual add from the missing-parts banner. Absent on hand-typed lines and on
+  // every line predating the auto-add, which is why the matcher still falls back
+  // to synergy_product_id and then to the normalized description.
+  from_request_at?: string
 }
 
 // First-PM-on-site completion captured by the tech at lead submission
@@ -210,6 +342,11 @@ export type PartRequestStatus =
   | 'ordered'
   | 'received'
   | 'from_stock'
+  // Terminal state stamped by the parts-queue `cancel` action alongside
+  // `cancelled: true`. All queue/dashboard/completion logic gates on the
+  // `cancelled` flag, so this value is inert-by-default (never matches an
+  // active status literal) — it only keeps the JSONB self-consistent.
+  | 'cancelled'
 
 export interface PartRequest {
   description: string
@@ -280,6 +417,26 @@ export interface PartRequest {
   // auto-stamped on ticket completion for any staged part never acknowledged.
   collected_at?: string
   collected_by?: string
+  // Deliberately kept OFF the work order: the part was fulfilled but not
+  // actually used (wrong part, machine failed differently, going back on the
+  // shelf). JSONB only — no migration. Set from the missing-parts banner, which
+  // requires a reason: a received part that goes unused is a real inventory
+  // event worth recording, not a dismissable warning. Suppresses the part from
+  // partsMissingFromWorkOrder() and from the auto-add, so re-receiving it can't
+  // silently resurrect a line the tech explicitly rejected. Distinct from
+  // `cancelled`, which means the request itself was killed before fulfillment.
+  wo_excluded_at?: string
+  wo_excluded_by?: string
+  wo_exclude_reason?: string
+  // Shipping speed the technician asked for at request time (feedback #80).
+  // JSONB only — no migration; the parts_order_queue view projects it so the
+  // buyer sees it before placing the PO (migration 149). Absent = 'standard',
+  // which is what every pre-feature row means and why no backfill was needed.
+  // Read it through shippingMethodOf() in src/lib/shipping.ts, never directly.
+  shipping_method?: ShippingMethod
+  // Free-text carrier instruction from the tech ("customer's UPS account",
+  // "must land before Friday"). Optional, capped at SHIPPING_NOTE_MAX_LEN.
+  shipping_note?: string
 }
 
 // ============================================================
@@ -372,6 +529,22 @@ export type PartsQueueRow = {
   // part's (po_number, product_number), joined from synergy_po_lines. null when
   // the part isn't on an open PO (no PO# yet, or already received/closed).
   po_due_date: string | null
+  // Shipping speed the tech asked for, projected off the JSONB by migration 149.
+  // Typed as a plain string because the view can surface anything a past write
+  // put there — narrow it with shippingMethodOf()/isPriorityShipping().
+  shipping_method: string | null
+  shipping_note: string | null
+  // Parent ticket's freight charge (migration 150). Ticket-level, so every row
+  // sharing a (source, ticket_id) carries the same value — the client updates
+  // them together, the way it already does for synergy_order_number. Numeric
+  // over PostgREST can arrive as a string; the client Numbers it on write.
+  shipping_charge: number | null
+  // Parent ticket's own status (migration 158) — pm_tickets.status or
+  // service_tickets.status, not the part's. The view has no parent-status filter
+  // by design, so a row outlives its ticket; this is what lets the To Pull tab
+  // tell a live pull from a stranded one. Read it through isQueueRowStranded()
+  // rather than comparing strings at the call site.
+  ticket_status: string
 }
 
 // Open SynergyERP purchase-order lines (migration 115), synced by
@@ -411,6 +584,10 @@ export type CustomerRow = {
   po_required: boolean
   active: boolean
   show_pricing_on_pm_pdf: boolean
+  // Opt-in: this account will not authorize scheduled PM work without a written
+  // price (migration 159). Drives the Quote Needed badge and the start-work
+  // gate; does NOT restrict who can build a quote.
+  pm_quote_required: boolean
   auto_approve_threshold: number
   // Per-customer negotiated/bid labor rate overrides (migration 088). NULL =
   // use the global rate (settings) for that labor_rate_type. Customer-billing
@@ -501,6 +678,12 @@ export type UserRow = {
   hourly_cost: number | null
   must_change_password: boolean
   can_create_service_tickets: boolean
+  /** Earns tiered commission on billed labor (migration 153). Defaults false:
+   *  eligibility is opt-in so a new user never silently starts accruing. */
+  commission_eligible: boolean
+  /** Flat rate REPLACING the commission_tiers lookup, as a fraction. NULL =
+   *  use the tier table, which is the normal case. */
+  commission_rate_override: number | null
 }
 
 export type EquipmentRow = {
@@ -537,6 +720,66 @@ export type PmScheduleRow = {
   created_at: string
 }
 
+// ============================================================
+// PM quotes (migration 159)
+//
+// A quote covers one or more PM work orders for a single customer. Every line
+// SNAPSHOTS the price and equipment description as of build time, because
+// pm_schedules.flat_rate is editable and a customer who accepted $200.00 must
+// keep being owed $200.00.
+// ============================================================
+
+export const PM_QUOTE_STATUSES = [
+  'draft',
+  'sent',
+  'accepted',
+  'declined',
+  'expired',
+  'void',
+] as const
+export type PmQuoteStatus = (typeof PM_QUOTE_STATUSES)[number]
+
+export type PmQuoteRow = {
+  id: string
+  quote_number: number
+  customer_id: number
+  status: PmQuoteStatus
+  subtotal: number
+  notes: string | null
+  valid_until: string | null
+  approval_token: string | null
+  approval_token_expires_at: string | null
+  sent_at: string | null
+  accepted_at: string | null
+  declined_at: string | null
+  decline_reason: string | null
+  // Captured from the customer at acceptance and pushed onto the quoted
+  // tickets. The point of the feature for PO-required accounts.
+  po_number: string | null
+  signature: string | null
+  signature_name: string | null
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type PmQuoteLineRow = {
+  id: string
+  quote_id: string
+  pm_ticket_id: string
+  work_order_number: number | null
+  equipment_label: string | null
+  equipment_description: string | null
+  serial_number: string | null
+  interval_months: number | null
+  billing_type: string | null
+  amount: number
+  scope_note: string | null
+  sort_order: number
+  created_at: string
+}
+
 export type PmTicketRow = {
   id: string
   pm_schedule_id: string | null
@@ -561,6 +804,11 @@ export type PmTicketRow = {
   // (PM is always field work). trip_charge (105, flat dollars) retained, unused.
   trip_charge: number | null
   trip_charge_qty: number | null
+  // Inbound freight billed to the customer (migration 148, feedback #80). Flat
+  // dollars — unlike trip_charge_qty there is no per-unit rate to multiply.
+  // NULL = no freight charged, which is deliberately distinct from an explicit
+  // 0 ("quoted, and it was free"). Office-entered; never in TECH_ALLOWED_FIELDS.
+  shipping_charge: number | null
   billing_exported: boolean
   customer_signature: string | null
   customer_signature_name: string | null
@@ -811,6 +1059,8 @@ export type ShipToRequestRow = {
   customer_id: number
   requested_by: string
   pm_ticket_id: string | null
+  // Added by migration 084; a request can originate from either ticket kind.
+  service_ticket_id: string | null
   equipment_id: string | null
   note: string
   status: ShipToRequestStatus
@@ -838,6 +1088,39 @@ export type EquipmentLocationHistoryRow = {
 
 type MakeOptional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 
+export type PmQuoteInsert = MakeOptional<
+  Omit<PmQuoteRow, 'id' | 'quote_number' | 'created_at' | 'updated_at'>,
+  | 'status'
+  | 'subtotal'
+  | 'notes'
+  | 'valid_until'
+  | 'approval_token'
+  | 'approval_token_expires_at'
+  | 'sent_at'
+  | 'accepted_at'
+  | 'declined_at'
+  | 'decline_reason'
+  | 'po_number'
+  | 'signature'
+  | 'signature_name'
+  | 'created_by_id'
+  | 'deleted_at'
+>
+export type PmQuoteUpdate = Partial<Omit<PmQuoteRow, 'id' | 'quote_number' | 'created_at'>>
+
+export type PmQuoteLineInsert = MakeOptional<
+  Omit<PmQuoteLineRow, 'id' | 'created_at'>,
+  | 'work_order_number'
+  | 'equipment_label'
+  | 'equipment_description'
+  | 'serial_number'
+  | 'interval_months'
+  | 'billing_type'
+  | 'scope_note'
+  | 'sort_order'
+>
+export type PmQuoteLineUpdate = Partial<Omit<PmQuoteLineRow, 'id' | 'created_at'>>
+
 // ============================================================
 // Insert types (omit auto-generated fields, optional for DB defaults)
 // ============================================================
@@ -860,6 +1143,10 @@ export type ProductInsert = MakeOptional<
 export type UserInsert = MakeOptional<
   Omit<UserRow, 'id' | 'created_at'>,
   'active' | 'synergy_id' | 'hourly_cost' | 'must_change_password' | 'can_create_service_tickets'
+  // Both have DB defaults (false / NULL), so callers must not be forced to pass
+  // them. Omitting a new defaulted column here is what breaks the build with a
+  // SelectQueryError or a "missing properties" insert error.
+  | 'commission_eligible' | 'commission_rate_override'
 >
 
 export type EquipmentInsert = MakeOptional<
@@ -874,7 +1161,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'shipping_charge' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at'
 >
 
 export type SettingsRow = {
@@ -1452,6 +1739,76 @@ export interface Database {
           },
         ]
       }
+      commission_tiers: {
+        Row: CommissionTierRow
+        Insert: Partial<Omit<CommissionTierRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<CommissionTierRow, 'effective_from' | 'min_subtotal' | 'rate'>
+        Update: Partial<Omit<CommissionTierRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      payout_periods: {
+        Row: PayoutPeriodRow
+        Insert: Partial<Omit<PayoutPeriodRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<PayoutPeriodRow, 'period'>
+        Update: Partial<Omit<PayoutPeriodRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      payout_lines: {
+        Row: PayoutLineRow
+        Insert: Partial<Omit<PayoutLineRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<PayoutLineRow, 'payout_period_id' | 'tech_id' | 'kind' | 'category' | 'amount'>
+        Update: Partial<Omit<PayoutLineRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      synergy_labor_facts: {
+        Row: SynergyLaborFactRow
+        Insert: Partial<Omit<SynergyLaborFactRow, 'id' | 'created_at' | 'updated_at'>> &
+          Pick<SynergyLaborFactRow, 'synergy_id' | 'period' | 'bucket' | 'amount'>
+        Update: Partial<Omit<SynergyLaborFactRow, 'id' | 'created_at' | 'updated_at'>>
+        Relationships: []
+      }
+      pm_quotes: {
+        Row: PmQuoteRow
+        Insert: PmQuoteInsert
+        Update: PmQuoteUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'pm_quotes_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'customers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'pm_quotes_created_by_id_fkey'
+            columns: ['created_by_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      pm_quote_lines: {
+        Row: PmQuoteLineRow
+        Insert: PmQuoteLineInsert
+        Update: PmQuoteLineUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'pm_quote_lines_quote_id_fkey'
+            columns: ['quote_id']
+            isOneToOne: false
+            referencedRelation: 'pm_quotes'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'pm_quote_lines_pm_ticket_id_fkey'
+            columns: ['pm_ticket_id']
+            isOneToOne: false
+            referencedRelation: 'pm_tickets'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       tech_leads: {
         Row: TechLeadRow
         Insert: TechLeadInsert
@@ -1525,7 +1882,12 @@ export interface Database {
       ship_to_requests: {
         Row: ShipToRequestRow
         Insert: Pick<ShipToRequestRow, 'customer_id' | 'requested_by' | 'note'> &
-          Partial<Pick<ShipToRequestRow, 'pm_ticket_id' | 'equipment_id' | 'status'>>
+          Partial<
+            Pick<
+              ShipToRequestRow,
+              'pm_ticket_id' | 'service_ticket_id' | 'equipment_id' | 'status'
+            >
+          >
         Update: Partial<Omit<ShipToRequestRow, 'id' | 'requested_at'>>
         Relationships: []
       }
@@ -1578,6 +1940,70 @@ export interface Database {
             referencedColumns: ['id']
           },
         ]
+      }
+      // Purchasing/Reorder module (migration 142) — see src/types/reorder.ts
+      reorder_sessions: {
+        Row: ReorderSessionRow
+        Insert: ReorderSessionInsert
+        Update: ReorderSessionUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'reorder_sessions_created_by_id_fkey'
+            columns: ['created_by_id']
+            isOneToOne: false
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      reorder_lines: {
+        Row: ReorderLineRow
+        Insert: ReorderLineInsert
+        Update: ReorderLineUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'reorder_lines_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'reorder_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      reorder_session_vendors: {
+        Row: ReorderSessionVendorRow
+        Insert: ReorderSessionVendorInsert
+        Update: ReorderSessionVendorUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'reorder_session_vendors_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'reorder_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      // Read-only synced inventory tables — the app never writes these (the
+      // Whse-4 sync writes via the service role, which bypasses this typed
+      // client entirely), so Insert/Update are untyped Partial<Row> stand-ins.
+      inv_reorder: {
+        Row: InvReorderRow
+        Insert: Partial<InvReorderRow>
+        Update: Partial<InvReorderRow>
+        Relationships: []
+      }
+      inv_vendors: {
+        Row: InvVendorRow
+        Insert: Partial<InvVendorRow>
+        Update: Partial<InvVendorRow>
+        Relationships: []
+      }
+      inv_bins: {
+        Row: InvBinRow
+        Insert: Partial<InvBinRow>
+        Update: Partial<InvBinRow>
+        Relationships: []
       }
     }
     Views: {

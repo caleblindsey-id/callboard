@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getCustomerLaborRate } from '@/lib/db/settings'
 import { taxRatePercent } from '@/lib/tax'
+import { shippingChargeAmount } from '@/lib/shipping'
 import { APP_NAME } from '@/lib/branding'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -44,6 +45,7 @@ export async function POST(
         additional_parts_used,
         additional_hours_worked,
         billing_amount,
+        shipping_charge,
         show_pricing,
         customer_signature,
         customer_signature_name,
@@ -203,6 +205,7 @@ export async function POST(
       laborRatePerHour: number
       pmPartsPriced: boolean
       tripCharge: number
+      shippingCharge: number
       grandTotal: number
       taxRatePercent: number
     } | null = null
@@ -234,7 +237,11 @@ export async function POST(
         ? (activeSchedule?.flat_rate ?? 0) + addlPartsTotal + addlHrs * laborRatePerHour
         : partsSum((raw.parts_used as RawPart[]) ?? []) + addlPartsTotal
             + (((raw.hours_worked as number | null) ?? 0) + addlHrs) * laborRatePerHour
-      const tripChargePdf = Math.max(0, Number(raw.billing_amount) - nonTrip)
+      // Freight is also baked into billing_amount (feedback #80), so it has to
+      // join `nonTrip` — leaving it out would print the shipping cost inside the
+      // Trip Charge row, which is both wrong and invisible to the customer.
+      const shippingChargePdf = shippingChargeAmount(raw.shipping_charge as number | null)
+      const tripChargePdf = Math.max(0, Number(raw.billing_amount) - nonTrip - shippingChargePdf)
 
       pricing = {
         billingType,
@@ -244,6 +251,7 @@ export async function POST(
         laborRatePerHour,
         pmPartsPriced: !isFlatRate,
         tripCharge: tripChargePdf,
+        shippingCharge: shippingChargePdf,
         grandTotal: Number(raw.billing_amount),
         taxRatePercent: taxRatePercent(customer),
       }

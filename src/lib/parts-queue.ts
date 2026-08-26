@@ -153,6 +153,41 @@ export async function setSynergyOrderNumber(
   return (data.synergy_order_number ?? null) as string | null
 }
 
+/**
+ * Set (or clear) the inbound freight the customer is billed for this order
+ * (feedback #80). Ticket-level, like setSynergyOrderNumber above — pass null to
+ * clear it back to "no freight charged", which is distinct from an explicit 0.
+ *
+ * Rejects with a 409 when a sibling write moved the ticket's updated_at; the
+ * caller retries once, the same way every other write on this page does.
+ */
+export async function setShippingCharge(
+  source: PartsQueueSource,
+  ticket_id: string,
+  value: number | null,
+): Promise<number | null> {
+  const res = await fetch('/api/parts-queue/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source,
+      ticket_id,
+      // Ignored for this action (it's a ticket-level write) but the body shape
+      // expects the key — same -1 convention as set_synergy_order above.
+      part_index: -1,
+      action: 'set_shipping_charge',
+      shipping_charge: value,
+    }),
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    const err = new Error(data.error || 'Failed to update shipping charge') as Error & { status?: number }
+    err.status = res.status
+    throw err
+  }
+  return (data.shipping_charge ?? null) as number | null
+}
+
 // Bounces a classified part (requested / from_stock / ordered) back to
 // 'pending_review' so the office can re-triage it — e.g. pull from stock
 // instead of order. The server clears the prior triage decision and order/pull

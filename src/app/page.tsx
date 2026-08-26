@@ -20,6 +20,7 @@ import EstimateFollowUpSection from '@/components/dashboard/sections/EstimateFol
 import DeclinedEstimatesSection from '@/components/dashboard/sections/DeclinedEstimatesSection'
 import WarrantyClaimsSection from '@/components/dashboard/sections/WarrantyClaimsSection'
 import PoNeededSection from '@/components/dashboard/sections/PoNeededSection'
+import BelowReorderPointSection from '@/components/dashboard/sections/BelowReorderPointSection'
 import {
   KpiSkeleton,
   AlertsSkeleton,
@@ -152,6 +153,12 @@ export default async function DashboardPage({
           <ZoneErrorBoundary>
             <Suspense fallback={<QueueStatCardSkeleton />}>
               <PoNeededSection />
+            </Suspense>
+          </ZoneErrorBoundary>
+
+          <ZoneErrorBoundary>
+            <Suspense fallback={<QueueStatCardSkeleton />}>
+              <BelowReorderPointSection />
             </Suspense>
           </ZoneErrorBoundary>
 

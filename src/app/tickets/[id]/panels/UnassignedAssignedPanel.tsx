@@ -6,6 +6,8 @@ export interface UnassignedAssignedPanelProps {
   error: string | null
   loading: boolean
   onStart: () => void
+  /** Non-null when a gate blocks starting work; disables the button. */
+  startBlockedReason?: string | null
   isTech: boolean
   skipRequestOpen: boolean
   onOpenSkipRequest: () => void
@@ -27,6 +29,7 @@ export default function UnassignedAssignedPanel({
   error,
   loading,
   onStart,
+  startBlockedReason,
   isTech,
   skipRequestOpen,
   onOpenSkipRequest,
@@ -47,7 +50,8 @@ export default function UnassignedAssignedPanel({
       <div className="flex flex-wrap gap-2">
         <button
           onClick={onStart}
-          disabled={loading}
+          disabled={loading || !!startBlockedReason}
+          title={startBlockedReason ?? undefined}
           className="px-4 py-3 sm:py-2 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors min-h-[44px]"
         >
           {loading ? 'Starting...' : 'Start Work'}

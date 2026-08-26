@@ -7,6 +7,7 @@ import type {
   TicketStatus,
 } from '@/types/database'
 import type { ServiceTicketStatus, ServiceTicketType } from '@/types/service-tickets'
+import type { ReorderSessionStatus } from '@/types/reorder'
 
 /**
  * status-meta.ts — the single source of truth for status LABEL + COLOR across
@@ -145,6 +146,13 @@ const PARTS_STATUS_META: Record<PartsStatusKey, StatusMeta> = {
     label: 'Pulled',
     classes: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300',
   },
+  // Terminal state stamped alongside cancelled:true. Part rows render the
+  // cancelled treatment off the `cancelled` flag (a struck-through line +
+  // "Cancelled"), so this badge meta is a fallback for completeness.
+  cancelled: {
+    label: 'Cancelled',
+    classes: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+  },
 }
 
 // Matches MySuppliesClient's existing local STATUS_BADGE exactly (dominant
@@ -249,6 +257,20 @@ const CREDIT_REVIEW_STATUS_META: Record<CreditReviewStatus, StatusMeta> = {
   },
 }
 
+// Dispatch readiness for an approved / in-progress service ticket: can this work
+// actually be started? Derived from the parts counts, never stored (feedback
+// #79). The 'waiting' label is a fallback — the board overrides it per row with
+// the live "Parts N of M" count, matching the detail page's phrasing. Green here
+// is deliberately the same GREEN_COMPLETED the boards already read as "nothing
+// left to do", and amber matches the parts domain's own in-flight color.
+const READINESS_STATUS_META: Record<'ready' | 'waiting', StatusMeta> = {
+  ready: { label: 'Ready', classes: GREEN_COMPLETED },
+  waiting: {
+    label: 'Waiting on parts',
+    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  },
+}
+
 const CREDIT_HOLD_STATUS_META: Record<CreditHoldStatusKey, StatusMeta> = {
   active: {
     label: 'Credit Hold',
@@ -270,6 +292,28 @@ const TICKET_TYPE_META: Record<ServiceTicketType, StatusMeta> = {
   },
 }
 
+// Purchasing/Reorder session pipeline (migration 142). draft/canceled share the
+// gray family (terminal-negative-inert convention above) but at different
+// shades so the two remain visually distinct; walking reuses BLUE_IN_PROGRESS
+// and ordered reuses PURPLE_BILLED (money committed, same concept as "billed").
+const REORDER_STATUS_META: Record<ReorderSessionStatus, StatusMeta> = {
+  draft: {
+    label: 'Draft',
+    classes: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
+  },
+  walking: { label: 'Walking', classes: BLUE_IN_PROGRESS },
+  review: {
+    label: 'Review',
+    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  },
+  ordered: { label: 'Ordered', classes: PURPLE_BILLED },
+  closed: { label: 'Closed', classes: GREEN_COMPLETED },
+  canceled: {
+    label: 'Canceled',
+    classes: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  },
+}
+
 export const STATUS_META = {
   pm: PM_STATUS_META,
   service: SERVICE_STATUS_META,
@@ -278,8 +322,10 @@ export const STATUS_META = {
   lead: LEAD_STATUS_META,
   ace: ACE_STATUS_META,
   creditReview: CREDIT_REVIEW_STATUS_META,
+  readiness: READINESS_STATUS_META,
   creditHold: CREDIT_HOLD_STATUS_META,
   ticketType: TICKET_TYPE_META,
+  reorder: REORDER_STATUS_META,
 } as const
 
 export type StatusDomain = keyof typeof STATUS_META

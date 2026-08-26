@@ -3,14 +3,16 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
-import { stampCollectedOnStaged } from '@/lib/parts'
+import { stampCollectedOnStaged, partsAwaitingReview } from '@/lib/parts'
 import type { PartRequest } from '@/types/database'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { buildProductCostMap } from '@/lib/db/products'
 import { checkPartLines, COST_FLOOR } from '@/lib/margin'
+import { shippingChargeAmount } from '@/lib/shipping'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
+import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -23,6 +25,12 @@ interface CompleteServiceTicketBody {
   customer_signature_name: string | null
   photos: TicketPhoto[]
   warranty_labor_covered?: boolean
+  // Rate class the completer picked on the completion form. Absent = keep
+  // whatever the ticket already had. Mirrors the PM /complete route's
+  // laborRateType (feedback #76); added for service tickets so a technician —
+  // who never sees the staff-only Assignment card — can classify a heated
+  // pressure washer as industrial before the bill is computed (feedback #83).
+  labor_rate_type?: string
   trip_charge_qty?: number
   machine_hours?: number | null
   date_code?: string | null
@@ -47,6 +55,14 @@ export async function POST(
     const body = await request.json() as CompleteServiceTicketBody
 
     const { completed_at, hours_worked, parts_used, completion_notes, customer_signature, customer_signature_name, photos, ace_labor } = body
+
+    // Reject an unknown rate class before it reaches the billing math or the DB
+    // CHECK constraint. getCustomerLaborRate silently falls back to the standard
+    // column for an unrecognised key, so an unvalidated value would bill at the
+    // wrong rate with nothing in the logs.
+    if (body.labor_rate_type !== undefined && !isLaborRateType(body.labor_rate_type)) {
+      return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
+    }
 
     if (ace_labor != null) {
       if (!isNonNegativeNumber(ace_labor.hours) || ace_labor.hours <= 0) {
@@ -128,7 +144,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, labor_rate_type, equipment_id, customer_id, parts_requested')
+      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, shipping_charge, labor_rate_type, equipment_id, customer_id, parts_requested')
       .eq('id', id)
       .single()
 
@@ -185,6 +201,23 @@ export async function POST(
           { status: 409 }
         )
       }
+    }
+
+    // Un-triaged parts gate. A part still in 'pending_review' hasn't been acted
+    // on by the office (order vs. pull-from-stock), so completing here orphans it
+    // in the Parts Queue Review tab with no home. Block completion until it's
+    // triaged or removed. Scoped to 'pending_review' only — 'requested'/'ordered'
+    // parts (already worked by the office / on the way) still allow completing
+    // the labor, preserving service's deliberate "finish work while a part is in
+    // flight" behavior. Cancelled parts are excluded via the flag.
+    const reviewParts = partsAwaitingReview(current.parts_requested as PartRequest[] | null)
+    if (reviewParts.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${reviewParts.length} part(s) are awaiting Parts Queue review. Triage or remove them before completing this ticket.`,
+        },
+        { status: 409 }
+      )
     }
 
     // Manager-only below-floor override (mirrors the PATCH route). A manager who
@@ -250,6 +283,11 @@ export async function POST(
     // billing_amount is no longer accepted from the client — it's recomputed
     // for all roles from authoritative inputs.
     const billingType = current.billing_type as string
+    // The completer's pick wins over the stored type, so the rate the tech saw
+    // in the on-screen billing preview is the rate the bill is computed at. Used
+    // for the labor line AND the ACE payout entry below, which must agree.
+    const laborRateType = resolveLaborRateType(body.labor_rate_type, current.labor_rate_type)
+    const laborRateTypeChanged = laborRateType !== (current.labor_rate_type ?? 'standard')
     const finalParts: ServicePartUsed[] = parts_used ?? []
     const diagnosticCharge = Number(current.diagnostic_charge ?? 0) || 0
     // A diagnostic invoice number means the diagnostic visit was already billed
@@ -262,7 +300,7 @@ export async function POST(
     if (billingType === 'warranty') {
       finalBillingAmount = 0
     } else {
-      const laborRate = await getCustomerLaborRate(current.customer_id, current.labor_rate_type ?? 'standard')
+      const laborRate = await getCustomerLaborRate(current.customer_id, laborRateType)
       const laborTotal = hours_worked * laborRate
 
       const billablePartsTotal = billingType === 'partial_warranty'
@@ -281,7 +319,16 @@ export async function POST(
         : effectiveTripChargeQty(current.trip_charge_qty as number | null, current.ticket_type as string)
       const tripCharge = tripQty * await getTripChargeRate()
 
-      finalBillingAmount = laborTotal + billablePartsTotal + signedDiagnostic + tripCharge
+      // Inbound freight (feedback #80), flat dollars set by the office at PO
+      // time. Read from the stored column only — never from the request body:
+      // this route is tech-reachable, and what the customer pays for freight is
+      // a pricing decision that stays office-owned (same reason shipping_charge
+      // is absent from TECH_ALLOWED_FIELDS on the PATCH route). NULL → 0, so
+      // tickets with no special-order parts are unaffected.
+      const shippingCharge = shippingChargeAmount(current.shipping_charge as number | null)
+
+      finalBillingAmount =
+        laborTotal + billablePartsTotal + signedDiagnostic + tripCharge + shippingCharge
     }
     // Round to cents to avoid stored vs. displayed drift.
     finalBillingAmount = Math.round(finalBillingAmount * 100) / 100
@@ -314,7 +361,7 @@ export async function POST(
           .update({
             hours: ace_labor.hours,
             reason: ace_labor.reason.trim(),
-            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            labor_rate_type: laborRateType,
             status: 'pending',
             rejected_reason: null,
             approved_by_id: null,
@@ -341,7 +388,7 @@ export async function POST(
             service_ticket_id: id,
             tech_id: aceTechId,
             hours: ace_labor.hours,
-            labor_rate_type: (current.labor_rate_type ?? 'standard') as 'standard' | 'industrial' | 'vacuum',
+            labor_rate_type: laborRateType,
             reason: ace_labor.reason.trim(),
             status: 'pending',
             created_by_id: user.id,
@@ -368,6 +415,9 @@ export async function POST(
       warranty_labor_covered: body.warranty_labor_covered,
       machine_hours: machineHours,
       date_code: dateCode,
+      // Persisted in the same UPDATE as the billing_amount derived from it, so
+      // the stored rate class and the stored dollar figure can't drift apart.
+      ...(laborRateTypeChanged ? { labor_rate_type: laborRateType } : {}),
       // Stamp the manager's below-floor approval when one was exercised on this
       // completion (who/when/why); undefined leaves the columns untouched.
       ...(didOverride

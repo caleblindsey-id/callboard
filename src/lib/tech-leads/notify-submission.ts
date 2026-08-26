@@ -42,7 +42,9 @@ export async function notifyManagersOfLeadSubmission(
   if (managers.length === 0) return
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const reviewUrl = `${appUrl}/tech-leads`
+  // /tech-leads is only a redirect stub. Link the real hub so the email does
+  // not cost the reader a bounce.
+  const reviewUrl = `${appUrl}/tech-payouts`
   const companyName = (await getSetting('company_name')) ?? 'CallBoard'
 
   const email = renderTechLeadSubmittedEmail({

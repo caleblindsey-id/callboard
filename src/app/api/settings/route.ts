@@ -16,7 +16,8 @@ const ALLOWED_KEYS = new Set([
   'service_email',
   'service_phone',
   'ar_email',
-  'warranty_reminder_email',
+  'manager_digest_to',
+  'manager_digest_cc',
   'pickup_address',
   'pickup_hours',
 ])
@@ -30,7 +31,7 @@ const NUMERIC_RATE_KEYS = new Set([
 
 // Keys holding a comma/semicolon/whitespace-separated email list. A non-empty
 // value must parse to at least one plausible address.
-const EMAIL_LIST_KEYS = new Set(['ar_email', 'warranty_reminder_email'])
+const EMAIL_LIST_KEYS = new Set(['ar_email', 'manager_digest_to', 'manager_digest_cc'])
 
 const VALUE_MAX_LEN = 500
 

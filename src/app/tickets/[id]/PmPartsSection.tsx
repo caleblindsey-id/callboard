@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { PartRequest, TicketStatus } from '@/types/database'
 import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
+import PartQuantityField from '@/components/PartQuantityField'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
 import { partLabel, partsOnOrder } from '@/lib/parts'
+import { normalizeShippingNote } from '@/lib/shipping'
 import { formatDate } from '@/lib/format'
 import { getStatusMeta } from '@/lib/status-meta'
 import InlineError from '@/components/ui/InlineError'
@@ -37,6 +39,10 @@ const STATUS_TEXT: Record<PartRequest['status'], string> = {
   ordered:   'text-blue-600 dark:text-blue-400',
   received:  'text-green-600 dark:text-green-400',
   from_stock: 'text-teal-600 dark:text-teal-400',
+  // Cancelled parts render via the `part.cancelled` branch (a literal
+  // "Cancelled" span), so this is never indexed — it just keeps the record
+  // exhaustive over PartRequestStatus.
+  cancelled: 'text-red-600 dark:text-red-400',
 }
 
 export default function PmPartsSection({
@@ -96,6 +102,16 @@ export default function PmPartsSection({
         ...(entry.vendorCode?.trim() ? { vendor_code: entry.vendorCode.trim() } : {}),
         ...(entry.unitPrice.trim() !== '' && Number.isFinite(priceParsed) ? { unit_price: priceParsed } : {}),
         ...(entry.coveredByAgreement !== undefined ? { covered_by_agreement: entry.coveredByAgreement } : {}),
+        // Requested shipping speed (feedback #80). Only a non-default speed is
+        // written, so a standard-ground request stays as lean on the JSONB as
+        // before — and reads back through the same absent -> 'standard' path
+        // every pre-feature row uses.
+        ...(entry.shippingMethod && entry.shippingMethod !== 'standard'
+          ? { shipping_method: entry.shippingMethod }
+          : {}),
+        ...(normalizeShippingNote(entry.shippingNote)
+          ? { shipping_note: normalizeShippingNote(entry.shippingNote) }
+          : {}),
         // New requests enter the office Review step (stock-vs-order triage) before
         // they reach the To-Order queue.
         status: 'pending_review',
@@ -132,7 +148,26 @@ export default function PmPartsSection({
     setSaving(true)
     setError(null)
     try {
-      const updated = parts.map((p, i) => i === index ? { ...p, status } : p)
+      // Stamp the lifecycle audit fields the parts-queue route stamps for the
+      // same transitions (mark_ordered / mark_received). This inline path writes
+      // parts_requested straight through PATCH, and used to set `status` alone —
+      // so a part advanced from here landed in the queue's Received tab with a
+      // null date, sorted oddly, and left no record of who received it. Guarded
+      // on the existing value so re-clicking can't overwrite the original stamp.
+      const now = new Date().toISOString()
+      const updated = parts.map((p, i) => {
+        if (i !== index) return p
+        const nextPart: PartRequest = { ...p, status }
+        if (status === 'ordered' && !nextPart.ordered_at) {
+          nextPart.ordered_at = now
+          nextPart.ordered_by = userId ?? undefined
+        }
+        if (status === 'received' && !nextPart.received_at) {
+          nextPart.received_at = now
+          nextPart.received_by = userId ?? undefined
+        }
+        return nextPart
+      })
       await patchTicket({ parts_requested: updated })
       setParts(updated)
       router.refresh()
@@ -198,6 +233,24 @@ export default function PmPartsSection({
     }
   }
 
+  /**
+   * Correct a requested quantity. Mirrors handleSavePartVendorItemCode, and
+   * sends only parts_requested — the route derives any work-order line sync
+   * itself so the two ticket types can't diverge on it.
+   */
+  async function handleSavePartQuantity(index: number, quantity: number) {
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = parts.map((p, i) => (i === index ? { ...p, quantity } : p))
+      await patchTicket({ parts_requested: updated })
+      setParts(updated)
+      router.refresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleResetPartStatus(index: number) {
     const current = parts[index].status
     const prev: PartRequest['status'] = current === 'received' ? 'ordered' : 'requested'
@@ -229,7 +282,20 @@ export default function PmPartsSection({
       const now = new Date().toISOString()
       const updated = parts.map((p, i) =>
         i === index
-          ? { ...p, cancelled: true, cancel_reason: 'Removed from ticket', cancelled_at: now, cancelled_by: userId ?? undefined }
+          ? {
+              ...p,
+              cancelled: true,
+              // Stamp the terminal status too, not just the flag. The parts-queue
+              // `cancel` action does this (PR #247); this in-ticket path bypasses
+              // that route entirely and used to leave status at its pre-delete
+              // value, re-creating the contradictory "cancelled but pending_review"
+              // rows that #247 cleaned up. Inert either way — every tab, count and
+              // gate reads the `cancelled` flag — but the JSONB should not lie.
+              status: 'cancelled' as const,
+              cancel_reason: 'Removed from ticket',
+              cancelled_at: now,
+              cancelled_by: userId ?? undefined,
+            }
           : p
       )
       await patchTicket({ parts_requested: updated })
@@ -287,7 +353,11 @@ export default function PmPartsSection({
                     {part.product_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
                     )}
-                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">x{part.quantity}</span>
+                    <PartQuantityField
+                      part={part}
+                      disabled={saving}
+                      onSave={(qty) => handleSavePartQuantity(i, qty)}
+                    />
                     {part.covered_by_agreement === true && (
                       <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                         Covered
@@ -423,6 +493,7 @@ export default function PmPartsSection({
                 showCoverage={true}
                 showVendorItemCode={true}
                 showVendor={true}
+                showShipping={true}
                 label="Request a Part"
                 onRequestPart={handleRequestDraftPart}
               />

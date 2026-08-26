@@ -24,6 +24,7 @@ import {
   renderServiceTicketsAssignedDigestEmail,
 } from '@/lib/email-templates/service-ticket-assigned'
 import { sendPushToUser } from '@/lib/push/send-push'
+import { isDeliverableEmail } from '@/lib/email-deliverable'
 import { createNotification } from '@/lib/notifications/create-notification'
 import type { ServicePriority } from '@/types/service-tickets'
 
@@ -74,7 +75,9 @@ async function loadTech(
     .eq('id', techId)
     .maybeSingle()
   const email = (tech as { email: string | null } | null)?.email ?? null
-  if (!email) return null
+  // A placeholder or @callboard.local address is treated the same as no address:
+  // the caller reports no_tech_email and the push + bell legs still fire.
+  if (!isDeliverableEmail(email)) return null
   return { email, name: (tech as { name: string | null } | null)?.name ?? null }
 }
 
@@ -208,6 +211,7 @@ export async function notifyTechOfBulkAssignment(
   const { data: rows } = await supabase
     .from('service_tickets')
     .select('id, work_order_number, customers(name)')
+    .is('deleted_at', null)
     .in('id', ticketIds)
   type RowShape = { id: string; work_order_number: number | null; customers: { name: string } | null }
   const tickets = ((rows as unknown as RowShape[] | null) ?? [])
@@ -277,6 +281,7 @@ export async function notifyTechOfBulkAssignment(
         assigned_notify_message_id: sendResult.messageId,
       })
       .in('id', tickets.map((t) => t.id))
+      .is('deleted_at', null)
   } catch (err) {
     console.error('notifyTechOfBulkAssignment: audit write failed', err)
   }

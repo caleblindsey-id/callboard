@@ -21,7 +21,15 @@ const TECH_ALLOWED_API_PATTERNS = [
   /^\/api\/equipment\/[^/]+$/,                               // PATCH /api/equipment/[id] — techs may edit contact fields only (Save Contact on the equipment page). The route's TECH_FIELDS allowlist + the equipment_tech_field_lock trigger (migration 048) restrict the write to contact_* server-side. Anchored to one path segment so it can't match /notes or /verify siblings (feedback #61).
   /^\/api\/equipment\/[^/]+\/notes$/,                        // GET + POST /api/equipment/[id]/notes
   /^\/api\/equipment\/[^/]+\/verify$/,                       // POST /api/equipment/[id]/verify (tech confirms make/model/serial at completion)
-  /^\/api\/tech-leads(\/|$)/,                                // POST /api/tech-leads (Submit Lead modal)
+  // Scoped to the three paths /my-leads actually calls. This was a prefix match
+  // over the whole subtree, so a technician's POST to /update, /manual-match,
+  // /approve-and-email or /create-equipment-from-lead reached the route and was
+  // stopped only by the in-route role check. One layer instead of two, on a
+  // money path, and asymmetric with the ace-labor entry three lines down which
+  // was already scoped to a single UUID segment.
+  /^\/api\/tech-leads$/,                                     // POST — Submit Lead modal
+  /^\/api\/tech-leads\/[0-9a-f-]{36}$/i,                     // PATCH own lead while pending (route re-checks ownership)
+  /^\/api\/tech-leads\/[0-9a-f-]{36}\/photos$/i,             // PATCH photos on own lead
   /^\/api\/ship-to-requests(\/|$)/,                          // POST /api/ship-to-requests (request new ship-to)
   /^\/api\/feedback$/,                                       // POST /api/feedback (FAB submission — all roles)
   /^\/api\/help\/search$/,                                   // GET /api/help/search (help center search — all roles)
@@ -41,6 +49,35 @@ function isTechAllowed(pathname: string): boolean {
   return false
 }
 
+// Pages the purchasing role is allowed to access. Deliberately much narrower
+// than the technician allowlist above — the purchasing agent's whole world is
+// the /purchasing module (migration 142); their home is /purchasing itself,
+// NOT '/', because the office dashboard's sections query PM/service tables
+// that purchasing-role RLS can't read.
+const PURCHASING_ALLOWED_PAGES = ['/purchasing', '/login', '/change-password', '/account', '/notifications', '/help']
+const PURCHASING_ALLOWED_PAGE_PATTERNS = [
+  /^\/purchasing(\/|$)/,  // /purchasing, /purchasing/new, /purchasing/[id], /purchasing/[id]/review
+  /^\/help(\/|$)/,        // /help and all guide pages — read-only docs, all roles
+]
+
+// API routes the purchasing role is allowed to access. Anchored the same way
+// as TECH_ALLOWED_API_PATTERNS to avoid matching flat sibling routes.
+const PURCHASING_ALLOWED_API_PATTERNS = [
+  /^\/api\/purchasing(\/|$)/,   // GET/POST/PATCH the reorder session/line/vendor/search/worksheet routes
+  /^\/api\/auth\//,             // Self-service auth (change-password, PIN enroll) — all roles
+  /^\/api\/notifications(\/|$)/, // GET /api/notifications + POST /api/notifications/mark-read (the bell)
+  /^\/api\/help\/search$/,      // GET /api/help/search (help center search — all roles)
+  /^\/api\/feedback$/,          // POST /api/feedback (FAB submission — all roles)
+  /^\/api\/push\//,             // POST/DELETE /api/push/subscribe (purchasing opts into assignment push)
+]
+
+function isPurchasingAllowed(pathname: string): boolean {
+  if (PURCHASING_ALLOWED_PAGES.includes(pathname)) return true
+  if (PURCHASING_ALLOWED_PAGE_PATTERNS.some((p) => p.test(pathname))) return true
+  if (PURCHASING_ALLOWED_API_PATTERNS.some((p) => p.test(pathname))) return true
+  return false
+}
+
 const PM_COOKIE_OPTS = {
   httpOnly: true,
   sameSite: 'strict' as const,
@@ -54,7 +91,7 @@ export async function proxy(request: NextRequest) {
 
   // Skip auth check for public routes
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/set-password') || pathname === '/api/auth/set-password' || pathname.startsWith('/auth/') || pathname === '/api/auth/pin/login' || pathname === '/api/auth/pin/status' || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
+  if (pathname.startsWith('/login') || pathname.startsWith('/forgot-password') || pathname.startsWith('/set-password') || pathname === '/api/auth/set-password' || pathname.startsWith('/auth/') || pathname === '/api/auth/pin/login' || pathname === '/api/auth/pin/status' || pathname.startsWith('/e/') || pathname.startsWith('/approve') || pathname.startsWith('/api/approve') || pathname.startsWith('/q/') || pathname.startsWith('/api/quote-approve/') || pathname.startsWith('/cr/') || pathname.startsWith('/api/credit-review/') || pathname.startsWith('/api/cron/') || pathname === '/sw.js' || pathname === '/manifest.webmanifest') {
     return supabaseResponse
   }
 
@@ -151,6 +188,25 @@ export async function proxy(request: NextRequest) {
       }
       const url = request.nextUrl.clone()
       url.pathname = '/'
+      url.searchParams.set('error', 'denied')
+      return NextResponse.redirect(url)
+    }
+  }
+
+  if (role === 'purchasing') {
+    // Purchasing's home is /purchasing, not '/' — send them straight there
+    // instead of the office dashboard (which they don't have RLS access to).
+    if (pathname === '/') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/purchasing'
+      return NextResponse.redirect(url)
+    }
+    if (!isPurchasingAllowed(pathname)) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const url = request.nextUrl.clone()
+      url.pathname = '/purchasing'
       url.searchParams.set('error', 'denied')
       return NextResponse.redirect(url)
     }

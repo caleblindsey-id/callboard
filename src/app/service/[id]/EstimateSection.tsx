@@ -450,23 +450,27 @@ export default function EstimateSection({
             />
           ) : (
           <form onSubmit={onSubmitEstimate} className="space-y-4">
-              {/* Labor Rate Type — staff can correct the rate the office picked at intake */}
-              {isStaff && (
-                <div className="max-w-lg">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Labor Rate Type
-                  </label>
-                  <select
-                    value={estimateRateType}
-                    onChange={(e) => setEstimateRateType(e.target.value)}
-                    className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  >
-                    <option value="standard">Standard — ${laborRates.standard.toFixed(2)}/hr</option>
-                    <option value="industrial">Industrial — ${laborRates.industrial.toFixed(2)}/hr</option>
-                    <option value="vacuum">Vacuum — ${laborRates.vacuum.toFixed(2)}/hr</option>
-                  </select>
-                </div>
-              )}
+              {/* Labor Rate Type — correct the rate class the office picked at
+                  intake. Open to the tech building the estimate, not just
+                  staff: the person on the machine is the one who knows it's a
+                  heated pressure washer (industrial) rather than a standard
+                  unit, and quoting it at the wrong class puts the wrong number
+                  in front of the customer (feedback #83). Only the class is
+                  tech-editable — the dollars per class stay in Settings. */}
+              <div className="max-w-lg">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Labor Rate Type
+                </label>
+                <select
+                  value={estimateRateType}
+                  onChange={(e) => setEstimateRateType(e.target.value)}
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-3 sm:py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-slate-500"
+                >
+                  <option value="standard">Standard — ${laborRates.standard.toFixed(2)}/hr</option>
+                  <option value="industrial">Industrial — ${laborRates.industrial.toFixed(2)}/hr</option>
+                  <option value="vacuum">Vacuum — ${laborRates.vacuum.toFixed(2)}/hr</option>
+                </select>
+              </div>
 
               {/* Labor Hours */}
               <div className="max-w-lg">
@@ -522,6 +526,10 @@ export default function EstimateSection({
                 showWarranty={ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty'}
                 showVendor={true}
                 showVendorItemCode={true}
+                // Only meaningful when the per-row Request button is live — the
+                // speed is a procurement instruction, not part of the quote, so
+                // there's nothing to ask about when the row can't be requested.
+                showShipping={machineComplete}
                 label="Estimated Parts"
                 allowPriceOverride={isStaff}
                 allowPriceEdit={isTech}
@@ -552,6 +560,13 @@ export default function EstimateSection({
                       <span>${tripChargeNum.toFixed(2)}</span>
                     </div>
                   )}
+                  {/* No Shipping line here on purpose: freight is not part of
+                      estimate_amount (it is only known once the PO is placed,
+                      after approval), so showing it in the quote builder would
+                      display a charge the Estimate Total doesn't contain. It
+                      appears on the emailed/printed estimate and the customer
+                      approval page as a display-time line, alongside the
+                      diagnostic fee, which is excluded for the same reason. */}
                 </div>
                 <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-300 dark:border-gray-700">
                   <span className="text-base font-bold text-gray-900 dark:text-white">Estimate Total</span>

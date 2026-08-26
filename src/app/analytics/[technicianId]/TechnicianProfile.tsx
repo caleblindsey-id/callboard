@@ -4,14 +4,16 @@ import { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Target } from 'lucide-react'
-import type { TechnicianAnalytics } from '@/lib/db/analytics'
+import type { TechnicianAnalytics, TicketType } from '@/lib/db/analytics'
 import KpiCard from '@/components/analytics/KpiCard'
 import ScrollableTable from '@/components/ScrollableTable'
 import RevenueBreakdown from '@/components/analytics/RevenueBreakdown'
 import PeriodComparison from '@/components/analytics/PeriodComparison'
 import TargetsForm from '@/components/analytics/TargetsForm'
+import PeriodPicker from '@/components/analytics/PeriodPicker'
 import PageHeader from '@/components/ui/PageHeader'
 import SegmentedControl from '@/components/ui/SegmentedControl'
+import { analyticsQuery } from '@/lib/analytics-period'
 
 const TrendChart = dynamic(() => import('@/components/analytics/TrendChart'), {
   ssr: false,
@@ -40,16 +42,25 @@ function getTargetPercent(actual: number | null, target: number | null, invert =
 export default function TechnicianProfile({ initialData }: TechnicianProfileProps) {
   const [data, setData] = useState<TechnicianAnalytics>(initialData)
   const [periodType, setPeriodType] = useState<PeriodType>(initialData.period.type)
+  const [ticketType, setTicketType] = useState<TicketType>(initialData.ticketType)
+  // Anchor day for the selected period — see AnalyticsOverview for the rationale.
+  const [date, setDate] = useState(initialData.period.startDate)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('revenue')
   const [showTargets, setShowTargets] = useState(false)
 
-  const fetchData = useCallback(async (period: PeriodType) => {
+  const fetchData = useCallback(async (period: PeriodType, type: TicketType, anchor: string) => {
+    const query = analyticsQuery({ periodType: period, date: anchor, ticketType: type })
+    // Keep the URL in step without a router navigation — this component owns its
+    // own fetching, so `router.replace` would duplicate the whole payload fetch.
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `${window.location.pathname}?${query}`)
+    }
+
     setLoading(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const res = await fetch(`/api/analytics/technician/${data.tech.id}?period=${period}&date=${today}`)
+      const res = await fetch(`/api/analytics/technician/${data.tech.id}?${query}`)
       if (!res.ok) {
         setError(true)
         return
@@ -66,16 +77,27 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
 
   function handlePeriodChange(period: PeriodType) {
     setPeriodType(period)
-    fetchData(period)
+    fetchData(period, ticketType, date)
+  }
+
+  function handleTypeChange(type: TicketType) {
+    setTicketType(type)
+    fetchData(periodType, type, date)
+  }
+
+  function handleDateChange(next: string) {
+    setDate(next)
+    fetchData(periodType, ticketType, next)
   }
 
   const { current, prior, yoy, targets } = data
+  const backQuery = analyticsQuery({ periodType, date, ticketType })
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <PageHeader
-        backHref="/analytics"
+        backHref={`/analytics?${backQuery}`}
         title={data.tech.name}
         subtitle={`Technician${data.tech.hourlyCost != null ? ` · Hourly cost: $${data.tech.hourlyCost.toFixed(2)}` : ''}`}
         actions={
@@ -87,6 +109,22 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
               <Target className="h-3.5 w-3.5" />
               Set Targets
             </button>
+            <PeriodPicker
+              periodType={periodType}
+              date={date}
+              onChange={handleDateChange}
+              disabled={loading}
+            />
+            <SegmentedControl
+              ariaLabel="Ticket type"
+              options={[
+                { value: 'combined', label: 'Combined' },
+                { value: 'pm', label: 'PM' },
+                { value: 'service', label: 'Service' },
+              ]}
+              value={ticketType}
+              onChange={(v) => handleTypeChange(v as TicketType)}
+            />
             <SegmentedControl
               ariaLabel="Analytics period"
               options={[
@@ -105,7 +143,7 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           <p className="flex-1">Failed to load this period. The data below may be stale.</p>
           <button
             type="button"
-            onClick={() => fetchData(periodType)}
+            onClick={() => fetchData(periodType, ticketType, date)}
             className="shrink-0 font-medium underline"
           >
             Retry
@@ -161,21 +199,32 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           />
         </div>
 
-        {/* Two-column: Trend + Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-3">
-            <TrendChart
-              title={periodType === 'weekly' ? 'Weekly Trend' : 'Monthly Trend'}
-              data={data.trend}
-              activeMetric={trendMetric}
-              onMetricChange={setTrendMetric}
-              targets={targets}
-            />
+        {/* Trend (+ PM revenue breakdown). Breakdown is flat-rate-based, so it
+            only applies to PM scope; service/combined show the trend full-width. */}
+        {ticketType === 'pm' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-3">
+              <TrendChart
+                title={periodType === 'weekly' ? 'Weekly Trend' : 'Monthly Trend'}
+                data={data.trend}
+                activeMetric={trendMetric}
+                onMetricChange={setTrendMetric}
+                targets={targets}
+              />
+            </div>
+            <div className="lg:col-span-2">
+              <RevenueBreakdown data={data.revenueBreakdown} />
+            </div>
           </div>
-          <div className="lg:col-span-2">
-            <RevenueBreakdown data={data.revenueBreakdown} />
-          </div>
-        </div>
+        ) : (
+          <TrendChart
+            title={periodType === 'weekly' ? 'Weekly Trend' : 'Monthly Trend'}
+            data={data.trend}
+            activeMetric={trendMetric}
+            onMetricChange={setTrendMetric}
+            targets={targets}
+          />
+        )}
 
         {/* Period Comparison */}
         <PeriodComparison current={current} prior={prior} yoy={yoy} />
@@ -216,9 +265,12 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
                   return (
                     <tr key={ticket.id}>
                       <td className="px-5 py-2.5">
-                        <Link href={`/tickets/${ticket.id}`} className="text-blue-600 hover:text-blue-700 font-medium">
-                          WO-{ticket.workOrderNumber}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          {ticketType === 'combined' && <SourceBadge source={ticket.source} />}
+                          <Link href={`/tickets/${ticket.id}`} className="text-blue-600 hover:text-blue-700 font-medium">
+                            WO-{ticket.workOrderNumber}
+                          </Link>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-gray-900">{ticket.customerName ?? '—'}</td>
                       <td className="px-3 py-2.5 text-gray-500 text-xs">
@@ -257,7 +309,10 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
               return (
                 <Link key={ticket.id} href={`/tickets/${ticket.id}`} className="block px-4 py-3 hover:bg-gray-50">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-blue-600">WO-{ticket.workOrderNumber}</span>
+                    <span className="flex items-center gap-1.5">
+                      {ticketType === 'combined' && <SourceBadge source={ticket.source} />}
+                      <span className="text-sm font-medium text-blue-600">WO-{ticket.workOrderNumber}</span>
+                    </span>
                     <StatusBadge status={ticket.status} />
                   </div>
                   <div className="text-sm text-gray-900">{ticket.customerName ?? '—'}</div>
@@ -289,11 +344,25 @@ export default function TechnicianProfile({ initialData }: TechnicianProfileProp
           periodType={periodType}
           onClose={() => {
             setShowTargets(false)
-            fetchData(periodType)
+            fetchData(periodType, ticketType, date)
           }}
         />
       )}
     </div>
+  )
+}
+
+function SourceBadge({ source }: { source: 'pm' | 'service' }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+        source === 'pm'
+          ? 'bg-indigo-100 text-indigo-700'
+          : 'bg-teal-100 text-teal-700'
+      }`}
+    >
+      {source === 'pm' ? 'PM' : 'Svc'}
+    </span>
   )
 }
 

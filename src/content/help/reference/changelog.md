@@ -4,10 +4,15 @@ category: Reference
 roles: [super_admin, manager, coordinator, technician]
 order: 30
 summary: Recent changes and additions to CallBoard.
-last_verified: 2026-06-08
+last_verified: 2026-08-26
 ---
 
 The latest updates to CallBoard, newest first.
+
+## August 2026
+
+- **Warranty claims have a guide** — the full lifecycle, from filing with the vendor through logging the credit and clearing the billing block, is written up at [File a warranty claim and log the vendor credit](/help/managers/file-a-warranty-claim).
+- **The morning digest now chases warranty credits** — a new **Warranty credits to chase** section lists claims already filed with a vendor that haven't been credited back, aged from the day they were filed. Previously only claims still needing to be filed were surfaced.
 
 ## June 2026
 

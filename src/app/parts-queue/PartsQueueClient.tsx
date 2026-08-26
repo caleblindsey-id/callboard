@@ -11,13 +11,21 @@ import {
   markPartReceived,
   returnPartToReview,
   revalidateTicket,
+  setShippingCharge,
   setSynergyOrderNumber,
   ticketDeepLink,
   triagePart,
   updatePartFields,
 } from '@/lib/parts-queue'
-import { partLabel } from '@/lib/parts'
+import { partLabel, canEditPartQuantity, isQueueRowStranded, normalizePartQuantity } from '@/lib/parts'
+import {
+  isPriorityShipping,
+  normalizeShippingCharge,
+  shippingMethodLabel,
+  shippingMethodShortLabel,
+} from '@/lib/shipping'
 import CancelPartDialog from './CancelPartDialog'
+import FreightPromptDialog from './FreightPromptDialog'
 import TriageOrderDialog from './TriageOrderDialog'
 import VendorPicker from '@/components/VendorPicker'
 import ScrollableTable from '@/components/ScrollableTable'
@@ -109,6 +117,15 @@ function partToRow(row: PartsQueueRow, part: PartRequest): PartsQueueRow {
     pulled_at: part.pulled_at ?? null,
     pulled_by: part.pulled_by ?? null,
     requested_at: part.requested_at ?? row.requested_at,
+    // Requested shipping speed / note come back on the part, so they follow the
+    // same "server response wins" rule as every other per-part field above —
+    // otherwise an office edit to the method would revert on the next action.
+    shipping_method: part.shipping_method ?? null,
+    shipping_note: part.shipping_note ?? null,
+    // shipping_charge is deliberately NOT set here: it lives on the parent
+    // ticket, not the part, so the part payload never carries it and reading it
+    // off `part` would blank the value on every row action. It is preserved by
+    // the `...row` spread and updated ticket-wide by handleShippingChargeCommit.
   }
 }
 
@@ -282,6 +299,13 @@ export default function PartsQueueClient({
   const [orderJustifyTarget, setOrderJustifyTarget] = useState<PartsQueueRow | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  // To Pull only. A stock part whose ticket closed before anyone tapped Mark
+  // Pulled stays in this tab forever — completion is not gated on pulled_at on
+  // either ticket type, deliberately, because techs can neither see this page nor
+  // run the action. Hidden by default so the tab leads with pullable work; the
+  // rows are still one click away because a late Mark Pulled is exactly how they
+  // get cleared (and still works on a closed ticket — see isStagingOnlyAction).
+  const [hideStranded, setHideStranded] = useState(true)
 
   // Refresh the cutoff every 5 min so a long-lived session doesn't silently
   // drop parts that aged out, and so the value stays stable between unrelated
@@ -321,6 +345,7 @@ export default function PartsQueueClient({
     // Tab filter
     if (tab === 'review' && r.status !== 'pending_review') return false
     if (tab === 'to_pull' && (r.status !== 'from_stock' || !!r.pulled_at)) return false
+    if (tab === 'to_pull' && hideStranded && isQueueRowStranded(r.ticket_status)) return false
     if (tab === 'to_order' && r.status !== 'requested') return false
     if (tab === 'ordered' && r.status !== 'ordered') return false
     if (tab === 'received') {
@@ -361,7 +386,19 @@ export default function PartsQueueClient({
       if (!hay.includes(q)) return false
     }
     return true
-  }, [tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter])
+  }, [tab, sourceFilter, vendorFilter, search, receivedCutoffMs, ticketFilter, hideStranded])
+
+  // Counted straight off `rows` rather than through matchesFilters: this drives
+  // the toggle's own label, so it has to stay stable while someone types in the
+  // search box — a count that moved as you searched would read as rows silently
+  // disappearing.
+  const strandedToPullCount = useMemo(
+    () =>
+      rows.filter(
+        r => !r.cancelled && r.status === 'from_stock' && !r.pulled_at && isQueueRowStranded(r.ticket_status),
+      ).length,
+    [rows],
+  )
 
   // Only offer vendors present in the rows currently visible (post every other
   // filter), so the dropdown reflects what's on the page. Always keep the
@@ -446,6 +483,53 @@ export default function PartsQueueClient({
     return handleFieldsCommit(row, fields)
   }, [handleFieldsCommit])
 
+  // Freight the customer is billed, set ticket-wide (feedback #80). Mirrors
+  // handleSynergyOrderCommit exactly, including the single 409 retry and the
+  // "update every row on this ticket" fan-out — shipping_charge is a parent
+  // column, so a part row is just where we happen to edit it.
+  const handleShippingChargeCommit = useCallback(
+    async (row: PartsQueueRow, value: number | null): Promise<boolean> => {
+      if ((value ?? null) === (row.shipping_charge ?? null)) return true
+      const key = rowKey(row)
+      setPendingRow(key)
+      setError(null)
+      try {
+        let next: number | null
+        try {
+          next = await setShippingCharge(row.source, row.ticket_id, value)
+        } catch (err) {
+          if ((err as { status?: number })?.status === 409) {
+            next = await setShippingCharge(row.source, row.ticket_id, value)
+          } else {
+            throw err
+          }
+        }
+        setRows(rs =>
+          rs.map(r =>
+            r.ticket_id === row.ticket_id && r.source === row.source
+              ? { ...r, shipping_charge: next }
+              : r,
+          ),
+        )
+        flash(key)
+        return true
+      } catch (err) {
+        // Keep the typed value on screen (no router.refresh()) — same lesson as
+        // feedback #34, where a failed save blanked the coordinator's entry.
+        setError(err instanceof Error ? err.message : 'Failed to save shipping charge')
+        return false
+      } finally {
+        setPendingRow(cur => (cur === key ? null : cur))
+      }
+    },
+    [flash],
+  )
+
+  // The part whose ordering just prompted for freight, or null when no prompt is
+  // open. Holding the ROW (not a boolean) is what lets the dialog write back to
+  // the right ticket after the order has already gone through.
+  const [freightPromptRow, setFreightPromptRow] = useState<PartsQueueRow | null>(null)
+
   const handleMarkOrdered = useCallback(async (row: PartsQueueRow) => {
     const key = rowKey(row)
     setPendingRow(key)
@@ -454,6 +538,17 @@ export default function PartsQueueClient({
       const part = await markPartOrdered(row.source, row.ticket_id, row.part_index)
       applyUpdate(row, part)
       set('tab', 'ordered')
+      // Ask for freight at the one moment the buyer is looking at the vendor's
+      // quote. Deliberately AFTER the order lands and deliberately non-blocking:
+      // the field's absence is why $0 of freight has ever been billed, but a
+      // hard gate would stall every stock pull and warranty order that carries
+      // none. Only asked once per ticket — a second part on the same PO doesn't
+      // re-prompt, because a prompt you learn to dismiss is worse than no
+      // prompt. Skipped entirely for a part with no vendor (nothing was
+      // shipped in) or when someone has already answered.
+      if (row.shipping_charge == null && (part.vendor ?? row.vendor)) {
+        setFreightPromptRow(partToRow(row, part))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark ordered')
     } finally {
@@ -657,6 +752,11 @@ export default function PartsQueueClient({
     [orderJustifyTarget, handleTriage],
   )
 
+  const handleQuantityCommit = useCallback(
+    (row: PartsQueueRow, quantity: number) => handleFieldsCommit(row, { quantity }),
+    [handleFieldsCommit],
+  )
+
   const canEditFields = tab !== 'received' && tab !== 'review'
   const canMarkOrdered = tab === 'to_order'
   const canMarkReceived = tab === 'ordered'
@@ -766,6 +866,7 @@ export default function PartsQueueClient({
           onOrder={handleOrderClick}
           onStock={(row) => void handleTriage(row, 'stock')}
           onCancel={setCancelTarget}
+          onQuantityCommit={handleQuantityCommit}
         />
       ) : tab === 'to_pull' ? (
         <ToPullTable
@@ -777,6 +878,9 @@ export default function PartsQueueClient({
           onExportCsv={() => exportPickList(filteredRows)}
           onExportPdf={() => handleExportPdf(filteredRows)}
           pdfPending={pdfPending}
+          strandedCount={strandedToPullCount}
+          hideStranded={hideStranded}
+          onToggleStranded={() => setHideStranded(v => !v)}
         />
       ) : (
       <>
@@ -811,7 +915,19 @@ export default function PartsQueueClient({
                     onRevalidate={() => handleRevalidate(row)}
                     disabled={isPending}
                   />
-                  <span>Qty {row.quantity ?? 1}</span>
+                  <span className="inline-flex items-center gap-1">
+                    Qty
+                    {canEditPartQuantity(row) ? (
+                      <InlineQty
+                        value={row.quantity}
+                        disabled={isPending}
+                        warnOnCommit={orderedQtyWarning(row)}
+                        onCommit={v => handleQuantityCommit(row, v)}
+                      />
+                    ) : (
+                      row.quantity ?? 1
+                    )}
+                  </span>
                   {row.unit_price != null && <span className="tabular-nums">${row.unit_price.toFixed(2)}</span>}
                   <span>{formatDay(row.requested_at)}</span>
                   {row.assigned_technician_name && <span className="truncate">by {row.assigned_technician_name}</span>}
@@ -1017,6 +1133,11 @@ export default function PartsQueueClient({
                       <div className="text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
                         {partLabel(row) || '—'}
                       </div>
+                      {isPriorityShipping(row) && (
+                        <div className="mt-0.5">
+                          <PriorityShippingBadge row={row} />
+                        </div>
+                      )}
                       <InlineText
                         value={row.product_number ?? ''}
                         placeholder="Synergy Item #"
@@ -1042,7 +1163,18 @@ export default function PartsQueueClient({
                         disabled={isPending}
                       />
                     </td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.quantity ?? 1}</td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">
+                      {canEditPartQuantity(row) ? (
+                        <InlineQty
+                          value={row.quantity}
+                          disabled={isPending}
+                          warnOnCommit={orderedQtyWarning(row)}
+                          onCommit={v => handleQuantityCommit(row, v)}
+                        />
+                      ) : (
+                        row.quantity ?? 1
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <VendorPicker
                         vendor={row.vendor}
@@ -1193,6 +1325,29 @@ export default function PartsQueueClient({
                           <DetailField label="Requested by">
                             {row.assigned_technician_name ?? '—'}
                           </DetailField>
+                          {/* Requested speed, shown as text rather than the
+                              badge so the tech's instruction is readable in
+                              full — the badge only carries it in a tooltip. */}
+                          <DetailField label="Shipping">
+                            <span className={isPriorityShipping(row) ? 'font-medium text-amber-700 dark:text-amber-400' : ''}>
+                              {shippingMethodLabel(row.shipping_method)}
+                            </span>
+                            {row.shipping_note ? (
+                              <span className="block text-gray-500 dark:text-gray-400">{row.shipping_note}</span>
+                            ) : null}
+                          </DetailField>
+                          {/* Ticket-level freight (feedback #80). Editable here
+                              as well as via the mark-ordered prompt, because
+                              the real number often only arrives with the
+                              vendor's invoice — and correcting it in the queue
+                              beats reopening a ticket to fix it. */}
+                          <DetailField label="Shipping charge">
+                            <InlineMoney
+                              value={row.shipping_charge}
+                              disabled={!canEditFields}
+                              onCommit={v => handleShippingChargeCommit(row, v)}
+                            />
+                          </DetailField>
                         </dl>
                       </td>
                     </tr>
@@ -1222,6 +1377,25 @@ export default function PartsQueueClient({
         onCancel={() => setOrderJustifyTarget(null)}
         onConfirm={handleConfirmOrderJustify}
       />
+
+      {/* Freight capture, fired once per ticket right after a part is ordered.
+          Skipping is a first-class outcome, so onSkip just closes — nothing is
+          written, and the ticket stays eligible to be asked again on the next
+          part (the buyer may simply not have had the number to hand yet). */}
+      <FreightPromptDialog
+        open={!!freightPromptRow}
+        description={freightPromptRow ? partLabel(freightPromptRow) : ''}
+        vendor={freightPromptRow?.vendor ?? null}
+        workOrderNumber={freightPromptRow?.work_order_number ?? null}
+        onSkip={() => setFreightPromptRow(null)}
+        onConfirm={async (amount) => {
+          const target = freightPromptRow
+          if (!target) return
+          const ok = await handleShippingChargeCommit(target, amount)
+          if (ok) setFreightPromptRow(null)
+          else throw new Error('Failed to save shipping charge')
+        }}
+      />
     </div>
   )
 }
@@ -1238,6 +1412,23 @@ function StockBadge({ value, tone }: { value: number | null; tone: 'hand' | 'po'
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${classes}`}>
       {value}
+    </span>
+  )
+}
+
+// Rush-shipping chip (feedback #80). Renders NOTHING for standard/absent, which
+// is the point: the buyer has to be able to spot a next-day request while
+// scanning a full queue, and a chip on every row is invisible by the third one.
+// The tech's free-text instruction rides in the title so it's one hover away
+// without spending a line of row height on it.
+function PriorityShippingBadge({ row }: { row: Pick<PartsQueueRow, 'shipping_method' | 'shipping_note'> }) {
+  if (!isPriorityShipping(row)) return null
+  return (
+    <span
+      title={row.shipping_note ?? undefined}
+      className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+    >
+      {shippingMethodShortLabel(row.shipping_method)}
     </span>
   )
 }
@@ -1269,6 +1460,7 @@ function PartCardHeader({
         </p>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
+        <PriorityShippingBadge row={row} />
         <SourceBadge source={row.source} />
         {extra}
       </div>
@@ -1297,6 +1489,7 @@ function ReviewTable({
   onOrder,
   onStock,
   onCancel,
+  onQuantityCommit,
 }: {
   rows: PartsQueueRow[]
   pendingRow: string | null
@@ -1304,6 +1497,10 @@ function ReviewTable({
   onOrder: (row: PartsQueueRow) => void
   onStock: (row: PartsQueueRow) => void
   onCancel: (row: PartsQueueRow) => void
+  // Review is the tab where a wrong count is cheapest to fix — it is the last
+  // stop before the office commits to ordering or pulling stock. Quantity is
+  // deliberately editable here even though every other field on this tab is not.
+  onQuantityCommit: (row: PartsQueueRow, quantity: number) => Promise<boolean>
 }) {
   return (
     <>
@@ -1330,7 +1527,18 @@ function ReviewTable({
                 <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
               )}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                <span>Qty {row.quantity ?? 1}</span>
+                <span className="inline-flex items-center gap-1">
+                  Qty
+                  {canEditPartQuantity(row) ? (
+                    <InlineQty
+                      value={row.quantity}
+                      disabled={isPending}
+                      onCommit={v => onQuantityCommit(row, v)}
+                    />
+                  ) : (
+                    row.quantity ?? 1
+                  )}
+                </span>
                 <span className="inline-flex items-center gap-1">
                   On hand <StockBadge value={row.qty_on_hand} tone="hand" />
                 </span>
@@ -1424,9 +1632,26 @@ function ReviewTable({
                   <td className="px-3 py-2"><SourceBadge source={row.source} /></td>
                   <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900 dark:text-white">{row.work_order_number ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[200px] truncate" title={row.customer_name ?? ''}>{row.customer_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={partLabel(row) || (row.description ?? '')}>{partLabel(row) || '—'}</td>
+                  {/* Review is where order-vs-stock is decided, so a rush
+                      request has to be visible before the choice is made. */}
+                  <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px]" title={partLabel(row) || (row.description ?? '')}>
+                    <div className="truncate">{partLabel(row) || '—'}</div>
+                    {isPriorityShipping(row) && (
+                      <div className="mt-0.5"><PriorityShippingBadge row={row} /></div>
+                    )}
+                  </td>
                   <td className="px-3 py-2"><MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} /></td>
-                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">{row.quantity ?? 1}</td>
+                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">
+                    {canEditPartQuantity(row) ? (
+                      <InlineQty
+                        value={row.quantity}
+                        disabled={isPending}
+                        onCommit={v => onQuantityCommit(row, v)}
+                      />
+                    ) : (
+                      row.quantity ?? 1
+                    )}
+                  </td>
                   <td className="px-3 py-2"><StockBadge value={row.qty_on_hand} tone="hand" /></td>
                   <td className="px-3 py-2"><StockBadge value={row.qty_on_po} tone="po" /></td>
                   <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">{row.assigned_technician_name ?? '—'}</td>
@@ -1494,6 +1719,9 @@ function ToPullTable({
   onExportCsv,
   onExportPdf,
   pdfPending,
+  strandedCount,
+  hideStranded,
+  onToggleStranded,
 }: {
   rows: PartsQueueRow[]
   pendingRow: string | null
@@ -1503,6 +1731,9 @@ function ToPullTable({
   onExportCsv: () => void
   onExportPdf: () => void
   pdfPending: boolean
+  strandedCount: number
+  hideStranded: boolean
+  onToggleStranded: () => void
 }) {
   const exportBtn =
     'shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px] lg:min-h-0'
@@ -1536,6 +1767,24 @@ function ToPullTable({
           </button>
         </div>
       </div>
+      {strandedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>
+            {strandedCount} part{strandedCount === 1 ? '' : 's'}{' '}
+            {strandedCount === 1 ? 'belongs' : 'belong'} to a ticket that is already closed, so{' '}
+            {strandedCount === 1 ? 'it is' : 'they are'} not pullable work.
+            {hideStranded ? ' Hidden from the list and the pick list.' : ' Shown below.'}
+          </span>
+          <button
+            type="button"
+            onClick={onToggleStranded}
+            className="font-medium underline underline-offset-2 hover:no-underline"
+          >
+            {hideStranded ? 'Show them' : 'Hide them'}
+          </button>
+        </div>
+      )}
       {/* Mobile cards */}
       <div className="lg:hidden space-y-3">
         {rows.length === 0 ? (
@@ -1547,6 +1796,7 @@ function ToPullTable({
             const key = rowKey(row)
             const isPending = pendingRow === key
             const isFlashed = flashedRow === key
+            const isStranded = isQueueRowStranded(row.ticket_status)
             return (
               <div
                 key={key}
@@ -1562,6 +1812,11 @@ function ToPullTable({
                     </p>
                   }
                 />
+                {isStranded && (
+                  <div>
+                    <TicketStatusBadge ticketStatus={row.ticket_status} />
+                  </div>
+                )}
                 {(row.machine_make || row.machine_model || row.machine_serial) && (
                   <MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} />
                 )}
@@ -1584,10 +1839,14 @@ function ToPullTable({
                   </button>
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={isPending || isStranded}
                     onClick={() => onReturnToReview(row)}
-                    title="Return to Review — re-triage stock vs. order"
-                    className="p-3 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                    title={
+                      isStranded
+                        ? 'Not available: the ticket is closed, so re-triaging would be rejected. Mark Pulled to clear the row.'
+                        : 'Return to Review — re-triage stock vs. order'
+                    }
+                    className="p-3 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Undo2 className="h-5 w-5" />
                   </button>
@@ -1621,13 +1880,14 @@ function ToPullTable({
               <th scope="col" className={TH_CLS}>Machine</th>
               <th scope="col" className={TH_CLS}>Qty</th>
               <th scope="col" className={TH_CLS}>Requested by</th>
+              <th scope="col" className={TH_CLS}>Ticket</th>
               <th scope="col" className={TH_RIGHT_CLS}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nothing waiting to be pulled.
                 </td>
               </tr>
@@ -1636,6 +1896,10 @@ function ToPullTable({
                 const key = rowKey(row)
                 const isPending = pendingRow === key
                 const isFlashed = flashedRow === key
+                // Return to Review is not staging-only, so the route's ticketClosed
+                // guard 409s it on a closed ticket. Disable rather than let the
+                // click fail.
+                const isStranded = isQueueRowStranded(row.ticket_status)
                 return (
                   <tr
                     key={key}
@@ -1653,6 +1917,7 @@ function ToPullTable({
                     <td className="px-3 py-2"><MachineCell make={row.machine_make} model={row.machine_model} serial={row.machine_serial} /></td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300 tabular-nums">{row.quantity ?? 1}</td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-[140px] truncate">{row.assigned_technician_name ?? '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap"><TicketStatusBadge ticketStatus={row.ticket_status} /></td>
                     <td className="px-3 py-2 whitespace-nowrap text-right">
                       <div className="flex items-center gap-1 justify-end">
                         <button
@@ -1667,10 +1932,14 @@ function ToPullTable({
                         </button>
                         <button
                           type="button"
-                          disabled={isPending}
+                          disabled={isPending || isStranded}
                           onClick={() => onReturnToReview(row)}
-                          title="Return to Review — re-triage stock vs. order"
-                          className="p-1 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 transition-colors"
+                          title={
+                            isStranded
+                              ? 'Not available: the ticket is closed, so re-triaging would be rejected. Mark Pulled to clear the row.'
+                              : 'Return to Review — re-triage stock vs. order'
+                          }
+                          className="p-1 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           <Undo2 className="h-4 w-4" />
                         </button>
@@ -1787,6 +2056,22 @@ function MachineCell({
         </div>
       )}
     </div>
+  )
+}
+
+// Parent ticket state for a queue row (migration 158). Renders only when the
+// ticket is closed: on a live row it would be noise, and "no badge" is already
+// the overwhelmingly common case the eye should skip past.
+function TicketStatusBadge({ ticketStatus }: { ticketStatus: string | null | undefined }) {
+  if (!isQueueRowStranded(ticketStatus)) return null
+  const label = (ticketStatus ?? '').replace(/_/g, ' ')
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium capitalize bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+      title="This ticket is already closed, so nobody is waiting on this pull. Mark Pulled still works and will clear the row."
+    >
+      {label}
+    </span>
   )
 }
 
@@ -1970,6 +2255,219 @@ function InlineText({
         } dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 ${
           status === 'idle' ? 'px-2' : 'pl-2 pr-6'
         } py-1 text-xs focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 dark:disabled:bg-gray-900/40 disabled:text-gray-500`}
+      />
+      {status !== 'idle' && (
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">
+          {status === 'saving' && <RefreshCw className="h-3 w-3 animate-spin text-gray-400" aria-label="Saving" />}
+          {status === 'saved' && <Check className="h-3 w-3 text-green-600 dark:text-green-400" aria-label="Saved" />}
+          {status === 'error' && <AlertCircle className="h-3 w-3 text-red-500" aria-label="Not saved — try again" />}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Inline dollar field for the ticket's freight charge (feedback #80).
+ *
+ * A separate component from InlineText rather than a `type` prop on it, because
+ * the semantics differ in a way that matters: this one round-trips a
+ * `number | null` where empty means "no freight charged" — NOT 0. A vendor who
+ * ships free and a buyer who hasn't answered yet are different facts, and the
+ * ticket column preserves that distinction, so the input has to as well.
+ * Invalid input is rejected before any request goes out, using the same shared
+ * validator the three server write paths use.
+ */
+/**
+ * The caveat that has to ride along with a quantity change on an already-ordered
+ * part: the PO is with the vendor and nothing in CallBoard reaches it. Returns
+ * undefined for every earlier status, where there is nothing to warn about.
+ */
+function orderedQtyWarning(row: PartsQueueRow): string | undefined {
+  if (row.status !== 'ordered') return undefined
+  return row.po_number
+    ? `Qty changed after ordering — PO ${row.po_number} still shows the old count. Update it with the vendor.`
+    : 'Qty changed after ordering — the vendor PO still shows the old count. Update it with the vendor.'
+}
+
+/**
+ * Inline quantity editor for a requested part.
+ *
+ * Same never-yank / commit-on-blur / keep-the-typed-value-on-failure contract as
+ * InlineText and InlineMoney above, validated client-side through the shared
+ * normalizePartQuantity so the rules can't drift from the two server paths.
+ *
+ * `warnOnCommit` is set on the Ordered tab: the PO is already with the vendor,
+ * and changing the number here does nothing about that. The warning appears
+ * after a successful save rather than as a confirm dialog — a modal fired from
+ * a blur-commit control fights the focus it just lost.
+ */
+function InlineQty({
+  value,
+  disabled,
+  warnOnCommit,
+  onCommit,
+}: {
+  value: number | null
+  disabled: boolean
+  warnOnCommit?: string
+  onCommit: (v: number) => Promise<boolean>
+}) {
+  const asText = (v: number | null) => (v == null ? '' : String(v))
+  const [local, setLocal] = useState(asText(value))
+  const [focused, setFocused] = useState(false)
+  const [lastExternal, setLastExternal] = useState(value)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [warned, setWarned] = useState(false)
+
+  if (value !== lastExternal) {
+    setLastExternal(value)
+    if (!focused) setLocal(asText(value))
+  }
+
+  useEffect(() => {
+    if (status !== 'saved') return
+    const id = window.setTimeout(() => setStatus(s => (s === 'saved' ? 'idle' : s)), 1500)
+    return () => window.clearTimeout(id)
+  }, [status])
+
+  async function commit() {
+    setFocused(false)
+    const parsed = normalizePartQuantity(local)
+    if (!parsed.ok) {
+      setStatus('error')
+      return
+    }
+    if (parsed.value === (value ?? 1)) {
+      setStatus('idle')
+      return
+    }
+    setStatus('saving')
+    try {
+      const ok = await onCommit(parsed.value)
+      setStatus(ok ? 'saved' : 'error')
+      if (ok && warnOnCommit) setWarned(true)
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="inline-flex flex-col gap-0.5">
+      <div className="relative inline-flex items-center">
+        <input
+          type="number"
+          step="1"
+          min="1"
+          inputMode="numeric"
+          value={local}
+          onChange={e => {
+            setLocal(e.target.value)
+            if (status === 'error' || status === 'saved') setStatus('idle')
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={commit}
+          disabled={disabled}
+          aria-invalid={status === 'error'}
+          aria-label="Quantity"
+          className={`w-16 rounded-md border ${
+            status === 'error'
+              ? 'border-red-400 dark:border-red-500'
+              : warnOnCommit
+                ? 'border-amber-400 dark:border-amber-500'
+                : 'border-gray-300 dark:border-gray-600'
+          } dark:bg-gray-700 dark:text-white ${
+            status === 'idle' ? 'px-2' : 'pl-2 pr-6'
+          } py-1 text-xs text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 dark:disabled:bg-gray-900/40 disabled:text-gray-500`}
+        />
+        {status !== 'idle' && (
+          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">
+            {status === 'saving' && <RefreshCw className="h-3 w-3 animate-spin text-gray-400" aria-label="Saving" />}
+            {status === 'saved' && <Check className="h-3 w-3 text-green-600 dark:text-green-400" aria-label="Saved" />}
+            {status === 'error' && <AlertCircle className="h-3 w-3 text-red-500" aria-label="Not saved — try again" />}
+          </span>
+        )}
+      </div>
+      {warned && (
+        <span className="text-[11px] leading-tight text-amber-700 dark:text-amber-400">{warnOnCommit}</span>
+      )}
+    </div>
+  )
+}
+
+function InlineMoney({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number | null
+  disabled: boolean
+  onCommit: (v: number | null) => Promise<boolean>
+}) {
+  const asText = (v: number | null) => (v == null ? '' : String(v))
+  const [local, setLocal] = useState(asText(value))
+  const [focused, setFocused] = useState(false)
+  const [lastExternal, setLastExternal] = useState(value)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  // Same never-yank-mid-edit rule as InlineText above.
+  if (value !== lastExternal) {
+    setLastExternal(value)
+    if (!focused) setLocal(asText(value))
+  }
+
+  useEffect(() => {
+    if (status !== 'saved') return
+    const id = window.setTimeout(() => setStatus(s => (s === 'saved' ? 'idle' : s)), 1500)
+    return () => window.clearTimeout(id)
+  }, [status])
+
+  async function commit() {
+    setFocused(false)
+    const parsed = normalizeShippingCharge(local)
+    if (!parsed.ok) {
+      setStatus('error')
+      return
+    }
+    if (parsed.value === (value ?? null)) {
+      setStatus('idle')
+      return
+    }
+    setStatus('saving')
+    try {
+      const ok = await onCommit(parsed.value)
+      setStatus(ok ? 'saved' : 'error')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="relative inline-flex items-center gap-1">
+      <span className="text-xs text-gray-500 dark:text-gray-400">$</span>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        inputMode="decimal"
+        value={local}
+        onChange={e => {
+          setLocal(e.target.value)
+          if (status === 'error' || status === 'saved') setStatus('idle')
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={commit}
+        placeholder="none"
+        disabled={disabled}
+        aria-invalid={status === 'error'}
+        aria-label="Shipping charge"
+        className={`w-24 rounded-md border ${
+          status === 'error'
+            ? 'border-red-400 dark:border-red-500'
+            : 'border-gray-300 dark:border-gray-600'
+        } dark:bg-gray-700 dark:text-white dark:placeholder-gray-500 ${
+          status === 'idle' ? 'px-2' : 'pl-2 pr-6'
+        } py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:bg-gray-50 dark:disabled:bg-gray-900/40 disabled:text-gray-500`}
       />
       {status !== 'idle' && (
         <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">

@@ -5,6 +5,7 @@ import { columnsOf } from '@/lib/db/columns'
 const USER_COLUMNS = columnsOf<UserRow>()([
   'id', 'email', 'name', 'role', 'active', 'created_at', 'synergy_id',
   'hourly_cost', 'must_change_password', 'can_create_service_tickets',
+  'commission_eligible', 'commission_rate_override',
 ])
 
 export async function getUsers(activeOnly?: boolean): Promise<UserRow[]> {

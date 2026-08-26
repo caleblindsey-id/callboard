@@ -2,12 +2,15 @@
 
 import { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import type { TeamAnalytics } from '@/lib/db/analytics'
+import type { TeamAnalytics, TicketType } from '@/lib/db/analytics'
 import KpiCard from '@/components/analytics/KpiCard'
 import Leaderboard from '@/components/analytics/Leaderboard'
 import TargetsForm from '@/components/analytics/TargetsForm'
+import BacklogPanel from '@/components/analytics/BacklogPanel'
+import PeriodPicker from '@/components/analytics/PeriodPicker'
 import PageHeader from '@/components/ui/PageHeader'
 import SegmentedControl from '@/components/ui/SegmentedControl'
+import { analyticsQuery } from '@/lib/analytics-period'
 import { Target } from 'lucide-react'
 
 // Recharts is ~200KB; defer the chart so the page shell + KPIs render first.
@@ -29,17 +32,29 @@ type TrendMetric = 'revenue' | 'tickets' | 'profit'
 export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProps) {
   const [data, setData] = useState<TeamAnalytics>(initialData)
   const [periodType, setPeriodType] = useState<PeriodType>(initialData.period.type)
+  const [ticketType, setTicketType] = useState<TicketType>(initialData.ticketType)
+  // Anchor day for the selected period. `startDate` is what the server derived
+  // from the requested date, so seeding from it keeps client and server aligned.
+  const [date, setDate] = useState(initialData.period.startDate)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [sortMetric, setSortMetric] = useState<SortMetric>('revenue')
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('revenue')
   const [showTargets, setShowTargets] = useState(false)
 
-  const fetchData = useCallback(async (period: PeriodType) => {
+  const fetchData = useCallback(async (period: PeriodType, type: TicketType, anchor: string) => {
+    const query = analyticsQuery({ periodType: period, date: anchor, ticketType: type })
+    // Mirror the selection into the URL so the view is shareable and survives a
+    // refresh. `history.replaceState` rather than `router.replace` on purpose:
+    // this component fetches its own data, and a router navigation would re-run
+    // the server component and fetch the whole payload a second time per click.
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `${window.location.pathname}?${query}`)
+    }
+
     setLoading(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const res = await fetch(`/api/analytics/team?period=${period}&date=${today}`)
+      const res = await fetch(`/api/analytics/team?${query}`)
       if (!res.ok) {
         setError(true)
         return
@@ -54,13 +69,26 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
     }
   }, [])
 
+  // Each control changes only its own dimension — switching ticket type or
+  // weekly/monthly keeps the period you were looking at.
   function handlePeriodChange(period: PeriodType) {
     setPeriodType(period)
-    fetchData(period)
+    fetchData(period, ticketType, date)
+  }
+
+  function handleTypeChange(type: TicketType) {
+    setTicketType(type)
+    fetchData(periodType, type, date)
+  }
+
+  function handleDateChange(next: string) {
+    setDate(next)
+    fetchData(periodType, ticketType, next)
   }
 
   const { teamKpis: kpi, priorKpis: prior } = data
   const deltaLabel = periodType === 'weekly' ? 'vs last week' : 'vs last month'
+  const drilldownQuery = analyticsQuery({ periodType, date, ticketType })
 
   return (
     <div className="p-6 space-y-6">
@@ -77,6 +105,22 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
               <Target className="h-3.5 w-3.5" />
               Team Targets
             </button>
+            <PeriodPicker
+              periodType={periodType}
+              date={date}
+              onChange={handleDateChange}
+              disabled={loading}
+            />
+            <SegmentedControl
+              ariaLabel="Ticket type"
+              options={[
+                { value: 'combined', label: 'Combined' },
+                { value: 'pm', label: 'PM' },
+                { value: 'service', label: 'Service' },
+              ]}
+              value={ticketType}
+              onChange={(v) => handleTypeChange(v as TicketType)}
+            />
             <SegmentedControl
               ariaLabel="Analytics period"
               options={[
@@ -95,7 +139,7 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           <p className="flex-1">Failed to load this period. The data below may be stale.</p>
           <button
             type="button"
-            onClick={() => fetchData(periodType)}
+            onClick={() => fetchData(periodType, ticketType, date)}
             className="shrink-0 font-medium underline"
           >
             Retry
@@ -151,6 +195,7 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           techRows={data.techRows}
           activeSort={sortMetric}
           onSortChange={setSortMetric}
+          query={drilldownQuery}
         />
 
         {/* Team Trend Chart */}
@@ -160,6 +205,9 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           activeMetric={trendMetric}
           onMetricChange={setTrendMetric}
         />
+
+        {/* Operational health / backlog — point-in-time, ignores the period toggle */}
+        <BacklogPanel backlog={data.backlog} ticketType={ticketType} />
       </div>
 
       {/* Targets Modal */}
@@ -171,7 +219,7 @@ export default function AnalyticsOverview({ initialData }: AnalyticsOverviewProp
           periodType={periodType}
           onClose={() => {
             setShowTargets(false)
-            fetchData(periodType)
+            fetchData(periodType, ticketType, date)
           }}
         />
       )}
