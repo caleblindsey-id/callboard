@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser, isTechnician, MANAGER_ROLES } from '@/lib/auth'
+import { deriveCustomerBillAmount } from '@/lib/service-tickets/warranty-server'
 import type { ServiceTicketUpdate, ServicePartUsed } from '@/types/service-tickets'
 
 // Tech-facing "flag for warranty review" + office verdict workflow (migration
 // 160). Warranty is moving from a pricing switch (billing_type) to a review
 // lifecycle: a tech (or staff) flags a ticket they think is covered, and the
-// office verifies coverage part-by-part (or denies it). This route owns only
-// the review lifecycle columns — it never touches billing_type, pricing, the
-// completion form, or customer_bill_amount (a later round wires that recompute).
-// See lib/service-tickets/warranty.ts for the pure helpers this lifecycle feeds.
+// office verifies coverage part-by-part (or denies it). This route owns the
+// review lifecycle columns and, once a ticket has completed, the
+// customer_bill_amount recompute a verdict change implies — it never touches
+// billing_type, pricing, or the completion form itself.
+// See lib/service-tickets/warranty.ts for the pure helpers this lifecycle
+// feeds, and lib/service-tickets/warranty-server.ts for the recompute.
 //
 // Body: { action: 'flag' | 'unflag' | 'verify' | 'deny', ... } — see each
 // branch below for its own fields.
@@ -119,6 +122,8 @@ export async function POST(
       // Nulls the whole review lifecycle. Leaves warranty_vendor,
       // warranty_vendor_labor_rate, and the claim/credit fields alone — those
       // are the separate vendor-credit worklist, untouched by a flag/unflag.
+      // customer_bill_amount is cleared too: with no review decision, the
+      // customer is back to paying full billing_amount.
       const update: ServiceTicketUpdate = {
         warranty_review_status: null,
         warranty_review_requested_at: null,
@@ -127,6 +132,7 @@ export async function POST(
         warranty_review_decided_at: null,
         warranty_review_decided_by_id: null,
         warranty_review_decision_note: null,
+        customer_bill_amount: null,
       }
 
       const { data, error } = await supabase
@@ -172,6 +178,9 @@ export async function POST(
         warranty_review_decided_at: now,
         warranty_review_decided_by_id: user.id,
         warranty_review_decision_note: decisionNote,
+        // Denied bills the customer full price, same as a never-reviewed
+        // ticket: NULL means "same as billing_amount".
+        customer_bill_amount: null,
       }
 
       const { data, error } = await supabase
@@ -263,25 +272,38 @@ export async function POST(
     if (vendorRaw !== undefined) update.warranty_vendor = vendorRaw || null
     if (vendorLaborRate !== undefined) update.warranty_vendor_labor_rate = vendorLaborRate
 
-    // Per-part coverage: read the current array, flip warranty_covered at the
-    // listed indexes (true) and everywhere else (false), write the whole array
-    // back in the same update. Two literal select branches, not a computed
-    // column string — supabase-js parses the select literal at the type level,
-    // so a variable column name collapses the row type to SelectQueryError
-    // (same landmine noted in parts-queue/update/route.ts).
+    // One fetch for everything the rest of this branch needs: the parts array
+    // to flip coverage on (whichever field was requested), plus every billing
+    // field deriveCustomerBillAmount reads, so the customer_bill_amount
+    // recompute below can land in the same UPDATE as the coverage change
+    // instead of a second write.
+    const { data: currentRow, error: fetchCurrentError } = await supabase
+      .from('service_tickets')
+      .select(
+        'status, completed_at, billing_amount, shipping_charge, diagnostic_charge, diagnostic_invoice_number, parts_used, estimate_parts'
+      )
+      .eq('id', id)
+      .single()
+    if (fetchCurrentError || !currentRow) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+    }
+
+    // Effective parts_used after this update: the just-flipped array when the
+    // coverage edit targets parts_used, otherwise whatever's already stored
+    // (an estimate_parts edit doesn't touch the billed parts array).
+    let effectivePartsUsed = (currentRow.parts_used as ServicePartUsed[] | null) ?? []
+
+    // Per-part coverage: flip warranty_covered at the listed indexes (true)
+    // and everywhere else (false), write the whole array back in the same
+    // update. Two literal select branches above, not a computed column string
+    // — supabase-js parses the select literal at the type level, so a variable
+    // column name collapses the row type to SelectQueryError (same landmine
+    // noted in parts-queue/update/route.ts).
     if (coveredSet && partsField) {
-      const partsQuery =
-        partsField === 'parts_used'
-          ? supabase.from('service_tickets').select('parts_used').eq('id', id).single()
-          : supabase.from('service_tickets').select('estimate_parts').eq('id', id).single()
-      const { data: partsRow, error: partsFetchError } = await partsQuery
-      if (partsFetchError || !partsRow) {
-        return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
-      }
       const parts = (
         partsField === 'parts_used'
-          ? (partsRow as { parts_used: ServicePartUsed[] | null }).parts_used
-          : (partsRow as { estimate_parts: ServicePartUsed[] | null }).estimate_parts
+          ? (currentRow.parts_used as ServicePartUsed[] | null)
+          : (currentRow.estimate_parts as ServicePartUsed[] | null)
       ) ?? []
 
       for (const idx of coveredSet) {
@@ -296,9 +318,27 @@ export async function POST(
       const nextParts = parts.map((p, i) => ({ ...p, warranty_covered: coveredSet!.has(i) }))
       if (partsField === 'parts_used') {
         update.parts_used = nextParts
+        effectivePartsUsed = nextParts
       } else {
         update.estimate_parts = nextParts
       }
+    }
+
+    // Recompute customer_bill_amount when the ticket has already completed
+    // (billing_amount exists) — a verify/change-of-verdict after completion
+    // must not leave the customer's total stale. Pre-completion, there's
+    // nothing to derive yet; /complete computes it fresh at completion time.
+    const isCompleted =
+      !!currentRow.completed_at || currentRow.status === 'completed' || currentRow.status === 'billed'
+    if (isCompleted) {
+      update.customer_bill_amount = deriveCustomerBillAmount({
+        billing_amount: currentRow.billing_amount as number | null,
+        shipping_charge: currentRow.shipping_charge as number | null,
+        diagnostic_charge: currentRow.diagnostic_charge as number | null,
+        diagnostic_invoice_number: currentRow.diagnostic_invoice_number as string | null,
+        warranty_labor_covered: laborCovered,
+        parts_used: effectivePartsUsed,
+      })
     }
 
     const { data, error } = await supabase

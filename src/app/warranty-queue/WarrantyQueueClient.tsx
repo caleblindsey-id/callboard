@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck } from 'lucide-react'
@@ -10,6 +10,17 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import QueueActionCard from '@/components/ui/QueueActionCard'
 import ServiceStatusBadge from '@/components/ServiceStatusBadge'
 import { formatDate } from '@/lib/format'
+
+// Response shape of POST warranty-claim { action: 'suggest' }. See
+// src/lib/service-tickets/warranty-server.ts and the route for the source.
+type ClaimSuggestion = {
+  amount: number
+  unknownCostParts: number
+  lines: { index: number; description: string; qty: number; covered: boolean; unitCost: number | null }[]
+  hoursWorked: number
+  vendorLaborRate: number | null
+  laborCovered: boolean
+}
 
 // Aging tightens the longer a claim sits — an unfiled claim or an uncredited one
 // is parts cost the branch is carrying. Same escalation feel as the other queues.
@@ -24,7 +35,9 @@ function agingBadge(days: number | null): { label: string; classes: string } {
 
 function fmtMoney(amount: number | null | undefined): string {
   if (amount == null) return '—'
-  return `$${amount.toFixed(2)}`
+  // Postgres numeric columns can arrive over PostgREST as a string; coerce
+  // before .toFixed() or an unattended numeric-as-string throws.
+  return `$${Number(amount).toFixed(2)}`
 }
 
 // Which clock a bucket ages off, and the label that goes with it. to_review
@@ -144,9 +157,49 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
   const [creditExpected, setCreditExpected] = useState(
     row.warranty_credit_expected != null ? String(row.warranty_credit_expected) : ''
   )
-  const [creditAmount, setCreditAmount] = useState(
-    row.warranty_credit_amount != null ? String(row.warranty_credit_amount) : ''
+  const [vendorLaborRate, setVendorLaborRate] = useState(
+    row.warranty_vendor_labor_rate != null ? String(row.warranty_vendor_labor_rate) : ''
   )
+  // Reconcile-only: actual credit per covered part (keyed by parts_used
+  // index) and the actual labor credit, seeded from whatever's already saved.
+  const [partCredits, setPartCredits] = useState<Record<number, string>>(() => {
+    const seed: Record<number, string> = {}
+    for (const p of row.covered_parts) {
+      seed[p.index] = p.vendor_credit_amount != null ? String(p.vendor_credit_amount) : ''
+    }
+    return seed
+  })
+  const [laborCreditInput, setLaborCreditInput] = useState(
+    row.warranty_labor_credit_amount != null ? String(row.warranty_labor_credit_amount) : ''
+  )
+
+  // Suggested/expected credit, fetched once on expand — powers the file-claim
+  // prefill and the reconcile modal's per-line expected column.
+  const [suggestion, setSuggestion] = useState<ClaimSuggestion | null>(null)
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
+
+  // A billed-but-never-claimed ticket needs exactly the same action as a
+  // to-file one: record the vendor and claim number so the credit can still
+  // be chased. The only difference is that the customer was already invoiced.
+  const isFiling = row.bucket === 'to_file' || row.bucket === 'billed_unclaimed'
+  const isReconciling = row.bucket === 'awaiting_credit'
+
+  useEffect(() => {
+    if (!open || suggestion || suggestionLoading || !(isFiling || isReconciling)) return
+    setSuggestionLoading(true)
+    fetch(`/api/service-tickets/${row.id}/warranty-claim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'suggest' }),
+    })
+      .then((res) => (res.ok ? (res.json() as Promise<ClaimSuggestion>) : null))
+      .then((data) => {
+        if (!data) return
+        setSuggestion(data)
+        if (isFiling) setCreditExpected(String(data.amount))
+      })
+      .finally(() => setSuggestionLoading(false))
+  }, [open, suggestion, suggestionLoading, isFiling, isReconciling, row.id])
 
   async function post(payload: Record<string, unknown>, failMsg: string) {
     setBusy(true)
@@ -170,10 +223,37 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
     }
   }
 
-  // A billed-but-never-claimed ticket needs exactly the same action as a
-  // to-file one: record the vendor and claim number so the credit can still
-  // be chased. The only difference is that the customer was already invoiced.
-  const isFiling = row.bucket === 'to_file' || row.bucket === 'billed_unclaimed'
+  function submitCredit() {
+    const part_credits = Object.fromEntries(
+      Object.entries(partCredits).filter(([, v]) => v.trim() !== '').map(([k, v]) => [k, Number(v)])
+    )
+    post(
+      {
+        action: 'credit',
+        vendor,
+        claim_number: claimNumber,
+        labor_credit_amount: row.warranty_labor_covered
+          ? (laborCreditInput.trim() === '' ? null : Number(laborCreditInput))
+          : undefined,
+        part_credits,
+      },
+      'Failed to log the credit',
+    )
+  }
+
+  // Expected per covered part comes from the suggest endpoint's unit cost
+  // (unknown until it loads); the row itself only carries the customer price.
+  const reconcileParts = row.covered_parts.map((p) => {
+    const unitCost = suggestion?.lines.find((l) => l.index === p.index)?.unitCost ?? null
+    return { ...p, unitCost, expected: unitCost != null ? p.qty * unitCost : null }
+  })
+  const laborExpected =
+    row.warranty_labor_covered && row.hours_worked != null && row.warranty_vendor_labor_rate
+      ? row.hours_worked * row.warranty_vendor_labor_rate
+      : null
+  const actualTotal =
+    (laborCreditInput.trim() === '' ? 0 : Number(laborCreditInput) || 0) +
+    Object.values(partCredits).reduce((sum, v) => sum + (v.trim() === '' ? 0 : Number(v) || 0), 0)
 
   const clock = agingClock(row)
   const aging = agingBadge(clock.days)
@@ -208,6 +288,9 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
             {row.warranty_credit_expected != null && <span>Expected credit {fmtMoney(row.warranty_credit_expected)}</span>}
             {row.warranty_credit_amount != null && <span>Credit received {fmtMoney(row.warranty_credit_amount)}</span>}
           </div>
+          {row.bucket === 'received' && row.warranty_credit_expected != null && row.warranty_credit_amount != null && (
+            <RecoveryDelta expected={row.warranty_credit_expected} received={row.warranty_credit_amount} />
+          )}
         </>
       }
       badge={
@@ -245,61 +328,141 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
         </>
       }
       expanded={
-        open && (isFiling || row.bucket === 'awaiting_credit') ? (
+        open && (isFiling || isReconciling) ? (
           <>
             {error && (
               <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
                 {error}
               </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Vendor">
-                <input value={vendor} onChange={(e) => setVendor(e.target.value)} className={inputCls} placeholder="Manufacturer" />
-              </Field>
-              <Field label="Claim / RMA #">
-                <input value={claimNumber} onChange={(e) => setClaimNumber(e.target.value)} className={inputCls} placeholder="Vendor reference" />
-              </Field>
-              {isFiling ? (
-                <Field label="Expected credit">
-                  <input type="number" step="0.01" min="0" value={creditExpected} onChange={(e) => setCreditExpected(e.target.value)} className={inputCls} placeholder="0.00" />
-                </Field>
-              ) : (
-                <Field label="Credit received">
-                  <input type="number" step="0.01" min="0" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} className={inputCls} placeholder="0.00" />
-                </Field>
-              )}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setOpen(false)}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              {isFiling ? (
-                <button
-                  onClick={() => post(
-                    { action: 'file', vendor, claim_number: claimNumber, credit_expected: creditExpected || null },
-                    'Failed to file the claim',
+            {isFiling ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <Field label="Vendor">
+                    <input value={vendor} onChange={(e) => setVendor(e.target.value)} className={inputCls} placeholder="Manufacturer" />
+                  </Field>
+                  <Field label="Claim / RMA #">
+                    <input value={claimNumber} onChange={(e) => setClaimNumber(e.target.value)} className={inputCls} placeholder="Vendor reference" />
+                  </Field>
+                  <Field label="Vendor labor rate ($/hr)">
+                    <input type="number" step="0.01" min="0" value={vendorLaborRate} onChange={(e) => setVendorLaborRate(e.target.value)} className={inputCls} placeholder="0.00" />
+                  </Field>
+                  <Field label="Expected credit">
+                    <input type="number" step="0.01" min="0" value={creditExpected} onChange={(e) => setCreditExpected(e.target.value)} className={inputCls} placeholder="0.00" />
+                  </Field>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {suggestionLoading
+                    ? 'Estimating expected credit…'
+                    : suggestion && (
+                        <>
+                          Based on {row.covered_parts.length} covered part{row.covered_parts.length === 1 ? '' : 's'} at cost
+                          {row.warranty_labor_covered && suggestion.vendorLaborRate
+                            ? ` + ${suggestion.hoursWorked.toFixed(2)} hrs × ${fmtMoney(suggestion.vendorLaborRate)}/hr`
+                            : ''}
+                          {suggestion.unknownCostParts > 0
+                            ? ` (+ ${suggestion.unknownCostParts} part${suggestion.unknownCostParts === 1 ? '' : 's'} with unknown cost, not included)`
+                            : ''}
+                          .
+                        </>
+                      )}
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setOpen(false)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => post(
+                      {
+                        action: 'file',
+                        vendor,
+                        claim_number: claimNumber,
+                        credit_expected: creditExpected || null,
+                        vendor_labor_rate: vendorLaborRate || null,
+                      },
+                      'Failed to file the claim',
+                    )}
+                    disabled={busy}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {busy ? 'Saving…' : 'Mark filed'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Vendor">
+                    <input value={vendor} onChange={(e) => setVendor(e.target.value)} className={inputCls} placeholder="Manufacturer" />
+                  </Field>
+                  <Field label="Claim / RMA #">
+                    <input value={claimNumber} onChange={(e) => setClaimNumber(e.target.value)} className={inputCls} placeholder="Vendor reference" />
+                  </Field>
+                </div>
+                <div className="space-y-2">
+                  {reconcileParts.map((p) => (
+                    <div key={p.index} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+                      <div className="sm:col-span-2 text-sm text-gray-700 dark:text-gray-300">
+                        {p.description} <span className="text-gray-400 dark:text-gray-500">×{p.qty}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Expected {suggestionLoading ? '…' : p.expected != null ? fmtMoney(p.expected) : '—'}
+                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={partCredits[p.index] ?? ''}
+                        onChange={(e) => setPartCredits((prev) => ({ ...prev, [p.index]: e.target.value }))}
+                        className={inputCls}
+                        placeholder="Actual credit"
+                      />
+                    </div>
+                  ))}
+                  {row.warranty_labor_covered && (
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end border-t border-gray-100 dark:border-gray-800 pt-2">
+                      <div className="sm:col-span-2 text-sm text-gray-700 dark:text-gray-300">
+                        Labor <span className="text-gray-400 dark:text-gray-500">×{(row.hours_worked ?? 0).toFixed(2)} hrs</span>
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Expected {laborExpected != null ? fmtMoney(laborExpected) : '—'}
+                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laborCreditInput}
+                        onChange={(e) => setLaborCreditInput(e.target.value)}
+                        className={inputCls}
+                        placeholder="Actual credit"
+                      />
+                    </div>
                   )}
-                  disabled={busy}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {busy ? 'Saving…' : 'Mark filed'}
-                </button>
-              ) : (
-                <button
-                  onClick={() => post(
-                    { action: 'credit', vendor, claim_number: claimNumber, credit_amount: creditAmount || null },
-                    'Failed to log the credit',
-                  )}
-                  disabled={busy}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
-                >
-                  {busy ? 'Saving…' : 'Mark credit received'}
-                </button>
-              )}
-            </div>
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-3">
+                  <span>Actual total {fmtMoney(actualTotal)}</span>
+                  {row.warranty_credit_expected != null && <span>of {fmtMoney(row.warranty_credit_expected)} expected</span>}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setOpen(false)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitCredit}
+                    disabled={busy}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {busy ? 'Saving…' : 'Mark credit received'}
+                  </button>
+                </div>
+              </>
+            )}
           </>
         ) : null
       }
@@ -319,6 +482,21 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
       onCancel={() => setConfirmingUndo(false)}
     />
     </>
+  )
+}
+
+// Internal margin-loss visibility, never a customer-facing figure or a
+// blocker: what the vendor actually credited vs. what was expected at file
+// time. A shortfall means the branch is eating the gap.
+function RecoveryDelta({ expected, received }: { expected: number; received: number }) {
+  const delta = Number(received) - Number(expected)
+  return (
+    <div
+      className={`text-xs mt-1 ${delta < 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}
+    >
+      Recovered {fmtMoney(received)} of {fmtMoney(expected)} expected
+      {delta < 0 && <span> (short {fmtMoney(Math.abs(delta))})</span>}
+    </div>
   )
 }
 

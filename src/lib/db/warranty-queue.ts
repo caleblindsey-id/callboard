@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { DigestDb } from '@/lib/digest/types'
 import { bucketOf, type WarrantyBucket, type WarrantyReviewStatus } from '@/lib/service-tickets/warranty'
-import type { ServiceTicketStatus } from '@/types/service-tickets'
+import type { ServiceTicketStatus, ServicePartUsed } from '@/types/service-tickets'
 
 export type { WarrantyBucket } from '@/lib/service-tickets/warranty'
 
@@ -21,6 +21,17 @@ const ACTIVE_REVIEW_STATUSES: ServiceTicketStatus[] = [
   'in_progress',
   'completed',
 ]
+
+// Covered-parts line the reconcile modal needs, mapped server-side from the
+// parts_used JSONB — covered lines only, so the row stays lean instead of
+// carrying every uncovered/billable line the queue never shows.
+export type WarrantyQueueCoveredPart = {
+  index: number
+  description: string
+  qty: number
+  unit_price: number
+  vendor_credit_amount: number | null
+}
 
 export type WarrantyQueueRow = {
   id: string
@@ -50,6 +61,14 @@ export type WarrantyQueueRow = {
   requested_by_name: string | null
   warranty_labor_covered: boolean
   days_since_requested: number | null
+  // Reconcile inputs (Round 5): the suggest-endpoint prefill and the reconcile
+  // modal's expected/actual columns.
+  hours_worked: number | null
+  warranty_vendor_labor_rate: number | null
+  warranty_labor_credit_amount: number | null
+  customer_bill_amount: number | null
+  billing_amount: number | null
+  covered_parts: WarrantyQueueCoveredPart[]
 }
 
 type RawRow = {
@@ -75,6 +94,12 @@ type RawRow = {
   warranty_review_requested_at: string | null
   warranty_review_requested_by_id: string | null
   warranty_labor_covered: boolean | null
+  hours_worked: number | null
+  warranty_vendor_labor_rate: number | null
+  warranty_labor_credit_amount: number | null
+  customer_bill_amount: number | null
+  billing_amount: number | null
+  parts_used: ServicePartUsed[] | null
 }
 
 function firstNonEmpty(...vals: (string | null | undefined)[]): string | null {
@@ -93,7 +118,9 @@ const SELECT = `id, work_order_number, status, billing_type, completed_at,
    customers(name),
    equipment(make, model, serial_number),
    warranty_review_status, warranty_review_note, warranty_review_requested_at,
-   warranty_review_requested_by_id, warranty_labor_covered`
+   warranty_review_requested_by_id, warranty_labor_covered,
+   hours_worked, warranty_vendor_labor_rate, warranty_labor_credit_amount,
+   customer_bill_amount, billing_amount, parts_used`
 
 export async function getWarrantyQueue(db?: DigestDb): Promise<WarrantyQueueRow[]> {
   const supabase = db ?? (await createClient())
@@ -185,6 +212,21 @@ export async function getWarrantyQueue(db?: DigestDb): Promise<WarrantyQueueRow[
         : null,
       warranty_labor_covered: r.warranty_labor_covered ?? false,
       days_since_requested: daysSince(r.warranty_review_requested_at),
+      hours_worked: r.hours_worked,
+      warranty_vendor_labor_rate: r.warranty_vendor_labor_rate,
+      warranty_labor_credit_amount: r.warranty_labor_credit_amount,
+      customer_bill_amount: r.customer_bill_amount,
+      billing_amount: r.billing_amount,
+      covered_parts: (r.parts_used ?? [])
+        .map((p, index) => ({ ...p, index }))
+        .filter((p) => p.warranty_covered)
+        .map((p) => ({
+          index: p.index,
+          description: p.description,
+          qty: Number(p.quantity) || 0,
+          unit_price: Number(p.unit_price) || 0,
+          vendor_credit_amount: p.vendor_credit_amount ?? null,
+        })),
     }
   })
 }
