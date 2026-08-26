@@ -9,7 +9,7 @@ import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { taxRatePercent } from '@/lib/tax'
 import { shippingChargeAmount } from '@/lib/shipping'
 import { estimateDiagnosticLine, signedDiagnostic } from '@/lib/service-tickets/diagnostic'
-import type { ServicePartUsed } from '@/types/service-tickets'
+import type { ServicePartUsed, WarrantyReviewStatus } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -46,6 +46,7 @@ export async function POST(
         diagnostic_charge,
         diagnostic_invoice_number,
         diagnostic_invoice_validation_status,
+        warranty_review_status,
         contact_name,
         contact_email,
         contact_phone,
@@ -125,19 +126,18 @@ export async function POST(
     // Trip charge is already baked into estimate_amount (server recompute).
     // Derive the line as total − labor − parts so the printed row always
     // reconciles with the bottom line, regardless of when it was snapshotted.
+    // Estimates are always full price (migration 160+, Round 6) — every part
+    // counts toward the subtraction, unfiltered by warranty coverage.
     const laborTotalPdf = ((raw.estimate_labor_hours as number) ?? 0) * ((raw.estimate_labor_rate as number) ?? 0)
     const partsTotalPdf = estimateParts
-      .filter((p) => !p.warranty_covered)
       .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
     const tripChargePdf = Math.max(0, ((raw.estimate_amount as number) ?? 0) - laborTotalPdf - partsTotalPdf)
 
     // Freight is NOT in estimate_amount (same as the diagnostic fee below) — it
     // is only known once the PO is placed, after approval. So it is added as a
     // display line rather than subtracted out of the derived trip charge.
-    const shippingChargePdf =
-      (raw.billing_type as string) === 'warranty'
-        ? 0
-        : shippingChargeAmount(raw.shipping_charge as number | null)
+    // Always full price now — no warranty zeroing.
+    const shippingChargePdf = shippingChargeAmount(raw.shipping_charge as number | null)
 
     // Diagnostic fee is NOT in estimate_amount — signed display-time line
     // (credit only when the invoice # is verified, migration 137).
@@ -160,7 +160,7 @@ export async function POST(
       contactPhone: raw.contact_phone,
       problemDescription: raw.problem_description,
       diagnosisNotes: raw.diagnosis_notes,
-      billingType: raw.billing_type,
+      warrantyReviewStatus: (raw.warranty_review_status as WarrantyReviewStatus | null) ?? null,
       laborHours: (raw.estimate_labor_hours as number) ?? 0,
       laborRate: (raw.estimate_labor_rate as number) ?? 0,
       parts: estimateParts.map((p) => ({
