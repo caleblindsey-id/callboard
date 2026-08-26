@@ -13,7 +13,7 @@ export default async function WarrantyQueuePage() {
     <div className="p-6 space-y-6">
       <PageHeader
         title="Warranty Claims"
-        subtitle="Completed warranty repairs move through the vendor-credit lifecycle here: file the claim, wait for the credit that offsets covered parts, then log it. A warranty ticket can't be billed until the credit is recorded."
+        subtitle="A ticket a tech flags for warranty review moves through this lifecycle: verify coverage, file the claim, wait for the credit that offsets covered parts, then log it. A warranty ticket can't be billed until it's verified and the credit is recorded."
       />
       <WarrantyQueueClient rows={rows} />
     </div>

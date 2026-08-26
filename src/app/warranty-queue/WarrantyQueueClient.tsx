@@ -5,8 +5,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck } from 'lucide-react'
 import type { WarrantyQueueRow, WarrantyBucket } from '@/lib/db/warranty-queue'
+import type { ServiceTicketStatus } from '@/types/service-tickets'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import QueueActionCard from '@/components/ui/QueueActionCard'
+import ServiceStatusBadge from '@/components/ServiceStatusBadge'
+import { formatDate } from '@/lib/format'
 
 // Aging tightens the longer a claim sits — an unfiled claim or an uncredited one
 // is parts cost the branch is carrying. Same escalation feel as the other queues.
@@ -24,7 +27,22 @@ function fmtMoney(amount: number | null | undefined): string {
   return `$${amount.toFixed(2)}`
 }
 
+// Which clock a bucket ages off, and the label that goes with it. to_review
+// ages off when the tech flagged it (it can still be sitting open/in_progress,
+// unlike the other buckets which only ever hold completed/billed work).
+function agingClock(row: WarrantyQueueRow): { days: number | null; label: string } {
+  if (row.bucket === 'to_review') return { days: row.days_since_requested, label: 'Requested' }
+  if (row.bucket === 'awaiting_credit') return { days: row.days_since_submitted, label: 'Filed' }
+  return { days: row.days_since_completed, label: 'Completed' }
+}
+
 const BUCKETS: { key: WarrantyBucket; title: string; blurb: string }[] = [
+  {
+    key: 'to_review',
+    title: 'To verify',
+    blurb:
+      'Flagged by a tech as possible warranty. Verify the serial or part is in its warranty period, then record the verdict on the ticket.',
+  },
   { key: 'to_file', title: 'To file', blurb: 'Warranty work is done — file the claim with the vendor.' },
   { key: 'awaiting_credit', title: 'Awaiting credit', blurb: 'Claim filed — waiting on the vendor credit.' },
   { key: 'received', title: 'Credit received', blurb: 'Credit logged — ready to bill and close.' },
@@ -48,12 +66,15 @@ export default function WarrantyQueueClient({ rows }: { rows: WarrantyQueueRow[]
       (r.serial_number ?? '').toLowerCase().includes(q) ||
       (r.warranty_vendor ?? '').toLowerCase().includes(q) ||
       (r.warranty_claim_number ?? '').toLowerCase().includes(q) ||
+      (r.warranty_review_note ?? '').toLowerCase().includes(q) ||
+      (r.requested_by_name ?? '').toLowerCase().includes(q) ||
       String(r.work_order_number ?? '').includes(q)
     )
   }, [rows, query])
 
   const byBucket = useMemo(() => {
     const m: Record<WarrantyBucket, WarrantyQueueRow[]> = {
+      to_review: [],
       to_file: [],
       awaiting_credit: [],
       received: [],
@@ -95,9 +116,13 @@ export default function WarrantyQueueClient({ rows }: { rows: WarrantyQueueRow[]
               <p className="text-sm text-gray-400 dark:text-gray-500">{b.title}: none</p>
             ) : (
               <div className="space-y-2">
-                {byBucket[b.key].map((r) => (
-                  <WarrantyClaimCard key={r.id} row={r} />
-                ))}
+                {byBucket[b.key].map((r) =>
+                  b.key === 'to_review' ? (
+                    <ToReviewCard key={r.id} row={r} />
+                  ) : (
+                    <WarrantyClaimCard key={r.id} row={r} />
+                  )
+                )}
               </div>
             )}
           </section>
@@ -150,11 +175,9 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
   // be chased. The only difference is that the customer was already invoiced.
   const isFiling = row.bucket === 'to_file' || row.bucket === 'billed_unclaimed'
 
-  const aging =
-    row.bucket === 'awaiting_credit'
-      ? agingBadge(row.days_since_submitted)
-      : agingBadge(row.days_since_completed)
-  const agingLabel = row.bucket === 'awaiting_credit' ? 'Filed' : row.bucket === 'received' ? 'Completed' : 'Completed'
+  const clock = agingClock(row)
+  const aging = agingBadge(clock.days)
+  const agingLabel = clock.label
 
   return (
     <>
@@ -296,6 +319,60 @@ function WarrantyClaimCard({ row }: { row: WarrantyQueueRow }) {
       onCancel={() => setConfirmingUndo(false)}
     />
     </>
+  )
+}
+
+// A to_review row is still an open ticket, not a completed one waiting on
+// office paperwork — there's nothing to file or credit here yet, only a
+// verdict to make. The verdict form itself lives on the ticket detail page
+// (WarrantyReviewPanel), so this card's only job is to surface the tech's
+// case and point the manager there.
+function ToReviewCard({ row }: { row: WarrantyQueueRow }) {
+  const clock = agingClock(row)
+  const aging = agingBadge(clock.days)
+
+  return (
+    <QueueActionCard
+      title={
+        <Link
+          href={`/service/${row.id}`}
+          className="hover:text-indigo-600 dark:hover:text-indigo-400"
+        >
+          {row.customer_name}
+        </Link>
+      }
+      sub={
+        <>
+          <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {row.work_order_number != null && <span>WO-{row.work_order_number}</span>}
+            <span>{row.equipment_label}{row.serial_number ? ` · S/N ${row.serial_number}` : ''}</span>
+            <ServiceStatusBadge status={row.status as ServiceTicketStatus} />
+          </div>
+          {row.warranty_review_note && (
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">&ldquo;{row.warranty_review_note}&rdquo;</p>
+          )}
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {row.requested_by_name && <span>{row.requested_by_name}</span>}
+            {row.warranty_review_requested_at && (
+              <span>{row.requested_by_name ? ' · ' : ''}{formatDate(row.warranty_review_requested_at)}</span>
+            )}
+          </div>
+        </>
+      }
+      badge={
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${aging.classes}`}>
+          {clock.label} {aging.label}
+        </span>
+      }
+      actions={
+        <Link
+          href={`/service/${row.id}`}
+          className="px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+        >
+          Review on ticket
+        </Link>
+      }
+    />
   )
 }
 

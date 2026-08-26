@@ -19,6 +19,7 @@ import {
   billingGateSatisfied,
 } from '@/lib/transitions/service'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
+import { warrantyBillingBlock, WarrantyReviewStatus } from '@/lib/service-tickets/warranty'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { partsOnOrder, partsAllFulfilled, validateNewManualPartRequests, hasNewRequestedPart, findPartMissingSynergyItemNumber, validateQuantityEdits, quantitySyncPatch } from '@/lib/parts'
@@ -287,7 +288,7 @@ export async function PATCH(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, shipping_charge, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
+      .select('status, customer_id, assigned_technician_id, parts_requested, estimate_amount, estimate_bypassed, billing_type, warranty_review_status, warranty_credit_received_at, labor_rate_type, photos, parts_used, equipment_make, equipment_model, equipment_serial_number, ticket_type, trip_charge_qty, shipping_charge, awaiting_pickup, ready_for_pickup_at, decline_resolved_at, diagnostic_invoice_number, equipment(make, model, serial_number, details_verified_at)')
       .eq('id', id)
       .single()
 
@@ -298,6 +299,24 @@ export async function PATCH(
     // Techs can only update their own assigned tickets
     if (isTechnician(user.role) && current.assigned_technician_id !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // TRANSITION SHIM (remove in Round 4): staff/techs can still write
+    // billing_type='warranty'|'partial_warranty' via the old field until the
+    // billing-type UI is retired. A ticket that's never been through the new
+    // review flow (warranty_review_status still null) would otherwise be
+    // invisible to the queue/gate, which are now keyed off review status —
+    // so auto-stamp it as a verified review on the spot.
+    if (
+      (filtered.billing_type === 'warranty' || filtered.billing_type === 'partial_warranty') &&
+      current.warranty_review_status == null
+    ) {
+      const now = new Date().toISOString()
+      filtered.warranty_review_status = 'verified'
+      filtered.warranty_review_decided_at = now
+      filtered.warranty_review_decided_by_id = user.id
+      filtered.warranty_labor_covered = filtered.billing_type === 'warranty'
+      filtered.warranty_review_decision_note = 'Auto-stamped from billing type (transition shim)'
     }
 
     // Freight is a TERM of billing_amount, and billing_amount is computed once,
@@ -596,28 +615,27 @@ export async function PATCH(
           }
         }
 
-        // --- Hard block: warranty work isn't billed until the vendor credit
-        // lands. A warranty/partial-warranty repair files a claim with the
-        // vendor and waits for the credit that offsets covered parts; billing
-        // before that closes the claim prematurely. Cleared by logging the
-        // credit on the warranty-claims worklist (warranty_credit_received_at).
+        // --- Hard block: warranty work isn't billed until the office has
+        // verified coverage and, if covered, the vendor credit has landed.
+        // See src/lib/service-tickets/warranty.ts for the review lifecycle.
         const billingType =
           (filtered.billing_type as string | undefined) ?? current.billing_type ?? 'non_warranty'
-        if (billingType === 'warranty' || billingType === 'partial_warranty') {
-          const creditReceived = filtered.warranty_credit_received_at ?? null
-          if (!creditReceived) {
-            const { data: full } = await supabase
-              .from('service_tickets')
-              .select('warranty_credit_received_at')
-              .eq('id', id)
-              .single()
-            if (!full?.warranty_credit_received_at) {
-              return NextResponse.json(
-                { error: 'Vendor credit not yet received — log the warranty credit before billing this ticket.' },
-                { status: 400 }
-              )
-            }
-          }
+        const warrantyBlock = warrantyBillingBlock({
+          warranty_review_status: current.warranty_review_status as WarrantyReviewStatus | null,
+          warranty_credit_received_at: current.warranty_credit_received_at,
+          billing_type: billingType,
+        })
+        if (warrantyBlock === 'pending_review') {
+          return NextResponse.json(
+            { error: 'Warranty review pending — record the coverage verdict before billing this ticket.' },
+            { status: 400 }
+          )
+        }
+        if (warrantyBlock === 'awaiting_credit') {
+          return NextResponse.json(
+            { error: 'Vendor credit not yet received — log the warranty credit before billing this ticket.' },
+            { status: 400 }
+          )
         }
 
         // --- Hard block: a PO-required customer can't be billed without a PO ---

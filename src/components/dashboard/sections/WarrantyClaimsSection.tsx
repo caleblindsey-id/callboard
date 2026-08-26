@@ -7,6 +7,7 @@ export default async function WarrantyClaimsSection() {
   if (counts.actionable === 0) return null
 
   const parts: string[] = []
+  if (counts.toReview > 0) parts.push(`${counts.toReview} to verify`)
   if (counts.toFile > 0) parts.push(`${counts.toFile} to file`)
   if (counts.awaitingCredit > 0) parts.push(`${counts.awaitingCredit} awaiting credit`)
   // Counted in `actionable`, so it has to be named here too or the headline
