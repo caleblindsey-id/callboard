@@ -337,10 +337,12 @@ export async function completeServiceTicket(
     parts_used: ServiceTicketRow['parts_used']
     completion_notes: string | null
     billing_amount: number
+    // Post-coverage customer total (migration 160+ review lifecycle). null =
+    // same as billing_amount (not verified-warranty, or coverage denied).
+    customer_bill_amount: number | null
     customer_signature: string | null
     customer_signature_name: string | null
     photos: ServiceTicketRow['photos']
-    warranty_labor_covered?: boolean
     machine_hours?: number | null
     date_code?: string | null
     // Rate class the labor was actually billed at. Only present when the
@@ -366,10 +368,10 @@ export async function completeServiceTicket(
       parts_used: data.parts_used,
       completion_notes: data.completion_notes,
       billing_amount: data.billing_amount,
+      customer_bill_amount: data.customer_bill_amount,
       customer_signature: data.customer_signature,
       customer_signature_name: data.customer_signature_name,
       photos: data.photos,
-      warranty_labor_covered: data.warranty_labor_covered ?? false,
       machine_hours: data.machine_hours ?? null,
       date_code: data.date_code ?? null,
       ...(data.labor_rate_type ? { labor_rate_type: data.labor_rate_type } : {}),

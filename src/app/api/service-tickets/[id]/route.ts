@@ -41,7 +41,6 @@ const STAFF_ALLOWED_FIELDS = [
   'status',
   'priority',
   'ticket_type',
-  'billing_type',
   'problem_description',
   'contact_name',
   'contact_email',
@@ -118,12 +117,6 @@ const TECH_ALLOWED_FIELDS = [
   'estimate_approved',
   'estimate_approved_at',
   'manual_decision_note',
-  // A repair often turns out to be a warranty claim once the tech is on the
-  // machine, but it was keyed non-warranty. Let the tech correct/confirm the
-  // billing type on their OWN ticket (the ownership check below scopes this),
-  // including the "confirm at completion" flow. billing_type only drives the
-  // $0-to-customer math; the vendor-credit side stays staff-owned.
-  'billing_type',
   // Techs set the trip count on their OWN ticket (the ownership check below
   // scopes this). Only the quantity — the per-trip RATE stays office-controlled
   // in Settings. Mirrors tech part-price edit / approve-estimate access.
@@ -198,11 +191,6 @@ export async function PATCH(
 
     if (filtered.labor_rate_type !== undefined && !isLaborRateType(filtered.labor_rate_type)) {
       return NextResponse.json({ error: 'Invalid labor_rate_type' }, { status: 400 })
-    }
-
-    if (filtered.billing_type !== undefined &&
-        !['non_warranty', 'warranty', 'partial_warranty'].includes(filtered.billing_type as string)) {
-      return NextResponse.json({ error: 'Invalid billing_type' }, { status: 400 })
     }
 
     if (Object.keys(filtered).length === 0) {
@@ -301,24 +289,6 @@ export async function PATCH(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // TRANSITION SHIM (remove in Round 4): staff/techs can still write
-    // billing_type='warranty'|'partial_warranty' via the old field until the
-    // billing-type UI is retired. A ticket that's never been through the new
-    // review flow (warranty_review_status still null) would otherwise be
-    // invisible to the queue/gate, which are now keyed off review status —
-    // so auto-stamp it as a verified review on the spot.
-    if (
-      (filtered.billing_type === 'warranty' || filtered.billing_type === 'partial_warranty') &&
-      current.warranty_review_status == null
-    ) {
-      const now = new Date().toISOString()
-      filtered.warranty_review_status = 'verified'
-      filtered.warranty_review_decided_at = now
-      filtered.warranty_review_decided_by_id = user.id
-      filtered.warranty_labor_covered = filtered.billing_type === 'warranty'
-      filtered.warranty_review_decision_note = 'Auto-stamped from billing type (transition shim)'
-    }
-
     // Freight is a TERM of billing_amount, and billing_amount is computed once,
     // server-side, at completion. Accepting a shipping_charge edit afterwards
     // would store a number that no total anywhere reflects — the PDF and the
@@ -355,23 +325,13 @@ export async function PATCH(
     let didOverride = false
 
     // --- Margin floor (parts only, per-line) ---
-    // A billable part line's price can't drop below 15% gross margin over loaded
+    // A part line's price can't drop below 15% gross margin over loaded
     // cost (min price = cost / 0.85). Cost is sourced from the products catalog
     // here (server-authoritative); a client-supplied unit_cost is never trusted.
-    // Lines with no catalog cost are allowed through (flagged in the UI). Only
-    // BILLABLE lines are floored — warranty-covered parts aren't billed, so they
-    // are excluded (mirrors the estimate/billing math).
+    // Lines with no catalog cost are allowed through (flagged in the UI). Every
+    // line is floored now (migration 160+ review lifecycle) — warranty coverage
+    // no longer excludes a part from billing, so the floor applies uniformly.
     {
-      const billingType =
-        (filtered.billing_type as string | undefined) ?? current.billing_type ?? 'non_warranty'
-      // Restrict an array to its billable lines for the current billing type.
-      const billableOnly = (lines: ServicePartUsed[]): ServicePartUsed[] =>
-        billingType === 'warranty'
-          ? []
-          : billingType === 'partial_warranty'
-            ? lines.filter((p) => !p.warranty_covered)
-            : lines
-
       const partFields = (['estimate_parts', 'parts_used'] as const).filter(
         (k) => Array.isArray(filtered[k]),
       )
@@ -383,7 +343,7 @@ export async function PATCH(
         // Techs must never see the min price (it back-derives loaded cost).
         const hideFloor = isTechnician(user.role)
         for (const key of partFields) {
-          const billable = billableOnly(filtered[key] as ServicePartUsed[])
+          const billable = filtered[key] as ServicePartUsed[]
           const check = checkPartLines(billable, lookup)
           if (!check.ok) {
             // Manager override: a manager who supplied an explicit override flag
@@ -426,11 +386,10 @@ export async function PATCH(
       // lines). Keeps the per-line floor from being bypassed via the total.
       // Once a manager has approved a below-floor override on THIS PATCH, the
       // floor relaxes to the loaded-cost sum (still never below cost).
-      if (typeof filtered.billing_amount === 'number' && billingType !== 'warranty') {
-        const effParts = Array.isArray(filtered.parts_used)
+      if (typeof filtered.billing_amount === 'number') {
+        const billable = Array.isArray(filtered.parts_used)
           ? (filtered.parts_used as ServicePartUsed[])
           : ((current.parts_used as ServicePartUsed[] | null) ?? [])
-        const billable = billableOnly(effParts)
         const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
         const floorPct = didOverride ? COST_FLOOR : MARGIN_FLOOR
         let floorSum = 0
@@ -680,18 +639,24 @@ export async function PATCH(
       // reopen branch below already cleared completion data while preserving the
       // estimate, so a restart naturally re-prefills.
       if (nextStatus === 'in_progress') {
-        // Pre-authorized work: a non-warranty ticket may start work straight
-        // from 'open' without an estimate, but only with an authorizer on
-        // record (who told us to proceed). Warranty/partial-warranty tickets
-        // already skip the estimate and stay note-free — that path is unchanged.
-        // Mirrors the manual approve/decline note requirement above.
+        // Pre-authorized work: a ticket may start work straight from 'open'
+        // without an estimate, but only with an authorizer on record (who told
+        // us to proceed) — UNLESS the office has already verified warranty
+        // coverage, which stands in for that authorization. Both paths now go
+        // through the same estimate_bypassed/estimate_approved stamping, so a
+        // verified-warranty ticket can route in_progress → estimated the same
+        // as a manually-bypassed one (previously it never got estimate_bypassed
+        // and so could never take that path). Mirrors the manual approve/
+        // decline note requirement above.
         if (currentStatus === 'open') {
-          const billingType = (current.billing_type as string | null) ?? 'non_warranty'
-          const isWarranty = billingType === 'warranty' || billingType === 'partial_warranty'
-          if (!isWarranty) {
-            const note = typeof filtered.manual_decision_note === 'string'
-              ? filtered.manual_decision_note.trim()
-              : ''
+          const isVerifiedWarranty = current.warranty_review_status === 'verified'
+          const note = typeof filtered.manual_decision_note === 'string'
+            ? filtered.manual_decision_note.trim()
+            : ''
+          if (isVerifiedWarranty) {
+            filtered.manual_decision_note =
+              note.length >= 2 ? note : 'Warranty verified - no estimate required'
+          } else {
             if (note.length < 2) {
               return NextResponse.json(
                 { error: 'An authorization note is required to start work without an estimate.' },
@@ -699,10 +664,10 @@ export async function PATCH(
               )
             }
             filtered.manual_decision_note = note
-            filtered.estimate_bypassed = true
-            filtered.estimate_approved = true
-            filtered.estimate_approved_at = new Date().toISOString()
           }
+          filtered.estimate_bypassed = true
+          filtered.estimate_approved = true
+          filtered.estimate_approved_at = new Date().toISOString()
         }
         const { data: ticketData } = await supabase
           .from('service_tickets')
@@ -954,21 +919,20 @@ export async function PATCH(
       filtered.estimate_labor_rate = laborRate
 
       const laborTotal = (Number.isFinite(hours) ? hours : 0) * laborRate
-      const billingType = current.billing_type ?? 'non_warranty'
-      const partsTotal = billingType === 'warranty'
-        ? 0
-        : parts
-            .filter((p: ServicePartUsed) => !p.warranty_covered)
-            .reduce((sum: number, p: ServicePartUsed) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+      // Every line prices at full — estimates are no longer zeroed for
+      // warranty (migration 160+ review lifecycle; see /complete for the
+      // matching billing-side change).
+      const partsTotal = parts.reduce(
+        (sum: number, p: ServicePartUsed) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
+      )
 
       // Trip charge on the estimate so the approved total matches the final bill.
       // trips × per-trip rate; use the new qty if this PATCH changes it, else stored.
       const tripQtyRaw = (filtered.trip_charge_qty !== undefined
         ? filtered.trip_charge_qty
         : current.trip_charge_qty) as number | null
-      const tripCharge = billingType === 'warranty'
-        ? 0
-        : effectiveTripChargeQty(tripQtyRaw, current.ticket_type as string) * await getTripChargeRate()
+      const tripCharge =
+        effectiveTripChargeQty(tripQtyRaw, current.ticket_type as string) * await getTripChargeRate()
 
       // Freight is deliberately NOT part of estimate_amount, exactly like the
       // diagnostic fee. Both are known only AFTER the quote: freight arrives

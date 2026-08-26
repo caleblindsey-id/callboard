@@ -11,7 +11,7 @@ import DraftRestoredToast from '@/components/DraftRestoredToast'
 import { useFormDraft } from '@/lib/hooks/useFormDraft'
 import type { EquipmentRow, UserRow, UserRole, ContactRow, ShipToLocationRow } from '@/types/database'
 import { MANAGER_ROLES } from '@/types/database'
-import type { ServiceTicketType, ServiceBillingType, ServicePriority } from '@/types/service-tickets'
+import type { ServiceTicketType, ServicePriority } from '@/types/service-tickets'
 
 const DRAFT_KEY = 'draft-create-service-ticket'
 
@@ -28,7 +28,6 @@ interface CreateServiceTicketDraft {
   eqDescription: string
   eqLocation: string
   ticketType: ServiceTicketType
-  billingType: ServiceBillingType
   priority: ServicePriority
   laborRateType: string
   problemDescription: string
@@ -253,7 +252,6 @@ export function CreateServiceTicketForm({
   // --- Ticket fields ---
   // Techs are locked to outside; office defaults to inside (the common bench case).
   const [ticketType, setTicketType] = useState<ServiceTicketType>(isTech ? 'outside' : 'inside')
-  const [billingType, setBillingType] = useState<ServiceBillingType>('non_warranty')
   const [priority, setPriority] = useState<ServicePriority>('standard')
   const [laborRateType, setLaborRateType] = useState('')
   const [problemDescription, setProblemDescription] = useState('')
@@ -303,7 +301,6 @@ export function CreateServiceTicketForm({
     eqDescription,
     eqLocation,
     ticketType,
-    billingType,
     priority,
     laborRateType,
     problemDescription,
@@ -320,7 +317,7 @@ export function CreateServiceTicketForm({
   }), [
     customerId, selectedCustomerName, customerSearch, shipToId,
     equipmentId, unknownEquipment, eqMake, eqModel, eqSerial, eqDescription, eqLocation,
-    ticketType, billingType, priority, laborRateType, problemDescription,
+    ticketType, priority, laborRateType, problemDescription,
     diagnosticInvoiceNumber, diagnosticCharge,
     contactName, contactEmail, contactPhone,
     serviceAddress, serviceCity, serviceState, serviceZip, technicianId,
@@ -363,7 +360,6 @@ export function CreateServiceTicketForm({
       // Techs stay locked to outside even from a stale draft that saved 'inside'.
       if (isTech) setTicketType('outside')
       else if (d.ticketType === 'inside' || d.ticketType === 'outside') setTicketType(d.ticketType)
-      if (d.billingType) setBillingType(d.billingType)
       if (d.priority) setPriority(d.priority)
       setLaborRateType(d.laborRateType || '')
       setProblemDescription(d.problemDescription || '')
@@ -399,7 +395,6 @@ export function CreateServiceTicketForm({
     setEqLocation('')
     setEqConflictId(null)
     setTicketType(isTech ? 'outside' : 'inside')
-    setBillingType('non_warranty')
     setPriority('standard')
     setLaborRateType('standard')
     setProblemDescription('')
@@ -780,7 +775,6 @@ export function CreateServiceTicketForm({
       customer_id: customerId,
       ship_to_location_id: shipToId ? parseInt(shipToId, 10) : undefined,
       ticket_type: ticketType,
-      billing_type: billingType,
       priority,
       labor_rate_type: laborRateType,
       problem_description: problemDescription.trim(),
@@ -1340,21 +1334,11 @@ export function CreateServiceTicketForm({
               </div>
             )}
 
-            {/* Billing Type / Priority / Labor Rate */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className={labelClass}>Billing Type</label>
-                <select
-                  value={billingType}
-                  onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
-                  className={inputClass}
-                >
-                  <option value="non_warranty">Non-Warranty</option>
-                  <option value="warranty">Warranty</option>
-                  <option value="partial_warranty">Partial Warranty</option>
-                </select>
-              </div>
-
+            {/* Priority / Labor Rate. Billing type is no longer set at
+                creation — every ticket starts non_warranty; a tech requests
+                warranty review from the ticket detail page once they're on
+                the machine (migration 160+ review lifecycle). */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Priority</label>
                 <select

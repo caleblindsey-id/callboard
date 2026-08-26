@@ -70,7 +70,7 @@ export default function NextStepBar({
 }: NextStepBarProps) {
   return (
     <NextStepShell label="Next Step">
-      {/* Open + warranty/partial → skip the estimate, start work */}
+      {/* Open + verified warranty → skip the estimate, start work */}
       {isWarrantyOpen && (
         <button
           onClick={onStartWork}
@@ -81,8 +81,9 @@ export default function NextStepBar({
         </button>
       )}
 
-      {/* Open + non-warranty → build / revise the estimate (opens builder below),
-          or skip the estimate entirely when the work is already authorized. */}
+      {/* Open + not-verified-warranty → build / revise the estimate (opens
+          builder below), or skip the estimate entirely when the work is
+          already authorized. */}
       {ticket.status === SERVICE_STATUS.OPEN && !isWarrantyOpen && !showEstimateForm && (
         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
           <button

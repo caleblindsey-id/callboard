@@ -27,10 +27,14 @@ export function estimateDiagnosticLine(t: {
   diagnostic_charge: number | string | null
   diagnostic_invoice_number: string | null
   diagnostic_invoice_validation_status: string | null
-  billing_type: string | null
+  // Unused as of the migration 160+ review lifecycle — the diagnostic line now
+  // renders/signs by the same presence/validation rules regardless of warranty
+  // status. Kept in the signature (rather than dropped) because at least one
+  // caller (estimate-pdf/route.ts, Round 6) still passes it as an object
+  // literal, which TS's excess-property check would reject if this field were
+  // removed from the type.
+  billing_type?: string | null
 }): EstimateDiagnosticLine | null {
-  // Warranty estimates are zeroed everywhere; no diagnostic line either.
-  if (t.billing_type === 'warranty') return null
   const charge = Number(t.diagnostic_charge ?? 0) || 0
   if (charge <= 0) return null
   const invoice = String(t.diagnostic_invoice_number ?? '').trim()

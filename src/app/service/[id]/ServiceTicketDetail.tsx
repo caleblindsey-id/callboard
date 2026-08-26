@@ -42,13 +42,12 @@ import EstimateSection from './EstimateSection'
 import PartsSection from './PartsSection'
 import CompletionSection from './CompletionSection'
 import NextStepBar from './NextStepBar'
-import { Badge, Card, InfoField, billingTypeLabels } from './detail-ui'
+import { Badge, Card, InfoField } from './detail-ui'
 import ChangeLocationSection from '@/app/tickets/[id]/ChangeLocationSection'
 import ChangeBillToSection from '@/app/tickets/[id]/ChangeBillToSection'
 import type {
   ServiceTicketDetail as ServiceTicketDetailType,
   ServiceTicketStatus,
-  ServiceBillingType,
   ServiceTicketType,
   PartRequest,
   ServicePartUsed,
@@ -84,10 +83,9 @@ interface ServiceTicketDetailProps {
 // aren't saved in drafts" convention in SubmitLeadModal). Estimate-phase
 // fields are out of scope (Round 9 targets the completion form only).
 interface ServiceCompletionDraft {
-  billingType: ServiceBillingType
-  // Same lifecycle as billingType: picked on the completion form and only sent
-  // when the job is marked complete, so it isn't covered by the server autosave
-  // and would otherwise be lost on a mid-completion refresh (feedback #83).
+  // Picked on the completion form and only sent when the job is marked
+  // complete, so it isn't covered by the server autosave and would otherwise
+  // be lost on a mid-completion refresh (feedback #83).
   laborRateType: string
   hoursWorked: string
   tripChargeQty: string
@@ -448,10 +446,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // mirroring the create form (CreateServiceTicketForm).
   const [technicians, setTechnicians] = useState<UserRow[]>([])
   const [assignedTechId, setAssignedTechId] = useState(ticket.assigned_technician_id ?? '')
-  // Staff-editable billing type (warranty / non-warranty). The badge above shows
-  // it at a glance; staff can correct a mis-keyed ticket here (API already allows
-  // billing_type in STAFF_ALLOWED_FIELDS). Techs use the completion-form confirm.
-  const [billingType, setBillingType] = useState<ServiceBillingType>(ticket.billing_type)
   // Staff-editable ticket type (inside/bench vs outside/field). Badge above shows
   // it at a glance; staff can correct a mis-keyed ticket here (API already allows
   // ticket_type in STAFF_ALLOWED_FIELDS). Switching to "outside" turns on the
@@ -1281,10 +1275,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // mid-completion doesn't lose the form on refresh. Keyed by ticket id, and
   // only enabled during the completion phase (not the estimate builder).
   const serviceCompletionDraftState = useMemo<ServiceCompletionDraft>(() => ({
-    billingType, laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
     completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
   }), [
-    billingType, laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
+    laborRateType, hoursWorked, tripChargeQty, machineHours, dateCode,
     completionNotes, completionParts, aceLaborOpen, aceHours, aceReason,
   ])
 
@@ -1308,7 +1302,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       // server value with a stale local one.
       const serverLastSaved = new Date(ticket.updated_at).getTime()
       if (!Number.isFinite(lastEditedAt) || lastEditedAt <= serverLastSaved) return
-      if (draft.billingType) setBillingType(draft.billingType)
       if (draft.laborRateType) setLaborRateType(draft.laborRateType)
       setHoursWorked(draft.hoursWorked ?? '')
       setTripChargeQty(draft.tripChargeQty ?? tripChargeQty)
@@ -1853,19 +1846,12 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     }
 
     await apiAction(async () => {
-      // Persist a warranty correction before completing — the /complete route
-      // recomputes billing from the STORED billing_type, so it must be saved
-      // first for the $0 math to apply.
-      if (billingType !== ticket.billing_type) {
-        await patchTicket({ billing_type: billingType })
-      }
       const res = await requestWithMarginOverride(`/api/service-tickets/${ticket.id}/complete`, 'POST', {
         completed_at: new Date().toISOString(),
         hours_worked: hours,
         // Rate class the completer picked on the form. Sent with the completion
-        // rather than PATCHed first (like billing_type above) so the stored
-        // labor_rate_type and the billing_amount computed from it land in the
-        // same UPDATE and can't disagree (feedback #83).
+        // so the stored labor_rate_type and the billing_amount computed from it
+        // land in the same UPDATE and can't disagree (feedback #83).
         labor_rate_type: laborRateType,
         trip_charge_qty: parseFloat(tripChargeQty) || 0,
         parts_used: toServicePartUsed(completionParts),
@@ -2005,8 +1991,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // Un-triaged parts block completion server-side (complete/route.ts). Mirror it
   // here so the tech sees why Complete is unavailable instead of hitting a 409.
   const reviewPartsCount = partsAwaitingReview(partsRequested).length
+  // Every part lines at full price now (migration 160+ review lifecycle) —
+  // warranty coverage no longer zeroes anything in the billing preview.
   const partsTotal = completionParts
-    .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   // Completion labor rate follows the rate class selected on the completion
   // form, not just the type stored at page load, so the on-screen billing
@@ -2014,10 +2001,9 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   // customer-resolved rates are already on the client via laborRates.
   const effectiveLaborRate = laborRates?.[laborRateType] ?? laborRate
   const laborTotal = (parseFloat(hoursWorked) || 0) * effectiveLaborRate
-  // Trip charge billed (0 on full-warranty tickets, matching the server).
-  // Billed trip charge = trips × per-trip rate (0 on full-warranty tickets).
+  // Billed trip charge = trips × per-trip rate.
   const tripChargeQtyNum = parseFloat(tripChargeQty) || 0
-  const tripChargeNum = ticket.billing_type === 'warranty' ? 0 : tripChargeQtyNum * tripChargeRate
+  const tripChargeNum = tripChargeQtyNum * tripChargeRate
   // Diagnostic fee mirrors the server: a separately-invoiced diagnostic (has an
   // invoice number) is a credit (subtracted) so the customer isn't double-billed;
   // otherwise it's a normal added charge.
@@ -2026,40 +2012,33 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     ? -diagnosticChargeNum
     : diagnosticChargeNum
   // Inbound freight (feedback #80) — office-set on the ticket, so it's read
-  // straight off the row rather than from any form field. 0 on full-warranty,
-  // matching how the complete route computed billing_amount.
-  const shippingChargeNum =
-    ticket.billing_type === 'warranty' ? 0 : shippingChargeAmount(ticket.shipping_charge)
-  const billingTotal = ticket.billing_type === 'warranty'
-    ? 0
-    : laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum + shippingChargeNum
+  // straight off the row rather than from any form field.
+  const shippingChargeNum = shippingChargeAmount(ticket.shipping_charge)
+  const billingTotal = laborTotal + partsTotal + tripChargeNum + signedDiagnosticNum + shippingChargeNum
   // Sales tax (parts only, display-only) — mirrors the work-order PDF so the
-  // on-screen total matches what the customer sees. 0 on warranty (no parts billed).
+  // on-screen total matches what the customer sees.
   const taxRateFraction = (taxRatePercent ?? 0) / 100
-  const billTaxAmount = ticket.billing_type === 'warranty' ? 0 : computePartsTax(partsTotal, taxRateFraction)
+  const billTaxAmount = computePartsTax(partsTotal, taxRateFraction)
 
   // Estimate computed totals. The rate type can be re-picked in the builder, so the
   // preview uses the resolved rate for the selected type (server re-snapshots on submit).
   const effectiveEstRate = laborRates?.[estimateRateType] ?? laborRate
   const estLaborTotal = (parseFloat(estimateLaborHours) || 0) * effectiveEstRate
   const estPartsTotal = estimateParts
-    .filter((p) => !p.warrantyCovered)
     .reduce((sum, p) => sum + (parseFloat(p.quantity) || 0) * (parseFloat(p.unitPrice) || 0), 0)
   // Mirrors the server's estimate recompute exactly — which excludes freight,
   // for the same reason it excludes the diagnostic fee (see the PATCH route).
-  const estTotal = ticket.billing_type === 'warranty' ? 0 : estLaborTotal + estPartsTotal + tripChargeNum
-  const estTaxAmount = ticket.billing_type === 'warranty' ? 0 : computePartsTax(estPartsTotal, taxRateFraction)
+  const estTotal = estLaborTotal + estPartsTotal + tripChargeNum
+  const estTaxAmount = computePartsTax(estPartsTotal, taxRateFraction)
 
   // Sales tax for the READ-ONLY summary cards (saved estimate / completed billing),
   // computed from the persisted parts so the on-screen review matches the PDF.
   const savedEstPartsSubtotal = (ticket.estimate_parts ?? [])
-    .filter((p) => !p.warranty_covered)
     .reduce((sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
-  const savedEstTax = ticket.billing_type === 'warranty' ? 0 : computePartsTax(savedEstPartsSubtotal, taxRateFraction)
+  const savedEstTax = computePartsTax(savedEstPartsSubtotal, taxRateFraction)
   const savedBillPartsSubtotal = (ticket.parts_used ?? [])
-    .filter((p) => !p.warranty_covered)
     .reduce((sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
-  const savedBillTax = ticket.billing_type === 'warranty' ? 0 : computePartsTax(savedBillPartsSubtotal, taxRateFraction)
+  const savedBillTax = computePartsTax(savedBillPartsSubtotal, taxRateFraction)
 
   // Service address
   const serviceAddress = ticket.ticket_type === 'outside'
@@ -2160,7 +2139,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     : []
   const isWarrantyOpen =
     ticket.status === SERVICE_STATUS.OPEN &&
-    (ticket.billing_type === 'warranty' || ticket.billing_type === 'partial_warranty')
+    ticket.warranty_review_status === 'verified'
   const viewerHasPrimaryAction =
     isWarrantyOpen ||
     (ticket.status === SERVICE_STATUS.OPEN && !showEstimateForm) ||
@@ -2214,26 +2193,22 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
     ticket.status === SERVICE_STATUS.COMPLETED || ticket.status === SERVICE_STATUS.BILLED
   const assignmentDirty = {
     tech: assignedTechId !== (ticket.assigned_technician_id ?? ''),
-    billing: billingType !== ticket.billing_type,
     ticketType: ticketType !== ticket.ticket_type,
     labor: !laborTypeLocked && laborRateType !== (ticket.labor_rate_type ?? 'standard'),
   }
   const assignmentIsDirty =
-    assignmentDirty.tech || assignmentDirty.billing || assignmentDirty.ticketType || assignmentDirty.labor
+    assignmentDirty.tech || assignmentDirty.ticketType || assignmentDirty.labor
 
   async function handleSaveAssignment() {
     await apiAction(async () => {
       const batch: Record<string, unknown> = {}
       if (assignmentDirty.tech) batch.assigned_technician_id = assignedTechId || null
-      if (assignmentDirty.billing) batch.billing_type = billingType
       if (assignmentDirty.ticketType) batch.ticket_type = ticketType
       if (Object.keys(batch).length > 0) {
         await patchTicket(batch)
       }
-      // labor_rate_type triggers the server's estimate recompute, which reads
-      // the ticket's STORED billing_type rather than this same request's value
-      // — sent as its own PATCH, after the batch above commits, so a same-save
-      // billing_type change is already persisted before the recompute runs.
+      // labor_rate_type triggers the server's estimate recompute — sent as its
+      // own PATCH, after the batch above commits.
       if (assignmentDirty.labor) {
         await patchTicket({ labor_rate_type: laborRateType })
       }
@@ -2255,9 +2230,10 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
         enteredAt={ticket.updated_at}
       />
 
-      {/* Ticket attributes — priority / type / billing / assignment.
-          Sits directly under the status card so the viewer knows what kind of
-          ticket this is before the alerts and the Next Step action. Status
+      {/* Ticket attributes — priority / type / assignment. Billing type is
+          retired (see the Warranty panel below for coverage state); this
+          card just orients the viewer before the alerts and the Next Step
+          action. Sits directly under the status card. Status
           itself is owned by the WorkflowStatusCard above (not repeated here). */}
       <Card>
         <div className="flex flex-wrap items-center gap-2">
@@ -2267,10 +2243,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           {ticketTypeConfig[ticket.ticket_type] && (
             <Badge {...ticketTypeConfig[ticket.ticket_type]} />
           )}
-          <Badge
-            label={billingTypeLabels[ticket.billing_type] ?? ticket.billing_type}
-            classes="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-          />
           <div className="ml-auto flex items-center gap-3">
             <span className="text-sm text-gray-500 dark:text-gray-400">
               Created {new Date(ticket.created_at).toLocaleDateString()}
@@ -2318,25 +2290,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
                 {technicians.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
-              </select>
-            </div>
-
-            {/* Billing type — correct a mis-keyed warranty/non-warranty ticket.
-                Warranty bills the customer $0 and routes the ticket through the
-                vendor-credit worklist before it can be billed. */}
-            <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
-                Billing Type
-              </label>
-              <select
-                value={billingType}
-                onChange={(e) => setBillingType(e.target.value as ServiceBillingType)}
-                disabled={loading}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2.5 sm:py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500 min-h-[44px] sm:min-h-0 disabled:opacity-50"
-              >
-                <option value="non_warranty">Non-Warranty</option>
-                <option value="warranty">Warranty</option>
-                <option value="partial_warranty">Partial Warranty</option>
               </select>
             </div>
 
@@ -3094,8 +3047,6 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           completionOpen={completionOpen}
           equipmentToVerify={equipmentToVerify}
           onEquipmentVerified={handleEquipmentVerified}
-          billingType={billingType}
-          setBillingType={setBillingType}
           laborRateType={laborRateType}
           setLaborRateType={setLaborRateType}
           hoursWorked={hoursWorked}
@@ -3161,7 +3112,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
               ${((ticket.hours_worked ?? 0) * laborRate).toFixed(2)}
             </InfoField>
             <InfoField label="Parts Total">
-              ${(ticket.parts_used ?? []).reduce((sum, p) => sum + (p.warranty_covered ? 0 : p.quantity * p.unit_price), 0).toFixed(2)}
+              ${(ticket.parts_used ?? []).reduce((sum, p) => sum + p.quantity * p.unit_price, 0).toFixed(2)}
             </InfoField>
             {savedBillTax > 0 && (
               <>
