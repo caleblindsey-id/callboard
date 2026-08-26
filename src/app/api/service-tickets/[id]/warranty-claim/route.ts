@@ -54,10 +54,10 @@ export async function POST(
 
     const supabase = await createClient()
 
-    // Guard to a real warranty/partial-warranty ticket.
+    // Guard to a ticket with a verified warranty review.
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('id, billing_type, deleted_at')
+      .select('id, billing_type, warranty_review_status, deleted_at')
       .eq('id', id)
       .single()
     if (fetchError || !current) {
@@ -66,8 +66,13 @@ export async function POST(
     if (current.deleted_at) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
-    if (current.billing_type !== 'warranty' && current.billing_type !== 'partial_warranty') {
-      return NextResponse.json({ error: 'This is not a warranty ticket.' }, { status: 400 })
+    const isLegacyWarranty =
+      current.warranty_review_status == null &&
+      (current.billing_type === 'warranty' || current.billing_type === 'partial_warranty')
+    // Legacy leg for Round 7 removal: should be unreachable post-160-backfill,
+    // but kept belt-and-braces until that's confirmed clean.
+    if (current.warranty_review_status !== 'verified' && !isLegacyWarranty) {
+      return NextResponse.json({ error: 'This ticket has no verified warranty review.' }, { status: 400 })
     }
 
     const now = new Date().toISOString()

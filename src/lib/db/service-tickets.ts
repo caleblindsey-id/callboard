@@ -10,6 +10,7 @@ import type {
   ServiceTicketType,
   ServiceBillingType,
   PartRequest,
+  WarrantyReviewStatus,
 } from '@/types/service-tickets'
 import type { LaborRateType } from '@/types/database'
 
@@ -410,6 +411,7 @@ export type ServiceBillingTicket = {
   synergy_order_number: string | null
   synergy_invoice_number: string | null
   warranty_credit_received_at: string | null
+  warranty_review_status: WarrantyReviewStatus | null
   completed_at: string | null
   customer_id: number | null
   service_address: string | null
@@ -453,7 +455,7 @@ async function getServiceBillingByExported(
     .select(`
       id, work_order_number, status, ticket_type, billing_type, billing_amount, hours_worked,
       billing_exported, po_number, synergy_order_number, synergy_invoice_number,
-      warranty_credit_received_at, completed_at,
+      warranty_credit_received_at, warranty_review_status, completed_at,
       customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
       customers ( name, account_number, po_required, ar_terms, credit_hold, tax_rate, tax_exempt ),

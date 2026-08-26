@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
+import { warrantyBillingBlock } from '@/lib/service-tickets/warranty'
 import BillingNotesDrawer from './BillingNotesDrawer'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
@@ -43,17 +44,28 @@ function needsPo(t: ServiceBillingTicket): boolean {
   return !!t.customers?.po_required && !t.po_number
 }
 
-// Warranty work isn't billed until the vendor credit lands (logged on the
-// warranty-claims worklist). Mirrors the server gate in mark-billed.
-function awaitingWarrantyCredit(t: ServiceBillingTicket): boolean {
-  return (
-    (t.billing_type === 'warranty' || t.billing_type === 'partial_warranty') &&
-    !t.warranty_credit_received_at
-  )
+// Warranty work isn't billed until the office has verified coverage and, once
+// verified, the vendor credit has landed (logged on the warranty-claims
+// worklist). Mirrors the server gate in mark-billed via the shared predicate.
+function warrantyPill(t: ServiceBillingTicket): { label: string; className: string } | null {
+  const reason = warrantyBillingBlock(t)
+  if (reason === 'pending_review') {
+    return {
+      label: 'Warranty review pending',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    }
+  }
+  if (reason === 'awaiting_credit') {
+    return {
+      label: 'Awaiting vendor credit',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    }
+  }
+  return null
 }
 
 function isBlocked(t: ServiceBillingTicket): boolean {
-  return needsInvoice(t) || needsPo(t) || awaitingWarrantyCredit(t)
+  return needsInvoice(t) || needsPo(t) || warrantyBillingBlock(t) !== null
 }
 
 type ServiceInvoiceSortKey =
@@ -316,7 +328,8 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
     .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
 
   const selectableCount = tickets.filter((t) => !isBlocked(t)).length
-  const awaitingCreditCount = tickets.filter(awaitingWarrantyCredit).length
+  const reviewPendingCount = tickets.filter((t) => warrantyBillingBlock(t) === 'pending_review').length
+  const awaitingCreditCount = tickets.filter((t) => warrantyBillingBlock(t) === 'awaiting_credit').length
 
   function renderInvoiceStatus(t: ServiceBillingTicket) {
     return (
@@ -425,6 +438,13 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
         </div>
       )}
 
+      {/* Warranty review pending banner */}
+      {reviewPendingCount > 0 && (
+        <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+          {reviewPendingCount} warranty ticket{reviewPendingCount === 1 ? '' : 's'} {reviewPendingCount === 1 ? 'is' : 'are'} still waiting on office review before {reviewPendingCount === 1 ? 'it' : 'they'} can be billed.
+        </div>
+      )}
+
       {/* Awaiting warranty credit banner */}
       {awaitingCreditCount > 0 && (
         <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
@@ -457,6 +477,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {sorted.map((t) => {
                 const blocked = isBlocked(t)
+                const pill = warrantyPill(t)
                 return (
                   <div
                     key={t.id}
@@ -499,9 +520,9 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                           </span>
-                          {awaitingWarrantyCredit(t) && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                              Awaiting vendor credit
+                          {pill && (
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pill.className}`}>
+                              {pill.label}
                             </span>
                           )}
                         </div>
@@ -562,6 +583,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {sorted.map((t) => {
                     const blocked = isBlocked(t)
+                    const pill = warrantyPill(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
@@ -614,9 +636,9 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
-                          {awaitingWarrantyCredit(t) && (
+                          {pill && (
                             <span className="block text-xs font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap">
-                              Awaiting vendor credit
+                              {pill.label}
                             </span>
                           )}
                         </td>
