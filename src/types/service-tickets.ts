@@ -296,6 +296,8 @@ export type ServiceTicketDetail = ServiceTicketRow & {
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
   deleted_by: { name: string } | null
+  warranty_review_requested_by: { name: string } | null
+  warranty_review_decided_by: { name: string } | null
   credit_reviews: { id: string; status: CreditReviewStatus; block_reason: string | null; decided_by_name: string | null }[] | null
 }
 

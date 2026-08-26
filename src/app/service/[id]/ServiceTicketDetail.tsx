@@ -34,6 +34,7 @@ import { createClient } from '@/lib/supabase/client'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import { getStatusMeta } from '@/lib/status-meta'
 import RegisterEquipmentPanel from './RegisterEquipmentPanel'
+import WarrantyReviewPanel from './WarrantyReviewPanel'
 import { equipmentNeedsVerification, equipmentReadyForParts } from '@/lib/equipment'
 import type { LineViolation } from '@/lib/margin'
 import DiagnosticFeeCard from './DiagnosticFeeCard'
@@ -2398,6 +2399,33 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           </div>
         </Card>
       )}
+
+      {/* Warranty review lifecycle (migration 160, round 2). Single mount
+          point for both roles: the panel itself decides what to render for a
+          tech vs. staff, and for the not-flagged/flagged states. All state and
+          fetch logic lives inside the panel so this file barely changes as
+          the redesign continues. */}
+      <WarrantyReviewPanel
+        ticketId={ticket.id}
+        status={ticket.status}
+        assignedTechnicianId={ticket.assigned_technician_id}
+        isTech={isTech}
+        isStaff={isStaff}
+        userId={userId}
+        warrantyReviewStatus={ticket.warranty_review_status}
+        warrantyReviewRequestedAt={ticket.warranty_review_requested_at}
+        warrantyReviewRequestedById={ticket.warranty_review_requested_by_id}
+        warrantyReviewNote={ticket.warranty_review_note}
+        warrantyReviewDecidedAt={ticket.warranty_review_decided_at}
+        warrantyReviewDecisionNote={ticket.warranty_review_decision_note}
+        warrantyLaborCovered={ticket.warranty_labor_covered}
+        warrantyVendor={ticket.warranty_vendor}
+        warrantyVendorLaborRate={ticket.warranty_vendor_labor_rate}
+        requesterName={ticket.warranty_review_requested_by?.name ?? null}
+        deciderName={ticket.warranty_review_decided_by?.name ?? null}
+        partsUsed={ticket.parts_used ?? []}
+        estimateParts={ticket.estimate_parts ?? []}
+      />
 
       {/* Request More Info note — surfaced prominently when the manager has
           sent the estimate back. Visible to anyone viewing the ticket so
