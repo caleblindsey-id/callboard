@@ -42,20 +42,42 @@ interface ServiceWorkOrderData {
   workPerformed: string | null
   technicianName: string
   completedDate: string
-  billingType: string
+  // Warranty review lifecycle (migration 160+, Round 6). 'full' = the claim
+  // artifact — every line at full price, nothing zeroed. 'net' = the customer
+  // document — covered lines print at $0, and the printed Total is
+  // billingTotal, which the route has already resolved to whichever figure
+  // the mode calls for (billing_amount for full, customer_bill_amount for a
+  // verified new-lifecycle ticket, or the legacy stored billing_amount for a
+  // frozen billing_type row).
+  pricingMode: 'full' | 'net'
+  warrantyReviewStatus: 'requested' | 'verified' | 'denied' | null
+  warrantyCreditReceived: boolean
   laborHours: number
   laborRate: number
+  // Already reflects net-mode zeroing when warranty_labor_covered — see
+  // work-order-pdf/route.ts. Full mode always passes hours x laborRate.
+  laborTotal: number
   parts: ServiceWorkOrderPart[]
+  // Legacy-only: a frozen full 'warranty' billing_type row zeroes every part
+  // line regardless of its own warrantyCovered flag (the old isWarranty
+  // override). False everywhere else, where only individually-flagged lines zero.
+  zeroAllParts: boolean
+  // Already reflects net-mode zeroing (labor covered -> trip zeroed too). See
+  // work-order-pricing.ts.
   tripCharge: number
   // Inbound freight billed to the customer (feedback #80). 0 when none was
-  // charged. Rendered as its own line beside the trip charge rather than folded
-  // into the parts subtotal, so the customer can see exactly what the shipping
-  // cost — which is the whole point of passing it through rather than burying it.
+  // charged, or when net mode zeroes it for coverage. Rendered as its own
+  // line beside the trip charge rather than folded into the parts subtotal,
+  // so the customer can see exactly what the shipping cost.
   shippingCharge: number
   diagnosticCharge: number
   // When present, the diagnostic was already billed separately (Synergy invoice),
   // so it renders as a negative credit on this work order rather than a charge.
   diagnosticInvoiceNumber: string | null
+  // New review-lifecycle net mode only: a positive diagnostic charge credited
+  // away by warranty coverage. Forces the line to $0.00 regardless of the
+  // invoice-number credit logic above.
+  diagnosticZeroed: boolean
   billingTotal: number
   // Customer sales-tax rate as a percent (e.g. 7.75); 0 when exempt or none on
   // file. Display-only — applied to the parts subtotal only (migration 133).
@@ -155,6 +177,8 @@ const styles = StyleSheet.create({
   signatureCaption: { fontSize: 7.5, color: '#888888', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 1 },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   photoImage: { width: 164, height: 110, objectFit: 'cover' as const, borderWidth: 0.5, borderColor: '#e5e5e5', margin: 3 },
+  warrantyNoteBlock: { marginTop: 6, marginBottom: 2 },
+  warrantyNoteText: { fontSize: 7.5, color: '#888888', fontStyle: 'italic', lineHeight: 1.3 },
 })
 
 // ============================================================
@@ -174,14 +198,24 @@ function money(amount: number): string {
 // ============================================================
 
 export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }: ServiceWorkOrderDocumentProps) {
-  const laborTotal = workOrder.laborHours * workOrder.laborRate
-  const isWarranty = workOrder.billingType === 'warranty'
-  // Warranty tickets bill no parts; partial/non-warranty bill only non-covered lines.
-  const partsTotal = isWarranty
-    ? 0
-    : workOrder.parts
-        .filter((p) => !p.warrantyCovered)
-        .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+  const isNet = workOrder.pricingMode === 'net'
+  // A part line zeroes for display when net mode says so: either every line
+  // zeroes (legacy full 'warranty' row) or just this line's own flag does.
+  const partZeroed = (p: ServiceWorkOrderPart) => isNet && (workOrder.zeroAllParts || p.warrantyCovered)
+  const partsTotal = workOrder.parts.reduce(
+    (sum, p) => sum + (partZeroed(p) ? 0 : p.quantity * p.unitPrice),
+    0,
+  )
+  // Full mode: the pending/verified-review note, shown only while the
+  // customer hasn't already seen the discounted net total.
+  const warrantyNote =
+    workOrder.pricingMode === 'full' && workOrder.warrantyReviewStatus === 'requested'
+      ? 'Pending warranty review, covered items will be credited on your final invoice.'
+      : workOrder.pricingMode === 'full'
+          && workOrder.warrantyReviewStatus === 'verified'
+          && !workOrder.warrantyCreditReceived
+        ? 'Warranty verified, covered items will show at $0 on your final invoice.'
+        : null
   // Tax applies to parts only (labor/trip/diagnostic excluded). Display-only;
   // billingTotal is pre-tax, so the printed Total = billingTotal + tax.
   const taxAmount = computePartsTax(partsTotal, (workOrder.taxRatePercent ?? 0) / 100)
@@ -291,7 +325,7 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
               <Text style={styles.colDescription}>Service Labor</Text>
               <Text style={styles.colQty}>{workOrder.laborHours}</Text>
               <Text style={styles.colPrice}>{money(workOrder.laborRate)}/hr</Text>
-              <Text style={styles.colTotal}>{money(laborTotal)}</Text>
+              <Text style={styles.colTotal}>{money(workOrder.laborTotal)}</Text>
             </View>
           )}
 
@@ -299,12 +333,12 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
             <View key={idx} style={styles.tableRow}>
               <Text style={styles.colDescription}>
                 {partLabel(part)}
-                {part.warrantyCovered ? ' (warranty)' : ''}
+                {isNet && part.warrantyCovered ? ' (warranty)' : ''}
               </Text>
               <Text style={styles.colQty}>{part.quantity}</Text>
               <Text style={styles.colPrice}>{money(part.unitPrice)}</Text>
               <Text style={styles.colTotal}>
-                {part.warrantyCovered || isWarranty ? '$0.00' : money(part.quantity * part.unitPrice)}
+                {partZeroed(part) ? '$0.00' : money(part.quantity * part.unitPrice)}
               </Text>
             </View>
           ))}
@@ -330,16 +364,20 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
           {workOrder.diagnosticCharge > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.colDescription}>
-                {workOrder.diagnosticInvoiceNumber
-                  ? `Diagnostic Fee Credit (Inv #${workOrder.diagnosticInvoiceNumber})`
-                  : 'Diagnostic Fee'}
+                {workOrder.diagnosticZeroed
+                  ? 'Diagnostic Fee (warranty)'
+                  : workOrder.diagnosticInvoiceNumber
+                    ? `Diagnostic Fee Credit (Inv #${workOrder.diagnosticInvoiceNumber})`
+                    : 'Diagnostic Fee'}
               </Text>
               <Text style={styles.colQty}>—</Text>
               <Text style={styles.colPrice}>—</Text>
               <Text style={styles.colTotal}>
-                {workOrder.diagnosticInvoiceNumber
-                  ? `-${money(workOrder.diagnosticCharge)}`
-                  : money(workOrder.diagnosticCharge)}
+                {workOrder.diagnosticZeroed
+                  ? '$0.00'
+                  : workOrder.diagnosticInvoiceNumber
+                    ? `-${money(workOrder.diagnosticCharge)}`
+                    : money(workOrder.diagnosticCharge)}
               </Text>
             </View>
           )}
@@ -349,7 +387,7 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
         <View style={styles.summaryBlock}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Labor Subtotal:</Text>
-            <Text style={styles.summaryValue}>{money(laborTotal)}</Text>
+            <Text style={styles.summaryValue}>{money(workOrder.laborTotal)}</Text>
           </View>
           {workOrder.parts.length > 0 && (
             <View style={styles.summaryRow}>
@@ -372,13 +410,22 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
           {workOrder.diagnosticCharge > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>
-                {workOrder.diagnosticInvoiceNumber ? 'Diagnostic Fee Credit:' : 'Diagnostic Fee:'}
+                {workOrder.diagnosticZeroed
+                  ? 'Diagnostic Fee (warranty):'
+                  : workOrder.diagnosticInvoiceNumber ? 'Diagnostic Fee Credit:' : 'Diagnostic Fee:'}
               </Text>
               <Text style={styles.summaryValue}>
-                {workOrder.diagnosticInvoiceNumber
-                  ? `-${money(workOrder.diagnosticCharge)}`
-                  : money(workOrder.diagnosticCharge)}
+                {workOrder.diagnosticZeroed
+                  ? '$0.00'
+                  : workOrder.diagnosticInvoiceNumber
+                    ? `-${money(workOrder.diagnosticCharge)}`
+                    : money(workOrder.diagnosticCharge)}
               </Text>
+            </View>
+          )}
+          {warrantyNote && (
+            <View style={styles.warrantyNoteBlock}>
+              <Text style={styles.warrantyNoteText}>{warrantyNote}</Text>
             </View>
           )}
           <View style={styles.totalRow}>

@@ -29,7 +29,10 @@ interface EstimateData {
   contactPhone: string | null
   problemDescription: string
   diagnosisNotes: string | null
-  billingType: string
+  // Warranty review lifecycle (migration 160+, Round 6). Estimates are ALWAYS
+  // full price now — coverage is decided and priced at completion, not here —
+  // so this only drives the pending/verified-review note near the total.
+  warrantyReviewStatus: 'requested' | 'verified' | 'denied' | null
   laborHours: number
   laborRate: number
   parts: EstimatePart[]
@@ -178,6 +181,8 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 1.4,
   },
+  warrantyNoteBlock: { marginTop: 6, marginBottom: 2 },
+  warrantyNoteText: { fontSize: 7.5, color: '#888888', fontStyle: 'italic', lineHeight: 1.3 },
 })
 
 // ============================================================
@@ -198,16 +203,20 @@ function money(amount: number): string {
 
 export function EstimateDocument({ estimate, logoBase64, companyName }: EstimateDocumentProps) {
   const laborTotal = estimate.laborHours * estimate.laborRate
-  const isWarranty = estimate.billingType === 'warranty'
-  const partsTotal = isWarranty
-    ? 0
-    : estimate.parts
-        .filter((p) => !p.warrantyCovered)
-        .reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
+  // Estimates are always full price now (migration 160+, Round 6) — no line
+  // is ever zeroed here, regardless of warranty coverage. Coverage is decided
+  // and priced at completion (see service-work-order-template.tsx).
+  const partsTotal = estimate.parts.reduce((sum, p) => sum + p.quantity * p.unitPrice, 0)
   // Tax applies to parts only (labor/trip excluded). Display-only line; the
   // estimateTotal passed in is pre-tax, so the printed Total = pre-tax + tax.
   const taxAmount = computePartsTax(partsTotal, (estimate.taxRatePercent ?? 0) / 100)
   const grandTotal = estimate.estimateTotal + taxAmount
+  const warrantyNote =
+    estimate.warrantyReviewStatus === 'requested'
+      ? 'Pending warranty review, covered items will be credited on your final invoice.'
+      : estimate.warrantyReviewStatus === 'verified'
+        ? 'Warranty verified, covered items will show at $0 on your final invoice.'
+        : null
 
   return (
     <Document>
@@ -295,18 +304,13 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
             </View>
           )}
 
-          {/* Parts lines */}
+          {/* Parts lines — always full price; coverage is priced at completion. */}
           {estimate.parts.map((part, idx) => (
             <View key={idx} style={styles.tableRow}>
-              <Text style={styles.colDescription}>
-                {partLabel(part)}
-                {part.warrantyCovered ? ' (warranty)' : ''}
-              </Text>
+              <Text style={styles.colDescription}>{partLabel(part)}</Text>
               <Text style={styles.colQty}>{part.quantity}</Text>
               <Text style={styles.colPrice}>{money(part.unitPrice)}</Text>
-              <Text style={styles.colTotal}>
-                {part.warrantyCovered ? '$0.00' : money(part.quantity * part.unitPrice)}
-              </Text>
+              <Text style={styles.colTotal}>{money(part.quantity * part.unitPrice)}</Text>
             </View>
           ))}
 
@@ -383,6 +387,11 @@ export function EstimateDocument({ estimate, logoBase64, companyName }: Estimate
                   ? `-${money(estimate.diagnosticCharge)}`
                   : money(estimate.diagnosticCharge)}
               </Text>
+            </View>
+          )}
+          {warrantyNote && (
+            <View style={styles.warrantyNoteBlock}>
+              <Text style={styles.warrantyNoteText}>{warrantyNote}</Text>
             </View>
           )}
           <View style={styles.totalRow}>

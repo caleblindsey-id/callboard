@@ -9,18 +9,32 @@ import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { getCustomerLaborRate, getSetting } from '@/lib/db/settings'
 import { taxRatePercent } from '@/lib/tax'
 import { shippingChargeAmount } from '@/lib/shipping'
-import type { ServicePartUsed } from '@/types/service-tickets'
+import { deriveWorkOrderTerms, type WorkOrderPricingMode } from '@/lib/pdf/work-order-pricing'
+import type { ServicePartUsed, WarrantyReviewStatus } from '@/types/service-tickets'
 import * as fs from 'fs'
 import * as path from 'path'
 
 // Customer-facing completion document for a service ticket — parity with the PM
 // /api/tickets/[id]/work-order-pdf route.
+//
+// Pricing mode (warranty review lifecycle, migration 160+):
+//   'net'  — a legacy frozen billing_type row (warranty/partial_warranty), OR
+//            warranty_review_status === 'verified' with the vendor credit
+//            already received, OR verified + the office explicitly asked for
+//            a { pricing: 'net' } preview.
+//   'full' — everything else (default). The claim artifact: every line at
+//            full price, plus a pending-review note when applicable.
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+
+    // Office-only preview toggle; a technician generating their own copy
+    // never sends this. Body is optional (the export flow POSTs with none).
+    const body = await request.json().catch(() => ({} as { pricing?: string }))
+    const requestedNet = body?.pricing === 'net'
 
     const user = await getCurrentUser()
     if (!user?.role) {
@@ -52,6 +66,10 @@ export async function POST(
         diagnostic_charge,
         diagnostic_invoice_number,
         billing_amount,
+        customer_bill_amount,
+        warranty_review_status,
+        warranty_credit_received_at,
+        warranty_labor_covered,
         shipping_charge,
         customer_signature,
         customer_signature_name,
@@ -160,36 +178,67 @@ export async function POST(
 
     const companyName = (await getSetting('company_name')) || undefined
 
-    // Trip charge is baked into billing_amount (server-computed). Derive the
-    // line as total − labor − parts − diagnostic so the printed breakdown
-    // always reconciles with the authoritative Total. 0 on warranty tickets.
-    // The diagnostic is SIGNED to match how billing_amount was computed: a
-    // separately-invoiced diagnostic (has an invoice number) is a credit, so it
-    // was subtracted; otherwise it was added.
-    const partsTotalPdf = partsUsed
-      .filter((p) => !p.warranty_covered)
-      .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+    // --- Pricing mode selection (warranty review lifecycle, migration 160+) ---
+    const billingType = raw.billing_type as string
+    const isLegacyWarranty = billingType === 'warranty' || billingType === 'partial_warranty'
+    const reviewStatus = (raw.warranty_review_status as WarrantyReviewStatus | null) ?? null
+    const creditReceived = !!raw.warranty_credit_received_at
+    const verified = reviewStatus === 'verified'
+    const laborCoveredFlag = raw.warranty_labor_covered === true
+    const pricingMode: WorkOrderPricingMode =
+      isLegacyWarranty || (verified && (creditReceived || requestedNet)) ? 'net' : 'full'
+
     const laborTotalPdf = ((raw.hours_worked as number | null) ?? 0) * laborRate
     const diagnosticPdf = (raw.diagnostic_charge as number | null) ?? 0
     const hasDiagInvoice = !!String(raw.diagnostic_invoice_number ?? '').trim()
     const signedDiagnosticPdf = hasDiagInvoice ? -diagnosticPdf : diagnosticPdf
-    // Freight is a term of billing_amount too, so it MUST come out of the
-    // subtraction above — otherwise it silently inflates the derived trip-charge
-    // line and the customer sees a $25 shipping cost printed as a trip charge.
-    // Warranty tickets bill 0 and never had shipping added, so it's 0 there,
-    // matching how the complete route computed the total.
+
+    // Parts total feeding the trip-charge subtraction only (NOT the per-line
+    // display, which the template derives itself from pricingMode/zeroAllParts).
+    // Legacy net mode excludes only individually-flagged warranty_covered lines
+    // — mirrors the pre-Round-6 route exactly, so a reprint doesn't change.
+    // Full mode and the new review-lifecycle net mode use every line's full
+    // price: billing_amount is always full price under both (migration 160+
+    // never zeroes it), so the trip must be derived in that same full-price
+    // space — see work-order-pricing.ts T1c.
+    const partsTotalForTrip = isLegacyWarranty
+      ? partsUsed
+          .filter((p) => !p.warranty_covered)
+          .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+      : partsUsed.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
+
+    // Freight: a legacy full 'warranty' row never had shipping added (mirrors
+    // the pre-Round-6 route); everywhere else it's full price, zeroed for
+    // DISPLAY only in the new-lifecycle net branch (deriveWorkOrderTerms).
     const shippingChargePdf =
-      (raw.billing_type as string) === 'warranty'
-        ? 0
-        : shippingChargeAmount(raw.shipping_charge as number | null)
-    const tripChargePdf = Math.max(
-      0,
-      ((raw.billing_amount as number | null) ?? 0)
-        - laborTotalPdf
-        - partsTotalPdf
-        - signedDiagnosticPdf
-        - shippingChargePdf,
-    )
+      billingType === 'warranty' ? 0 : shippingChargeAmount(raw.shipping_charge as number | null)
+
+    const allPartsCovered = partsUsed.length > 0 && partsUsed.every((p) => p.warranty_covered === true)
+
+    const terms = deriveWorkOrderTerms(pricingMode, {
+      billingAmount: (raw.billing_amount as number | null) ?? 0,
+      customerBillAmount: raw.customer_bill_amount as number | null,
+      laborTotal: laborTotalPdf,
+      signedDiagnostic: signedDiagnosticPdf,
+      shippingCharge: shippingChargePdf,
+      partsTotal: partsTotalForTrip,
+      isLegacyWarranty,
+      laborCovered: laborCoveredFlag,
+      allPartsCovered,
+    })
+
+    // Per-line zero + "(warranty)" suffix in net mode: a legacy full 'warranty'
+    // row zeroes every part line regardless of its own flag (old isWarranty
+    // override); everywhere else in net mode only individually-flagged lines
+    // zero. Full mode never zeroes a line.
+    const zeroAllParts = pricingMode === 'net' && billingType === 'warranty'
+
+    // A positive diagnostic charge credited away by warranty coverage — new
+    // review-lifecycle net mode only (the legacy branch never zeroes it, see
+    // work-order-pricing.ts). An already-negative diagnostic (already a
+    // credit) is untouched regardless.
+    const diagnosticZeroed =
+      pricingMode === 'net' && !isLegacyWarranty && laborCoveredFlag && signedDiagnosticPdf > 0
 
     const workOrder = {
       workOrderNumber: raw.work_order_number as number | null,
@@ -214,9 +263,12 @@ export async function POST(
             year: 'numeric', month: 'long', day: 'numeric',
           })
         : '—',
-      billingType: raw.billing_type as string,
+      pricingMode,
+      warrantyReviewStatus: reviewStatus,
+      warrantyCreditReceived: creditReceived,
       laborHours: (raw.hours_worked as number | null) ?? 0,
       laborRate,
+      laborTotal: terms.laborDisplay,
       parts: partsUsed.map((p) => ({
         description: p.description,
         detail: p.detail ?? null,
@@ -224,11 +276,13 @@ export async function POST(
         unitPrice: p.unit_price,
         warrantyCovered: p.warranty_covered ?? false,
       })),
-      tripCharge: tripChargePdf,
-      shippingCharge: shippingChargePdf,
+      zeroAllParts,
+      tripCharge: terms.tripDisplay,
+      shippingCharge: terms.shippingDisplay,
       diagnosticCharge: (raw.diagnostic_charge as number | null) ?? 0,
       diagnosticInvoiceNumber: (raw.diagnostic_invoice_number as string | null) ?? null,
-      billingTotal: (raw.billing_amount as number | null) ?? 0,
+      diagnosticZeroed,
+      billingTotal: terms.total,
       taxRatePercent: taxRatePercent(customer),
       customerSignature: raw.customer_signature as string | null,
       customerSignatureName: raw.customer_signature_name as string | null,

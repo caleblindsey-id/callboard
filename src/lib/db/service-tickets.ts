@@ -407,6 +407,9 @@ export type ServiceBillingTicket = {
   ticket_type: ServiceTicketType
   billing_type: ServiceBillingType
   billing_amount: number | null
+  // Post-coverage customer total (migration 160+ review lifecycle). NULL =
+  // same as billing_amount (not verified, or coverage denied/pending).
+  customer_bill_amount: number | null
   hours_worked: number | null
   billing_exported: boolean
   po_number: string | null
@@ -455,7 +458,8 @@ async function getServiceBillingByExported(
   let query = supabase
     .from('service_tickets')
     .select(`
-      id, work_order_number, status, ticket_type, billing_type, billing_amount, hours_worked,
+      id, work_order_number, status, ticket_type, billing_type, billing_amount,
+      customer_bill_amount, hours_worked,
       billing_exported, po_number, synergy_order_number, synergy_invoice_number,
       warranty_credit_received_at, warranty_review_status, completed_at,
       customer_id, equipment_make, equipment_model,

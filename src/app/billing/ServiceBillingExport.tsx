@@ -69,7 +69,7 @@ const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, Servic
       .filter(Boolean)
       .join(' ') || null,
   technician: t => t.assigned_technician?.name,
-  billing: t => t.billing_amount,
+  billing: t => customerAmount(t),
   ticketType: t => t.ticket_type,
   type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
   completed: t => t.completed_at,
@@ -95,6 +95,14 @@ function customerSubline(t: ServiceBillingTicket): string | null {
   const acct = t.customers?.account_number
   const parts = [acct ? `Acct #${acct}` : null, shipToLabel(t)].filter(Boolean)
   return parts.length ? parts.join(' · ') : null
+}
+
+// What the customer actually pays (warranty coverage netted out) — the
+// billing_amount is the full-price claim artifact vendors require, so once
+// coverage is verified customer_bill_amount is the number that belongs here.
+// NULL means "same as billing_amount" (not verified, or denied).
+function customerAmount(t: ServiceBillingTicket): number | null {
+  return t.customer_bill_amount ?? t.billing_amount
 }
 
 export default function ServiceBillingExport({
@@ -387,7 +395,10 @@ export default function ServiceBillingExport({
                     )}
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       Tech: {t.assigned_technician?.name ?? '—'} · Hrs: {t.hours_worked ?? '—'} ·{' '}
-                      {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
+                      {customerAmount(t) != null ? `$${customerAmount(t)!.toFixed(2)}` : '—'}
+                      {t.customer_bill_amount != null && t.customer_bill_amount !== t.billing_amount
+                        ? ` (claim $${(t.billing_amount ?? 0).toFixed(2)})`
+                        : ''}
                     </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <TicketTypeBadge type={t.ticket_type} />
@@ -464,9 +475,12 @@ export default function ServiceBillingExport({
                         {t.assigned_technician?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">
-                        {t.billing_amount != null
-                          ? `$${t.billing_amount.toFixed(2)}`
-                          : '—'}
+                        {customerAmount(t) != null ? `$${customerAmount(t)!.toFixed(2)}` : '—'}
+                        {t.customer_bill_amount != null && t.customer_bill_amount !== t.billing_amount && (
+                          <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                            claim ${(t.billing_amount ?? 0).toFixed(2)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <TicketTypeBadge type={t.ticket_type} />
