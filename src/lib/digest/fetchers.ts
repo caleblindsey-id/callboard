@@ -18,7 +18,7 @@ import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
 
 // Every fetcher is a thin adapter over a src/lib/db function, so the digest and
-// the queue page it points at are the same query. Nine of the thirteen are
+// the queue page it points at are the same query. Nine of the fourteen are
 // three-line maps because the shared row types already carry customer_name,
 // equipment_label and a days_since_* field.
 //
@@ -312,6 +312,48 @@ export async function warrantyToFile(db: DigestDb): Promise<DigestRow[]> {
       deepLink: `/service/${r.id}`,
       badge: badge(r.bucket === 'billed_unclaimed' ? 'Billed, no claim' : 'To file', AR),
     }))
+}
+
+/**
+ * Warranty claims filed with a vendor that have not been credited back yet.
+ *
+ * Separate from warrantyToFile on purpose. The action is different (chase the
+ * vendor, not file with them) and so is the clock: these age from the day the
+ * claim was filed, not the day the work was completed, so a claim filed
+ * promptly on old work does not read as already late.
+ *
+ * This bucket had no chase at all between the warranty-credit-remind cron
+ * being retired in the digest port and this section landing. It is the leg
+ * where money actually sits: the branch has carried the parts cost, the
+ * customer has not been billed, and the ticket cannot be billed until the
+ * credit is logged.
+ */
+export async function warrantyAwaitingCredit(db: DigestDb): Promise<DigestRow[]> {
+  const rows = await getWarrantyQueue(db)
+  return rows
+    .filter((r) => r.bucket === 'awaiting_credit')
+    // Longest-waiting first. A null filing date sorts last rather than first:
+    // it means the stamp is missing, not that the claim is fresh.
+    .sort((a, b) => (b.days_since_submitted ?? -1) - (a.days_since_submitted ?? -1))
+    .map((r) => {
+      const vendor = r.warranty_vendor ?? 'no vendor recorded'
+      // Coerced rather than trusted: warranty_credit_expected is a Postgres
+      // numeric, and a numeric that arrives as a string would make .toFixed
+      // throw and take the whole section down to "could not load".
+      const expectedNum = Number(r.warranty_credit_expected)
+      const expected =
+        r.warranty_credit_expected != null && Number.isFinite(expectedNum)
+          ? `, $${expectedNum.toFixed(2)} expected`
+          : ''
+      return {
+        entityKey: entityKey('svc', r.id),
+        title: wo(r.work_order_number),
+        subtitle: r.customer_name,
+        meta: age(r.days_since_submitted, `since filed with ${vendor}${expected}`),
+        deepLink: `/service/${r.id}`,
+        badge: badge('Awaiting credit', AR),
+      }
+    })
 }
 
 export async function creditHoldWithOpenWork(db: DigestDb): Promise<DigestRow[]> {

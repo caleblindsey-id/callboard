@@ -4,7 +4,7 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 60
 summary: Export completed PMs and service tickets for billing — and what it takes to mark them billed.
-last_verified: 2026-07-30
+last_verified: 2026-08-26
 ---
 
 The **Billing** page lists completed work that hasn't been invoiced yet. Billing is a two-step flow: **export** the work to a PDF, then **mark it billed** once you've created the invoice in Synergy. Exporting no longer marks anything billed on its own — a ticket only counts as billed after its Synergy invoice number is entered.
@@ -51,5 +51,6 @@ Per ticket: customer and account, equipment, technician, completion date, machin
 - **One Synergy invoice per work order** on PM tickets.
 - **A required PO blocks export** until it's entered (it's checked again at export). Fill it inline from this page.
 - **A missing Synergy Invoice # blocks a service ticket** from being marked billed.
+- **A warranty ticket is blocked until its vendor credit is logged.** Warranty and partial-warranty rows show an amber **Awaiting vendor credit** flag and can't be selected. Clear it on the **Warranty Claims** queue, not from here. See [File a warranty claim and log the vendor credit](/help/managers/file-a-warranty-claim).
 - **Un-export** is the undo for an accidental export — it returns the ticket to Ready to Export and clears the invoice number.
 - **Synergy Order #** is an optional reference that helps you find the invoice in Synergy — it never blocks billing. Only the **Synergy Invoice #** does. Enter it in **Ready to Export** before exporting and it prints on the work order; you can still add or change it afterward in **Awaiting Invoice #**.
