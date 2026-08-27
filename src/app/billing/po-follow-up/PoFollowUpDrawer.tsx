@@ -133,7 +133,7 @@ export default function PoFollowUpDrawer({
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-              PO Follow-Up
+              Contact Log
             </h2>
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 truncate">{title ?? '—'}</p>
             {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{subtitle}</p>}
