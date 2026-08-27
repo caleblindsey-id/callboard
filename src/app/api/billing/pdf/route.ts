@@ -447,7 +447,7 @@ export async function POST(request: NextRequest) {
     // actually invoiced in Synergy.
     const { data: marked, error: updateError } = await supabase
       .from('pm_tickets')
-      .update({ billing_exported: true })
+      .update({ billing_exported: true, billing_exported_at: new Date().toISOString() })
       .in('id', ticketIds as string[])
       .is('deleted_at', null)
       .eq('status', 'completed')

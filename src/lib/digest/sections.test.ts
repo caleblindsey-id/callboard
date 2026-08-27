@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { SECTIONS, OWNER_BLOCKS, TOP_N } from './sections'
 import { KEY_PREFIXES } from './types'
 
-test('all fifteen sections are registered', () => {
-  assert.equal(SECTIONS.length, 15)
+test('all sixteen sections are registered', () => {
+  assert.equal(SECTIONS.length, 16)
 })
 
 test('section keys are unique', () => {
@@ -59,9 +59,12 @@ test('every section is wired to a real fetch function', () => {
   }
 })
 
-test('ready to bill is the only mixed-entity section', () => {
+test('ready_to_bill, not_entered_synergy, and po_gated are the mixed-entity sections', () => {
+  // The Billing Chase worklist (migration 163) spans both ticket types, so
+  // both digest sections built on it are mixed alongside the pre-existing
+  // ready_to_bill.
   const mixed = SECTIONS.filter((s) => s.keyPrefixes.length > 1).map((s) => s.key)
-  assert.deepEqual(mixed, ['ready_to_bill'])
+  assert.deepEqual(mixed, ['ready_to_bill', 'not_entered_synergy', 'po_gated'])
 })
 
 test('TOP_N matches the Python original', () => {

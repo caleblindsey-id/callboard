@@ -13,7 +13,7 @@ import { runSections, sectionStatuses, getSetting, digestDateLabel } from '@/lib
 import type { DigestDb } from '@/lib/digest/types'
 import { renderManagerDigestEmail } from '@/lib/email-templates/manager-digest'
 
-// Weekday morning action email: fifteen queues grouped by who does the work,
+// Weekday morning action email: sixteen queues grouped by who does the work,
 // sent to the manager_digest_to / manager_digest_cc settings lists. Ported from
 // a Python script that ran on Caleb's laptop via Task Scheduler and sent through
 // Outlook COM, which meant no machine, no digest.

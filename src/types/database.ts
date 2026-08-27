@@ -861,6 +861,15 @@ export type PmTicketRow = {
   // Stamped when the whole order's parts are staged and the tech was notified
   // (migration 104). Reset to NULL if the order later falls out of fully-staged.
   parts_ready_notified_at: string | null
+  // PO-chase recency, denormalized from the newest po_follow_ups row for this
+  // ticket (migration 163). Mirrors the service_tickets columns of the same
+  // name (140); maintained by the follow-up POST route, not written directly.
+  po_last_contacted_at: string | null
+  po_last_method: string | null
+  // When the billing PDF export flipped billing_exported=true (migration 163).
+  // Parity with service_tickets.billing_exported_at (106); anchors the
+  // Billing Chase worklist's "exported but not yet invoiced" aging.
+  billing_exported_at: string | null
   created_at: string
   updated_at: string
 }
@@ -915,17 +924,25 @@ export type CustomerNoteRow = {
 }
 
 // Structured per-PO follow-up log (migration 140): one row per outreach attempt
-// to collect a customer PO on a completed service ticket.
+// to collect a customer PO on a completed ticket. Polymorphic across both
+// ticket types as of migration 163 (the credit_reviews (077) pattern):
+// ticket_type discriminator + two nullable FKs, exactly one of which is set.
 export type PoFollowUpMethod = 'call' | 'email' | 'text' | 'other'
+export type PoFollowUpTicketType = 'pm' | 'service'
 export type PoFollowUpRow = {
   id: string
-  ticket_id: string
+  ticket_type: PoFollowUpTicketType
+  service_ticket_id: string | null
+  pm_ticket_id: string | null
   method: PoFollowUpMethod
   note: string | null
   contacted_by: string
   contacted_at: string
   created_at: string
 }
+
+export type PoFollowUpInsert = Pick<PoFollowUpRow, 'ticket_type'> &
+  Partial<Omit<PoFollowUpRow, 'id' | 'ticket_type' | 'created_at'>>
 
 export type TechnicianTargetRow = {
   id: string
@@ -1161,7 +1178,7 @@ export type PmScheduleInsert = MakeOptional<
 
 export type PmTicketInsert = MakeOptional<
   Omit<PmTicketRow, 'id' | 'created_at' | 'updated_at'>,
-  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'shipping_charge' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at'
+  'status' | 'billing_exported' | 'parts_used' | 'pm_schedule_id' | 'equipment_id' | 'customer_id' | 'assigned_technician_id' | 'created_by_id' | 'scheduled_date' | 'completed_date' | 'completion_notes' | 'hours_worked' | 'billing_amount' | 'trip_charge' | 'trip_charge_qty' | 'shipping_charge' | 'work_order_number' | 'additional_parts_used' | 'additional_hours_worked' | 'customer_signature' | 'customer_signature_name' | 'photos' | 'po_number' | 'billing_contact_name' | 'billing_contact_email' | 'billing_contact_phone' | 'skip_reason' | 'skip_previous_status' | 'skip_reason_category' | 'skip_recommended_month' | 'skip_recommended_year' | 'skip_equipment_on_site' | 'parts_requested' | 'synergy_order_number' | 'synergy_invoice_number' | 'machine_hours' | 'date_code' | 'deleted_at' | 'deleted_by_id' | 'show_pricing' | 'ship_to_location_id' | 'requires_review' | 'review_reason' | 'reviewed_by_id' | 'reviewed_at' | 'labor_rate_type' | 'completion_seeded_at' | 'parts_ready_notified_at' | 'billed_at' | 'po_last_contacted_at' | 'po_last_method' | 'billing_exported_at'
 >
 
 export type SettingsRow = {
@@ -1644,14 +1661,23 @@ export interface Database {
       }
       po_follow_ups: {
         Row: PoFollowUpRow
-        Insert: Omit<PoFollowUpRow, 'id' | 'created_at'>
+        Insert: PoFollowUpInsert
         Update: never
         Relationships: [
           {
+            // Column renamed ticket_id -> service_ticket_id in migration 163;
+            // Postgres does not rename the constraint along with the column.
             foreignKeyName: 'po_follow_ups_ticket_id_fkey'
-            columns: ['ticket_id']
+            columns: ['service_ticket_id']
             isOneToOne: false
             referencedRelation: 'service_tickets'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'po_follow_ups_pm_ticket_id_fkey'
+            columns: ['pm_ticket_id']
+            isOneToOne: false
+            referencedRelation: 'pm_tickets'
             referencedColumns: ['id']
           },
           {

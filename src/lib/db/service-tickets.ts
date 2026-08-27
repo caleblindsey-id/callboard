@@ -694,12 +694,14 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
   return counts
 }
 
-// --- Completed-but-waiting-on-PO count (dashboard card) ---
+// --- Completed-but-waiting-on-PO count (technician dashboard card) ---
 // Completed tickets for PO-required customers that still have no customer PO on
 // file — the same subset the Mark Billed gate blocks (needsPo in
 // ServiceAwaitingInvoice.tsx). The inner customers join restricts the count to
-// PO-required customers; po_number empty = null OR ''. Pass technicianId to scope
-// to a single tech's completed tickets (the technician dashboard card).
+// PO-required customers; po_number empty = null OR ''. Manager-side is now
+// getBillingChaseCounts (billing-chase.ts, migration 163); this one survives
+// scoped to a single tech's completed tickets via technicianId, which the
+// polymorphic worklist has no equivalent of.
 export async function getPoNeededCount(technicianId?: string): Promise<number> {
   const supabase = await createClient()
   let q = supabase
@@ -715,57 +717,6 @@ export async function getPoNeededCount(technicianId?: string): Promise<number> {
   const { count, error } = await q
   if (error) throw error
   return count ?? 0
-}
-
-// --- Waiting-on-PO worklist (PO collection tracking) ---
-// The same subset as getPoNeededCount / the billing PO gate: completed tickets
-// for PO-required customers with no customer PO yet. Adds the denormalized
-// follow-up recency (po_last_contacted_at / po_last_method) so the worklist can
-// show "N days since last contact · call". Ordered oldest-contact-first, with
-// never-contacted rows surfaced first (nulls) — the most urgent to chase.
-
-export type PoFollowUpQueueTicket = {
-  id: string
-  work_order_number: number | null
-  completed_at: string | null
-  billing_amount: number | null
-  po_number: string | null
-  po_last_contacted_at: string | null
-  po_last_method: string | null
-  equipment_make: string | null
-  equipment_model: string | null
-  customers: {
-    name: string
-    account_number: string | null
-  } | null
-  equipment: {
-    make: string | null
-    model: string | null
-    serial_number: string | null
-  } | null
-  assigned_technician: { name: string } | null
-}
-
-export async function getPoFollowUpQueue(db?: DigestDb): Promise<PoFollowUpQueueTicket[]> {
-  const supabase = db ?? (await createClient())
-
-  const { data, error } = await supabase
-    .from('service_tickets')
-    .select(`
-      id, work_order_number, completed_at, billing_amount, po_number,
-      po_last_contacted_at, po_last_method, equipment_make, equipment_model,
-      customers!inner ( name, account_number, po_required ),
-      equipment ( make, model, serial_number ),
-      assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
-    `)
-    .eq('status', 'completed')
-    .eq('customers.po_required', true)
-    .is('deleted_at', null)
-    .or('po_number.is.null,po_number.eq.')
-    .order('po_last_contacted_at', { ascending: true, nullsFirst: true })
-
-  if (error) throw error
-  return (data ?? []) as unknown as PoFollowUpQueueTicket[]
 }
 
 // --- Bulk assign a technician to service tickets ---

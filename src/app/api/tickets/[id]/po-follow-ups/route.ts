@@ -4,8 +4,9 @@ import { MANAGER_ROLES } from '@/types/database'
 import type { PoFollowUpMethod } from '@/types/database'
 import { getPoFollowUps, createPoFollowUp } from '@/lib/db/po-follow-ups'
 
-// PO-collection follow-up log for one service ticket. Mirrors the customer-notes
-// route (per-customer free text); this one is per-ticket + structured (method).
+// PO-collection follow-up log for one PM ticket. Mirrors
+// api/service-tickets/[id]/po-follow-ups exactly, pointed at pm_ticket_id
+// instead of service_ticket_id (migration 163 made the log polymorphic).
 // Reads: any authenticated user. Writes: MANAGER_ROLES (office/coordinator).
 
 const VALID_METHODS: PoFollowUpMethod[] = ['call', 'email', 'text', 'other']
@@ -20,7 +21,7 @@ export async function GET(
   }
 
   const { id } = await params
-  const followUps = await getPoFollowUps('service', id)
+  const followUps = await getPoFollowUps('pm', id)
   return NextResponse.json(followUps)
 }
 
@@ -58,7 +59,7 @@ export async function POST(
   }
 
   const created = await createPoFollowUp({
-    ticketType: 'service',
+    ticketType: 'pm',
     ticketId: id,
     userId: user.id,
     method: method as PoFollowUpMethod,

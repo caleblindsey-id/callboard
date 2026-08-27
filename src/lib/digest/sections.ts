@@ -1,7 +1,7 @@
 import type { DigestDb, DigestOwner, DigestRow, KeyPrefix } from './types'
 import * as f from './fetchers'
 
-// The fifteen action queues the morning digest surfaces, grouped by who does
+// The sixteen action queues the morning digest surfaces, grouped by who does
 // the work. Adding a section here is the only place it needs registering: the
 // email template renders whatever this list contains, and the headline dedupe
 // reads the declared key prefixes.
@@ -130,6 +130,15 @@ export const SECTIONS: readonly DigestSection[] = [
     keyPrefixes: ['part'],
     fetch: f.partsStuck,
   },
+  {
+    key: 'not_entered_synergy',
+    owner: 'billing',
+    title: 'Completed jobs not yet entered in Synergy',
+    action: 'key the Synergy order number',
+    viewAllPath: '/billing/po-follow-up',
+    keyPrefixes: ['pm', 'svc'],
+    fetch: f.notEnteredSynergy,
+  },
 
   // --- OFFICE AND AR ---
   {
@@ -138,7 +147,7 @@ export const SECTIONS: readonly DigestSection[] = [
     title: 'Waiting on a customer PO',
     action: 'chase the customer for a PO',
     viewAllPath: '/billing/po-follow-up',
-    keyPrefixes: ['svc'],
+    keyPrefixes: ['pm', 'svc'],
     fetch: f.poGatedBilling,
   },
   {
