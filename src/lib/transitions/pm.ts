@@ -60,3 +60,25 @@ export function isCreditGatedTarget(to: TicketStatus): boolean {
 export function isWorkStartTransition(from: TicketStatus, to: TicketStatus): boolean {
   return to === 'in_progress' && (from === 'unassigned' || from === 'assigned')
 }
+
+/**
+ * The Mark Billed hard gate: a PM ticket can't move to 'billed' without a
+ * Synergy invoice # on record. `ticket` is whatever mix of the in-flight
+ * PATCH body and the persisted row the caller has on hand: the invoice #
+ * may be arriving in THIS request (new value) or have been saved earlier
+ * (existing value); either satisfies the gate. Mirrors
+ * transitions/service.ts's `billingGateSatisfied`.
+ */
+export function billingGateSatisfied(ticket: { synergy_invoice_number?: string | null }): boolean {
+  return !!ticket.synergy_invoice_number?.trim()
+}
+
+/**
+ * The PO gate: a PM ticket whose customer requires a PO can't move to
+ * 'billed' without a PO # on record. Not gated at all when the customer
+ * doesn't require one. Mirrors the same PO requirement service enforces
+ * at Mark Billed.
+ */
+export function poGateSatisfied(ticket: { po_number?: string | null }, poRequired: boolean): boolean {
+  return !poRequired || !!ticket.po_number?.trim()
+}

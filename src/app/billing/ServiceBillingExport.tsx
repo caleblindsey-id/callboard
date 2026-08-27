@@ -27,8 +27,10 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-// A ticket is blocked from export when its customer requires a PO but none is on
-// the ticket yet — mirrors the PM Ready-to-Export gate in BillingExport.tsx.
+// A ticket's customer requires a PO but none is on the ticket yet — shown as an
+// informational status here (PO Status column, amber banner), never blocking
+// export. The PO is required later, at Mark Billed. Mirrors the PM
+// Ready-to-Export gate in BillingExport.tsx.
 function needsPo(t: ServiceBillingTicket): boolean {
   return !!t.customers?.po_required && !t.po_number
 }
@@ -57,7 +59,7 @@ type ServiceBillingSortKey =
 const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, ServiceBillingSortKey> = {
   customer: t => t.customers?.name,
   wo: t => t.work_order_number,
-  // Group PO-needed rows first (they block export), then has-PO, then not-required.
+  // Group PO-needed rows first (they block Mark Billed), then has-PO, then not-required.
   poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   equipment: t =>
     [t.equipment?.make ?? t.equipment_make, t.equipment?.model ?? t.equipment_model]

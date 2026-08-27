@@ -64,7 +64,7 @@ type BillingSortKey =
 const BILLING_SORT_ACCESSORS: SortAccessors<TicketWithJoins, BillingSortKey> = {
   customer: t => t.customers?.name,
   wo: t => t.work_order_number,
-  // Group PO-needed rows first (they block export), then has-PO, then not-required.
+  // Group PO-needed rows first (they block Mark Billed), then has-PO, then not-required.
   poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
   technician: t => t.users?.name,
@@ -89,18 +89,6 @@ export default function BillingExport({
   const [exporting, setExporting] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
-  // Rows with an inline editor open — kept out of the "blocked" dim treatment
-  // below so a coordinator isn't typing into a grayed-out row.
-  const [editingRowIds, setEditingRowIds] = useState<Set<string>>(new Set())
-
-  function setRowEditing(ticketId: string, editing: boolean) {
-    setEditingRowIds((prev) => {
-      const next = new Set(prev)
-      if (editing) next.add(ticketId)
-      else next.delete(ticketId)
-      return next
-    })
-  }
 
   const poMissingCount = tickets.filter(needsPo).length
 
@@ -110,8 +98,6 @@ export default function BillingExport({
   >(tickets, BILLING_SORT_ACCESSORS)
 
   function toggleSelect(id: string) {
-    const ticket = tickets.find((t) => t.id === id)
-    if (ticket && needsPo(ticket)) return
     const next = new Set(selected)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -119,11 +105,10 @@ export default function BillingExport({
   }
 
   function toggleAll() {
-    const selectable = tickets.filter((t) => !needsPo(t))
-    if (selected.size === selectable.length) {
+    if (selected.size === tickets.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(selectable.map((t) => t.id)))
+      setSelected(new Set(tickets.map((t) => t.id)))
     }
   }
 
@@ -247,8 +232,6 @@ export default function BillingExport({
     .filter((t) => selected.has(t.id))
     .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
 
-  const selectableCount = tickets.filter((t) => !needsPo(t)).length
-
   function renderPoStatus(t: TicketWithJoins) {
     if (!t.customers?.po_required) return <span className="text-gray-400 dark:text-gray-600">—</span>
     return (
@@ -262,7 +245,6 @@ export default function BillingExport({
         inputWidthClassName="w-24"
         valueMaxWidthClassName="max-w-[120px]"
         readOnlyWhenSet
-        onEditingChange={(editing) => setRowEditing(t.id, editing)}
       />
     )
   }
@@ -357,10 +339,11 @@ export default function BillingExport({
         </div>
       </div>
 
-      {/* PO missing banner */}
+      {/* PO missing banner — informational. Export is allowed without a PO;
+          the PO is required later, at Mark Billed. */}
       {poMissingCount > 0 && (
         <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
-          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} require{poMissingCount === 1 ? 's' : ''} a PO number before {poMissingCount === 1 ? 'it' : 'they'} can be exported.
+          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} require{poMissingCount === 1 ? 's' : ''} a PO number before {poMissingCount === 1 ? 'it' : 'they'} can be billed.
         </div>
       )}
 
@@ -390,11 +373,10 @@ export default function BillingExport({
             {/* Mobile cards — hidden on desktop */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {sorted.map((t) => {
-                const blocked = needsPo(t)
                 return (
                   <div
                     key={t.id}
-                    className={`px-4 py-3 ${blocked && !editingRowIds.has(t.id) ? 'opacity-50' : ''}`}
+                    className="px-4 py-3"
                     onClick={() => toggleSelect(t.id)}
                   >
                     <div className="flex items-start gap-3">
@@ -403,7 +385,6 @@ export default function BillingExport({
                         checked={selected.has(t.id)}
                         onChange={() => toggleSelect(t.id)}
                         onClick={(e) => e.stopPropagation()}
-                        disabled={blocked}
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600 mt-0.5 shrink-0"
                       />
                       <div className="min-w-0 flex-1">
@@ -460,9 +441,9 @@ export default function BillingExport({
                     <th className="px-4 py-3 text-left">
                       <input
                         type="checkbox"
-                        checked={selectableCount > 0 && selected.size === selectableCount}
+                        checked={tickets.length > 0 && selected.size === tickets.length}
                         onChange={toggleAll}
-                        disabled={selectableCount === 0}
+                        disabled={tickets.length === 0}
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
                       />
                     </th>
@@ -481,15 +462,13 @@ export default function BillingExport({
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {sorted.map((t) => {
-                    const blocked = needsPo(t)
                     return (
-                      <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && !editingRowIds.has(t.id) ? 'opacity-50' : ''}`}>
+                      <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
                             checked={selected.has(t.id)}
                             onChange={() => toggleSelect(t.id)}
-                            disabled={blocked}
                             className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
                           />
                         </td>

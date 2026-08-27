@@ -20,7 +20,7 @@ The **PM Tickets** tab has two sections: **Ready to Export** at the top, and **A
    - **PO Needed** (red) — the customer requires a PO and none is entered. Tap it, type the **PO number**, and **Save** — right here without opening the ticket.
    - A green PO number means it's set; **—** means no PO is required.
 3. *(Optional)* Fill in the **Synergy Order #** column. Tap **+ Synergy Order #** and type the Synergy order number you're billing against. Entering it **before** you export prints it on the exported PDF, so you can match each work order back to its Synergy record when you key the invoice number in later. It's optional and never blocks export — and you can still add or change it afterward in **Awaiting Invoice #**.
-4. Tick the tickets to export (rows missing a required PO can't be selected).
+4. Tick the tickets to export. A missing PO doesn't stop you here — it's checked later, at Mark Billed.
 5. Tap **Export PDF** → review the preview (anything missing is flagged in amber) → tap **Export PDF** again to confirm.
 
 The PDF downloads and those tickets move down into **Awaiting Invoice #**. They are **not billed yet** — exporting just hands you the PDF to key into Synergy.
@@ -49,7 +49,7 @@ Per ticket: customer and account, equipment, technician, completion date, machin
 
 - **Exporting no longer bills anything.** A PM ticket is billed only after you enter its **Synergy invoice number** and tap **Mark Billed**. This keeps "billed" meaning the work was actually invoiced.
 - **One Synergy invoice per work order** on PM tickets.
-- **A required PO blocks export** until it's entered (it's checked again at export). Fill it inline from this page.
+- **A required PO doesn't block export** — it can be entered before or after. It gates **Mark Billed** instead, for both PM and service tickets, right alongside the Synergy invoice #. Fill it inline from this page.
 - **A missing Synergy Invoice # blocks a service ticket** from being marked billed.
 - **A warranty ticket is blocked for one of two reasons.** A ticket flagged for warranty and not yet verified shows an amber **Warranty review pending** flag; a verified ticket whose vendor credit hasn't landed shows **Awaiting vendor credit**. Either way it can't be selected. Clear it on the **Warranty Claims** queue, not from here. See [File a warranty claim and log the vendor credit](/help/managers/file-a-warranty-claim).
 - **The amount shown is what the customer pays, not the claim total.** Once a warranty ticket is verified, this page shows the net customer amount (covered lines removed), with the full claim value shown alongside it when they differ. Nothing here silently drops revenue: the difference is the vendor credit the office is chasing.

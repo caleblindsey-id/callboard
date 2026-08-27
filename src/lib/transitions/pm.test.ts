@@ -9,6 +9,8 @@ import {
   technicianForbiddenTarget,
   isCreditGatedTarget,
   isWorkStartTransition,
+  billingGateSatisfied,
+  poGateSatisfied,
 } from './pm'
 
 const ALL_STATUSES: TicketStatus[] = [
@@ -113,4 +115,25 @@ test('isWorkStartTransition: only the first move into in_progress', () => {
   // Assignment itself is never a work start.
   assert.equal(isWorkStartTransition('unassigned', 'assigned'), false)
   assert.equal(isWorkStartTransition('assigned', 'skipped'), false)
+})
+
+test('billingGateSatisfied: requires a non-empty (trimmed) Synergy invoice #', () => {
+  assert.equal(billingGateSatisfied({ synergy_invoice_number: 'INV-100' }), true)
+  assert.equal(billingGateSatisfied({ synergy_invoice_number: '  ' }), false)
+  assert.equal(billingGateSatisfied({ synergy_invoice_number: null }), false)
+  assert.equal(billingGateSatisfied({ synergy_invoice_number: undefined }), false)
+  assert.equal(billingGateSatisfied({ synergy_invoice_number: '' }), false)
+  assert.equal(billingGateSatisfied({}), false)
+})
+
+test('poGateSatisfied: only gates when the customer requires a PO', () => {
+  assert.equal(poGateSatisfied({ po_number: 'PO-1' }, true), true)
+  assert.equal(poGateSatisfied({ po_number: null }, true), false)
+  assert.equal(poGateSatisfied({ po_number: undefined }, true), false)
+  assert.equal(poGateSatisfied({ po_number: '' }, true), false)
+  assert.equal(poGateSatisfied({ po_number: '  ' }, true), false)
+  assert.equal(poGateSatisfied({}, true), false)
+  // Not required at all -> always satisfied, even with no PO on file.
+  assert.equal(poGateSatisfied({ po_number: null }, false), true)
+  assert.equal(poGateSatisfied({}, false), true)
 })

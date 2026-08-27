@@ -16,7 +16,8 @@ type PmBillingRow = {
   status: string
   billing_exported: boolean
   synergy_invoice_number: string | null
-  customers: { name: string } | null
+  po_number: string | null
+  customers: { name: string; po_required: boolean } | null
 }
 
 export async function POST(request: NextRequest) {
@@ -53,8 +54,8 @@ export async function POST(request: NextRequest) {
     const { data: rawTickets, error: fetchError } = await supabase
       .from('pm_tickets')
       .select(`
-        id, work_order_number, status, billing_exported, synergy_invoice_number,
-        customers ( name )
+        id, work_order_number, status, billing_exported, synergy_invoice_number, po_number,
+        customers ( name, po_required )
       `)
       .is('deleted_at', null)
       .in('id', ticketIds as string[])
@@ -94,6 +95,23 @@ export async function POST(request: NextRequest) {
         .join(', ')
       return NextResponse.json(
         { error: `Missing Synergy invoice #: ${names}` },
+        { status: 400 }
+      )
+    }
+
+    // Hard block: a PO-required customer can't be billed without a PO. The
+    // Ready-to-Export gate was relaxed so the Synergy order can be built before
+    // the PO arrives; the PO requirement lands here at finalization instead.
+    // po_number empty = null OR ''.
+    const missingPo = tickets.filter(
+      (t) => t.customers?.po_required && !(t.po_number ?? '').trim()
+    )
+    if (missingPo.length > 0) {
+      const names = missingPo
+        .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
+        .join(', ')
+      return NextResponse.json(
+        { error: `PO number required before billing: ${names}` },
         { status: 400 }
       )
     }
