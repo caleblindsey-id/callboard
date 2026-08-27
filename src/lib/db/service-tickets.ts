@@ -415,6 +415,11 @@ export type ServiceBillingTicket = {
   po_number: string | null
   synergy_order_number: string | null
   synergy_invoice_number: string | null
+  // Provenance for synergy_invoice_number (migration 164) — 'auto' when the
+  // nightly validator pre-filled it from Synergy, null for manually keyed
+  // numbers. Drives the "Synergy shows invoiced — confirm" pill.
+  synergy_invoice_detected_at: string | null
+  synergy_invoice_source: 'auto' | 'manual' | null
   warranty_credit_received_at: string | null
   warranty_review_status: WarrantyReviewStatus | null
   completed_at: string | null
@@ -461,6 +466,7 @@ async function getServiceBillingByExported(
       id, work_order_number, status, ticket_type, billing_type, billing_amount,
       customer_bill_amount, hours_worked,
       billing_exported, po_number, synergy_order_number, synergy_invoice_number,
+      synergy_invoice_detected_at, synergy_invoice_source,
       warranty_credit_received_at, warranty_review_status, completed_at,
       customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,

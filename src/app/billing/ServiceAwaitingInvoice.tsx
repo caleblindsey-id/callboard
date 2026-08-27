@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
@@ -11,7 +11,7 @@ import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { formatDateShort } from '@/lib/format'
+import { formatDate, formatDateShort } from '@/lib/format'
 import InlineEditCell from './InlineEditCell'
 
 // Service tickets that have been exported (work-order PDF pulled) but are NOT yet
@@ -60,6 +60,25 @@ function warrantyPill(t: ServiceBillingTicket): { label: string; className: stri
 
 function isBlocked(t: ServiceBillingTicket): boolean {
   return needsInvoice(t) || needsPo(t) || warrantyBillingBlock(t) !== null
+}
+
+// The nightly validator (migration 164) pre-fills synergy_invoice_number when
+// it finds the ticket's Synergy order already invoiced. Informational only —
+// Mark Billed still re-validates everything server-side, including the
+// warranty gate above, which the pill never overrides.
+function isSynergyDetected(t: ServiceBillingTicket): boolean {
+  return t.synergy_invoice_source === 'auto' && !!t.synergy_invoice_number?.trim() && t.status === 'completed'
+}
+
+function SynergyDetectedPill({ detectedAt }: { detectedAt: string | null }) {
+  return (
+    <span
+      title={detectedAt ? `Synergy shows this order invoiced as of ${formatDate(detectedAt)}.` : 'Synergy shows this order invoiced.'}
+      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 whitespace-nowrap"
+    >
+      Synergy shows invoiced — confirm
+    </span>
+  )
 }
 
 type ServiceInvoiceSortKey =
@@ -151,10 +170,19 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
   const missingCount = tickets.filter(needsInvoice).length
   const poMissingCount = tickets.filter(needsPo).length
 
+  // Default order (before any header click): auto-detected rows float to the
+  // top so the office sees one-click-confirmable tickets first, otherwise
+  // preserves the incoming (completed_at desc) order. Stable sort keeps
+  // column-header sorting (below) working exactly as before.
+  const defaultOrderedTickets = useMemo(
+    () => [...tickets].sort((a, b) => Number(isSynergyDetected(b)) - Number(isSynergyDetected(a))),
+    [tickets]
+  )
+
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ServiceBillingTicket,
     ServiceInvoiceSortKey
-  >(tickets, SERVICE_INVOICE_SORT_ACCESSORS)
+  >(defaultOrderedTickets, SERVICE_INVOICE_SORT_ACCESSORS)
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
@@ -335,15 +363,18 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
 
   function renderInvoiceStatus(t: ServiceBillingTicket) {
     return (
-      <InlineEditCell
-        value={t.synergy_invoice_number}
-        placeholder="Synergy Invoice #"
-        onSave={(v) => saveInvoice(t.id, v)}
-        emptyVariant="pill"
-        emptyText="Synergy Invoice # Needed"
-        valueClassName="text-green-700 dark:text-green-400"
-        onEditingChange={(editing) => setRowEditing(t.id, editing)}
-      />
+      <div className="flex items-center gap-1.5">
+        <InlineEditCell
+          value={t.synergy_invoice_number}
+          placeholder="Synergy Invoice #"
+          onSave={(v) => saveInvoice(t.id, v)}
+          emptyVariant="pill"
+          emptyText="Synergy Invoice # Needed"
+          valueClassName="text-green-700 dark:text-green-400"
+          onEditingChange={(editing) => setRowEditing(t.id, editing)}
+        />
+        {isSynergyDetected(t) && <SynergyDetectedPill detectedAt={t.synergy_invoice_detected_at} />}
+      </div>
     )
   }
 
