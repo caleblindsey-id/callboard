@@ -76,6 +76,13 @@ export type ServiceTicketRow = {
   parts_received: boolean
   synergy_order_number: string | null
   synergy_invoice_number: string | null
+  // Provenance for synergy_invoice_number (migration 164): stamped by the
+  // nightly validator when it finds the ticket's order invoiced in Synergy
+  // (roh.InvNum <> 0 or moved to invh) and pre-fills the number. NULL for
+  // manually keyed numbers. Billing gates don't read these; informational
+  // only, drives the "Synergy shows invoiced — confirm" pill.
+  synergy_invoice_detected_at: string | null
+  synergy_invoice_source: 'auto' | 'manual' | null
   started_at: string | null
   completed_at: string | null
   hours_worked: number | null
