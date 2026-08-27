@@ -696,8 +696,8 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
 
 // --- Completed-but-waiting-on-PO count (dashboard card) ---
 // Completed tickets for PO-required customers that still have no customer PO on
-// file — the same subset the billing Ready-to-Export gate blocks (needsPo in
-// ServiceBillingExport.tsx). The inner customers join restricts the count to
+// file — the same subset the Mark Billed gate blocks (needsPo in
+// ServiceAwaitingInvoice.tsx). The inner customers join restricts the count to
 // PO-required customers; po_number empty = null OR ''. Pass technicianId to scope
 // to a single tech's completed tickets (the technician dashboard card).
 export async function getPoNeededCount(technicianId?: string): Promise<number> {

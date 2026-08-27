@@ -15,7 +15,8 @@ import { formatDateShort } from '@/lib/format'
 // (one invoice per work order) — the checks-and-balance that proves the work
 // was actually invoiced in Synergy. Rendered as a section UNDER the PM
 // "Ready to Export" list; the month picker on that list drives both queries, so
-// this component intentionally has no picker of its own.
+// this component intentionally has no picker of its own. Mirrors
+// ServiceAwaitingInvoice.
 
 interface PmAwaitingInvoiceProps {
   tickets: TicketWithJoins[]
@@ -25,10 +26,24 @@ function needsInvoice(t: TicketWithJoins): boolean {
   return !t.synergy_invoice_number?.trim()
 }
 
+// A PO-required customer can't be billed until a PO is on the ticket. The
+// Ready-to-Export gate was relaxed (the PDF can be exported before the PO
+// arrives), so a PO-required ticket can now reach this queue without a PO —
+// it's recorded here, and blocks Mark Billed until it is. Mirrors the server
+// gate in mark-billed and the PO gate on Ready to Export.
+function needsPo(t: TicketWithJoins): boolean {
+  return !!t.customers?.po_required && !t.po_number
+}
+
+function isBlocked(t: TicketWithJoins): boolean {
+  return needsInvoice(t) || needsPo(t)
+}
+
 type PmInvoiceSortKey =
   | 'customer'
   | 'wo'
   | 'invoice'
+  | 'poStatus'
   | 'synergy'
   | 'equipment'
   | 'technician'
@@ -40,6 +55,8 @@ const PM_INVOICE_SORT_ACCESSORS: SortAccessors<TicketWithJoins, PmInvoiceSortKey
   wo: t => t.work_order_number,
   // Invoice-needed rows first (they block mark-billed).
   invoice: t => (needsInvoice(t) ? 0 : 1),
+  // PO-needed rows first (they block mark-billed), then has-PO, then not-required.
+  poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   synergy: t => t.synergy_order_number,
   equipment: t => [t.equipment?.make, t.equipment?.model].filter(Boolean).join(' ') || null,
   technician: t => t.users?.name,
@@ -73,9 +90,9 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   // Confirm naming the WO# so a single un-export can't be misread as a
   // bulk action — mirrors ServiceAwaitingInvoice (feedback #40).
   const [confirmingUnexportId, setConfirmingUnexportId] = useState<string | null>(null)
-  // Rows with an inline editor (invoice # or Synergy order #) open — kept out
-  // of the "blocked" dim treatment below so a coordinator isn't typing into a
-  // grayed-out row.
+  // Rows with an inline editor (invoice #, Synergy order #, or PO #) open —
+  // kept out of the "blocked" dim treatment below so a coordinator isn't
+  // typing into a grayed-out row.
   const [editingRowIds, setEditingRowIds] = useState<Set<string>>(new Set())
 
   function setRowEditing(ticketId: string, editing: boolean) {
@@ -88,6 +105,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   }
 
   const missingCount = tickets.filter(needsInvoice).length
+  const poMissingCount = tickets.filter(needsPo).length
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     TicketWithJoins,
@@ -96,7 +114,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
-    if (ticket && needsInvoice(ticket)) return
+    if (ticket && isBlocked(ticket)) return
     const next = new Set(selected)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -104,7 +122,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
   }
 
   function toggleAll() {
-    const selectable = tickets.filter((t) => !needsInvoice(t))
+    const selectable = tickets.filter((t) => !isBlocked(t))
     if (selected.size === selectable.length) {
       setSelected(new Set())
     } else {
@@ -151,6 +169,43 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
       setToast({ message, type: 'error' })
       throw err
     }
+  }
+
+  async function savePo(ticketId: string, value: string) {
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ po_number: value }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errData.error ?? `Server error ${res.status}`)
+      }
+      router.refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save PO number.'
+      setToast({ message, type: 'error' })
+      throw err
+    }
+  }
+
+  function renderPoStatus(t: TicketWithJoins) {
+    if (!t.customers?.po_required) return <span className="text-gray-400 dark:text-gray-600">—</span>
+    return (
+      <InlineEditCell
+        value={t.po_number}
+        placeholder="PO #"
+        onSave={(v) => savePo(t.id, v)}
+        emptyVariant="pill"
+        emptyText="PO Needed"
+        valueClassName="text-green-700 dark:text-green-400"
+        inputWidthClassName="w-24"
+        valueMaxWidthClassName="max-w-[120px]"
+        readOnlyWhenSet
+        onEditingChange={(editing) => setRowEditing(t.id, editing)}
+      />
+    )
   }
 
   async function handleMarkBilled() {
@@ -230,7 +285,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     .filter((t) => selected.has(t.id))
     .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
 
-  const selectableCount = tickets.filter((t) => !needsInvoice(t)).length
+  const selectableCount = tickets.filter((t) => !isBlocked(t)).length
 
   function renderInvoiceStatus(t: TicketWithJoins) {
     return (
@@ -312,6 +367,14 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
         </div>
       )}
 
+      {/* Waiting on PO banner — these were exported without a PO; record it here
+          before billing. */}
+      {poMissingCount > 0 && (
+        <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+          {poMissingCount} ticket{poMissingCount === 1 ? '' : 's'} need{poMissingCount === 1 ? 's' : ''} a PO number before {poMissingCount === 1 ? 'it' : 'they'} can be marked billed.
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div
@@ -336,7 +399,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {sorted.map((t) => {
-                const blocked = needsInvoice(t)
+                const blocked = isBlocked(t)
                 return (
                   <div
                     key={t.id}
@@ -379,6 +442,10 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                           {formatDateShort(t.completed_date)}
                         </p>
                         <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <span>PO:</span>
+                          {renderPoStatus(t)}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           <span>Synergy Order #:</span>
                           {renderSynergyCell(t)}
                         </div>
@@ -409,6 +476,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                     </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="WO#" colKey="wo" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Invoice #" colKey="invoice" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Synergy Order #" colKey="synergy" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="Equipment" colKey="equipment" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -420,7 +488,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {sorted.map((t) => {
-                    const blocked = needsInvoice(t)
+                    const blocked = isBlocked(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
@@ -442,6 +510,9 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                           {t.work_order_number ?? '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {renderPoStatus(t)}
                         </td>
                         <td className="px-4 py-3">
                           {renderInvoiceStatus(t)}
