@@ -10,9 +10,9 @@ export interface WhatsNewUpdate {
 }
 
 export const LATEST_UPDATE: WhatsNewUpdate | null = {
-  id: '2026-08-26-warranty-review-lifecycle',
+  id: '2026-08-27-billing-chase-synergy-same-day',
   headline:
-    'Change: warranty is now a flag-and-verify flow. Techs flag a repair on the ticket; the billing type picker is gone. Office verifies from the Warranty Claims queue.',
-  href: '/help/managers/file-a-warranty-claim',
+    'Change: bill completed work faster. Key the Synergy order the day work finishes — export is never blocked by a missing PO. One Billing Chase list covers PM and service; a nightly check pre-fills invoice numbers Synergy already shows as invoiced, for you to confirm.',
+  href: '/help/managers/billing-chase',
   cta: 'See how',
 }

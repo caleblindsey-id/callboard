@@ -200,6 +200,19 @@ export async function PATCH(
       )
     }
 
+    // A human keying/overwriting the Synergy invoice # through the app must
+    // clear any stale auto-detect provenance from an earlier nightly run —
+    // otherwise the "Synergy shows invoiced — confirm" pill would describe a
+    // number that's since been overwritten. synergy_invoice_source/
+    // synergy_invoice_detected_at are server-set only (not in
+    // STAFF_ALLOWED_FIELDS/TECH_ALLOWED_FIELDS); the nightly script writes them
+    // itself via a direct PostgREST PATCH and never goes through this route
+    // (migration 164).
+    if (filtered.synergy_invoice_number !== undefined) {
+      filtered.synergy_invoice_source = null
+      filtered.synergy_invoice_detected_at = null
+    }
+
     // billing_amount validation: must be a finite non-negative number when present.
     if (filtered.billing_amount !== undefined && filtered.billing_amount !== null) {
       if (typeof filtered.billing_amount !== 'number' || !Number.isFinite(filtered.billing_amount) || filtered.billing_amount < 0) {

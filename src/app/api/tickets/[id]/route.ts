@@ -120,6 +120,18 @@ export async function PATCH(
       )
     }
 
+    // A human keying/overwriting the Synergy invoice # through the app must
+    // clear any stale auto-detect provenance from an earlier nightly run —
+    // otherwise the "Synergy shows invoiced — confirm" pill would describe a
+    // number that's since been overwritten. synergy_invoice_source/
+    // synergy_invoice_detected_at are server-set only (not in ALLOWED_FIELDS);
+    // the nightly script writes them itself via a direct PostgREST PATCH and
+    // never goes through this route (migration 164).
+    if (filtered.synergy_invoice_number !== undefined) {
+      ;(filtered as Record<string, unknown>).synergy_invoice_source = null
+      ;(filtered as Record<string, unknown>).synergy_invoice_detected_at = null
+    }
+
     // Defense-in-depth: techs can only modify their own assigned tickets,
     // regardless of which fields they're updating. (RLS enforces this too,
     // but we don't rely on RLS as the only line.)
