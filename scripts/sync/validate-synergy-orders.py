@@ -346,7 +346,8 @@ def detect_invoiced(conn, rows: list[dict], table: str) -> dict[str, str]:
             f"SELECT OrdNum, InvNum FROM invh WHERE OrdNum IN ({placeholders})"
         )
         for ord_num, inv_num in cursor.fetchall():
-            invoice_by_order[ord_num] = inv_num  # invh wins on conflict
+            if inv_num:  # never let an unnumbered invh row overwrite a roh hit with 0
+                invoice_by_order[ord_num] = inv_num  # invh wins on conflict
 
     now_iso = datetime.now(timezone.utc).isoformat()
     detected_by_id: dict[str, str] = {}
