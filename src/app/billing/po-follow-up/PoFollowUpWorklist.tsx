@@ -117,10 +117,18 @@ function LastContact({ t }: { t: BillingChaseRow }) {
 
 // Sort is opt-in: with no `initial` the hook returns `tickets` untouched, so the
 // default view stays the server's most-blocked-first, oldest-completed-first
-// triage order. Because the hook's sort is stable, sorting by type yields three
-// contiguous blocks that each KEEP that triage order inside them.
-const SORT_ACCESSORS: SortAccessors<BillingChaseRow, 'workType'> = {
+// triage order. Because the hook's sort is stable, sorting by either column
+// yields contiguous blocks that each KEEP that triage order inside them.
+//
+// `customer` exists so the office can work one customer in one phone call:
+// a handful of customers own most of the queue and their rows are otherwise
+// scattered the length of the list. A-Z (rather than ordering customers by
+// urgency) is deliberate — it is what a Customer column is expected to do, and
+// she reaches for it knowing which customer she is about to call. Between-customer
+// urgency is the tradeoff; the unsorted default is still one click away.
+const SORT_ACCESSORS: SortAccessors<BillingChaseRow, 'workType' | 'customer'> = {
   workType: (t) => t.workType,
+  customer: (t) => t.customers?.name,
 }
 
 export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps) {
@@ -221,7 +229,7 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
           Billing Chase{tickets.length > 0 ? ` (${tickets.length})` : ''}
         </h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          Completed PM and service jobs missing a Synergy order #, a required customer PO, or a Synergy invoice #. Log each contact attempt and enter the missing field to clear the job. Most-blocked, then oldest-completed first. Click Type to group inside, outside, and PM together.
+          Completed PM and service jobs missing a Synergy order #, a required customer PO, or a Synergy invoice #. Log each contact attempt and enter the missing field to clear the job. Most-blocked, then oldest-completed first. Click Type to group inside, outside, and PM together, or Customer to line up every job for one customer before you call them.
         </p>
       </div>
 
@@ -298,7 +306,13 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left">
-                    <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Customer</th>
+                    <SortHeader
+                      label="Customer"
+                      colKey="customer"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                    />
                     <SortHeader
                       label="Type"
                       colKey="workType"
