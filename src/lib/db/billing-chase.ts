@@ -11,10 +11,17 @@ import type { DigestDb } from '@/lib/digest/types'
 
 export type BillingChaseReason = 'not_entered' | 'po_missing' | 'not_invoiced'
 export type BillingChaseTicketType = 'pm' | 'service'
+// Presentational split for the worklist's Type column. Service tickets carry
+// service_tickets.ticket_type (inside = bench/shop, outside = field); PM work is
+// field work by definition and has no such column, so it is its own value.
+// Deliberately SEPARATE from BillingChaseTicketType, which stays two-valued
+// because the worklist branches its detail href and PATCH route off it.
+export type BillingChaseWorkType = 'inside' | 'outside' | 'pm'
 
 export type BillingChaseRow = {
   id: string
   ticketType: BillingChaseTicketType
+  workType: BillingChaseWorkType
   workOrderNumber: number | null
   completedAt: string | null
   billingAmount: number | null
@@ -37,6 +44,7 @@ type ChaseEquipment = { make: string | null; model: string | null; serial_number
 
 type ServiceChaseSource = {
   id: string
+  ticket_type: 'inside' | 'outside'
   work_order_number: number | null
   completed_at: string | null
   billing_amount: number | null
@@ -90,7 +98,7 @@ export async function getBillingChaseQueue(db?: DigestDb): Promise<BillingChaseR
     supabase
       .from('service_tickets')
       .select(`
-        id, work_order_number, completed_at, billing_amount, po_number,
+        id, ticket_type, work_order_number, completed_at, billing_amount, po_number,
         synergy_order_number, synergy_invoice_number, billing_exported,
         po_last_contacted_at, po_last_method, equipment_make, equipment_model,
         customers ( id, name, account_number, po_required ),
@@ -125,6 +133,7 @@ export async function getBillingChaseQueue(db?: DigestDb): Promise<BillingChaseR
       return {
         id: t.id,
         ticketType: 'service',
+        workType: t.ticket_type,
         workOrderNumber: t.work_order_number,
         completedAt: t.completed_at,
         billingAmount: t.billing_amount,
@@ -153,6 +162,7 @@ export async function getBillingChaseQueue(db?: DigestDb): Promise<BillingChaseR
       return {
         id: t.id,
         ticketType: 'pm',
+        workType: 'pm',
         workOrderNumber: t.work_order_number,
         completedAt: t.completed_date,
         billingAmount: t.billing_amount,
