@@ -4,8 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Phone, Mail, MessageSquare, MoreHorizontal } from 'lucide-react'
-import type { BillingChaseRow, BillingChaseReason, BillingChaseTicketType } from '@/lib/db/billing-chase'
+import type { BillingChaseRow, BillingChaseReason, BillingChaseWorkType } from '@/lib/db/billing-chase'
 import ScrollableTable from '@/components/ScrollableTable'
+import Badge from '@/components/ui/Badge'
+import SortHeader from '@/components/SortHeader'
+import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import InlineEditCell from '../InlineEditCell'
 import PoFollowUpDrawer from './PoFollowUpDrawer'
 import { formatDateShort } from '@/lib/format'
@@ -22,18 +25,12 @@ function ticketPatchUrl(t: BillingChaseRow): string {
   return t.ticketType === 'pm' ? `/api/tickets/${t.id}` : `/api/service-tickets/${t.id}`
 }
 
-function TypeChip({ type }: { type: BillingChaseTicketType }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${
-        type === 'pm'
-          ? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
-          : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
-      }`}
-    >
-      {type === 'pm' ? 'PM' : 'Service'}
-    </span>
-  )
+// Inside (bench) / Outside (field) / PM. Replaces the old two-valued PM vs
+// Service chip: "Service" alone didn't tell the office who owns the row, and
+// inside vs outside billing is chased by different people. Colors come from the
+// shared `chaseWorkType` domain so Inside/Outside match the service board.
+function TypeChip({ workType }: { workType: BillingChaseWorkType }) {
+  return <Badge domain="chaseWorkType" status={workType} />
 }
 
 function ReasonChips({ reasons }: { reasons: BillingChaseReason[] }) {
@@ -118,8 +115,25 @@ function LastContact({ t }: { t: BillingChaseRow }) {
   )
 }
 
+// Sort is opt-in: with no `initial` the hook returns `tickets` untouched, so the
+// default view stays the server's most-blocked-first, oldest-completed-first
+// triage order. Because the hook's sort is stable, sorting by either column
+// yields contiguous blocks that each KEEP that triage order inside them.
+//
+// `customer` exists so the office can work one customer in one phone call:
+// a handful of customers own most of the queue and their rows are otherwise
+// scattered the length of the list. A-Z (rather than ordering customers by
+// urgency) is deliberate — it is what a Customer column is expected to do, and
+// she reaches for it knowing which customer she is about to call. Between-customer
+// urgency is the tradeoff; the unsorted default is still one click away.
+const SORT_ACCESSORS: SortAccessors<BillingChaseRow, 'workType' | 'customer'> = {
+  workType: (t) => t.workType,
+  customer: (t) => t.customers?.name,
+}
+
 export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps) {
   const router = useRouter()
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableTable(tickets, SORT_ACCESSORS)
   const [drawerTicket, setDrawerTicket] = useState<BillingChaseRow | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
@@ -215,7 +229,7 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
           Billing Chase{tickets.length > 0 ? ` (${tickets.length})` : ''}
         </h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          Completed PM and service jobs missing a Synergy order #, a required customer PO, or a Synergy invoice #. Log each contact attempt and enter the missing field to clear the job. Most-blocked, then oldest-completed first.
+          Completed PM and service jobs missing a Synergy order #, a required customer PO, or a Synergy invoice #. Log each contact attempt and enter the missing field to clear the job. Most-blocked, then oldest-completed first. Click Type to group inside, outside, and PM together, or Customer to line up every job for one customer before you call them.
         </p>
       </div>
 
@@ -240,12 +254,12 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
           <>
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
-              {tickets.map((t) => (
+              {sorted.map((t) => (
                 <div key={t.id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <TypeChip type={t.ticketType} />
+                        <TypeChip workType={t.workType} />
                         <Link href={ticketHref(t)} className="text-sm font-medium text-gray-900 dark:text-white hover:underline">
                           {t.customers?.name ?? '—'}
                         </Link>
@@ -292,8 +306,20 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-left">
-                    <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Customer</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
+                    <SortHeader
+                      label="Customer"
+                      colKey="customer"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                    />
+                    <SortHeader
+                      label="Type"
+                      colKey="workType"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                    />
                     <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Equipment</th>
                     <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Technician</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-400">Billing</th>
@@ -307,7 +333,7 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {tickets.map((t) => (
+                  {sorted.map((t) => (
                     <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-4 py-3 text-gray-900 dark:text-white">
                         <Link href={ticketHref(t)} className="hover:underline">
@@ -321,7 +347,7 @@ export default function PoFollowUpWorklist({ tickets }: PoFollowUpWorklistProps)
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <TypeChip type={t.ticketType} />
+                        <TypeChip workType={t.workType} />
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {renderEquipment(t)}
