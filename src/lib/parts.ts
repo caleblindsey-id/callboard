@@ -666,3 +666,53 @@ export function partLabel(
   const detail = (part.detail ?? '').trim()
   return detail ? `${desc} — ${detail}` : desc
 }
+
+/**
+ * The outcome of deciding which parts array a completion should persist.
+ * `would_blank` means the caller asked to empty a work order that currently has
+ * billable lines on it, which is refused rather than obeyed.
+ */
+export type CompletionPartsResolution<T> =
+  | { ok: true; parts: T[] }
+  | { ok: false; reason: 'would_blank'; storedCount: number }
+
+/**
+ * Resolve the parts array a `/complete` route should write.
+ *
+ * Both completion routes previously resolved `parts_used ?? []`, and neither
+ * read the stored value first. That made "the client did not mention parts" and
+ * "this job used no parts" the same instruction, so a caller could empty a
+ * billable work order by accident and get a 200 back.
+ *
+ * It happened. The mobile Quick Complete sheet (live 2026-05-15 to 2026-06-29,
+ * removed in PR #200) hardcoded `parts_used: []` in its submit body. Because it
+ * was gated on `isMobile` it only ever fired for technicians, so it wiped 14
+ * work orders across June while every desktop completion by the office was
+ * fine. Ten were noticed and re-entered; WO-1006 ($264.45, including a $249.72
+ * vacuum motor) and WO-837 ($113.76) were invoiced for labor and a trip charge
+ * only. Nothing in the stack objected.
+ *
+ * The rule this encodes: a completion may add, edit, or remove SOME lines, but
+ * it may not take a populated work order to none. Deliberately narrow, because
+ * a technician removing a part they did not end up fitting is legitimate and
+ * must not be blocked. Clearing the last line is done in the parts UI, which is
+ * an explicit act, not a side effect of pressing Complete.
+ */
+export function resolveCompletionParts<T>(
+  submitted: T[] | null | undefined,
+  stored: T[] | null | undefined
+): CompletionPartsResolution<T> {
+  const storedLines = Array.isArray(stored) ? stored : []
+
+  // Omitted entirely: keep what the row already has. Silence is not an
+  // instruction to delete.
+  if (submitted === null || submitted === undefined) {
+    return { ok: true, parts: storedLines }
+  }
+
+  if (submitted.length === 0 && storedLines.length > 0) {
+    return { ok: false, reason: 'would_blank', storedCount: storedLines.length }
+  }
+
+  return { ok: true, parts: submitted }
+}
