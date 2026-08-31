@@ -16,6 +16,8 @@ import {
   workOrderAutoAddPatch,
   isStagingOnlyAction,
   isQueueRowStranded,
+  isHeldForEstimate,
+  partsHeldForEstimate,
   canEditPartQuantity,
   normalizePartQuantity,
   validateQuantityEdits,
@@ -890,4 +892,105 @@ test('dropping some but not all lines is allowed', () => {
   const result = resolveCompletionParts(submitted, stored)
   assert.equal(result.ok, true)
   assert.deepEqual(result.ok && result.parts, submitted)
+})
+
+// ── isHeldForEstimate / partsHeldForEstimate ──
+//
+// These MIRROR the parts_order_queue view's service-branch WHERE clause. The
+// tests below are written against that clause, not against the helper, so they
+// fail if the two ever drift:
+//
+//   NOT (st.status IN ('open','estimated','declined','canceled')
+//        AND COALESCE(part->>'status','requested') IN ('requested','pending_review'))
+
+test('an uncommitted service part on an estimate-state ticket is held', () => {
+  for (const ticketStatus of ['open', 'estimated', 'declined', 'canceled']) {
+    for (const status of ['requested', 'pending_review']) {
+      assert.equal(
+        isHeldForEstimate({ source: 'service', ticketStatus, status }),
+        true,
+        `${ticketStatus}/${status}`,
+      )
+    }
+  }
+})
+
+test('a committed part is never held, whatever the ticket is doing', () => {
+  // An ordered or received part is a real vendor PO the office still has to
+  // chase or restock. Migration 147 kept the gate per-row for exactly this.
+  for (const ticketStatus of ['open', 'estimated', 'declined', 'canceled']) {
+    for (const status of ['ordered', 'received', 'from_stock']) {
+      assert.equal(
+        isHeldForEstimate({ source: 'service', ticketStatus, status }),
+        false,
+        `${ticketStatus}/${status}`,
+      )
+    }
+  }
+})
+
+test('an uncommitted part on a live ticket is not held', () => {
+  // This is the escape hatch Ken found by accident and flipped straight back
+  // out of: 'in_progress' is not in the gated list, so the part appears.
+  for (const ticketStatus of ['approved', 'in_progress', 'completed', 'billed']) {
+    assert.equal(
+      isHeldForEstimate({ source: 'service', ticketStatus, status: 'pending_review' }),
+      false,
+      ticketStatus,
+    )
+  }
+})
+
+test('a cancelled part is not reported as held', () => {
+  // It is not in the queue, but the gate is not why, and nagging about a part
+  // the office deliberately cancelled is noise.
+  assert.equal(
+    isHeldForEstimate({ source: 'service', ticketStatus: 'open', status: 'pending_review', cancelled: true }),
+    false,
+  )
+})
+
+test('PM parts are never held', () => {
+  // The view carries this predicate on its service branch only — PM work has no
+  // customer estimate to wait on.
+  assert.equal(
+    isHeldForEstimate({ source: 'pm', ticketStatus: 'open', status: 'pending_review' }),
+    false,
+  )
+})
+
+test('a part with no status defaults to requested, matching the view COALESCE', () => {
+  assert.equal(isHeldForEstimate({ source: 'service', ticketStatus: 'open', status: null }), true)
+  assert.equal(isHeldForEstimate({ source: 'service', ticketStatus: 'open', status: undefined }), true)
+})
+
+test('a missing ticket status is not treated as held', () => {
+  assert.equal(isHeldForEstimate({ source: 'service', ticketStatus: null, status: 'pending_review' }), false)
+  assert.equal(isHeldForEstimate({ source: 'service', ticketStatus: '', status: 'pending_review' }), false)
+})
+
+test('partsHeldForEstimate returns only the withheld parts — the WO-1129 shape', () => {
+  // Feedback #91's ticket, reduced: two hand-cancelled attempts at the same
+  // tank assembly, the parts that were already received before the estimate was
+  // reopened, and the live pending_review request nobody could find.
+  const parts = [
+    manual({ description: 'TANK ASSY, SOLTN [CS5]', status: 'pending_review', cancelled: true }),
+    manual({ description: 'PUMP', status: 'received' }),
+    manual({ description: 'MAIN PCB', status: 'received' }),
+    manual({ description: 'TANK ASSY, SOLTN [CS5]', status: 'pending_review' }),
+  ]
+  const held = partsHeldForEstimate('open', parts)
+  assert.equal(held.length, 1)
+  assert.equal(held[0].description, 'TANK ASSY, SOLTN [CS5]')
+  assert.equal(held[0].cancelled, undefined)
+})
+
+test('partsHeldForEstimate holds nothing once the estimate is approved', () => {
+  const parts = [manual({ status: 'pending_review' }), manual({ status: 'requested' })]
+  assert.deepEqual(partsHeldForEstimate('approved', parts), [])
+})
+
+test('partsHeldForEstimate tolerates a null parts array', () => {
+  assert.deepEqual(partsHeldForEstimate('open', null), [])
+  assert.deepEqual(partsHeldForEstimate('open', undefined), [])
 })

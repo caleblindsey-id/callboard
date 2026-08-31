@@ -1,4 +1,4 @@
-import type { PartRequest, PartUsed } from '@/types/database'
+import type { PartRequest, PartUsed, PartsQueueSource } from '@/types/database'
 
 /**
  * Parts that are neither received nor cancelled — i.e. still on order.
@@ -281,6 +281,90 @@ export function isQueueRowStranded(ticketStatus: string | null | undefined): boo
     ticketStatus === 'declined' ||
     ticketStatus === 'canceled' ||
     ticketStatus === 'skipped'
+  )
+}
+
+/**
+ * The service-ticket statuses in which the Parts Queue WITHHOLDS an
+ * uncommitted part — the estimate gate, grown over three migrations:
+ * 055 added it for 'open'/'estimated', 102 extended the part side to
+ * 'pending_review' when new tech requests started landing there, and 147 added
+ * 'declined'/'canceled' after feedback #81 (parts for a dead repair showing up
+ * as live procurement).
+ *
+ * The premise is "don't source a part the customer has not approved yet".
+ */
+export const ESTIMATE_HELD_TICKET_STATUSES = [
+  'open',
+  'estimated',
+  'declined',
+  'canceled',
+] as const
+
+/**
+ * The part statuses that gate applies to. Anything further along ('ordered',
+ * 'received', 'from_stock') is a real PO the office still has to chase, so it
+ * stays visible no matter what the parent ticket is doing.
+ */
+export const ESTIMATE_HELD_PART_STATUSES = ['requested', 'pending_review'] as const
+
+/**
+ * True when the estimate gate is withholding this part from the Parts Queue.
+ *
+ * Mirrors the `parts_order_queue` view's service-branch WHERE clause verbatim:
+ *
+ *   NOT (st.status IN ('open','estimated','declined','canceled')
+ *        AND COALESCE(part->>'status','requested') IN ('requested','pending_review'))
+ *
+ * **If that predicate changes, change this with it** — the two are a matched
+ * pair, and this one exists purely to TELL people what the view is doing. It
+ * does not gate anything itself.
+ *
+ * Why it exists (feedback #91, Ken, manager, 2026-08-18): WO-1129's estimate was
+ * approved on 08-11, parts were ordered and received, then a manager reopened the
+ * estimate on 08-17 to revise it — which drops the ticket back to 'open'. Every
+ * part added after that landed 'pending_review' on an 'open' ticket and was
+ * silently filtered out of the queue. Ken added the same tank assembly three
+ * times, cancelled two of them assuming the save had failed, and flipped the
+ * ticket open -> in_progress -> open three times hunting for a workaround. He was
+ * seconds from the answer each time (the part IS visible while 'in_progress') and
+ * nothing on either screen said a word. 19 parts across 13 tickets were held this
+ * way in prod when this shipped.
+ *
+ * PM parts are never held — PM work has no customer estimate to wait on, which is
+ * why the view only carries this predicate on its service branch.
+ *
+ * Structural rather than taking a full PartRequest, for the same reason
+ * `isPartOutstanding` is: the same judgement gets made about a view row (which
+ * projects status/cancelled as plain columns) and about a raw JSONB element.
+ */
+export function isHeldForEstimate(part: {
+  source?: PartsQueueSource | null
+  ticketStatus: string | null | undefined
+  status: string | null | undefined
+  cancelled?: boolean | null
+}): boolean {
+  // PM parts always show; absent source means a service-ticket caller that has
+  // no source column to pass (the ticket detail page only ever holds one).
+  if (part.source && part.source !== 'service') return false
+  if (part.cancelled) return false
+  if (!part.ticketStatus) return false
+  return (
+    (ESTIMATE_HELD_TICKET_STATUSES as readonly string[]).includes(part.ticketStatus) &&
+    (ESTIMATE_HELD_PART_STATUSES as readonly string[]).includes(part.status ?? 'requested')
+  )
+}
+
+/**
+ * The subset of a service ticket's parts the Parts Queue is withholding.
+ * Drives the ticket-side notice in PartsSection — see isHeldForEstimate.
+ */
+export function partsHeldForEstimate(
+  ticketStatus: string | null | undefined,
+  parts: PartRequest[] | null | undefined
+): PartRequest[] {
+  return (parts ?? []).filter((p) =>
+    isHeldForEstimate({ ticketStatus, status: p.status, cancelled: p.cancelled })
   )
 }
 
