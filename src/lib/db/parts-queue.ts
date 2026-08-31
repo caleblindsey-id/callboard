@@ -1,6 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import type { DigestDb } from '@/lib/digest/types'
-import { partsMissingFromWorkOrder } from '@/lib/parts'
+import {
+  ESTIMATE_HELD_TICKET_STATUSES,
+  isHeldForEstimate,
+  partsMissingFromWorkOrder,
+} from '@/lib/parts'
 import type { PartRequest, PartUsed, PartsQueueRow, PartsQueueSource } from '@/types/database'
 
 // Columns the queue page actually renders. customer_id and assigned_technician_id
@@ -221,6 +225,93 @@ export async function getMyPartsQueue(userId: string): Promise<MyPartRow[]> {
     ...flattenParts((pmResult.data ?? []) as unknown as TicketPartsRow[], 'pm'),
     ...flattenParts((serviceResult.data ?? []) as unknown as TicketPartsRow[], 'service'),
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Parts the estimate gate is withholding from the queue
+//
+// The parts_order_queue view drops uncommitted service parts while their ticket
+// sits in an estimate state (see isHeldForEstimate for the full predicate and
+// the feedback #91 story). That is deliberate and stays. What was NOT deliberate
+// is that it happened in total silence: the part saved fine, showed "In Review"
+// on the ticket, and simply never arrived in the queue, with nothing anywhere
+// saying why.
+//
+// So: read the withheld set explicitly, purely to display it. This deliberately
+// does NOT go through the view — the view's whole job is to exclude these rows,
+// and widening it would change every other consumer (the dashboard counts in
+// db/service-tickets.ts, the morning digest, service-readiness) and re-open
+// feedback #81. Nothing here is actionable; the banner links back to the ticket
+// and the office approves the estimate there.
+// ---------------------------------------------------------------------------
+
+export type HeldPartRow = {
+  ticket_id: string
+  work_order_number: number | null
+  part_index: number
+  customer_name: string | null
+  description: string | null
+  quantity: number | null
+  vendor: string | null
+  status: string
+  requested_at: string | null
+  ticket_status: string
+}
+
+export async function getPartsHeldForEstimate(): Promise<HeldPartRow[]> {
+  const supabase = await createClient()
+
+  // deleted_at guard is required on every multi-row service_tickets read — a
+  // soft-deleted ticket keeps its pre-delete status and RLS does not filter it
+  // (AGENTS.md), so without this the banner would count phantom work.
+  const { data, error } = await supabase
+    .from('service_tickets')
+    .select('id, work_order_number, status, parts_requested, customers(name)')
+    .is('deleted_at', null)
+    .in('status', [...ESTIMATE_HELD_TICKET_STATUSES])
+
+  if (error) throw error
+
+  const out: HeldPartRow[] = []
+  for (const ticket of (data ?? []) as unknown as HeldTicketRow[]) {
+    const parts = Array.isArray(ticket.parts_requested) ? ticket.parts_requested : []
+    // Index is the part's position in the FULL array — parts_queue and the
+    // ticket detail both address parts positionally (feedback #64), so it must
+    // be taken before any filtering.
+    parts.forEach((part, idx) => {
+      if (
+        !isHeldForEstimate({
+          source: 'service',
+          ticketStatus: ticket.status,
+          status: part.status,
+          cancelled: part.cancelled,
+        })
+      )
+        return
+      out.push({
+        ticket_id: ticket.id,
+        work_order_number: ticket.work_order_number,
+        part_index: idx,
+        customer_name: ticket.customers?.name ?? null,
+        description: part.description ?? null,
+        quantity: part.quantity ?? null,
+        vendor: part.vendor ?? null,
+        status: part.status ?? 'requested',
+        requested_at: part.requested_at ?? null,
+        ticket_status: ticket.status,
+      })
+    })
+  }
+  // Oldest first — a part held for six weeks is the one worth chasing.
+  return out.sort((a, b) => (a.requested_at ?? '').localeCompare(b.requested_at ?? ''))
+}
+
+type HeldTicketRow = {
+  id: string
+  work_order_number: number | null
+  status: string
+  parts_requested: PartRequest[] | null
+  customers: { name: string } | null
 }
 
 // ---------------------------------------------------------------------------

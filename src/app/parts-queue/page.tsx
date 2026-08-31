@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
-import { getPartsQueue } from '@/lib/db/parts-queue'
+import { getPartsQueue, getPartsHeldForEstimate } from '@/lib/db/parts-queue'
 import type { PartsQueueSource } from '@/types/database'
 import PartsQueueClient from './PartsQueueClient'
 import SyncStaleNotice from '@/components/SyncStaleNotice'
@@ -40,7 +40,10 @@ export default async function PartsQueuePage({
   }>
 }) {
   await requireRole(...MANAGER_ROLES)
-  const rows = await getPartsQueue()
+  // heldRows are the parts the view deliberately withholds behind the estimate
+  // gate. Fetched alongside the queue purely so the page can SAY they exist —
+  // before this they vanished without a word (feedback #91).
+  const [rows, heldRows] = await Promise.all([getPartsQueue(), getPartsHeldForEstimate()])
 
   const params = (await searchParams) ?? {}
   const ticketFilter = firstString(params.ticket)
@@ -73,6 +76,7 @@ export default async function PartsQueuePage({
       <SyncStaleNotice />
       <PartsQueueClient
         rows={rows}
+        heldRows={heldRows}
         initialTicketFilter={ticketFilter}
         initialFilters={initialFilters}
       />

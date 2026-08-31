@@ -1,12 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { ExternalLink, Trash2 } from 'lucide-react'
+import { AlertCircle, ExternalLink, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartQuantityField from '@/components/PartQuantityField'
 import VendorPicker from '@/components/VendorPicker'
 import TechEquipmentDetailsPanel from './TechEquipmentDetailsPanel'
-import { partLabel } from '@/lib/parts'
+import { partLabel, partsHeldForEstimate } from '@/lib/parts'
 import {
   SHIPPING_METHODS,
   SHIPPING_NOTE_MAX_LEN,
@@ -151,6 +151,11 @@ export default function PartsSection({
   onAddPartRequest,
   onSaveSynergyOrderNumber,
 }: PartsSectionProps) {
+  // Parts the Parts Queue is withholding behind the estimate gate. Read off the
+  // live (non-cancelled) list, so a part the office already cancelled doesn't
+  // keep nagging.
+  const heldParts = partsHeldForEstimate(ticket.status, livePartsRequested)
+  const ticketIsDead = ticket.status === 'declined' || ticket.status === 'canceled'
   return (
     <CardSection
       title={`Parts Requested${livePartsRequested.length > 0 ? ` (${partsReceivedCount}/${livePartsRequested.length} received)` : ''}`}
@@ -163,6 +168,38 @@ export default function PartsSection({
         <Badge label="All Received" classes="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" />
       ) : undefined}
     >
+      {/* The estimate gate withholds uncommitted parts from the Parts Queue
+          while the ticket sits in an estimate state (see isHeldForEstimate).
+          That is deliberate; the silence was not. Feedback #91: a manager added
+          the same tank assembly to this section three times, watched it save and
+          show "In Review" each time, and never learned the queue was filtering it
+          out because the estimate had been reopened the day before. */}
+      {heldParts.length > 0 && (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-medium">
+              {heldParts.length === 1
+                ? 'This part is not in the Parts Queue yet.'
+                : `These ${heldParts.length} parts are not in the Parts Queue yet.`}
+            </span>{' '}
+            {ticketIsDead ? (
+              <>
+                The office does not order parts for a {ticket.status === 'declined' ? 'declined' : 'cancelled'}{' '}
+                repair. Reopen the ticket if the work is going ahead after all.
+              </>
+            ) : (
+              <>
+                The office only orders once the estimate is approved. Approve it above
+                {ticket.status === 'open' ? ' (or start the work)' : ''} and{' '}
+                {heldParts.length === 1 ? 'it' : 'they'} will appear for the office to
+                order — re-adding {heldParts.length === 1 ? 'it' : 'them'} here will not
+                change that.
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {/* "View in Parts Queue" — consumes the Round A query-param contract.
           The link works regardless of Round A's filter shipping; if that
           round hasn't merged yet, parts-queue just shows its default view. */}

@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronRight, Download, ExternalLink, FileText, PackageCheck, RefreshCw, Undo2, XCircle } from 'lucide-react'
 import type { PartRequest, PartsQueueRow, PartsQueueSource } from '@/types/database'
+import type { HeldPartRow } from '@/lib/db/parts-queue'
 import {
   cancelPart,
   markPartOrdered,
@@ -259,12 +260,17 @@ interface Props {
   // set, the table is narrowed to just that ticket and a "clear filter" chip
   // surfaces above the table. Defaults to null on a direct /parts-queue visit.
   initialTicketFilter?: string | null
+  // Parts the estimate gate is withholding from `rows`. Display-only — they are
+  // not in the view, carry no actions, and exist so the queue can say out loud
+  // that they are being held instead of dropping them silently (feedback #91).
+  heldRows?: HeldPartRow[]
   // tab/sort/dir/q/source/vendor seeded from the URL so Back restores the view.
   initialFilters: { tab: string; sort: string; dir: string; q: string; source: string; vendor: string }
 }
 
 export default function PartsQueueClient({
   rows: initialRows,
+  heldRows = [],
   initialTicketFilter = null,
   initialFilters,
 }: Props) {
@@ -336,6 +342,24 @@ export default function PartsQueueClient({
     }
     return { review, toPull, toOrder, ordered, received }
   }, [rows, receivedCutoffMs])
+
+  // The held parts worth showing on the tab currently open: a 'pending_review'
+  // hold is one that would have landed in Review, a 'requested' hold one that
+  // would have landed in To Order. Narrowed by the ?ticket deep-link too, so
+  // arriving from a service ticket surfaces exactly that ticket's held parts —
+  // which is the trip Ken made three times with nothing to show for it.
+  const heldForTab = useMemo(() => {
+    // Arriving via the ?ticket deep-link means someone came here looking for a
+    // specific ticket's parts — show every held part on it, on whatever tab they
+    // land on. That link opens on To Order, but a freshly-added part is held at
+    // 'pending_review', so a strict tab match would hide the banner from exactly
+    // the person who followed the link to find it.
+    if (ticketFilter) return heldRows.filter(h => h.ticket_id === ticketFilter)
+    const want =
+      tab === 'review' ? 'pending_review' : tab === 'to_order' ? 'requested' : null
+    if (!want) return []
+    return heldRows.filter(h => h.status === want)
+  }, [heldRows, tab, ticketFilter])
 
   // Shared row predicate. `skipVendor` lets the vendor dropdown derive its
   // options from rows that match every *other* active filter — otherwise the
@@ -856,6 +880,8 @@ export default function PartsQueueClient({
           {info}
         </div>
       )}
+
+      <HeldForEstimateBanner rows={heldForTab} />
 
       {/* Table */}
       {tab === 'review' ? (
@@ -1475,6 +1501,73 @@ function DetailField({ label, children }: { label: string; children: React.React
     <div>
       <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-0.5">{label}</dt>
       <dd className="text-gray-700 dark:text-gray-300">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * Says out loud that the estimate gate is withholding parts from this tab.
+ *
+ * These rows are NOT in the parts_order_queue view and carry no actions — the
+ * hold is deliberate (you don't source a part the customer hasn't approved) and
+ * this does not lift it. It exists because the hold used to be completely
+ * invisible: feedback #91, where a manager added the same tank assembly to
+ * WO-1129 three times, cancelled two of them assuming the save had failed, and
+ * never once saw a word about why the queue stayed empty.
+ *
+ * The way out is on the ticket, so every row links there.
+ */
+function HeldForEstimateBanner({ rows }: { rows: HeldPartRow[] }) {
+  const [expanded, setExpanded] = useState(false)
+  if (rows.length === 0) return null
+  const n = rows.length
+  // 'declined'/'canceled' holds are a different sentence from 'open'/'estimated'
+  // ones — one is waiting on an answer, the other already got a no.
+  const dead = rows.filter(r => r.ticket_status === 'declined' || r.ticket_status === 'canceled').length
+  return (
+    <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        <span>
+          {n} part{n === 1 ? '' : 's'} {n === 1 ? 'is' : 'are'} held off this tab until{' '}
+          {n === 1 ? 'its' : 'their'} estimate is approved
+          {dead > 0 && (
+            <>
+              {dead === n ? '' : `, ${dead} of them`} on a declined or cancelled repair
+            </>
+          )}
+          .
+        </span>
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          className="font-medium underline underline-offset-2 hover:no-underline"
+        >
+          {expanded ? 'Hide them' : 'Show them'}
+        </button>
+      </div>
+      {expanded && (
+        <ul className="mt-2 space-y-1 border-t border-amber-200 dark:border-amber-800 pt-2">
+          {rows.map(r => (
+            <li key={`${r.ticket_id}-${r.part_index}`} className="flex flex-wrap items-baseline gap-x-2">
+              <Link
+                href={`/service/${r.ticket_id}`}
+                className="font-medium underline underline-offset-2 hover:no-underline"
+              >
+                WO-{r.work_order_number ?? '—'}
+              </Link>
+              <span>{r.description ?? 'Part'}</span>
+              {r.quantity != null && <span className="text-xs">x{r.quantity}</span>}
+              {r.customer_name && (
+                <span className="text-xs text-amber-700 dark:text-amber-300">{r.customer_name}</span>
+              )}
+              <span className="text-xs text-amber-700 dark:text-amber-300">
+                requested {r.requested_at ? formatDate(r.requested_at) : 'unknown'} · ticket {r.ticket_status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
