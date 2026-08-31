@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { completeServiceTicket } from '@/lib/db/service-tickets'
 import { getCurrentUser, isTechnician, RESET_ROLES } from '@/lib/auth'
-import { stampCollectedOnStaged, partsAwaitingReview } from '@/lib/parts'
+import { stampCollectedOnStaged, partsAwaitingReview, resolveCompletionParts } from '@/lib/parts'
 import type { PartRequest } from '@/types/database'
 import { getCustomerLaborRate, getTripChargeRate, effectiveTripChargeQty } from '@/lib/db/settings'
 import { isTicketCreditGated } from '@/lib/credit-review'
@@ -144,13 +144,33 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, shipping_charge, labor_rate_type, equipment_id, customer_id, parts_requested, warranty_review_status, warranty_labor_covered')
+      .select('status, assigned_technician_id, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, shipping_charge, labor_rate_type, equipment_id, customer_id, parts_requested, parts_used, warranty_review_status, warranty_labor_covered')
       .eq('id', id)
       .single()
 
     if (fetchError || !current) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
+
+    // Resolve the parts to persist BEFORE the margin floor, so the floor and the
+    // write can never disagree about which array they are talking about.
+    // resolveCompletionParts refuses to take a populated work order to zero
+    // lines; see its docblock for the June 2026 incident that motivates it.
+    const partsResolution = resolveCompletionParts<ServicePartUsed>(
+      parts_used,
+      current.parts_used as ServicePartUsed[] | null,
+    )
+    if (!partsResolution.ok) {
+      return NextResponse.json(
+        {
+          error: `Completing now would remove the ${partsResolution.storedCount} part${partsResolution.storedCount === 1 ? '' : 's'} recorded on this work order. If the parts list on your screen looks empty, refresh the page. If you meant to take ${partsResolution.storedCount === 1 ? 'it' : 'them'} off, remove ${partsResolution.storedCount === 1 ? 'it' : 'them'} in the parts list and save first.`,
+          wouldBlankParts: true,
+          storedPartsCount: partsResolution.storedCount,
+        },
+        { status: 409 },
+      )
+    }
+    const finalParts: ServicePartUsed[] = partsResolution.parts
 
     // Signature required only for outside (field) tickets
     if (current.ticket_type !== 'inside' && (!customer_signature || !customer_signature_name)) {
@@ -235,7 +255,7 @@ export async function POST(
     // it. Every ticket bills all part lines at full price now (migration 160+
     // review lifecycle), so the floor applies to every line, warranty or not.
     {
-      const billable = parts_used ?? []
+      const billable = finalParts
       if (billable.length > 0) {
         const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
         const check = checkPartLines(billable, (pid) => costMap.get(pid))
@@ -288,7 +308,6 @@ export async function POST(
     // which must agree.
     const laborRateType = resolveLaborRateType(body.labor_rate_type, current.labor_rate_type)
     const laborRateTypeChanged = laborRateType !== (current.labor_rate_type ?? 'standard')
-    const finalParts: ServicePartUsed[] = parts_used ?? []
     const diagnosticCharge = Number(current.diagnostic_charge ?? 0) || 0
     // A diagnostic invoice number means the diagnostic visit was already billed
     // separately in Synergy, so on this work order it's a CREDIT (subtracted) so

@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
 import { PartUsed, PartRequest, TicketPhoto } from '@/types/database'
-import { partsOnOrder, stampCollectedOnStaged } from '@/lib/parts'
+import { partsOnOrder, stampCollectedOnStaged, resolveCompletionParts } from '@/lib/parts'
 import { computePmBilling } from '@/lib/pm-billing'
 import { isTicketCreditGated } from '@/lib/credit-review'
 import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
@@ -158,7 +158,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('pm_tickets')
-      .select('status, assigned_technician_id, parts_requested, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, shipping_charge, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
+      .select('status, assigned_technician_id, parts_requested, parts_used, additional_parts_used, month, year, pm_schedule_id, labor_rate_type, trip_charge_qty, shipping_charge, equipment_id, customer_id, pm_schedules(flat_rate, billing_type), customers(show_pricing_on_pm_pdf)')
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -245,8 +245,42 @@ export async function POST(
       }
     }
 
+    // Same blanking guard the service route uses, on both PM arrays. PM splits
+    // parts across two columns: parts_used is the covered work (inventory only,
+    // always $0) and additional_parts_used is the billable extra. Both are worth
+    // protecting -- the billable one for the invoice, the covered one because it
+    // is the inventory record of what came off the van.
+    const coveredResolution = resolveCompletionParts<PartUsed>(
+      partsUsed,
+      current.parts_used as PartUsed[] | null,
+    )
+    if (!coveredResolution.ok) {
+      return NextResponse.json(
+        {
+          error: `Completing now would remove the ${coveredResolution.storedCount} part${coveredResolution.storedCount === 1 ? '' : 's'} recorded on this PM. If the parts list on your screen looks empty, refresh the page. If you meant to take ${coveredResolution.storedCount === 1 ? 'it' : 'them'} off, remove ${coveredResolution.storedCount === 1 ? 'it' : 'them'} in the parts list and save first.`,
+          wouldBlankParts: true,
+          storedPartsCount: coveredResolution.storedCount,
+        },
+        { status: 409 },
+      )
+    }
+    const additionalResolution = resolveCompletionParts<PartUsed>(
+      additionalPartsUsed,
+      current.additional_parts_used as PartUsed[] | null,
+    )
+    if (!additionalResolution.ok) {
+      return NextResponse.json(
+        {
+          error: `Completing now would remove the ${additionalResolution.storedCount} additional-work part${additionalResolution.storedCount === 1 ? '' : 's'} recorded on this PM. If the additional work list on your screen looks empty, refresh the page. If you meant to take ${additionalResolution.storedCount === 1 ? 'it' : 'them'} off, remove ${additionalResolution.storedCount === 1 ? 'it' : 'them'} there and save first.`,
+          wouldBlankParts: true,
+          storedPartsCount: additionalResolution.storedCount,
+        },
+        { status: 409 },
+      )
+    }
+
     // PM parts always have unit_price zeroed (inventory tracking only)
-    const finalParts: PartUsed[] = (partsUsed ?? []).map(p => ({ ...p, unit_price: 0 }))
+    const finalParts: PartUsed[] = coveredResolution.parts.map(p => ({ ...p, unit_price: 0 }))
     const finalAdditionalHours = additionalHoursWorked ?? 0
 
     // Server-authoritative billing math: recompute for ALL roles via the shared
@@ -272,7 +306,7 @@ export async function POST(
       laborRateType,
       flatRate,
       additionalHours: finalAdditionalHours,
-      additionalParts: additionalPartsUsed ?? [],
+      additionalParts: additionalResolution.parts,
       tripQty,
       // Office-set freight off the ticket column (feedback #80). Read from the
       // stored row, never the request body — this route is tech-reachable and

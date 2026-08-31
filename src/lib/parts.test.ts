@@ -9,6 +9,7 @@ import {
   partsAllFulfilled,
   isPartOutstanding,
   fulfilledRequestedParts,
+  resolveCompletionParts,
   partsMissingFromWorkOrder,
   requestToUsedLine,
   isCoveredByAgreement,
@@ -820,6 +821,77 @@ test('an unrecognized ticket status is not treated as stranded', () => {
   // Same reasoning: a status this predicate has never heard of is not evidence
   // the ticket is closed.
   assert.equal(isQueueRowStranded('some_future_status'), false)
+})
+
+// ---------------------------------------------------------------------------
+// resolveCompletionParts — the completion routes must not blank a work order
+//
+// Regression cover for the June 2026 incident: the mobile Quick Complete sheet
+// POSTed a hardcoded `parts_used: []`, and the complete route wrote it verbatim
+// over parts the technician had already entered. 14 work orders lost their
+// parts that way and two were invoiced for labor only (WO-1006 $264.45,
+// WO-837 $113.76). That client is gone, but the route still resolved
+// `parts_used ?? []`, so any caller that sent an empty array — or forgot the
+// field entirely — silently emptied a billable work order.
+// ---------------------------------------------------------------------------
+
+const line = (description: string, unit_price: number) => ({
+  description,
+  quantity: 1,
+  unit_price,
+})
+
+test('an omitted parts array keeps the stored lines', () => {
+  // `parts_used ?? []` turned "I did not mention parts" into "there are no
+  // parts". Forgetting the field must never be a destructive act.
+  const stored = [line('MAIN PCB', 146.3), line('PUMP', 58.8)]
+  const result = resolveCompletionParts(undefined, stored)
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.ok && result.parts, stored)
+})
+
+test('a null parts array keeps the stored lines', () => {
+  const stored = [line('MAIN PCB', 146.3)]
+  const result = resolveCompletionParts(null, stored)
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.ok && result.parts, stored)
+})
+
+test('an empty submission over stored lines is refused', () => {
+  // The exact Quick Complete payload shape. This is the one that cost money.
+  const stored = [line('VM29 VAC MOTOR', 249.72), line('GASKET', 11)]
+  const result = resolveCompletionParts([], stored)
+  assert.equal(result.ok, false)
+  assert.equal(result.ok === false && result.reason, 'would_blank')
+  assert.equal(result.ok === false && result.storedCount, 2)
+})
+
+test('an empty submission is fine when the work order has no parts', () => {
+  // Most completions are labor only. The guard must not make those an error.
+  for (const stored of [[], null, undefined]) {
+    const result = resolveCompletionParts([], stored)
+    assert.equal(result.ok, true, String(stored))
+    assert.deepEqual(result.ok && result.parts, [])
+  }
+})
+
+test('a populated submission replaces the stored lines', () => {
+  // Editing parts at completion is the normal path and must still win.
+  const stored = [line('MAIN PCB', 146.3)]
+  const submitted = [line('MAIN PCB', 146.3), line('SQUEEGEE BLADE KIT', 30)]
+  const result = resolveCompletionParts(submitted, stored)
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.ok && result.parts, submitted)
+})
+
+test('dropping some but not all lines is allowed', () => {
+  // A tech legitimately removing a part they did not fit is not a blanking.
+  // The guard is deliberately narrow: only all-to-none is refused.
+  const stored = [line('MAIN PCB', 146.3), line('PUMP', 58.8)]
+  const submitted = [line('PUMP', 58.8)]
+  const result = resolveCompletionParts(submitted, stored)
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.ok && result.parts, submitted)
 })
 
 // ── isHeldForEstimate / partsHeldForEstimate ──
