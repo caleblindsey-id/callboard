@@ -1,7 +1,7 @@
 import type { DigestDb, DigestOwner, DigestRow, KeyPrefix } from './types'
 import * as f from './fetchers'
 
-// The thirteen action queues the morning digest surfaces, grouped by who does
+// The sixteen action queues the morning digest surfaces, grouped by who does
 // the work. Adding a section here is the only place it needs registering: the
 // email template renders whatever this list contains, and the headline dedupe
 // reads the declared key prefixes.
@@ -130,6 +130,15 @@ export const SECTIONS: readonly DigestSection[] = [
     keyPrefixes: ['part'],
     fetch: f.partsStuck,
   },
+  {
+    key: 'not_entered_synergy',
+    owner: 'billing',
+    title: 'Completed jobs not yet entered in Synergy',
+    action: 'key the Synergy order number',
+    viewAllPath: '/billing/po-follow-up',
+    keyPrefixes: ['pm', 'svc'],
+    fetch: f.notEnteredSynergy,
+  },
 
   // --- OFFICE AND AR ---
   {
@@ -138,7 +147,7 @@ export const SECTIONS: readonly DigestSection[] = [
     title: 'Waiting on a customer PO',
     action: 'chase the customer for a PO',
     viewAllPath: '/billing/po-follow-up',
-    keyPrefixes: ['svc'],
+    keyPrefixes: ['pm', 'svc'],
     fetch: f.poGatedBilling,
   },
   {
@@ -146,9 +155,18 @@ export const SECTIONS: readonly DigestSection[] = [
     owner: 'ar',
     title: 'Ship-to requests',
     action: 'add the address in Synergy',
-    viewAllPath: '/customers',
+    viewAllPath: '/ship-to-requests',
     keyPrefixes: ['shipto'],
     fetch: f.shipToRequestsPending,
+  },
+  {
+    key: 'warranty_to_review',
+    owner: 'ar',
+    title: 'Warranty reviews to verify',
+    action: 'verify coverage and record the verdict on the ticket',
+    viewAllPath: '/warranty-queue',
+    keyPrefixes: ['svc'],
+    fetch: f.warrantyToReview,
   },
   {
     key: 'warranty_to_file',
@@ -158,6 +176,15 @@ export const SECTIONS: readonly DigestSection[] = [
     viewAllPath: '/warranty-queue',
     keyPrefixes: ['svc'],
     fetch: f.warrantyToFile,
+  },
+  {
+    key: 'warranty_awaiting_credit',
+    owner: 'ar',
+    title: 'Warranty credits to chase',
+    action: 'chase the vendor for the credit',
+    viewAllPath: '/warranty-queue',
+    keyPrefixes: ['svc'],
+    fetch: f.warrantyAwaitingCredit,
   },
   {
     key: 'credit_hold',

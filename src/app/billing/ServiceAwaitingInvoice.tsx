@@ -1,16 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
+import { warrantyBillingBlock, LEGACY_BILLING_TYPE_LABELS } from '@/lib/service-tickets/warranty'
 import BillingNotesDrawer from './BillingNotesDrawer'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { formatDateShort } from '@/lib/format'
+import { formatDate, formatDateShort } from '@/lib/format'
 import InlineEditCell from './InlineEditCell'
 
 // Service tickets that have been exported (work-order PDF pulled) but are NOT yet
@@ -19,12 +20,6 @@ import InlineEditCell from './InlineEditCell'
 // Rendered UNDER the service "Ready to Export" list; the month picker on that list
 // drives both queries, so this component intentionally has no picker of its own.
 // Mirrors PmAwaitingInvoice.
-
-const BILLING_TYPE_LABELS: Record<string, string> = {
-  non_warranty: 'T&M',
-  warranty: 'Warranty',
-  partial_warranty: 'Partial Warranty',
-}
 
 interface ServiceAwaitingInvoiceProps {
   tickets: ServiceBillingTicket[]
@@ -43,17 +38,47 @@ function needsPo(t: ServiceBillingTicket): boolean {
   return !!t.customers?.po_required && !t.po_number
 }
 
-// Warranty work isn't billed until the vendor credit lands (logged on the
-// warranty-claims worklist). Mirrors the server gate in mark-billed.
-function awaitingWarrantyCredit(t: ServiceBillingTicket): boolean {
-  return (
-    (t.billing_type === 'warranty' || t.billing_type === 'partial_warranty') &&
-    !t.warranty_credit_received_at
-  )
+// Warranty work isn't billed until the office has verified coverage and, once
+// verified, the vendor credit has landed (logged on the warranty-claims
+// worklist). Mirrors the server gate in mark-billed via the shared predicate.
+function warrantyPill(t: ServiceBillingTicket): { label: string; className: string } | null {
+  const reason = warrantyBillingBlock(t)
+  if (reason === 'pending_review') {
+    return {
+      label: 'Warranty review pending',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    }
+  }
+  if (reason === 'awaiting_credit') {
+    return {
+      label: 'Awaiting vendor credit',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    }
+  }
+  return null
 }
 
 function isBlocked(t: ServiceBillingTicket): boolean {
-  return needsInvoice(t) || needsPo(t) || awaitingWarrantyCredit(t)
+  return needsInvoice(t) || needsPo(t) || warrantyBillingBlock(t) !== null
+}
+
+// The nightly validator (migration 164) pre-fills synergy_invoice_number when
+// it finds the ticket's Synergy order already invoiced. Informational only —
+// Mark Billed still re-validates everything server-side, including the
+// warranty gate above, which the pill never overrides.
+function isSynergyDetected(t: ServiceBillingTicket): boolean {
+  return t.synergy_invoice_source === 'auto' && !!t.synergy_invoice_number?.trim() && t.status === 'completed'
+}
+
+function SynergyDetectedPill({ detectedAt }: { detectedAt: string | null }) {
+  return (
+    <span
+      title={detectedAt ? `Synergy shows this order invoiced as of ${formatDate(detectedAt)}.` : 'Synergy shows this order invoiced.'}
+      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 whitespace-nowrap"
+    >
+      Synergy shows invoiced — confirm
+    </span>
+  )
 }
 
 type ServiceInvoiceSortKey =
@@ -82,9 +107,9 @@ const SERVICE_INVOICE_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, Servic
       .filter(Boolean)
       .join(' ') || null,
   technician: t => t.assigned_technician?.name,
-  billing: t => t.billing_amount,
+  billing: t => customerAmount(t),
   ticketType: t => t.ticket_type,
-  type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
+  type: t => LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
   completed: t => t.completed_at,
 }
 
@@ -103,6 +128,14 @@ function customerSubline(t: ServiceBillingTicket): string | null {
   const acct = t.customers?.account_number
   const parts = [acct ? `Acct #${acct}` : null, shipToLabel(t)].filter(Boolean)
   return parts.length ? parts.join(' · ') : null
+}
+
+// What the customer actually pays (warranty coverage netted out) — the
+// billing_amount is the full-price claim artifact vendors require, so once
+// coverage is verified customer_bill_amount is the number that belongs on
+// this queue. NULL means "same as billing_amount" (not verified, or denied).
+function customerAmount(t: ServiceBillingTicket): number | null {
+  return t.customer_bill_amount ?? t.billing_amount
 }
 
 export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoiceProps) {
@@ -137,10 +170,19 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
   const missingCount = tickets.filter(needsInvoice).length
   const poMissingCount = tickets.filter(needsPo).length
 
+  // Default order (before any header click): auto-detected rows float to the
+  // top so the office sees one-click-confirmable tickets first, otherwise
+  // preserves the incoming (completed_at desc) order. Stable sort keeps
+  // column-header sorting (below) working exactly as before.
+  const defaultOrderedTickets = useMemo(
+    () => [...tickets].sort((a, b) => Number(isSynergyDetected(b)) - Number(isSynergyDetected(a))),
+    [tickets]
+  )
+
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ServiceBillingTicket,
     ServiceInvoiceSortKey
-  >(tickets, SERVICE_INVOICE_SORT_ACCESSORS)
+  >(defaultOrderedTickets, SERVICE_INVOICE_SORT_ACCESSORS)
 
   function toggleSelect(id: string) {
     const ticket = tickets.find((t) => t.id === id)
@@ -313,22 +355,26 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
 
   const selectedTotal = tickets
     .filter((t) => selected.has(t.id))
-    .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
+    .reduce((sum, t) => sum + (customerAmount(t) ?? 0), 0)
 
   const selectableCount = tickets.filter((t) => !isBlocked(t)).length
-  const awaitingCreditCount = tickets.filter(awaitingWarrantyCredit).length
+  const reviewPendingCount = tickets.filter((t) => warrantyBillingBlock(t) === 'pending_review').length
+  const awaitingCreditCount = tickets.filter((t) => warrantyBillingBlock(t) === 'awaiting_credit').length
 
   function renderInvoiceStatus(t: ServiceBillingTicket) {
     return (
-      <InlineEditCell
-        value={t.synergy_invoice_number}
-        placeholder="Synergy Invoice #"
-        onSave={(v) => saveInvoice(t.id, v)}
-        emptyVariant="pill"
-        emptyText="Synergy Invoice # Needed"
-        valueClassName="text-green-700 dark:text-green-400"
-        onEditingChange={(editing) => setRowEditing(t.id, editing)}
-      />
+      <div className="flex items-center gap-1.5">
+        <InlineEditCell
+          value={t.synergy_invoice_number}
+          placeholder="Synergy Invoice #"
+          onSave={(v) => saveInvoice(t.id, v)}
+          emptyVariant="pill"
+          emptyText="Synergy Invoice # Needed"
+          valueClassName="text-green-700 dark:text-green-400"
+          onEditingChange={(editing) => setRowEditing(t.id, editing)}
+        />
+        {isSynergyDetected(t) && <SynergyDetectedPill detectedAt={t.synergy_invoice_detected_at} />}
+      </div>
     )
   }
 
@@ -425,6 +471,13 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
         </div>
       )}
 
+      {/* Warranty review pending banner */}
+      {reviewPendingCount > 0 && (
+        <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
+          {reviewPendingCount} warranty ticket{reviewPendingCount === 1 ? '' : 's'} {reviewPendingCount === 1 ? 'is' : 'are'} still waiting on office review before {reviewPendingCount === 1 ? 'it' : 'they'} can be billed.
+        </div>
+      )}
+
       {/* Awaiting warranty credit banner */}
       {awaitingCreditCount > 0 && (
         <div className="rounded-lg p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300">
@@ -457,6 +510,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {sorted.map((t) => {
                 const blocked = isBlocked(t)
+                const pill = warrantyPill(t)
                 return (
                   <div
                     key={t.id}
@@ -492,16 +546,19 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           {t.work_order_number != null ? `WO#${t.work_order_number} · ` : ''}
                           Tech: {t.assigned_technician?.name ?? '—'} ·{' '}
-                          {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
+                          {customerAmount(t) != null ? `$${customerAmount(t)!.toFixed(2)}` : '—'}
+                          {t.customer_bill_amount != null && t.customer_bill_amount !== t.billing_amount
+                            ? ` (claim $${(t.billing_amount ?? 0).toFixed(2)})`
+                            : ''}
                         </p>
                         <div className="mt-0.5 flex items-center gap-2">
                           <TicketTypeBadge type={t.ticket_type} />
                           <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                            {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                           </span>
-                          {awaitingWarrantyCredit(t) && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                              Awaiting vendor credit
+                          {pill && (
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${pill.className}`}>
+                              {pill.label}
                             </span>
                           )}
                         </div>
@@ -562,6 +619,7 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {sorted.map((t) => {
                     const blocked = isBlocked(t)
+                    const pill = warrantyPill(t)
                     return (
                       <tr key={t.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${blocked && !editingRowIds.has(t.id) ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-3">
@@ -605,18 +663,21 @@ export default function ServiceAwaitingInvoice({ tickets }: ServiceAwaitingInvoi
                           {t.assigned_technician?.name ?? '—'}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">
-                          {t.billing_amount != null
-                            ? `$${t.billing_amount.toFixed(2)}`
-                            : '—'}
+                          {customerAmount(t) != null ? `$${customerAmount(t)!.toFixed(2)}` : '—'}
+                          {t.customer_bill_amount != null && t.customer_bill_amount !== t.billing_amount && (
+                            <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                              claim ${(t.billing_amount ?? 0).toFixed(2)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <TicketTypeBadge type={t.ticket_type} />
                         </td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                          {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
-                          {awaitingWarrantyCredit(t) && (
+                          {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                          {pill && (
                             <span className="block text-xs font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap">
-                              Awaiting vendor credit
+                              {pill.label}
                             </span>
                           )}
                         </td>

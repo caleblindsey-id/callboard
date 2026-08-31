@@ -137,7 +137,12 @@ export default function ServiceOpsReportClient({
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <KpiCard label="Claims filed" value={warranty.filed} format="number" />
               <KpiCard label="Credits received" value={warranty.received} format="number" />
-              <KpiCard label="Recovered" value={warranty.receivedAmount} format="currency" />
+              <KpiCard
+                label="Recovered"
+                value={warranty.receivedAmount}
+                format="currency"
+                subtitle={warranty.receivedExpectedAmount > 0 ? `of ${money(warranty.receivedExpectedAmount)} expected` : undefined}
+              />
               <KpiCard
                 label="Outstanding expected"
                 value={warranty.outstandingExpected}
@@ -150,6 +155,12 @@ export default function ServiceOpsReportClient({
                 format="days"
               />
             </div>
+            {warranty.receivedExpectedAmount > 0 && warranty.receivedAmount < warranty.receivedExpectedAmount && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Recovery shortfall: {money(warranty.receivedExpectedAmount - warranty.receivedAmount)} less than
+                expected on credited claims. Internal margin loss only — never billed to the customer.
+              </p>
+            )}
           </SectionCard>
 
           <SectionCard

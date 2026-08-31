@@ -31,8 +31,11 @@ import {
   ChevronRight,
   SprayCan,
   ShoppingCart,
+  MapPinPlus,
+  PhoneCall,
   type LucideIcon,
 } from 'lucide-react'
+import { isRouteActive as isRouteActiveIn } from '@/lib/nav-active'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
 import NotificationBell from '@/components/notifications/NotificationBell'
@@ -65,6 +68,7 @@ const officeGroups: NavGroup[] = [
       { label: 'Parts Queue', icon: PackageSearch, route: '/parts-queue' },
       { label: 'Supply Requests', icon: ShoppingCart, route: '/supply-requests' },
       { label: 'Ready for Pickup', icon: PackageCheck, route: '/pickup-queue' },
+      { label: 'Ship-To Requests', icon: MapPinPlus, route: '/ship-to-requests' },
     ],
   },
   {
@@ -82,6 +86,7 @@ const officeGroups: NavGroup[] = [
     label: 'Money',
     items: [
       { label: 'Billing', icon: FileText, route: '/billing' },
+      { label: 'Billing Chase', icon: PhoneCall, route: '/billing/po-follow-up' },
       { label: 'Tech Payouts', icon: Award, route: '/tech-payouts' },
       { label: 'Analytics', icon: BarChart3, route: '/analytics' },
     ],
@@ -182,8 +187,20 @@ const navGroupStore = {
   },
 }
 
+// Every route the sidebar can render, so a parent entry can tell when a more
+// specific child entry owns the current page. Billing Chase
+// (/billing/po-follow-up) sits under Billing (/billing) and is the nav's only
+// nested pair; plain startsWith lit BOTH entries at once on the chase page.
+// The rule itself lives in lib/nav-active.ts so it can be unit tested.
+const ALL_NAV_ROUTES: string[] = [
+  ...officeGroups.flatMap((g) => g.items.map((i) => i.route)),
+  ...adminGroup.items.map((i) => i.route),
+  ...techNavItems.map((i) => i.route),
+  purchasingNavItem.route,
+]
+
 function isRouteActive(route: string, pathname: string): boolean {
-  return route === '/' ? pathname === '/' : pathname.startsWith(route)
+  return isRouteActiveIn(route, pathname, ALL_NAV_ROUTES)
 }
 
 function NavLink({

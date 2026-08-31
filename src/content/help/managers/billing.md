@@ -4,10 +4,12 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 60
 summary: Export completed PMs and service tickets for billing — and what it takes to mark them billed.
-last_verified: 2026-07-30
+last_verified: 2026-08-27
 ---
 
 The **Billing** page lists completed work that hasn't been invoiced yet. Billing is a two-step flow: **export** the work to a PDF, then **mark it billed** once you've created the invoice in Synergy. Exporting no longer marks anything billed on its own — a ticket only counts as billed after its Synergy invoice number is entered.
+
+The expectation is to key the Synergy order the same day the work completes — export never waits on a PO, so there's no reason to let the order number sit. If a job's Synergy order, PO, or invoice # falls behind, it shows up on the **[Billing Chase](/help/managers/billing-chase)** worklist for the office to work.
 
 ## Bill PM tickets
 
@@ -20,7 +22,7 @@ The **PM Tickets** tab has two sections: **Ready to Export** at the top, and **A
    - **PO Needed** (red) — the customer requires a PO and none is entered. Tap it, type the **PO number**, and **Save** — right here without opening the ticket.
    - A green PO number means it's set; **—** means no PO is required.
 3. *(Optional)* Fill in the **Synergy Order #** column. Tap **+ Synergy Order #** and type the Synergy order number you're billing against. Entering it **before** you export prints it on the exported PDF, so you can match each work order back to its Synergy record when you key the invoice number in later. It's optional and never blocks export — and you can still add or change it afterward in **Awaiting Invoice #**.
-4. Tick the tickets to export (rows missing a required PO can't be selected).
+4. Tick the tickets to export. A missing PO doesn't stop you here — it's checked later, at Mark Billed.
 5. Tap **Export PDF** → review the preview (anything missing is flagged in amber) → tap **Export PDF** again to confirm.
 
 The PDF downloads and those tickets move down into **Awaiting Invoice #**. They are **not billed yet** — exporting just hands you the PDF to key into Synergy.
@@ -30,6 +32,8 @@ The PDF downloads and those tickets move down into **Awaiting Invoice #**. They 
 1. Create the invoices in Synergy from the PDF.
 2. Back on the **PM Tickets** tab, find each ticket in **Awaiting Invoice #**. Tap **Invoice # Needed**, type the **Synergy invoice number**, and **Save** — one invoice per work order.
 3. Tick the tickets that now have an invoice number and tap **Mark Billed**. They flip to billed and drop off the list.
+
+A nightly check watches Synergy for orders that were invoiced there but not yet keyed here. When it finds one, it pre-fills the **Synergy invoice number** and tags the row with an emerald **Synergy shows invoiced — confirm** pill. Auto-detected rows float to the top of **Awaiting Invoice #** so you see them first — glance at the number, and if it's right, tick the row and **Mark Billed** as usual. Nothing changes about the gate: it's still a pre-filled number waiting on your confirmation, not an auto-bill.
 
 **Awaiting Invoice #** carries the same sortable **WO#** column, so you can line its rows up against the PDF you just exported. Each row also has the optional **Synergy Order #** field next to the invoice number — the same one from **Ready to Export**, so anything you entered before exporting shows here too. Tap **+ Synergy Order #** to jot down (or correct) the Synergy order number you're billing against so it stays on screen while you track down the matching invoice — then key that invoice number in. It's only a reference and never blocks **Mark Billed**.
 
@@ -41,6 +45,8 @@ Service tickets follow the same idea: each must have its **Synergy Invoice #** e
 
 Use the **Service Type** toggle at the top of the tab — **All / Inside / Outside** — to work one group at a time. It narrows both the **Ready to Export** and **Awaiting Invoice #** lists at once, so you can clear all the inside (bench) repairs before switching to the outside (field) ones.
 
+The same nightly Synergy check and emerald **Synergy shows invoiced — confirm** pill described above for PM tickets covers service tickets too, on the same **Awaiting Invoice #** list.
+
 ## What's on the PDF
 
 Per ticket: customer and account, equipment, technician, completion date, machine hours and date code, the **Synergy order #** (when you've entered one), the PM (flat-rate) line plus any additional labor/parts, the line total, and the customer's signature and photos when captured. Taxes are not included.
@@ -49,7 +55,12 @@ Per ticket: customer and account, equipment, technician, completion date, machin
 
 - **Exporting no longer bills anything.** A PM ticket is billed only after you enter its **Synergy invoice number** and tap **Mark Billed**. This keeps "billed" meaning the work was actually invoiced.
 - **One Synergy invoice per work order** on PM tickets.
-- **A required PO blocks export** until it's entered (it's checked again at export). Fill it inline from this page.
+- **A required PO doesn't block export** — it can be entered before or after. It gates **Mark Billed** instead, for both PM and service tickets, right alongside the Synergy invoice #. Fill it inline from this page.
 - **A missing Synergy Invoice # blocks a service ticket** from being marked billed.
+- **A warranty ticket is blocked for one of two reasons.** A ticket flagged for warranty and not yet verified shows an amber **Warranty review pending** flag; a verified ticket whose vendor credit hasn't landed shows **Awaiting vendor credit**. Either way it can't be selected. Clear it on the **Warranty Claims** queue, not from here. See [File a warranty claim and log the vendor credit](/help/managers/file-a-warranty-claim).
+- **The amount shown is what the customer pays, not the claim total.** Once a warranty ticket is verified, this page shows the net customer amount (covered lines removed), with the full claim value shown alongside it when they differ. Nothing here silently drops revenue: the difference is the vendor credit the office is chasing.
 - **Un-export** is the undo for an accidental export — it returns the ticket to Ready to Export and clears the invoice number.
 - **Synergy Order #** is an optional reference that helps you find the invoice in Synergy — it never blocks billing. Only the **Synergy Invoice #** does. Enter it in **Ready to Export** before exporting and it prints on the work order; you can still add or change it afterward in **Awaiting Invoice #**.
+- **The emerald pill means "confirm," not "billed."** An auto-detected invoice number still needs a human to tick the row and tap **Mark Billed** — Synergy showing invoiced isn't the same as this ticket being marked billed here.
+- **Typing over a pre-filled invoice number is fine.** If the auto-filled number is wrong, just correct it and save — the pill clears once you've entered your own number.
+- **Falling behind on any of the three fields** (Synergy order #, PO, invoice #) puts the job on the **[Billing Chase](/help/managers/billing-chase)** worklist, where it stays until it's cleared.

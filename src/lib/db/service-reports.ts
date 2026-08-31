@@ -25,6 +25,11 @@ export type ServiceOpsReport = {
     filed: number
     received: number
     receivedAmount: number
+    // Sum of warranty_credit_expected across CREDITED claims only (not the
+    // outstanding ones) — the other half of the recovery-shortfall pair with
+    // receivedAmount. A gap here is margin the branch ate, invisible until the
+    // two are put side by side.
+    receivedExpectedAmount: number
     // Point-in-time: expected credit on claims filed but not yet credited.
     outstandingExpected: number
     medianDaysToCredit: number | null
@@ -123,7 +128,10 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
   // billing, so historical rollups stay correct.
   const filedQ = supabase
     .from('service_tickets')
-    .select('warranty_claim_submitted_at, warranty_credit_received_at, warranty_credit_amount', { count: 'exact' })
+    .select(
+      'warranty_claim_submitted_at, warranty_credit_received_at, warranty_credit_amount, warranty_credit_expected',
+      { count: 'exact' }
+    )
     .is('deleted_at', null)
     .not('warranty_claim_submitted_at', 'is', null)
     .limit(10_000)
@@ -146,6 +154,7 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
     warranty_claim_submitted_at: string
     warranty_credit_received_at: string | null
     warranty_credit_amount: number | null
+    warranty_credit_expected: number | null
   }[]
   const receivedRows = filedRows.filter((r) => r.warranty_credit_received_at)
   const daysToCredit = receivedRows.map((r) =>
@@ -227,6 +236,7 @@ export async function getServiceOpsReport(rangeDays: number | null): Promise<Ser
       filed: filedRows.length,
       received: receivedRows.length,
       receivedAmount: receivedRows.reduce((sum, r) => sum + (r.warranty_credit_amount ?? 0), 0),
+      receivedExpectedAmount: receivedRows.reduce((sum, r) => sum + (r.warranty_credit_expected ?? 0), 0),
       outstandingExpected,
       medianDaysToCredit: median(daysToCredit),
     },

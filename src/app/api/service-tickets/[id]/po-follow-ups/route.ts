@@ -20,7 +20,7 @@ export async function GET(
   }
 
   const { id } = await params
-  const followUps = await getPoFollowUps(id)
+  const followUps = await getPoFollowUps('service', id)
   return NextResponse.json(followUps)
 }
 
@@ -58,6 +58,7 @@ export async function POST(
   }
 
   const created = await createPoFollowUp({
+    ticketType: 'service',
     ticketId: id,
     userId: user.id,
     method: method as PoFollowUpMethod,

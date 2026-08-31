@@ -16,6 +16,15 @@ Validates two things for open service and PM tickets:
         ('valid' = all parts match, 'partial' = some match, 'invalid' = none match,
          NULL = order invalid / no parts)
 
+It also detects when a completed ticket's Synergy order has been INVOICED
+and pre-fills `synergy_invoice_number` so the office can one-click-confirm
+billing instead of retyping the number off the printed invoice.
+`roh.InvNum <> 0` means invoiced in real time; the `invh` replica lags ~1 day
+behind, so both are checked, with `invh` winning on conflict. Never
+overwrites a manually keyed `synergy_invoice_number`.
+     → writes `synergy_invoice_number`, `synergy_invoice_detected_at` (now),
+       `synergy_invoice_source` ('auto') (migration 164)
+
 Runs nightly at 5:30 AM via Windows Task Scheduler (after the 5 AM sync).
 """
 
@@ -118,7 +127,7 @@ def fetch_candidates(table: str, excluded_statuses: tuple[str, ...]) -> list[dic
     """Fetch tickets from the given table that have an order # and are still actionable."""
     excluded = ",".join(excluded_statuses)
     return supabase_get(table, {
-        "select": "id,synergy_order_number,parts_requested,status",
+        "select": "id,synergy_order_number,parts_requested,status,synergy_invoice_number",
         "synergy_order_number": "not.is.null",
         "status": f"not.in.({excluded})",
     })
@@ -126,7 +135,7 @@ def fetch_candidates(table: str, excluded_statuses: tuple[str, ...]) -> list[dic
 
 def fetch_single_ticket(table: str, ticket_id: str) -> dict | None:
     """Fetch one ticket by id for the on-demand re-validate path."""
-    select = "id,synergy_order_number,parts_requested,status"
+    select = "id,synergy_order_number,parts_requested,status,synergy_invoice_number"
     if table == "service_tickets":
         # PM tickets have no diagnostic fee — selecting the column there would 400.
         select += ",diagnostic_invoice_number"
@@ -146,6 +155,10 @@ def validate_single(table: str, ticket: dict) -> dict:
     Service tickets also get their diagnostic invoice # verified against
     invh.KeyInvCMNo (migration 137) — a diagnostic can be invoiced before any
     order # is keyed, so this runs even when synergy_order_number is empty.
+
+    Also runs invoice detection (`detect_invoiced`) on this ticket, same skip
+    conditions as the batch pass — completed status, no invoice # already
+    keyed.
     """
     raw = str(ticket.get("synergy_order_number") or "").strip()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -208,8 +221,12 @@ def validate_single(table: str, ticket: dict) -> dict:
                         "SELECT KeyInvCMNo FROM invh WHERE KeyInvCMNo = ?", inv_num
                     )
                     diag_status = "valid" if cursor.fetchone() is not None else "invalid"
+
+            detected_invoices = detect_invoiced(conn, [ticket], table)
         finally:
             conn.close()
+    else:
+        detected_invoices = {}
 
     # Assemble the order-side patch (same shapes the old early-returns wrote).
     reason: str | None = None
@@ -246,6 +263,11 @@ def validate_single(table: str, ticket: dict) -> dict:
     result = {"ok": True, **patch}
     if reason:
         result["reason"] = reason
+    # detect_invoiced already wrote the invoice columns directly (its own
+    # PATCH) — echo the number here too so the caller doesn't have to re-fetch.
+    if ticket["id"] in detected_invoices:
+        result["synergy_invoice_number"] = detected_invoices[ticket["id"]]
+        result["synergy_invoice_source"] = "auto"
     return result
 
 
@@ -268,6 +290,81 @@ def classify_parts(parts: list[dict], prodcodes_for_order: set[str]) -> str | No
     if matches == 0:
         return "invalid"
     return "partial"
+
+
+def detect_invoiced(conn, rows: list[dict], table: str) -> dict[str, str]:
+    """Pre-fill `synergy_invoice_number` for completed tickets whose Synergy
+    order has already been invoiced, so the office can one-click-confirm
+    billing on the Awaiting Invoice queues instead of retyping the number off
+    the printed invoice (migration 164).
+
+    `roh.InvNum <> 0` means invoiced in real time. Synergy eventually moves
+    the header to `invh` (a replica that lags ~1 day), whose invoice number
+    is also `InvNum` — checking both catches an order in either state, with
+    `invh` winning when both have a number (it has settled there). Never
+    overwrites a manually keyed `synergy_invoice_number`, and never touches
+    `status` — Mark Billed still re-validates PO/warranty/CAS itself.
+
+    `conn` is an already-open pyodbc connection (caller manages its
+    lifecycle). Returns ticket_id -> detected invoice number for every row
+    this call actually patched, so a caller like `validate_single` can echo
+    it back without a re-fetch.
+    """
+    candidates = [
+        t for t in rows
+        if t.get("status") == "completed"
+        and not str(t.get("synergy_invoice_number") or "").strip()
+    ]
+    if not candidates:
+        return {}
+
+    order_map: dict[int, list[str]] = {}
+    for t in candidates:
+        raw = str(t.get("synergy_order_number") or "").strip()
+        try:
+            ord_num = int(raw)
+        except ValueError:
+            continue
+        order_map.setdefault(ord_num, []).append(t["id"])
+
+    if not order_map:
+        return {}
+
+    unique_orders = sorted(order_map.keys())
+    invoice_by_order: dict[int, int] = {}
+    cursor = conn.cursor()
+    batch_size = 100
+    for i in range(0, len(unique_orders), batch_size):
+        batch = unique_orders[i:i + batch_size]
+        placeholders = ",".join(str(o) for o in batch)
+        cursor.execute(
+            f"SELECT OrdNum, InvNum FROM roh WHERE OrdNum IN ({placeholders}) AND InvNum <> 0"
+        )
+        for ord_num, inv_num in cursor.fetchall():
+            invoice_by_order[ord_num] = inv_num
+        cursor.execute(
+            f"SELECT OrdNum, InvNum FROM invh WHERE OrdNum IN ({placeholders})"
+        )
+        for ord_num, inv_num in cursor.fetchall():
+            if inv_num:  # never let an unnumbered invh row overwrite a roh hit with 0
+                invoice_by_order[ord_num] = inv_num  # invh wins on conflict
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    detected_by_id: dict[str, str] = {}
+    for ord_num, inv_num in invoice_by_order.items():
+        for tid in order_map.get(ord_num, []):
+            supabase_patch_by_id(table, tid, {
+                "synergy_invoice_number": str(inv_num),
+                "synergy_invoice_detected_at": now_iso,
+                "synergy_invoice_source": "auto",
+            })
+            detected_by_id[tid] = str(inv_num)
+
+    log.info(
+        f"Invoice detection ({table}): {len(detected_by_id)} of {len(candidates)} "
+        f"completed tickets show invoiced in Synergy."
+    )
+    return detected_by_id
 
 
 def validate_diagnostic_invoices_batch() -> None:
@@ -611,6 +708,21 @@ def main() -> None:
     log.info(f"  Parts partial:       {parts_partial}")
     log.info(f"  Parts invalid:       {parts_invalid}")
     log.info("=" * 60)
+
+    # 6. Invoice detection — pre-fill synergy_invoice_number for completed
+    # tickets whose Synergy order has been invoiced. Self-contained (own
+    # connection, own try/except), same isolation as
+    # validate_diagnostic_invoices_batch above, so a failure here can't
+    # discard the validation writes already made in steps 3-4.
+    try:
+        inv_conn = pyodbc.connect("DSN=ERPlinked", autocommit=True, timeout=30)
+        try:
+            detect_invoiced(inv_conn, service_tickets, "service_tickets")
+            detect_invoiced(inv_conn, pm_tickets, "pm_tickets")
+        finally:
+            inv_conn.close()
+    except Exception as e:
+        log.error(f"Invoice detection pass failed (validation results above already written): {e}")
 
 
 if __name__ == "__main__":

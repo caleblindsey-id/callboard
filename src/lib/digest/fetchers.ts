@@ -1,10 +1,6 @@
 import { entityKey, type DigestDb, type DigestRow } from './types'
 import { getTickets, getBillingTickets } from '@/lib/db/tickets'
-import {
-  getServiceTickets,
-  getServiceBillingTickets,
-  getPoFollowUpQueue,
-} from '@/lib/db/service-tickets'
+import { getServiceTickets, getServiceBillingTickets } from '@/lib/db/service-tickets'
 import { getEstimateQueue } from '@/lib/db/estimate-queue'
 import { getDeclinedQueue } from '@/lib/db/declined-queue'
 import { getPickupQueue } from '@/lib/db/pickup-queue'
@@ -13,18 +9,24 @@ import { getWarrantyQueue } from '@/lib/db/warranty-queue'
 import { getAllLeads } from '@/lib/db/tech-leads'
 import { getCreditHoldCustomers } from '@/lib/db/dashboard-metrics'
 import { getPendingShipToRequests } from '@/lib/db/ship-to-requests'
+import { getBillingChaseQueue } from '@/lib/db/billing-chase'
 import { daysOverdue } from '@/lib/overdue'
+import { businessDaysSince } from '@/lib/business-days'
+import { BUSINESS_TIME_ZONE } from '@/lib/business-time'
 import { SERVICE_STATUS } from '@/lib/constants/service-status'
 import type { ServiceTicketStatus } from '@/types/service-tickets'
 
 // Every fetcher is a thin adapter over a src/lib/db function, so the digest and
-// the queue page it points at are the same query. Nine of the thirteen are
-// three-line maps because the shared row types already carry customer_name,
-// equipment_label and a days_since_* field.
-//
-// The four that contain real logic are idleServiceTickets (no shared "idle"
-// concept exists), partsStuck and idlePickups (shared queue plus an age
-// filter), and creditHoldWithOpenWork (row list built beside the count).
+// the queue page it points at are the same query. Most are plain maps because
+// the shared row types already carry customer_name, equipment_label and a
+// days_since_* field; the ones below with real filtering, sorting, or bucketing
+// logic are idleServiceTickets (no shared "idle" concept exists), leadsWaiting
+// (pending-only), partsStuck and idlePickups (shared queue plus an age
+// filter), warrantyToReview / warrantyToFile / warrantyAwaitingCredit (bucket
+// split plus an age sort), creditHoldWithOpenWork (row list built beside the
+// count), and the two billing-chase sections (poGatedBilling and
+// notEnteredSynergy), which share one fetch, getBillingChaseQueue, and each
+// filter their own reason bucket out of it.
 
 const STUCK_DAYS_PARTS = 7
 const STUCK_DAYS_SERVICE = 7
@@ -253,18 +255,52 @@ export async function partsStuck(db: DigestDb): Promise<DigestRow[]> {
 
 // --- OFFICE & AR -----------------------------------------------------------
 
+// Completed PM or service tickets for PO-required customers with no customer
+// PO yet. keyPrefixes covers both entity types (migration 163 made the
+// worklist, and this section, span both ticket types; ready_to_bill and
+// not_entered_synergy are the digest's other two mixed sections).
 export async function poGatedBilling(db: DigestDb): Promise<DigestRow[]> {
-  const rows = await getPoFollowUpQueue(db)
-  return rows.map((t) => ({
-    entityKey: entityKey('svc', t.id),
-    title: wo(t.work_order_number),
-    subtitle: t.customers?.name ?? 'Unknown customer',
-    meta: t.po_last_contacted_at
-      ? age(daysSince(t.po_last_contacted_at), `since last chase by ${t.po_last_method ?? 'unknown'}`)
-      : 'never chased',
-    deepLink: `/service/${t.id}`,
-    badge: badge(t.po_last_contacted_at ? 'Chased' : 'Never chased', AR),
-  }))
+  const rows = await getBillingChaseQueue(db)
+  return rows
+    .filter((r) => r.reasons.includes('po_missing'))
+    .map((r) => ({
+      entityKey: entityKey(r.ticketType === 'pm' ? 'pm' : 'svc', r.id),
+      title: wo(r.workOrderNumber),
+      subtitle: r.customers?.name ?? 'Unknown customer',
+      meta: r.poLastContactedAt
+        ? age(daysSince(r.poLastContactedAt), `since last chase by ${r.poLastMethod ?? 'unknown'}`)
+        : 'never chased',
+      deepLink: r.ticketType === 'pm' ? `/tickets/${r.id}` : `/service/${r.id}`,
+      badge: badge(r.poLastContactedAt ? 'Chased' : 'Never chased', AR),
+    }))
+}
+
+/**
+ * Completed PM or service tickets with no Synergy order # keyed yet, aged
+ * past one full business day. The one-day grace period is deliberate: a job
+ * completed this morning or yesterday afternoon is same-day-entry territory,
+ * not yet a chase item; businessDaysSince also means a Friday completion does
+ * not read as overdue over the weekend, only once Monday actually passes.
+ *
+ * Shares its fetch with poGatedBilling via getBillingChaseQueue rather than
+ * querying twice — the two sections just filter different reason buckets out
+ * of the same result.
+ */
+export async function notEnteredSynergy(db: DigestDb): Promise<DigestRow[]> {
+  const now = new Date()
+  const rows = await getBillingChaseQueue(db)
+  return rows
+    .filter((r) => r.reasons.includes('not_entered'))
+    .filter((r) => !!r.completedAt && businessDaysSince(new Date(r.completedAt), now, BUSINESS_TIME_ZONE) > 1)
+    .sort((a, b) => (a.completedAt ?? '').localeCompare(b.completedAt ?? ''))
+    .map((r) => ({
+      entityKey: entityKey(r.ticketType === 'pm' ? 'pm' : 'svc', r.id),
+      title: wo(r.workOrderNumber),
+      subtitle: r.customers?.name ?? 'Unknown customer',
+      meta: age(daysSince(r.completedAt), 'since completed, no Synergy order # yet'),
+      deepLink: r.ticketType === 'pm' ? `/tickets/${r.id}` : `/service/${r.id}`,
+      badge: badge('Not entered', BILLING),
+    }))
 }
 
 export async function shipToRequestsPending(db: DigestDb): Promise<DigestRow[]> {
@@ -274,9 +310,36 @@ export async function shipToRequestsPending(db: DigestDb): Promise<DigestRow[]> 
     title: r.customer?.name ?? 'Unknown customer',
     subtitle: r.note || 'No address detail given',
     meta: age(daysSince(r.requested_at), `waiting, from ${r.requested_by_user?.name ?? 'a tech'}`),
-    deepLink: '/customers',
+    deepLink: '/ship-to-requests',
     badge: badge('Pending', AR),
   }))
+}
+
+/**
+ * Warranty flags waiting on office review: a tech flagged possible coverage
+ * and nobody has verified or denied it yet, so the ticket can't be billed
+ * until someone does. Rides alongside the ticket's normal active work
+ * (open/estimated/approved/in_progress/completed) -- catching the flag while
+ * the job is still moving is the whole point, not just after it completes.
+ */
+export async function warrantyToReview(db: DigestDb): Promise<DigestRow[]> {
+  const rows = await getWarrantyQueue(db)
+  return rows
+    .filter((r) => r.bucket === 'to_review')
+    // Oldest request first. A null request date sorts last: it means the
+    // stamp is missing, not that the flag is fresh.
+    .sort((a, b) => (b.days_since_requested ?? -1) - (a.days_since_requested ?? -1))
+    .map((r) => ({
+      entityKey: entityKey('svc', r.id),
+      title: wo(r.work_order_number),
+      subtitle: r.customer_name,
+      meta:
+        r.days_since_requested === null
+          ? 'requested, age unknown'
+          : `requested ${r.days_since_requested}d ago`,
+      deepLink: `/service/${r.id}`,
+      badge: badge(r.status, AR),
+    }))
 }
 
 /**
@@ -312,6 +375,48 @@ export async function warrantyToFile(db: DigestDb): Promise<DigestRow[]> {
       deepLink: `/service/${r.id}`,
       badge: badge(r.bucket === 'billed_unclaimed' ? 'Billed, no claim' : 'To file', AR),
     }))
+}
+
+/**
+ * Warranty claims filed with a vendor that have not been credited back yet.
+ *
+ * Separate from warrantyToFile on purpose. The action is different (chase the
+ * vendor, not file with them) and so is the clock: these age from the day the
+ * claim was filed, not the day the work was completed, so a claim filed
+ * promptly on old work does not read as already late.
+ *
+ * This bucket had no chase at all between the warranty-credit-remind cron
+ * being retired in the digest port and this section landing. It is the leg
+ * where money actually sits: the branch has carried the parts cost, the
+ * customer has not been billed, and the ticket cannot be billed until the
+ * credit is logged.
+ */
+export async function warrantyAwaitingCredit(db: DigestDb): Promise<DigestRow[]> {
+  const rows = await getWarrantyQueue(db)
+  return rows
+    .filter((r) => r.bucket === 'awaiting_credit')
+    // Longest-waiting first. A null filing date sorts last rather than first:
+    // it means the stamp is missing, not that the claim is fresh.
+    .sort((a, b) => (b.days_since_submitted ?? -1) - (a.days_since_submitted ?? -1))
+    .map((r) => {
+      const vendor = r.warranty_vendor ?? 'no vendor recorded'
+      // Coerced rather than trusted: warranty_credit_expected is a Postgres
+      // numeric, and a numeric that arrives as a string would make .toFixed
+      // throw and take the whole section down to "could not load".
+      const expectedNum = Number(r.warranty_credit_expected)
+      const expected =
+        r.warranty_credit_expected != null && Number.isFinite(expectedNum)
+          ? `, $${expectedNum.toFixed(2)} expected`
+          : ''
+      return {
+        entityKey: entityKey('svc', r.id),
+        title: wo(r.work_order_number),
+        subtitle: r.customer_name,
+        meta: age(r.days_since_submitted, `since filed with ${vendor}${expected}`),
+        deepLink: `/service/${r.id}`,
+        badge: badge('Awaiting credit', AR),
+      }
+    })
 }
 
 export async function creditHoldWithOpenWork(db: DigestDb): Promise<DigestRow[]> {

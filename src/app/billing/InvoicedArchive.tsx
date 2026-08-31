@@ -42,9 +42,17 @@ const SORT_ACCESSORS: SortAccessors<InvoicedRow, InvoicedSortKey> = {
   wo: r => r.work_order_number,
   synergyOrder: r => r.synergy_order_number,
   invoice: r => r.synergy_invoice_number,
-  amount: r => r.billing_amount,
+  amount: r => r.customer_bill_amount ?? r.billing_amount,
   completed: r => r.completed_at,
   billed: r => r.billed_at,
+}
+
+// What the customer actually paid (warranty coverage netted out). PM rows
+// never carry customer_bill_amount (no warranty concept), so this falls
+// through to billing_amount for them the same as for an unverified/denied
+// service ticket. Mirrors ServiceAwaitingInvoice.tsx's customerAmount.
+function customerAmount(r: InvoicedRow): number | null {
+  return r.customer_bill_amount ?? r.billing_amount
 }
 
 function TypeBadge({ type }: { type: 'service' | 'pm' }) {
@@ -74,7 +82,7 @@ export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: I
     SORT_ACCESSORS
   )
 
-  const total = filtered.reduce((sum, r) => sum + (r.billing_amount ?? 0), 0)
+  const total = filtered.reduce((sum, r) => sum + (customerAmount(r) ?? 0), 0)
 
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
@@ -199,8 +207,13 @@ export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: I
                         Completed {fmtDate(r.completed_at)} · Billed {fmtDate(r.billed_at)}
                       </p>
                     </div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white shrink-0">
-                      {r.billing_amount != null ? `$${r.billing_amount.toFixed(2)}` : '—'}
+                    <span className="text-sm font-medium text-gray-900 dark:text-white shrink-0 text-right">
+                      {customerAmount(r) != null ? `$${customerAmount(r)!.toFixed(2)}` : '—'}
+                      {r.customer_bill_amount != null && r.customer_bill_amount !== r.billing_amount && (
+                        <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                          claim ${(r.billing_amount ?? 0).toFixed(2)}
+                        </span>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -242,7 +255,12 @@ export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: I
                         {r.synergy_invoice_number ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">
-                        {r.billing_amount != null ? `$${r.billing_amount.toFixed(2)}` : '—'}
+                        {customerAmount(r) != null ? `$${customerAmount(r)!.toFixed(2)}` : '—'}
+                        {r.customer_bill_amount != null && r.customer_bill_amount !== r.billing_amount && (
+                          <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                            claim ${(r.billing_amount ?? 0).toFixed(2)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{fmtDate(r.completed_at)}</td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{fmtDate(r.billed_at)}</td>

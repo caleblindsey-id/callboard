@@ -34,6 +34,9 @@ function methodLabel(method: PoFollowUpMethod): string {
 
 interface PoFollowUpDrawerProps {
   ticketId: string | null
+  // Selects the API surface (PM vs service po-follow-ups). Only read while
+  // ticketId is non-null, so the value while closed is a harmless default.
+  ticketType: 'pm' | 'service'
   title: string | null
   subtitle: string | null
   onClose: () => void
@@ -41,11 +44,19 @@ interface PoFollowUpDrawerProps {
   onLogged: () => void
 }
 
-// Slide-over PO-collection log for one service ticket: the append-only history of
-// outreach attempts (who, method, when, note) plus the Log-Contact form. Mirrors
-// the customer BillingNotesDrawer, but per-ticket and structured (method).
+function followUpUrl(ticketType: 'pm' | 'service', ticketId: string): string {
+  return ticketType === 'pm'
+    ? `/api/tickets/${ticketId}/po-follow-ups`
+    : `/api/service-tickets/${ticketId}/po-follow-ups`
+}
+
+// Slide-over PO-collection log for one PM or service ticket: the append-only
+// history of outreach attempts (who, method, when, note) plus the Log-Contact
+// form. Mirrors the customer BillingNotesDrawer, but per-ticket and structured
+// (method).
 export default function PoFollowUpDrawer({
   ticketId,
+  ticketType,
   title,
   subtitle,
   onClose,
@@ -63,7 +74,7 @@ export default function PoFollowUpDrawer({
     if (!ticketId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/service-tickets/${ticketId}/po-follow-ups`)
+      const res = await fetch(followUpUrl(ticketType, ticketId))
       if (!res.ok) throw new Error('Failed to load follow-ups')
       setEntries(await res.json())
       setError(null)
@@ -72,7 +83,7 @@ export default function PoFollowUpDrawer({
     } finally {
       setLoading(false)
     }
-  }, [ticketId])
+  }, [ticketId, ticketType])
 
   useEffect(() => {
     if (!open) return
@@ -92,7 +103,7 @@ export default function PoFollowUpDrawer({
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch(`/api/service-tickets/${ticketId}/po-follow-ups`, {
+      const res = await fetch(followUpUrl(ticketType, ticketId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ method, note: note.trim() || null }),
@@ -122,7 +133,7 @@ export default function PoFollowUpDrawer({
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-              PO Follow-Up
+              Contact Log
             </h2>
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 truncate">{title ?? '—'}</p>
             {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{subtitle}</p>}

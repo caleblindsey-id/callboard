@@ -19,9 +19,10 @@ test('singular item reads correctly', () => {
 })
 
 test('total outage never renders as zero items', () => {
-  const s = buildSubject({ distinctCount: 0, failedCount: 13, dateLabel: 'Aug 20' })
+  // failedCount tracks SECTIONS.length so this stays a genuine total outage.
+  const s = buildSubject({ distinctCount: 0, failedCount: 16, dateLabel: 'Aug 20' })
   assert.ok(!s.includes('0 items'), `subject must not claim zero items: ${s}`)
-  assert.equal(s, 'CallBoard Morning Digest: degraded, 13 sections could not load (Aug 20)')
+  assert.equal(s, 'CallBoard Morning Digest: degraded, 16 sections could not load (Aug 20)')
 })
 
 test('partial failure reports both the count and the failures', () => {

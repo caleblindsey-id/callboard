@@ -4,7 +4,7 @@ category: Technicians
 roles: [super_admin, manager, coordinator, technician]
 order: 20
 summary: Record the work on an assigned service (repair) ticket and mark it complete.
-last_verified: 2026-07-30
+last_verified: 2026-08-26
 ---
 
 A service ticket is reactive repair work — the customer called with a problem, rather than a scheduled PM. Completing one is simpler than a PM: you log your time, any parts used, notes, photos, and (for field work) a customer signature.
@@ -41,4 +41,5 @@ Tap **Mark Complete**. CallBoard checks that your hours are valid and — on fie
 
 - **It won't let me complete.** Check the message at the top — usually a missing signature/name on a field ticket, invalid hours, or a part that hasn't been received yet.
 - **The numbers look like the estimate, not what I actually did.** They are — they were copied from the approved estimate. Edit them to match your real hours and parts before submitting.
+- **This turned out to be warranty work.** Flag it in the **Warranty** box on the ticket (see [Flag a warranty repair](/help/technicians/flag-a-warranty-repair)), any time from assignment through completion. You still write the ticket up at full price; the office verifies coverage and handles the vendor claim and the customer's net amount from there.
 - **The labor rate is wrong for this machine.** Change **Labor Type** in Step 2 — the billing total updates immediately and the new rate is saved when you mark the job complete. You can also set it earlier, on the estimate.

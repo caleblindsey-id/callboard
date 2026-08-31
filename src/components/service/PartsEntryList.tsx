@@ -50,6 +50,12 @@ export interface PartEntry {
   searchResults: ProductResult[]
   searching: boolean
   warrantyCovered: boolean
+  // Actual amount the vendor credited for this line at warranty reconcile
+  // (migration 160+, office-only — never surfaced in this component's UI).
+  // Carried through the round-trip like fromRequestAt below so a tech
+  // resubmitting the completion form after office reconcile can't silently
+  // wipe it.
+  vendorCreditAmount?: number | null
   // PM coverage classification, surfaced only when the parent opts in via
   // showCoverage (PM part requests). undefined = not yet chosen — the Request
   // gate blocks until the tech picks. true = included in the PM agreement (no
@@ -115,7 +121,7 @@ export function emptyPart(): PartEntry {
   }
 }
 
-export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[]): PartEntry[] {
+export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; vendor_credit_amount?: number | null; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
     quantity: String(p.quantity),
@@ -127,6 +133,9 @@ export function partsFromSaved(saved: { synergy_product_id?: number | null; desc
     searchResults: [],
     searching: false,
     warrantyCovered: p.warranty_covered ?? false,
+    // Restore the office-set vendor credit (see PartEntry) so it survives a
+    // tech resubmitting the form after warranty reconcile.
+    vendorCreditAmount: p.vendor_credit_amount ?? null,
     // Restore the detail input on reload — requiresDetail is only set on the
     // product-select event, which never fires again on rehydrate.
     requiresDetail: !!p.requires_detail,
@@ -142,13 +151,16 @@ export function partsFromSaved(saved: { synergy_product_id?: number | null; desc
   }))
 }
 
-export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[] {
+export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; vendor_credit_amount?: number | null; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
     quantity: parseFloat(p.quantity) || 0,
     unit_price: parseFloat(p.unitPrice) || 0,
     warranty_covered: p.warrantyCovered,
+    // Persist the office-set vendor credit through the round-trip (see
+    // PartEntry) — only when set, so unreconciled lines stay lean.
+    ...(p.vendorCreditAmount != null ? { vendor_credit_amount: p.vendorCreditAmount } : {}),
     // Persist only when meaningful so non-flagged parts stay lean.
     ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
     ...(p.requiresDetail ? { requires_detail: true } : {}),

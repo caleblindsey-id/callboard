@@ -13,6 +13,7 @@ import { shippingChargeAmount } from '@/lib/shipping'
 import { equipmentNeedsVerification } from '@/lib/equipment'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
 import { isLaborRateType, resolveLaborRateType } from '@/lib/labor-rate-type'
+import { computeCustomerBillAmount } from '@/lib/service-tickets/warranty'
 import type { ServicePartUsed } from '@/types/service-tickets'
 import type { TicketPhoto } from '@/types/database'
 
@@ -24,7 +25,6 @@ interface CompleteServiceTicketBody {
   customer_signature: string | null
   customer_signature_name: string | null
   photos: TicketPhoto[]
-  warranty_labor_covered?: boolean
   // Rate class the completer picked on the completion form. Absent = keep
   // whatever the ticket already had. Mirrors the PM /complete route's
   // laborRateType (feedback #76); added for service tickets so a technician —
@@ -144,7 +144,7 @@ export async function POST(
     const supabase = await createClient()
     const { data: current, error: fetchError } = await supabase
       .from('service_tickets')
-      .select('status, assigned_technician_id, billing_type, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, shipping_charge, labor_rate_type, equipment_id, customer_id, parts_requested')
+      .select('status, assigned_technician_id, ticket_type, diagnostic_charge, diagnostic_invoice_number, trip_charge_qty, shipping_charge, labor_rate_type, equipment_id, customer_id, parts_requested, warranty_review_status, warranty_labor_covered')
       .eq('id', id)
       .single()
 
@@ -232,15 +232,11 @@ export async function POST(
     // Margin floor (parts only, per-line): every billable part must keep >= 15%
     // gross margin over loaded cost. Cost is sourced from the products catalog
     // (server-authoritative); the line unit_cost snapshot is overwritten from
-    // it. Warranty tickets bill no parts, so the floor doesn't apply there.
+    // it. Every ticket bills all part lines at full price now (migration 160+
+    // review lifecycle), so the floor applies to every line, warranty or not.
     {
-      const billingTypeForFloor = current.billing_type as string
-      const lines = parts_used ?? []
-      if (billingTypeForFloor !== 'warranty' && lines.length > 0) {
-        const billable =
-          billingTypeForFloor === 'partial_warranty'
-            ? lines.filter((p) => !p.warranty_covered)
-            : lines
+      const billable = parts_used ?? []
+      if (billable.length > 0) {
         const costMap = await buildProductCostMap(supabase, billable.map((l) => l.synergy_product_id))
         const check = checkPartLines(billable, (pid) => costMap.get(pid))
         if (!check.ok) {
@@ -281,11 +277,15 @@ export async function POST(
 
     // Server-authoritative billing math (mirrors PM /complete in section 2).
     // billing_amount is no longer accepted from the client — it's recomputed
-    // for all roles from authoritative inputs.
-    const billingType = current.billing_type as string
-    // The completer's pick wins over the stored type, so the rate the tech saw
-    // in the on-screen billing preview is the rate the bill is computed at. Used
-    // for the labor line AND the ACE payout entry below, which must agree.
+    // for all roles from authoritative inputs. Every ticket completes at full
+    // price now (labor + ALL parts + signed diagnostic + trip + shipping) —
+    // warranty coverage no longer zeroes anything here. The office-verified
+    // coverage instead produces customer_bill_amount below, the post-coverage
+    // total; billing_amount stays the full-price vendor-claim artifact.
+    // The completer's labor-rate pick wins over the stored type, so the rate
+    // the tech saw in the on-screen billing preview is the rate the bill is
+    // computed at. Used for the labor line AND the ACE payout entry below,
+    // which must agree.
     const laborRateType = resolveLaborRateType(body.labor_rate_type, current.labor_rate_type)
     const laborRateTypeChanged = laborRateType !== (current.labor_rate_type ?? 'standard')
     const finalParts: ServicePartUsed[] = parts_used ?? []
@@ -296,42 +296,52 @@ export async function POST(
     const hasDiagInvoice = !!String(current.diagnostic_invoice_number ?? '').trim()
     const signedDiagnostic = hasDiagInvoice ? -diagnosticCharge : diagnosticCharge
 
-    let finalBillingAmount: number
-    if (billingType === 'warranty') {
-      finalBillingAmount = 0
-    } else {
-      const laborRate = await getCustomerLaborRate(current.customer_id, laborRateType)
-      const laborTotal = hours_worked * laborRate
+    const laborRate = await getCustomerLaborRate(current.customer_id, laborRateType)
+    const laborTotal = hours_worked * laborRate
 
-      const billablePartsTotal = billingType === 'partial_warranty'
-        ? finalParts.filter(p => !p.warranty_covered).reduce(
-            (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
-          )
-        : finalParts.reduce(
-            (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
-          )
+    const partsTotal = finalParts.reduce(
+      (sum, p) => sum + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0
+    )
 
-      // Trip charge = trips × per-trip rate (mirrors labor). The completer's
-      // inline qty (body) wins, else the stored qty, else the ticket-type default
-      // (bench 'inside' = 0 trips, field = 1). partial_warranty still bills it.
-      const tripQty = isNonNegativeNumber(body.trip_charge_qty)
-        ? body.trip_charge_qty
-        : effectiveTripChargeQty(current.trip_charge_qty as number | null, current.ticket_type as string)
-      const tripCharge = tripQty * await getTripChargeRate()
+    // Trip charge = trips × per-trip rate (mirrors labor). The completer's
+    // inline qty (body) wins, else the stored qty, else the ticket-type default
+    // (bench 'inside' = 0 trips, field = 1).
+    const tripQty = isNonNegativeNumber(body.trip_charge_qty)
+      ? body.trip_charge_qty
+      : effectiveTripChargeQty(current.trip_charge_qty as number | null, current.ticket_type as string)
+    const tripCharge = tripQty * await getTripChargeRate()
 
-      // Inbound freight (feedback #80), flat dollars set by the office at PO
-      // time. Read from the stored column only — never from the request body:
-      // this route is tech-reachable, and what the customer pays for freight is
-      // a pricing decision that stays office-owned (same reason shipping_charge
-      // is absent from TECH_ALLOWED_FIELDS on the PATCH route). NULL → 0, so
-      // tickets with no special-order parts are unaffected.
-      const shippingCharge = shippingChargeAmount(current.shipping_charge as number | null)
+    // Inbound freight (feedback #80), flat dollars set by the office at PO
+    // time. Read from the stored column only — never from the request body:
+    // this route is tech-reachable, and what the customer pays for freight is
+    // a pricing decision that stays office-owned (same reason shipping_charge
+    // is absent from TECH_ALLOWED_FIELDS on the PATCH route). NULL → 0, so
+    // tickets with no special-order parts are unaffected.
+    const shippingCharge = shippingChargeAmount(current.shipping_charge as number | null)
 
-      finalBillingAmount =
-        laborTotal + billablePartsTotal + signedDiagnostic + tripCharge + shippingCharge
-    }
+    let finalBillingAmount =
+      laborTotal + partsTotal + signedDiagnostic + tripCharge + shippingCharge
     // Round to cents to avoid stored vs. displayed drift.
     finalBillingAmount = Math.round(finalBillingAmount * 100) / 100
+
+    // Post-coverage customer total (migration 160+ review lifecycle). Only
+    // computed once the office has verified coverage; every other status
+    // (requested, denied, or never flagged) bills the customer the full
+    // amount, so the column stays null and callers fall back to billing_amount.
+    const customerBillAmount = current.warranty_review_status === 'verified'
+      ? computeCustomerBillAmount({
+          billingAmount: finalBillingAmount,
+          laborTotal,
+          tripCharge,
+          signedDiagnostic,
+          shippingCharge,
+          laborCovered: current.warranty_labor_covered === true,
+          parts: finalParts.map((p) => ({
+            lineTotal: (Number(p.quantity) || 0) * (Number(p.unit_price) || 0),
+            covered: !!p.warranty_covered,
+          })),
+        })
+      : null
 
     // ACE labor — write BEFORE the ticket transitions to completed so a failure
     // returns 500 with the ticket unchanged. See PM /complete for the full
@@ -409,10 +419,10 @@ export async function POST(
       parts_used: finalParts,
       completion_notes: completion_notes ?? null,
       billing_amount: finalBillingAmount,
+      customer_bill_amount: customerBillAmount,
       customer_signature: customer_signature ?? null,
       customer_signature_name: customer_signature_name ?? null,
       photos: photos ?? [],
-      warranty_labor_covered: body.warranty_labor_covered,
       machine_hours: machineHours,
       date_code: dateCode,
       // Persisted in the same UPDATE as the billing_amount derived from it, so

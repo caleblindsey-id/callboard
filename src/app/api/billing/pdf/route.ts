@@ -207,23 +207,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // --- Validate PO requirements ---
-    const missingPoTickets = (rawTickets as RawTicket[]).filter(
-      (t) => t.customers?.po_required && !t.po_number
-    )
-
-    if (missingPoTickets.length > 0) {
-      const names = missingPoTickets
-        .map((t) => `WO#${t.work_order_number} (${t.customers?.name ?? 'Unknown'})`)
-        .join(', ')
-      return NextResponse.json(
-        {
-          error: `Cannot export — ${missingPoTickets.length} ticket(s) missing required PO: ${names}`,
-        },
-        { status: 400 }
-      )
-    }
-
     // --- Collect all unique synergy_product_ids to resolve descriptions ---
     const productIdSet = new Set<number>()
     for (const ticket of rawTickets as RawTicket[]) {
@@ -464,7 +447,7 @@ export async function POST(request: NextRequest) {
     // actually invoiced in Synergy.
     const { data: marked, error: updateError } = await supabase
       .from('pm_tickets')
-      .update({ billing_exported: true })
+      .update({ billing_exported: true, billing_exported_at: new Date().toISOString() })
       .in('id', ticketIds as string[])
       .is('deleted_at', null)
       .eq('status', 'completed')

@@ -10,8 +10,9 @@ export interface WhatsNewUpdate {
 }
 
 export const LATEST_UPDATE: WhatsNewUpdate | null = {
-  id: '2026-06-08-pm-billing-gate',
-  headline: 'Change: exporting a PM no longer marks it billed — enter its Synergy invoice number, then tap Mark Billed.',
-  href: '/help/managers/billing',
+  id: '2026-08-27-billing-chase-synergy-same-day',
+  headline:
+    'Change: bill completed work faster. Key the Synergy order the day work finishes — export is never blocked by a missing PO. One Billing Chase list covers PM and service; a nightly check pre-fills invoice numbers Synergy already shows as invoiced, for you to confirm.',
+  href: '/help/managers/billing-chase',
   cta: 'See how',
 }

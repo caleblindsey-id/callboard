@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getUser } from '@/lib/db/users'
 import { MANAGER_ROLES } from '@/types/database'
 import { sendPickupNotice } from '@/lib/service-tickets/send-pickup-notice'
+import { warrantyBillingBlock, WarrantyReviewStatus } from '@/lib/service-tickets/warranty'
 
 // Batch-flip exported service tickets to 'billed'. Export-first (migration 106):
 // a ticket must already be billing_exported (manager pulled the work-order PDF)
@@ -20,7 +21,7 @@ type ServiceTicketBillingRow = {
   ticket_type: string | null
   awaiting_pickup: boolean | null
   ready_for_pickup_at: string | null
-  billing_type: string | null
+  warranty_review_status: WarrantyReviewStatus | null
   warranty_credit_received_at: string | null
   customers: { name: string; po_required: boolean } | null
 }
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id, work_order_number, status, billing_exported, synergy_invoice_number, po_number,
         ticket_type, awaiting_pickup, ready_for_pickup_at,
-        billing_type, warranty_credit_received_at,
+        warranty_review_status, warranty_credit_received_at,
         customers ( name, po_required )
       `)
       .is('deleted_at', null)
@@ -103,22 +104,33 @@ export async function POST(request: NextRequest) {
     }
 
     // Hard block (parity with the single-ticket PATCH gate): warranty work
-    // isn't billed until the vendor credit lands. Billing before the credit
-    // closes the claim prematurely — cleared by logging the credit on the
-    // warranty-claims worklist (warranty_credit_received_at).
-    const awaitingCredit = tickets.filter(
-      (t) =>
-        (t.billing_type === 'warranty' || t.billing_type === 'partial_warranty') &&
-        !t.warranty_credit_received_at
-    )
-    if (awaitingCredit.length > 0) {
-      const names = awaitingCredit
-        .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
-        .join(', ')
-      return NextResponse.json(
-        { error: `Vendor credit not yet received — log the warranty credit before billing: ${names}` },
-        { status: 400 }
-      )
+    // isn't billed until the office has verified coverage and, if covered,
+    // the vendor credit has landed. See src/lib/service-tickets/warranty.ts.
+    const pendingReview: ServiceTicketBillingRow[] = []
+    const awaitingCredit: ServiceTicketBillingRow[] = []
+    for (const t of tickets) {
+      const block = warrantyBillingBlock({
+        warranty_review_status: t.warranty_review_status,
+        warranty_credit_received_at: t.warranty_credit_received_at,
+      })
+      if (block === 'pending_review') pendingReview.push(t)
+      else if (block === 'awaiting_credit') awaitingCredit.push(t)
+    }
+    if (pendingReview.length > 0 || awaitingCredit.length > 0) {
+      const parts: string[] = []
+      if (pendingReview.length > 0) {
+        const names = pendingReview
+          .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
+          .join(', ')
+        parts.push(`Warranty review pending — record the coverage verdict before billing: ${names}`)
+      }
+      if (awaitingCredit.length > 0) {
+        const names = awaitingCredit
+          .map((t) => `WO#${t.work_order_number ?? t.id} (${t.customers?.name ?? 'Unknown'})`)
+          .join(', ')
+        parts.push(`Vendor credit not yet received — log the warranty credit before billing: ${names}`)
+      }
+      return NextResponse.json({ error: parts.join(' ') }, { status: 400 })
     }
 
     const missingSynergy = tickets.filter((t) => !t.synergy_invoice_number)

@@ -292,6 +292,20 @@ const TICKET_TYPE_META: Record<ServiceTicketType, StatusMeta> = {
   },
 }
 
+// Billing Chase's Type column: the two service ticket types PLUS pm, so one
+// sortable column covers every row on that page (PM tickets have no
+// ticket_type — PM work is field work by definition). Spreads TICKET_TYPE_META
+// rather than restating indigo/teal so Inside/Outside can never drift from the
+// service board and the other billing queues. PM keeps the slate the Billing
+// Chase page already used for its PM chip.
+const CHASE_WORK_TYPE_META: Record<ServiceTicketType | 'pm', StatusMeta> = {
+  ...TICKET_TYPE_META,
+  pm: {
+    label: 'PM',
+    classes: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+  },
+}
+
 // Purchasing/Reorder session pipeline (migration 142). draft/canceled share the
 // gray family (terminal-negative-inert convention above) but at different
 // shades so the two remain visually distinct; walking reuses BLUE_IN_PROGRESS
@@ -325,6 +339,7 @@ export const STATUS_META = {
   readiness: READINESS_STATUS_META,
   creditHold: CREDIT_HOLD_STATUS_META,
   ticketType: TICKET_TYPE_META,
+  chaseWorkType: CHASE_WORK_TYPE_META,
   reorder: REORDER_STATUS_META,
 } as const
 

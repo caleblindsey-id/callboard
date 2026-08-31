@@ -24,15 +24,11 @@ export function shouldRunNow(now: Date, timeZone: string, targetHour = 8): boole
  * the manual path: `vercel crons run`, or a curl with the secret, must not be
  * able to mail the branch on a Saturday.
  *
- * It has to resolve through the business timezone rather than getUTCDay(),
- * because the digest's 14:00Z winter fire is still Friday in UTC when it is
- * Friday in Central, but a naive UTC check at other hours would disagree near
- * midnight.
+ * Moved to src/lib/business-days.ts (the not_entered_synergy section's aging
+ * helper, businessDaysSince, needed it too) and re-exported here so existing
+ * imports of `./should-run` keep working unchanged.
  */
-export function isBusinessWeekday(now: Date, timeZone: string): boolean {
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(now)
-  return weekday !== 'Sat' && weekday !== 'Sun'
-}
+export { isBusinessWeekday } from '@/lib/business-days'
 
 export function localHourIn(now: Date, timeZone: string): number {
   const hour = new Intl.DateTimeFormat('en-US', {

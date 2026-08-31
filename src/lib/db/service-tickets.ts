@@ -10,6 +10,7 @@ import type {
   ServiceTicketType,
   ServiceBillingType,
   PartRequest,
+  WarrantyReviewStatus,
 } from '@/types/service-tickets'
 import type { LaborRateType } from '@/types/database'
 
@@ -290,6 +291,8 @@ export async function getServiceTicket(id: string): Promise<ServiceTicketDetail 
       assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name ),
       created_by:users!service_tickets_created_by_id_fkey ( name ),
       deleted_by:users!service_tickets_deleted_by_id_fkey ( name ),
+      warranty_review_requested_by:users!service_tickets_warranty_review_requested_by_id_fkey ( name ),
+      warranty_review_decided_by:users!service_tickets_warranty_review_decided_by_id_fkey ( name ),
       credit_reviews ( id, status, block_reason, decided_by_name )
     `)
     .eq('id', id)
@@ -334,10 +337,12 @@ export async function completeServiceTicket(
     parts_used: ServiceTicketRow['parts_used']
     completion_notes: string | null
     billing_amount: number
+    // Post-coverage customer total (migration 160+ review lifecycle). null =
+    // same as billing_amount (not verified-warranty, or coverage denied).
+    customer_bill_amount: number | null
     customer_signature: string | null
     customer_signature_name: string | null
     photos: ServiceTicketRow['photos']
-    warranty_labor_covered?: boolean
     machine_hours?: number | null
     date_code?: string | null
     // Rate class the labor was actually billed at. Only present when the
@@ -363,10 +368,10 @@ export async function completeServiceTicket(
       parts_used: data.parts_used,
       completion_notes: data.completion_notes,
       billing_amount: data.billing_amount,
+      customer_bill_amount: data.customer_bill_amount,
       customer_signature: data.customer_signature,
       customer_signature_name: data.customer_signature_name,
       photos: data.photos,
-      warranty_labor_covered: data.warranty_labor_covered ?? false,
       machine_hours: data.machine_hours ?? null,
       date_code: data.date_code ?? null,
       ...(data.labor_rate_type ? { labor_rate_type: data.labor_rate_type } : {}),
@@ -402,12 +407,21 @@ export type ServiceBillingTicket = {
   ticket_type: ServiceTicketType
   billing_type: ServiceBillingType
   billing_amount: number | null
+  // Post-coverage customer total (migration 160+ review lifecycle). NULL =
+  // same as billing_amount (not verified, or coverage denied/pending).
+  customer_bill_amount: number | null
   hours_worked: number | null
   billing_exported: boolean
   po_number: string | null
   synergy_order_number: string | null
   synergy_invoice_number: string | null
+  // Provenance for synergy_invoice_number (migration 164) — 'auto' when the
+  // nightly validator pre-filled it from Synergy, null for manually keyed
+  // numbers. Drives the "Synergy shows invoiced — confirm" pill.
+  synergy_invoice_detected_at: string | null
+  synergy_invoice_source: 'auto' | 'manual' | null
   warranty_credit_received_at: string | null
+  warranty_review_status: WarrantyReviewStatus | null
   completed_at: string | null
   customer_id: number | null
   service_address: string | null
@@ -449,9 +463,11 @@ async function getServiceBillingByExported(
   let query = supabase
     .from('service_tickets')
     .select(`
-      id, work_order_number, status, ticket_type, billing_type, billing_amount, hours_worked,
+      id, work_order_number, status, ticket_type, billing_type, billing_amount,
+      customer_bill_amount, hours_worked,
       billing_exported, po_number, synergy_order_number, synergy_invoice_number,
-      warranty_credit_received_at, completed_at,
+      synergy_invoice_detected_at, synergy_invoice_source,
+      warranty_credit_received_at, warranty_review_status, completed_at,
       customer_id, equipment_make, equipment_model,
       service_address, service_city, service_state,
       customers ( name, account_number, po_required, ar_terms, credit_hold, tax_rate, tax_exempt ),
@@ -684,12 +700,14 @@ export async function getServiceTicketCounts(technicianId?: string): Promise<Rec
   return counts
 }
 
-// --- Completed-but-waiting-on-PO count (dashboard card) ---
+// --- Completed-but-waiting-on-PO count (technician dashboard card) ---
 // Completed tickets for PO-required customers that still have no customer PO on
-// file — the same subset the billing Ready-to-Export gate blocks (needsPo in
-// ServiceBillingExport.tsx). The inner customers join restricts the count to
-// PO-required customers; po_number empty = null OR ''. Pass technicianId to scope
-// to a single tech's completed tickets (the technician dashboard card).
+// file — the same subset the Mark Billed gate blocks (needsPo in
+// ServiceAwaitingInvoice.tsx). The inner customers join restricts the count to
+// PO-required customers; po_number empty = null OR ''. Manager-side is now
+// getBillingChaseCounts (billing-chase.ts, migration 163); this one survives
+// scoped to a single tech's completed tickets via technicianId, which the
+// polymorphic worklist has no equivalent of.
 export async function getPoNeededCount(technicianId?: string): Promise<number> {
   const supabase = await createClient()
   let q = supabase
@@ -705,57 +723,6 @@ export async function getPoNeededCount(technicianId?: string): Promise<number> {
   const { count, error } = await q
   if (error) throw error
   return count ?? 0
-}
-
-// --- Waiting-on-PO worklist (PO collection tracking) ---
-// The same subset as getPoNeededCount / the billing PO gate: completed tickets
-// for PO-required customers with no customer PO yet. Adds the denormalized
-// follow-up recency (po_last_contacted_at / po_last_method) so the worklist can
-// show "N days since last contact · call". Ordered oldest-contact-first, with
-// never-contacted rows surfaced first (nulls) — the most urgent to chase.
-
-export type PoFollowUpQueueTicket = {
-  id: string
-  work_order_number: number | null
-  completed_at: string | null
-  billing_amount: number | null
-  po_number: string | null
-  po_last_contacted_at: string | null
-  po_last_method: string | null
-  equipment_make: string | null
-  equipment_model: string | null
-  customers: {
-    name: string
-    account_number: string | null
-  } | null
-  equipment: {
-    make: string | null
-    model: string | null
-    serial_number: string | null
-  } | null
-  assigned_technician: { name: string } | null
-}
-
-export async function getPoFollowUpQueue(db?: DigestDb): Promise<PoFollowUpQueueTicket[]> {
-  const supabase = db ?? (await createClient())
-
-  const { data, error } = await supabase
-    .from('service_tickets')
-    .select(`
-      id, work_order_number, completed_at, billing_amount, po_number,
-      po_last_contacted_at, po_last_method, equipment_make, equipment_model,
-      customers!inner ( name, account_number, po_required ),
-      equipment ( make, model, serial_number ),
-      assigned_technician:users!service_tickets_assigned_technician_id_fkey ( name )
-    `)
-    .eq('status', 'completed')
-    .eq('customers.po_required', true)
-    .is('deleted_at', null)
-    .or('po_number.is.null,po_number.eq.')
-    .order('po_last_contacted_at', { ascending: true, nullsFirst: true })
-
-  if (error) throw error
-  return (data ?? []) as unknown as PoFollowUpQueueTicket[]
 }
 
 // --- Bulk assign a technician to service tickets ---

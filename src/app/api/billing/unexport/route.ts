@@ -78,10 +78,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // CAS: only revert rows still in the awaiting-invoice state.
+    // CAS: only revert rows still in the awaiting-invoice state. Also clears
+    // the nightly auto-detect provenance (migration 164) alongside the invoice
+    // # itself, so a re-exported ticket never carries a stale "confirm" pill.
     const { data: reverted, error: updateError } = await supabase
       .from('pm_tickets')
-      .update({ billing_exported: false, synergy_invoice_number: null })
+      .update({
+        billing_exported: false,
+        synergy_invoice_number: null,
+        synergy_invoice_source: null,
+        synergy_invoice_detected_at: null,
+      })
       .in('id', ticketIds as string[])
       .is('deleted_at', null)
       .eq('status', 'completed')

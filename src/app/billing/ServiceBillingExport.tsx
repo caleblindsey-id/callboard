@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
+import { LEGACY_BILLING_TYPE_LABELS } from '@/lib/service-tickets/warranty'
 import BillingNotesDrawer from './BillingNotesDrawer'
 import InlineEditCell from './InlineEditCell'
 import TicketTypeBadge from '@/components/TicketTypeBadge'
@@ -26,14 +27,10 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-const BILLING_TYPE_LABELS: Record<string, string> = {
-  non_warranty: 'T&M',
-  warranty: 'Warranty',
-  partial_warranty: 'Partial Warranty',
-}
-
-// A ticket is blocked from export when its customer requires a PO but none is on
-// the ticket yet — mirrors the PM Ready-to-Export gate in BillingExport.tsx.
+// A ticket's customer requires a PO but none is on the ticket yet — shown as an
+// informational status here (PO Status column, amber banner), never blocking
+// export. The PO is required later, at Mark Billed. Mirrors the PM
+// Ready-to-Export gate in BillingExport.tsx.
 function needsPo(t: ServiceBillingTicket): boolean {
   return !!t.customers?.po_required && !t.po_number
 }
@@ -62,16 +59,16 @@ type ServiceBillingSortKey =
 const SERVICE_BILLING_SORT_ACCESSORS: SortAccessors<ServiceBillingTicket, ServiceBillingSortKey> = {
   customer: t => t.customers?.name,
   wo: t => t.work_order_number,
-  // Group PO-needed rows first (they block export), then has-PO, then not-required.
+  // Group PO-needed rows first (they block Mark Billed), then has-PO, then not-required.
   poStatus: t => (needsPo(t) ? 0 : t.customers?.po_required ? 1 : 2),
   equipment: t =>
     [t.equipment?.make ?? t.equipment_make, t.equipment?.model ?? t.equipment_model]
       .filter(Boolean)
       .join(' ') || null,
   technician: t => t.assigned_technician?.name,
-  billing: t => t.billing_amount,
+  billing: t => customerAmount(t),
   ticketType: t => t.ticket_type,
-  type: t => BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
+  type: t => LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type,
   completed: t => t.completed_at,
 }
 
@@ -95,6 +92,14 @@ function customerSubline(t: ServiceBillingTicket): string | null {
   const acct = t.customers?.account_number
   const parts = [acct ? `Acct #${acct}` : null, shipToLabel(t)].filter(Boolean)
   return parts.length ? parts.join(' · ') : null
+}
+
+// What the customer actually pays (warranty coverage netted out) — the
+// billing_amount is the full-price claim artifact vendors require, so once
+// coverage is verified customer_bill_amount is the number that belongs here.
+// NULL means "same as billing_amount" (not verified, or denied).
+function customerAmount(t: ServiceBillingTicket): number | null {
+  return t.customer_bill_amount ?? t.billing_amount
 }
 
 export default function ServiceBillingExport({
@@ -387,12 +392,15 @@ export default function ServiceBillingExport({
                     )}
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       Tech: {t.assigned_technician?.name ?? '—'} · Hrs: {t.hours_worked ?? '—'} ·{' '}
-                      {t.billing_amount != null ? `$${t.billing_amount.toFixed(2)}` : '—'}
+                      {customerAmount(t) != null ? `$${customerAmount(t)!.toFixed(2)}` : '—'}
+                      {t.customer_bill_amount != null && t.customer_bill_amount !== t.billing_amount
+                        ? ` (claim $${(t.billing_amount ?? 0).toFixed(2)})`
+                        : ''}
                     </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <TicketTypeBadge type={t.ticket_type} />
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                        {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                         {t.work_order_number != null ? ` · WO#${t.work_order_number}` : ''}
                       </span>
                     </div>
@@ -464,15 +472,18 @@ export default function ServiceBillingExport({
                         {t.assigned_technician?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-900 dark:text-white font-medium">
-                        {t.billing_amount != null
-                          ? `$${t.billing_amount.toFixed(2)}`
-                          : '—'}
+                        {customerAmount(t) != null ? `$${customerAmount(t)!.toFixed(2)}` : '—'}
+                        {t.customer_bill_amount != null && t.customer_bill_amount !== t.billing_amount && (
+                          <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                            claim ${(t.billing_amount ?? 0).toFixed(2)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <TicketTypeBadge type={t.ticket_type} />
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
+                        {LEGACY_BILLING_TYPE_LABELS[t.billing_type] ?? t.billing_type}
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {formatDateShort(t.completed_at)}

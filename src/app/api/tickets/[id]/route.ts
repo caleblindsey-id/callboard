@@ -13,6 +13,8 @@ import {
   isResetTransition,
   technicianForbiddenTarget,
   isCreditGatedTarget,
+  billingGateSatisfied,
+  poGateSatisfied,
 } from '@/lib/transitions/pm'
 import { isTicketQuoteGated } from '@/lib/db/pm-quotes'
 import { validatePhotoStoragePath } from '@/lib/security/storage-paths'
@@ -116,6 +118,18 @@ export async function PATCH(
         { error: 'No recognized fields in request body' },
         { status: 400 }
       )
+    }
+
+    // A human keying/overwriting the Synergy invoice # through the app must
+    // clear any stale auto-detect provenance from an earlier nightly run —
+    // otherwise the "Synergy shows invoiced — confirm" pill would describe a
+    // number that's since been overwritten. synergy_invoice_source/
+    // synergy_invoice_detected_at are server-set only (not in ALLOWED_FIELDS);
+    // the nightly script writes them itself via a direct PostgREST PATCH and
+    // never goes through this route (migration 164).
+    if (filtered.synergy_invoice_number !== undefined) {
+      ;(filtered as Record<string, unknown>).synergy_invoice_source = null
+      ;(filtered as Record<string, unknown>).synergy_invoice_detected_at = null
     }
 
     // Defense-in-depth: techs can only modify their own assigned tickets,
@@ -280,7 +294,7 @@ export async function PATCH(
     if (filtered.status !== undefined) {
       const { data: current, error: fetchError } = await supabase
         .from('pm_tickets')
-        .select('status, assigned_technician_id')
+        .select('status, assigned_technician_id, po_number, synergy_invoice_number, customers ( po_required )')
         .eq('id', id)
         .is('deleted_at', null)
         .single()
@@ -316,11 +330,45 @@ export async function PATCH(
         )
       }
 
-      // Stamp the invoice date for the Invoiced archive (migration 141) on the
-      // forward completed->billed transition. Set on `filtered`, which flows to
-      // the catch-all updateTicket below; the billed->completed reset returns
-      // earlier, so a re-bill overwrites it and no reset-on-reopen is needed.
       if (nextStatus === 'billed' && currentStatus !== 'billed') {
+        // --- Hard block: completed → billed requires synergy_invoice_number ---
+        // The invoice # is the proof the completed work was billed in SynergyERP.
+        // (synergy_order_number is the separate parts-ordering order #, not a
+        // billing gate — mirrors the service gate on service_tickets.synergy_invoice_number.)
+        const incomingInvoice =
+          (filtered.synergy_invoice_number as string | null | undefined) ?? null
+        if (!billingGateSatisfied({ synergy_invoice_number: incomingInvoice })) {
+          if (!billingGateSatisfied({ synergy_invoice_number: current.synergy_invoice_number })) {
+            return NextResponse.json(
+              { error: 'Synergy invoice number is required to mark a ticket as billed' },
+              { status: 400 }
+            )
+          }
+        }
+
+        // --- Hard block: a PO-required customer can't be billed without a PO ---
+        // The Ready-to-Export gate was relaxed so a completed ticket can be
+        // exported before its PO arrives. The PO requirement is enforced HERE,
+        // at finalization, instead — mirrors the batch mark-billed route.
+        // po_number empty = null OR ''.
+        const incomingPo =
+          typeof filtered.po_number === 'string' ? filtered.po_number.trim() : null
+        if (!incomingPo) {
+          const poRequired =
+            (current.customers as { po_required?: boolean } | null)?.po_required ?? false
+          const existingPo = (current.po_number ?? '').trim()
+          if (!poGateSatisfied({ po_number: existingPo }, poRequired)) {
+            return NextResponse.json(
+              { error: 'A PO number is required before this ticket can be billed.' },
+              { status: 400 }
+            )
+          }
+        }
+
+        // Stamp the invoice date for the Invoiced archive (migration 141) on the
+        // forward completed->billed transition. Set on `filtered`, which flows to
+        // the catch-all updateTicket below; the billed->completed reset returns
+        // earlier, so a re-bill overwrites it and no reset-on-reopen is needed.
         ;(filtered as Record<string, unknown>).billed_at = new Date().toISOString()
       }
 

@@ -24,10 +24,17 @@ export type ServiceTicketType = 'inside' | 'outside'
 
 export type ServicePriority = 'emergency' | 'standard' | 'low'
 
+// Warranty review lifecycle (migration 160). requested = awaiting office
+// verification, verified = coverage confirmed, denied = bills full price.
+export type WarrantyReviewStatus = 'requested' | 'verified' | 'denied'
+
 // --- Extended PartUsed with warranty flag ---
 
 export interface ServicePartUsed extends PartUsed {
   warranty_covered?: boolean
+  // Actual amount the vendor credited for this line at reconcile (migration
+  // 160). Internal only, never shown to the customer.
+  vendor_credit_amount?: number | null
 }
 
 // --- Row Types ---
@@ -69,6 +76,13 @@ export type ServiceTicketRow = {
   parts_received: boolean
   synergy_order_number: string | null
   synergy_invoice_number: string | null
+  // Provenance for synergy_invoice_number (migration 164): stamped by the
+  // nightly validator when it finds the ticket's order invoiced in Synergy
+  // (roh.InvNum <> 0 or moved to invh) and pre-fills the number. NULL for
+  // manually keyed numbers. Billing gates don't read these; informational
+  // only, drives the "Synergy shows invoiced — confirm" pill.
+  synergy_invoice_detected_at: string | null
+  synergy_invoice_source: 'auto' | 'manual' | null
   started_at: string | null
   completed_at: string | null
   hours_worked: number | null
@@ -173,6 +187,23 @@ export type ServiceTicketRow = {
   warranty_credit_received_at: string | null
   warranty_credit_received_by_id: string | null
   warranty_credit_amount: number | null
+  // Warranty review lifecycle (migration 160): replaces billing_type as the
+  // source of truth for whether a ticket is covered. requested = awaiting
+  // office verification, verified = coverage confirmed, denied = bills full
+  // price. billing_type is frozen going forward; see lib/service-tickets/warranty.ts.
+  warranty_review_status: WarrantyReviewStatus | null
+  warranty_review_requested_at: string | null
+  warranty_review_requested_by_id: string | null
+  warranty_review_note: string | null
+  warranty_review_decided_at: string | null
+  warranty_review_decided_by_id: string | null
+  warranty_review_decision_note: string | null
+  // Vendor's warranty labor rate, entered by the office to suggest the
+  // expected credit; actual labor credit is entered at line-level reconcile.
+  warranty_vendor_labor_rate: number | null
+  warranty_labor_credit_amount: number | null
+  // Final customer total after warranty coverage. NULL = same as billing_amount.
+  customer_bill_amount: number | null
   manual_decision_note: string | null
   request_info_note: string | null
   labor_rate_type: string
@@ -272,6 +303,8 @@ export type ServiceTicketDetail = ServiceTicketRow & {
   assigned_technician: { name: string } | null
   created_by: { name: string } | null
   deleted_by: { name: string } | null
+  warranty_review_requested_by: { name: string } | null
+  warranty_review_decided_by: { name: string } | null
   credit_reviews: { id: string; status: CreditReviewStatus; block_reason: string | null; decided_by_name: string | null }[] | null
 }
 
