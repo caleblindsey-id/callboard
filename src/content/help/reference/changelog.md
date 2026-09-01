@@ -11,6 +11,7 @@ The latest updates to CallBoard, newest first.
 
 ## September 2026
 
+- **Export several service tickets at once.** The service **Ready to Export** list now has checkboxes and a **Select all**, matching the PM list above it. Tick the tickets you're billing and tap **Export Selected** — they come down as one PDF with a page per work order, and all move to **Awaiting Invoice #** together. Exporting a single row on its own still works the same way. See [Bill completed work](/help/managers/billing).
 - **Fix an ACE labor entry instead of rejecting it.** When a tech's ACE entry has the right idea but a wrong number, **Edit** it in place — hours, rate type, and reason are all editable from the **ACE Review** tab and from the **ACE Labor** card on the ticket. The entry stays in the queue for approval, so nobody waits on a resubmission. Rejecting still works for entries that shouldn't be paid at all, and editing a rejected entry puts it back in the queue. Approved and paid entries stay locked. See [Run tech payouts](/help/managers/tech-payouts).
 
 ## August 2026

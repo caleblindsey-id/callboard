@@ -4,26 +4,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import React from 'react'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { ServiceWorkOrderDocument } from '@/lib/pdf/service-work-order-template'
+import {
+  buildServiceWorkOrder,
+  SERVICE_WORK_ORDER_SELECT,
+  type ServiceWorkOrderRow,
+} from '@/lib/pdf/service-work-order-data'
 import { createClient } from '@/lib/supabase/server'
+import { resolveServiceLaborRate } from '@/lib/pdf/service-work-order-rate'
 import { getCurrentUser, isTechnician } from '@/lib/auth'
-import { getCustomerLaborRate, getSetting } from '@/lib/db/settings'
-import { taxRatePercent } from '@/lib/tax'
-import { shippingChargeAmount } from '@/lib/shipping'
-import { deriveWorkOrderTerms, type WorkOrderPricingMode } from '@/lib/pdf/work-order-pricing'
-import type { ServicePartUsed, WarrantyReviewStatus } from '@/types/service-tickets'
+import { getSetting } from '@/lib/db/settings'
 import * as fs from 'fs'
 import * as path from 'path'
 
 // Customer-facing completion document for a service ticket — parity with the PM
 // /api/tickets/[id]/work-order-pdf route.
 //
-// Pricing mode (warranty review lifecycle, migration 160+):
-//   'net'  — a legacy frozen billing_type row (warranty/partial_warranty), OR
-//            warranty_review_status === 'verified' with the vendor credit
-//            already received, OR verified + the office explicitly asked for
-//            a { pricing: 'net' } preview.
-//   'full' — everything else (default). The claim artifact: every line at
-//            full price, plus a pending-review note when applicable.
+// The row -> document mapping, including the warranty pricing-mode rules, lives
+// in @/lib/pdf/service-work-order-data so this route and the batch billing
+// export (/api/billing/service/export-pdf) cannot drift apart.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -45,54 +43,7 @@ export async function POST(
 
     const { data: raw, error: fetchError } = await supabase
       .from('service_tickets')
-      .select(`
-        id,
-        work_order_number,
-        synergy_order_number,
-        po_number,
-        status,
-        ticket_type,
-        billing_type,
-        problem_description,
-        diagnosis_notes,
-        completion_notes,
-        completed_at,
-        hours_worked,
-        machine_hours,
-        date_code,
-        estimate_labor_rate,
-        labor_rate_type,
-        parts_used,
-        diagnostic_charge,
-        diagnostic_invoice_number,
-        billing_amount,
-        customer_bill_amount,
-        warranty_review_status,
-        warranty_credit_received_at,
-        warranty_labor_covered,
-        shipping_charge,
-        customer_signature,
-        customer_signature_name,
-        photos,
-        contact_name,
-        contact_email,
-        contact_phone,
-        service_address,
-        service_city,
-        service_state,
-        service_zip,
-        equipment_make,
-        equipment_model,
-        equipment_serial_number,
-        assigned_technician_id,
-        customer_id,
-        customers(name, account_number, tax_rate, tax_exempt),
-        equipment:equipment!service_tickets_equipment_id_fkey(
-          make, model, serial_number,
-          ship_to_locations(address, city, state, zip)
-        ),
-        assigned_technician:users!service_tickets_assigned_technician_id_fkey(name)
-      `)
+      .select(SERVICE_WORK_ORDER_SELECT)
       .eq('id', id)
       .is('deleted_at', null)
       .single()
@@ -114,38 +65,13 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const customer = raw.customers as {
-      name: string; account_number: string | null
-      tax_rate: number | null; tax_exempt: boolean | null
-    } | null
-    const equipment = raw.equipment as {
-      make: string | null; model: string | null; serial_number: string | null
-      ship_to_locations: { address: string | null; city: string | null; state: string | null; zip: string | null } | null
-    } | null
-
-    let serviceAddress: string | null = null
-    if (raw.ticket_type === 'outside') {
-      serviceAddress = [raw.service_address, raw.service_city, raw.service_state, raw.service_zip]
-        .filter(Boolean).join(', ') || null
-    } else if (equipment?.ship_to_locations) {
-      const loc = equipment.ship_to_locations
-      serviceAddress = [loc.address, loc.city, loc.state, loc.zip].filter(Boolean).join(', ') || null
-    }
-
-    const equipmentLine = [
-      equipment?.make ?? raw.equipment_make,
-      equipment?.model ?? raw.equipment_model,
-    ].filter(Boolean).join(' ') || '—'
-
-    const technicianEntry = raw.assigned_technician as { name: string } | { name: string }[] | null
-    const technicianName = Array.isArray(technicianEntry)
-      ? (technicianEntry[0]?.name ?? '—')
-      : (technicianEntry?.name ?? '—')
+    // The select is a shared constant, so supabase-js can't infer the row shape;
+    // ServiceWorkOrderRow is that shape, declared alongside the select it matches.
+    const row = raw as unknown as ServiceWorkOrderRow
 
     // Signed URLs for completion photos (short-lived; PDF embeds them at render).
-    const photos = (raw.photos ?? []) as Array<{ storage_path: string }>
     const photoUrls: string[] = []
-    for (const photo of photos) {
+    for (const photo of row.photos ?? []) {
       try {
         const { data } = await supabase.storage
           .from('ticket-photos')
@@ -156,16 +82,7 @@ export async function POST(
       }
     }
 
-    // Informational labor rate for the breakdown — the snapshot from estimate
-    // time, falling back to the current rate for the ticket's labor type. The
-    // authoritative figure printed as Total is billing_amount (server-computed).
-    const laborRate = (raw.estimate_labor_rate as number | null)
-      ?? await getCustomerLaborRate(
-        (raw as { customer_id?: number | null }).customer_id,
-        (raw.labor_rate_type as string | null) ?? 'standard',
-      )
-
-    const partsUsed = (raw.parts_used as ServicePartUsed[]) ?? []
+    const laborRate = await resolveServiceLaborRate(row)
 
     // Load logo
     let logoBase64: string | null = null
@@ -178,116 +95,14 @@ export async function POST(
 
     const companyName = (await getSetting('company_name')) || undefined
 
-    // --- Pricing mode selection (warranty review lifecycle, migration 160+) ---
-    const billingType = raw.billing_type as string
-    const isLegacyWarranty = billingType === 'warranty' || billingType === 'partial_warranty'
-    const reviewStatus = (raw.warranty_review_status as WarrantyReviewStatus | null) ?? null
-    const creditReceived = !!raw.warranty_credit_received_at
-    const verified = reviewStatus === 'verified'
-    const laborCoveredFlag = raw.warranty_labor_covered === true
-    const pricingMode: WorkOrderPricingMode =
-      isLegacyWarranty || (verified && (creditReceived || requestedNet)) ? 'net' : 'full'
-
-    const laborTotalPdf = ((raw.hours_worked as number | null) ?? 0) * laborRate
-    const diagnosticPdf = (raw.diagnostic_charge as number | null) ?? 0
-    const hasDiagInvoice = !!String(raw.diagnostic_invoice_number ?? '').trim()
-    const signedDiagnosticPdf = hasDiagInvoice ? -diagnosticPdf : diagnosticPdf
-
-    // Parts total feeding the trip-charge subtraction only (NOT the per-line
-    // display, which the template derives itself from pricingMode/zeroAllParts).
-    // Legacy net mode excludes only individually-flagged warranty_covered lines
-    // — mirrors the pre-Round-6 route exactly, so a reprint doesn't change.
-    // Full mode and the new review-lifecycle net mode use every line's full
-    // price: billing_amount is always full price under both (migration 160+
-    // never zeroes it), so the trip must be derived in that same full-price
-    // space — see work-order-pricing.ts T1c.
-    const partsTotalForTrip = isLegacyWarranty
-      ? partsUsed
-          .filter((p) => !p.warranty_covered)
-          .reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
-      : partsUsed.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.unit_price) || 0), 0)
-
-    // Freight: a legacy full 'warranty' row never had shipping added (mirrors
-    // the pre-Round-6 route); everywhere else it's full price, zeroed for
-    // DISPLAY only in the new-lifecycle net branch (deriveWorkOrderTerms).
-    const shippingChargePdf =
-      billingType === 'warranty' ? 0 : shippingChargeAmount(raw.shipping_charge as number | null)
-
-    const allPartsCovered = partsUsed.length > 0 && partsUsed.every((p) => p.warranty_covered === true)
-
-    const terms = deriveWorkOrderTerms(pricingMode, {
-      billingAmount: (raw.billing_amount as number | null) ?? 0,
-      customerBillAmount: raw.customer_bill_amount as number | null,
-      laborTotal: laborTotalPdf,
-      signedDiagnostic: signedDiagnosticPdf,
-      shippingCharge: shippingChargePdf,
-      partsTotal: partsTotalForTrip,
-      isLegacyWarranty,
-      laborCovered: laborCoveredFlag,
-      allPartsCovered,
-    })
-
-    // Per-line zero + "(warranty)" suffix in net mode: a legacy full 'warranty'
-    // row zeroes every part line regardless of its own flag (old isWarranty
-    // override); everywhere else in net mode only individually-flagged lines
-    // zero. Full mode never zeroes a line.
-    const zeroAllParts = pricingMode === 'net' && billingType === 'warranty'
-
-    // A positive diagnostic charge credited away by warranty coverage — new
-    // review-lifecycle net mode only (the legacy branch never zeroes it, see
-    // work-order-pricing.ts). An already-negative diagnostic (already a
-    // credit) is untouched regardless.
-    const diagnosticZeroed =
-      pricingMode === 'net' && !isLegacyWarranty && laborCoveredFlag && signedDiagnosticPdf > 0
-
-    const workOrder = {
-      workOrderNumber: raw.work_order_number as number | null,
-      synergyOrderNumber: (raw.synergy_order_number as string | null) ?? null,
-      poNumber: (raw.po_number as string | null) ?? null,
-      customerName: customer?.name ?? '—',
-      accountNumber: customer?.account_number ?? null,
-      serviceAddress,
-      equipmentLine,
-      serialNumber: equipment?.serial_number ?? raw.equipment_serial_number ?? null,
-      machineHours: raw.machine_hours as number | null,
-      dateCode: raw.date_code as string | null,
-      contactName: raw.contact_name as string | null,
-      contactEmail: raw.contact_email as string | null,
-      contactPhone: raw.contact_phone as string | null,
-      problemDescription: raw.problem_description as string,
-      diagnosisNotes: raw.diagnosis_notes as string | null,
-      workPerformed: raw.completion_notes as string | null,
-      technicianName,
-      completedDate: raw.completed_at
-        ? new Date(raw.completed_at as string).toLocaleDateString('en-US', {
-            year: 'numeric', month: 'long', day: 'numeric',
-          })
-        : '—',
-      pricingMode,
-      warrantyReviewStatus: reviewStatus,
-      warrantyCreditReceived: creditReceived,
-      laborHours: (raw.hours_worked as number | null) ?? 0,
+    // Row → document data, including every warranty pricing rule, lives in
+    // service-work-order-data.ts so the batch export at
+    // /api/billing/service/export-pdf renders a byte-identical work order.
+    const workOrder = buildServiceWorkOrder(row, {
       laborRate,
-      laborTotal: terms.laborDisplay,
-      parts: partsUsed.map((p) => ({
-        description: p.description,
-        detail: p.detail ?? null,
-        quantity: p.quantity,
-        unitPrice: p.unit_price,
-        warrantyCovered: p.warranty_covered ?? false,
-      })),
-      zeroAllParts,
-      tripCharge: terms.tripDisplay,
-      shippingCharge: terms.shippingDisplay,
-      diagnosticCharge: (raw.diagnostic_charge as number | null) ?? 0,
-      diagnosticInvoiceNumber: (raw.diagnostic_invoice_number as string | null) ?? null,
-      diagnosticZeroed,
-      billingTotal: terms.total,
-      taxRatePercent: taxRatePercent(customer),
-      customerSignature: raw.customer_signature as string | null,
-      customerSignatureName: raw.customer_signature_name as string | null,
       photoUrls,
-    }
+      requestedNet,
+    })
 
     const element = React.createElement(ServiceWorkOrderDocument, {
       workOrder,
@@ -304,8 +119,8 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to render PDF' }, { status: 500 })
     }
 
-    const customerSlug = (customer?.name ?? 'Customer').replace(/[^a-zA-Z0-9]/g, '-').substring(0, 40)
-    const woLabel = raw.work_order_number ? `WO-${raw.work_order_number}` : 'WorkOrder'
+    const customerSlug = (row.customers?.name ?? 'Customer').replace(/[^a-zA-Z0-9]/g, '-').substring(0, 40)
+    const woLabel = row.work_order_number ? `WO-${row.work_order_number}` : 'WorkOrder'
     const filename = `${woLabel}-${customerSlug}.pdf`
 
     return new Response(new Uint8Array(buffer), {
