@@ -7,6 +7,8 @@ import { useUrlFilters } from '@/lib/hooks/useUrlFilters'
 // to the URL (same hook the tab toggle uses); the server page re-queries and
 // filters BOTH service lists — Ready to Export and Awaiting Invoice # — so the
 // manager works one group at a time (feedback #51). '' = show all.
+// Rendered as a child of the tab's FilterBar (see ServiceBillingPanel), hence
+// the label-above-control shape its sibling filters use.
 const TYPE_OPTIONS: { value: '' | ServiceTicketType; label: string }[] = [
   { value: '', label: 'All' },
   { value: 'inside', label: 'Inside' },
@@ -23,8 +25,8 @@ export default function ServiceTypeFilter({ initial }: ServiceTypeFilterProps) {
   const selected = filters.serviceType
 
   return (
-    <div className="flex items-center gap-2">
-      <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Service Type</label>
+    <div className="w-full lg:w-auto">
+      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Service Type</label>
       <div className="inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
         {TYPE_OPTIONS.map((opt) => {
           const active = selected === opt.value

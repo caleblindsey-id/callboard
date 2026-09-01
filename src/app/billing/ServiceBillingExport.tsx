@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import type { ServiceBillingTicket } from '@/lib/db/service-tickets'
@@ -13,6 +13,7 @@ import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { formatDateShort } from '@/lib/format'
 import { FIELDS } from '@/lib/labels'
+import { matchesSearch } from '@/lib/search'
 
 // "Ready to Export" — completed service tickets not yet exported. Export is the
 // first half of the export-first billing flow (mirrors the PM Ready-to-Export
@@ -40,6 +41,27 @@ interface ServiceBillingExportProps {
   // Active narrowing filter from the URL. undefined → "All months" (default).
   selectedMonth?: number
   selectedYear?: number
+  // Free-text query owned by ServiceBillingPanel — the same box filters this
+  // list and Awaiting Invoice # below it. '' shows everything.
+  search?: string
+}
+
+// Fields the tab's search box matches against — everything a coordinator would
+// recognise a service ticket by, including the numbers keyed into Synergy
+// (feedback #92).
+function serviceBillingHaystack(t: ServiceBillingTicket) {
+  return [
+    t.work_order_number,
+    t.customers?.name,
+    t.customers?.account_number,
+    shipToLabel(t),
+    t.equipment?.make ?? t.equipment_make,
+    t.equipment?.model ?? t.equipment_model,
+    t.equipment?.serial_number,
+    t.assigned_technician?.name,
+    t.po_number,
+    t.synergy_order_number,
+  ]
 }
 
 // 0 is the "All months" sentinel for the month picker — no date narrowing.
@@ -106,6 +128,7 @@ export default function ServiceBillingExport({
   tickets,
   selectedMonth,
   selectedYear,
+  search = '',
 }: ServiceBillingExportProps) {
   const router = useRouter()
   const thisYear = new Date().getFullYear()
@@ -115,12 +138,19 @@ export default function ServiceBillingExport({
   const [exportingId, setExportingId] = useState<string | null>(null)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
 
+  // Deliberately counted over the UNFILTERED list: the banner reports a
+  // condition that blocks billing, so a search must never hide it.
   const poMissingCount = tickets.filter(needsPo).length
+
+  const visible = useMemo(
+    () => tickets.filter((t) => matchesSearch(serviceBillingHaystack(t), search)),
+    [tickets, search]
+  )
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ServiceBillingTicket,
     ServiceBillingSortKey
-  >(tickets, SERVICE_BILLING_SORT_ACCESSORS)
+  >(visible, SERVICE_BILLING_SORT_ACCESSORS)
 
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
@@ -302,7 +332,12 @@ export default function ServiceBillingExport({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="mb-3">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Ready to Export{tickets.length > 0 ? ` (${tickets.length})` : ''}
+            Ready to Export
+            {tickets.length > 0
+              ? search
+                ? ` (${visible.length} of ${tickets.length})`
+                : ` (${tickets.length})`
+              : ''}
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             Completed service tickets. Export each to download its work order, then it moves to Awaiting Invoice #.
@@ -361,11 +396,13 @@ export default function ServiceBillingExport({
 
       {/* Billing list */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {tickets.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            {month === ALL_MONTHS
-              ? 'No completed service tickets ready to export.'
-              : 'No completed service tickets ready to export for this period.'}
+            {search
+              ? 'No tickets ready to export match your search.'
+              : month === ALL_MONTHS
+                ? 'No completed service tickets ready to export.'
+                : 'No completed service tickets ready to export for this period.'}
           </div>
         ) : (
           <>

@@ -2,11 +2,8 @@ import { getBillingTickets, getPmAwaitingInvoiceTickets } from '@/lib/db/tickets
 import { getServiceBillingTickets, getServiceAwaitingInvoiceTickets } from '@/lib/db/service-tickets'
 import { getInvoicedRows } from '@/lib/db/invoiced'
 import { requireRole, MANAGER_ROLES } from '@/lib/auth'
-import BillingExport from './BillingExport'
-import PmAwaitingInvoice from './PmAwaitingInvoice'
-import ServiceBillingExport from './ServiceBillingExport'
-import ServiceAwaitingInvoice from './ServiceAwaitingInvoice'
-import ServiceTypeFilter from './ServiceTypeFilter'
+import PmBillingPanel from './PmBillingPanel'
+import ServiceBillingPanel from './ServiceBillingPanel'
 import InvoicedArchive from './InvoicedArchive'
 import BillingTabs from './BillingTabs'
 import PageHeader from '@/components/ui/PageHeader'
@@ -66,17 +63,21 @@ export default async function BillingPage({
         invoicedCount={invoicedRows.length}
         initialTab={params.tab ?? ''}
         pmContent={
-          <div className="space-y-6">
-            <BillingExport tickets={pmTickets} selectedMonth={month} selectedYear={year} />
-            <PmAwaitingInvoice tickets={pmAwaitingInvoice} />
-          </div>
+          <PmBillingPanel
+            tickets={pmTickets}
+            awaitingInvoice={pmAwaitingInvoice}
+            selectedMonth={month}
+            selectedYear={year}
+          />
         }
         serviceContent={
-          <div className="space-y-6">
-            <ServiceTypeFilter initial={serviceType ?? ''} />
-            <ServiceBillingExport tickets={filteredServiceTickets} selectedMonth={month} selectedYear={year} />
-            <ServiceAwaitingInvoice tickets={filteredServiceAwaitingInvoice} />
-          </div>
+          <ServiceBillingPanel
+            tickets={filteredServiceTickets}
+            awaitingInvoice={filteredServiceAwaitingInvoice}
+            selectedMonth={month}
+            selectedYear={year}
+            serviceType={serviceType ?? ''}
+          />
         }
         invoicedContent={
           <InvoicedArchive rows={invoicedRows} selectedMonth={month} selectedYear={year} />

@@ -6,11 +6,15 @@ import type { InvoicedRow } from '@/lib/db/invoiced'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import SearchField from '@/components/ui/SearchField'
+import { matchesSearch } from '@/lib/search'
 import { formatDateShort } from '@/lib/format'
 
 // Read-only archive of completed + invoiced work orders (service + PM), so a
 // billed ticket can still be referenced after it leaves the active billing
-// queues. Month picker narrows by billed_at; a type toggle filters PM vs Service.
+// queues. Month picker narrows by billed_at; a type toggle filters PM vs Service;
+// a free-text box searches the loaded rows — this list runs to hundreds of rows
+// under "All months", which is what made it unscrollable (feedback #92).
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -55,6 +59,18 @@ function customerAmount(r: InvoicedRow): number | null {
   return r.customer_bill_amount ?? r.billing_amount
 }
 
+// Fields the search box matches against — how a coordinator refers back to a
+// billed work order: who it was for, and the numbers on it.
+function invoicedHaystack(r: InvoicedRow) {
+  return [
+    r.customer_name,
+    r.account_number,
+    r.work_order_number,
+    r.synergy_order_number,
+    r.synergy_invoice_number,
+  ]
+}
+
 function TypeBadge({ type }: { type: 'service' | 'pm' }) {
   return type === 'pm' ? (
     <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
@@ -75,8 +91,10 @@ export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: I
   const [month, setMonth] = useState(selectedMonth ?? ALL_MONTHS)
   const [year, setYear] = useState(selectedYear ?? thisYear)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [search, setSearch] = useState('')
 
-  const filtered = rows.filter((r) => typeFilter === 'all' || r.type === typeFilter)
+  const typeFiltered = rows.filter((r) => typeFilter === 'all' || r.type === typeFilter)
+  const filtered = typeFiltered.filter((r) => matchesSearch(invoicedHaystack(r), search))
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<InvoicedRow, InvoicedSortKey>(
     filtered,
     SORT_ACCESSORS
@@ -114,13 +132,23 @@ export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: I
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Invoiced{filtered.length > 0 ? ` (${filtered.length})` : ''}
+            Invoiced
+            {typeFiltered.length > 0
+              ? search
+                ? ` (${filtered.length} of ${typeFiltered.length})`
+                : ` (${filtered.length})`
+              : ''}
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             Completed work orders that have been billed. Reference only. Service tickets also appear on the Service board&apos;s Billed tab.
           </p>
         </div>
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
+          <SearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="Customer, WO#, order #, invoice #"
+          />
           <div className="w-full lg:w-auto">
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Billed month</label>
             <select
@@ -177,9 +205,11 @@ export default function InvoicedArchive({ rows, selectedMonth, selectedYear }: I
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {filtered.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            {month === ALL_MONTHS
-              ? 'No invoiced work orders yet.'
-              : 'No work orders invoiced in this period.'}
+            {search
+              ? 'No invoiced work orders match your search.'
+              : month === ALL_MONTHS
+                ? 'No invoiced work orders yet.'
+                : 'No work orders invoiced in this period.'}
           </div>
         ) : (
           <>
