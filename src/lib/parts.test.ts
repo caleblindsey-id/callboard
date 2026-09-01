@@ -11,6 +11,7 @@ import {
   fulfilledRequestedParts,
   resolveCompletionParts,
   partsMissingFromWorkOrder,
+  partsMarkedNotUsed,
   requestToUsedLine,
   isCoveredByAgreement,
   workOrderAutoAddPatch,
@@ -390,6 +391,49 @@ test('searches every array it is given (PM covered + additional)', () => {
 test('a part marked not-used is suppressed rather than reported missing', () => {
   const part = manual({ status: 'received', wo_excluded_at: '2026-07-20T00:00:00.000Z' })
   assert.deepEqual(partsMissingFromWorkOrder([part], []), [])
+})
+
+// --- partsMarkedNotUsed -----------------------------------------------------
+// The other half of partsMissingFromWorkOrder: the parts it suppresses. Nothing
+// read wo_exclude_reason back before feedback #90, so a bought-and-unused part
+// left no visible trace anywhere in the app.
+
+test('reports a fulfilled part the tech marked not-used', () => {
+  const part = manual({ status: 'received', wo_excluded_at: '2026-07-20T00:00:00.000Z' })
+  assert.deepEqual(partsMarkedNotUsed([part]), [part])
+})
+
+test('is the exact complement of partsMissingFromWorkOrder', () => {
+  // Every fulfilled part belongs to exactly one of the two lists (given no
+  // work-order line matches it), so a part can never fall through both.
+  const excluded = manual({ status: 'received', wo_excluded_at: '2026-07-20T00:00:00.000Z' })
+  const open = manual({ status: 'received', description: 'Vac motor 991' })
+  assert.deepEqual(partsMarkedNotUsed([excluded, open]), [excluded])
+  assert.deepEqual(partsMissingFromWorkOrder([excluded, open], []), [open])
+})
+
+test('ignores a part that was never fulfilled or was cancelled', () => {
+  const onOrder = manual({ status: 'ordered', wo_excluded_at: '2026-07-20T00:00:00.000Z' })
+  const cancelled = manual({
+    status: 'received',
+    cancelled: true,
+    wo_excluded_at: '2026-07-20T00:00:00.000Z',
+  })
+  assert.deepEqual(partsMarkedNotUsed([onOrder, cancelled]), [])
+})
+
+test('still reports a not-used part that also reached the work order', () => {
+  // The exclusion stamp is the record of the tech's decision. If a line was
+  // added anyway, the office needs to see BOTH facts, not have one hide the
+  // other — that is the reconciliation conversation.
+  const part = manual({ status: 'received', wo_excluded_at: '2026-07-20T00:00:00.000Z' })
+  assert.deepEqual(partsMarkedNotUsed([part]), [part])
+})
+
+test('empty and null part lists are safe', () => {
+  assert.deepEqual(partsMarkedNotUsed(null), [])
+  assert.deepEqual(partsMarkedNotUsed(undefined), [])
+  assert.deepEqual(partsMarkedNotUsed([]), [])
 })
 
 test('a very short description does not fuzzy-match everything', () => {

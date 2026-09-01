@@ -3,6 +3,7 @@ import type { DigestDb } from '@/lib/digest/types'
 import {
   ESTIMATE_HELD_TICKET_STATUSES,
   isHeldForEstimate,
+  partsMarkedNotUsed,
   partsMissingFromWorkOrder,
 } from '@/lib/parts'
 import type { PartRequest, PartUsed, PartsQueueRow, PartsQueueSource } from '@/types/database'
@@ -351,6 +352,15 @@ export type MissingWorkOrderPartRow = {
   requested_at: string | null
   received_at: string | null
   pulled_at: string | null
+  /** When a tech marked this part "not used". Only set on notUsed rows. */
+  wo_excluded_at: string | null
+  /** The reason the tech typed. Only set on notUsed rows. */
+  wo_exclude_reason: string | null
+  /** Raw wo_excluded_by uuid, kept so the name lookup has something to key on. */
+  excluded_by_id: string | null
+  /** Resolved name for wo_excluded_by — the uuid lives inside the JSONB, so it
+   *  can't be joined and is looked up in a second pass. */
+  excluded_by_name: string | null
 }
 
 type MissingScanRow = {
@@ -362,6 +372,48 @@ type MissingScanRow = {
   additional_parts_used?: PartUsed[] | null
   customers: { name: string } | null
   users: { name: string } | null
+}
+
+/**
+ * One parts_requested entry -> one report row. Shared by both scans below so
+ * the missing list and the not-used list can never describe the same part
+ * differently.
+ */
+function toRow(
+  ticket: MissingScanRow,
+  source: PartsQueueSource,
+  part: PartRequest,
+  requested: PartRequest[],
+): MissingWorkOrderPartRow {
+  const qty = part.quantity ?? 0
+  const price = typeof part.unit_price === 'number' ? part.unit_price : 0
+  return {
+    source,
+    ticket_id: ticket.id,
+    work_order_number: ticket.work_order_number,
+    ticket_status: ticket.status,
+    // Ordinal in parts_requested — the addressing convention the Parts Queue
+    // and the "not used" write both rely on.
+    part_index: requested.indexOf(part),
+    customer_name: ticket.customers?.name ?? null,
+    assigned_technician_name: ticket.users?.name ?? null,
+    description: part.description ?? null,
+    detail: part.detail ?? null,
+    product_number: part.product_number ?? null,
+    quantity: qty,
+    unit_price: price,
+    extended_value: qty * price,
+    status: part.status,
+    covered_by_agreement: part.covered_by_agreement ?? null,
+    requested_at: part.requested_at ?? null,
+    received_at: part.received_at ?? null,
+    pulled_at: part.pulled_at ?? null,
+    wo_excluded_at: part.wo_excluded_at ?? null,
+    wo_exclude_reason: part.wo_exclude_reason ?? null,
+    excluded_by_id: part.wo_excluded_by ?? null,
+    // Filled in by resolveExcludedByNames — the uuid is inside the JSONB.
+    excluded_by_name: null,
+  }
 }
 
 function scanMissing(
@@ -378,34 +430,72 @@ function scanMissing(
       ticket.parts_used,
       source === 'pm' ? ticket.additional_parts_used : null,
     )
-    for (const part of missing) {
-      const qty = part.quantity ?? 0
-      const price = typeof part.unit_price === 'number' ? part.unit_price : 0
-      out.push({
-        source,
-        ticket_id: ticket.id,
-        work_order_number: ticket.work_order_number,
-        ticket_status: ticket.status,
-        // Ordinal in parts_requested — the addressing convention the Parts Queue
-        // and the "not used" write both rely on.
-        part_index: requested.indexOf(part),
-        customer_name: ticket.customers?.name ?? null,
-        assigned_technician_name: ticket.users?.name ?? null,
-        description: part.description ?? null,
-        detail: part.detail ?? null,
-        product_number: part.product_number ?? null,
-        quantity: qty,
-        unit_price: price,
-        extended_value: qty * price,
-        status: part.status,
-        covered_by_agreement: part.covered_by_agreement ?? null,
-        requested_at: part.requested_at ?? null,
-        received_at: part.received_at ?? null,
-        pulled_at: part.pulled_at ?? null,
-      })
+    for (const part of missing) out.push(toRow(ticket, source, part, requested))
+  }
+  return out
+}
+
+function scanNotUsed(
+  rows: MissingScanRow[],
+  source: PartsQueueSource,
+): MissingWorkOrderPartRow[] {
+  const out: MissingWorkOrderPartRow[] = []
+  for (const ticket of rows) {
+    const requested = Array.isArray(ticket.parts_requested) ? ticket.parts_requested : []
+    for (const part of partsMarkedNotUsed(requested)) {
+      out.push(toRow(ticket, source, part, requested))
     }
   }
   return out
+}
+
+/**
+ * Resolve wo_excluded_by uuids to names, in place.
+ *
+ * A second query rather than a join: the uuid lives inside the parts_requested
+ * JSONB, so PostgREST has nothing to join on. The id set is tiny — one entry
+ * per person who has ever marked a part not-used — so this is a single `in`.
+ */
+async function resolveExcludedByNames(rows: MissingWorkOrderPartRow[]): Promise<void> {
+  const ids = [
+    ...new Set(rows.map((r) => r.excluded_by_id).filter((id): id is string => !!id)),
+  ]
+  if (ids.length === 0) return
+  const supabase = await createClient()
+  const { data } = await supabase.from('users').select('id, name').in('id', ids)
+  const byId = new Map((data ?? []).map((u) => [u.id, u.name]))
+  for (const row of rows) {
+    if (row.excluded_by_id) row.excluded_by_name = byId.get(row.excluded_by_id) ?? null
+  }
+}
+
+/**
+ * PostgREST caps a single response at 1000 rows and says nothing when it
+ * truncates — you just get a short array. Both scans below read whole ticket
+ * tables, and pm_tickets is already past that cap, so an unpaged read drops the
+ * tail silently. It did: the first cut of the not-used list was missing WO 870
+ * entirely, and there was no error anywhere to explain why.
+ *
+ * `order('id')` is what makes the paging stable — without a deterministic sort
+ * the pages can overlap or skip rows between round trips.
+ */
+const SCAN_PAGE_SIZE = 1000
+
+async function fetchAllPages<T>(
+  fetchPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; ; from += SCAN_PAGE_SIZE) {
+    const { data, error } = await fetchPage(from, from + SCAN_PAGE_SIZE - 1)
+    if (error) throw error
+    const page = data ?? []
+    out.push(...page)
+    // A short page is the only signal that we've reached the end.
+    if (page.length < SCAN_PAGE_SIZE) return out
+  }
 }
 
 export async function getPartsMissingFromWorkOrder(): Promise<MissingWorkOrderPartRow[]> {
@@ -415,28 +505,94 @@ export async function getPartsMissingFromWorkOrder(): Promise<MissingWorkOrderPa
   // PM-only and supabase-js parses the select literal at the type level.
   // deleted_at IS NULL on both — soft-deleted tickets keep their pre-delete
   // status and RLS does not hide them, so an unguarded scan double-counts.
-  const [pmResult, serviceResult] = await Promise.all([
-    supabase
-      .from('pm_tickets')
-      .select(
-        'id, work_order_number, status, parts_requested, parts_used, additional_parts_used, customers(name), users!pm_tickets_assigned_technician_id_fkey(name)',
-      )
-      .is('deleted_at', null)
-      .not('status', 'in', '("billed","skipped")'),
-    supabase
-      .from('service_tickets')
-      .select(
-        'id, work_order_number, status, parts_requested, parts_used, customers(name), users!service_tickets_assigned_technician_id_fkey(name)',
-      )
-      .is('deleted_at', null)
-      .not('status', 'in', '("billed","declined","canceled")'),
+  const [pmRows, serviceRows] = await Promise.all([
+    fetchAllPages((from, to) =>
+      supabase
+        .from('pm_tickets')
+        .select(
+          'id, work_order_number, status, parts_requested, parts_used, additional_parts_used, customers(name), users!pm_tickets_assigned_technician_id_fkey(name)',
+        )
+        .is('deleted_at', null)
+        .not('status', 'in', '("billed","skipped")')
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('service_tickets')
+        .select(
+          'id, work_order_number, status, parts_requested, parts_used, customers(name), users!service_tickets_assigned_technician_id_fkey(name)',
+        )
+        .is('deleted_at', null)
+        .not('status', 'in', '("billed","declined","canceled")')
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
   ])
 
-  if (pmResult.error) throw pmResult.error
-  if (serviceResult.error) throw serviceResult.error
-
   return [
-    ...scanMissing((pmResult.data ?? []) as unknown as MissingScanRow[], 'pm'),
-    ...scanMissing((serviceResult.data ?? []) as unknown as MissingScanRow[], 'service'),
+    ...scanMissing(pmRows as unknown as MissingScanRow[], 'pm'),
+    ...scanMissing(serviceRows as unknown as MissingScanRow[], 'service'),
   ].sort((a, b) => b.extended_value - a.extended_value)
+}
+
+/**
+ * Parts a tech marked "not used" — bought or pulled, then not fitted.
+ *
+ * Before feedback #90 these were invisible. Marking a part not-used writes
+ * wo_excluded_at / _by / _reason and nothing else: correct for billing, but it
+ * also removed the part from the tech banner AND from the missing-from-work-
+ * order list above, and no screen ever read the reason back. A $1,372 scrub
+ * motor on WO #1396 was received, collected by the tech, marked "Found wiring
+ * issues", and then simply stopped being mentioned anywhere in the app.
+ *
+ * Deliberately a WIDER scope than getPartsMissingFromWorkOrder, which stops at
+ * billed tickets because once the invoice is out there is nothing left to fix.
+ * The question here is physical, not financial: a received-and-collected motor
+ * is on a shelf or in a van whatever the invoice did, and it still has to go
+ * back to the vendor or into stock. Three of the seven rows on day one were on
+ * already-billed tickets, which is exactly the set the narrower scope drops.
+ *
+ * Its own queries rather than a second bucket off the scan above, precisely
+ * because of that scope difference — and it needs neither parts_used nor
+ * additional_parts_used, so the wider row count is paid for with a narrower
+ * select rather than three JSONB arrays per ticket.
+ */
+export async function getPartsMarkedNotUsed(): Promise<MissingWorkOrderPartRow[]> {
+  const supabase = await createClient()
+
+  // deleted_at IS NULL on both: a soft-deleted ticket keeps its pre-delete
+  // status and RLS does not filter it, so an unguarded scan inflates the list.
+  // Paged, because this scan has no status filter and pm_tickets is already
+  // past PostgREST's 1000-row response cap — see fetchAllPages.
+  const [pmRows, serviceRows] = await Promise.all([
+    fetchAllPages((from, to) =>
+      supabase
+        .from('pm_tickets')
+        .select(
+          'id, work_order_number, status, parts_requested, customers(name), users!pm_tickets_assigned_technician_id_fkey(name)',
+        )
+        .is('deleted_at', null)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('service_tickets')
+        .select(
+          'id, work_order_number, status, parts_requested, customers(name), users!service_tickets_assigned_technician_id_fkey(name)',
+        )
+        .is('deleted_at', null)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+  ])
+
+  const rows = [
+    ...scanNotUsed(pmRows as unknown as MissingScanRow[], 'pm'),
+    ...scanNotUsed(serviceRows as unknown as MissingScanRow[], 'service'),
+  ].sort((a, b) => b.extended_value - a.extended_value)
+
+  await resolveExcludedByNames(rows)
+  return rows
 }

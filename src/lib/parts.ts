@@ -171,6 +171,33 @@ export function partsMissingFromWorkOrder(
   )
 }
 
+/**
+ * Fulfilled requested parts a tech deliberately marked "not used".
+ *
+ * The exact complement of partsMissingFromWorkOrder's `wo_excluded_at` filter,
+ * and deliberately derived from the same fulfilledRequestedParts base so the
+ * two lists partition the same population instead of drifting.
+ *
+ * Why this exists: marking a part not-used writes wo_excluded_at / _by /
+ * _reason onto the request and nothing else. That correctly keeps the part off
+ * the invoice, but it also removed the part from the tech banner AND from the
+ * office reconciliation report, and the reason the tech typed was never read
+ * back anywhere — so a part the branch had already bought, received and handed
+ * to a tech simply stopped being mentioned. WO #1396: a $1,372 scrub motor,
+ * "Found wiring issues", invisible. This predicate is what puts those parts
+ * back on a screen (feedback #90).
+ *
+ * Note it does NOT consult the work order. A part can be marked not-used and
+ * still have a billable line (the tech changed their mind, or the office added
+ * one) — the office needs both facts, so the exclusion stamp is reported on its
+ * own terms rather than being cancelled out by a matching line.
+ */
+export function partsMarkedNotUsed(
+  requested: PartRequest[] | null | undefined
+): PartRequest[] {
+  return fulfilledRequestedParts(requested).filter((r) => !!r.wo_excluded_at)
+}
+
 /** The bits of a `products` row the work-order line cares about. */
 export type PartCatalogInfo = {
   unit_price?: number | null

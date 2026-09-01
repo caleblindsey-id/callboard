@@ -4,7 +4,7 @@ category: Office
 roles: [super_admin, manager, coordinator]
 order: 20
 summary: Work the shared queue of parts requested across all tickets — decide stock vs. order, pull or order them, bill the freight, and receive them in.
-last_verified: 2026-08-10
+last_verified: 2026-09-01
 ---
 
 The **Parts Queue** is one shared list of every part technicians have requested across all PM and service tickets. You decide whether each part comes from stock or gets ordered, then move it through to fulfilment.
@@ -79,6 +79,22 @@ When the part arrives, find it in the **Ordered** tab and tap **Mark Received** 
 
 If you triaged a part the wrong way — say you sent it to **To Order** but it should be pulled from stock instead — tap the **↩ Return to Review** button on the row. It sends the part back to the **Review** tab so you can re-decide. This works from **To Order**, **To Pull**, and **Ordered**; the vendor, PO #, and item # you've entered are kept. A part that's already been **received** can't be returned (the goods are physically in hand) — cancel it instead if needed.
 
+## When a part arrives and isn't used
+
+A requested part and a **billed** part are two different lists. The Parts Queue tracks what we bought; the work order tracks what the customer pays for. A part can be ordered, received, and collected by the technician while still being worth $0 on the invoice — so there's a standing check that the two agree.
+
+From the Parts Queue, tap **Parts not on a work order** (top right). It has two lists.
+
+**Parts Not on a Work Order** — the branch paid for these and nobody billed them. Parts are added to the work order automatically when they're received or pulled, so a row here means something interrupted that: a technician deleted the line, the part was fulfilled before the automatic add existed, or a completion form left open overwrote the list. Open the ticket and get the part onto **Parts Used**. Billed tickets aren't listed — at that point the invoice is out and it's a credit-memo conversation.
+
+**Marked Not Used** — the technician deliberately recorded that the part wasn't fitted, with a reason ("wrong part", "went back on the shelf"). The $0 here is correct, so these are **not** a billing problem. They're an inventory one: the part was still bought, and usually already collected, so it has to go back to the vendor or onto the shelf. This list shows the reason, who recorded it, and when — and unlike the list above it **does include billed tickets**, because the part physically exists whatever the invoice did.
+
+On the ticket itself, a part marked this way keeps its normal status and adds an orange **Not used** label with the reason underneath, so it's obvious at a glance which parts on a job were fitted and which weren't.
+
+### Undoing "not used"
+
+If a part was marked not used by mistake, or you decide the customer should be charged after all, a **manager** can tap **Undo** next to the **Not used** label in the ticket's **Parts Requested** list. That clears the mark and puts the part back on the **Parts Not on a Work Order** list so it can be billed. This works on completed and billed tickets — you don't need to reopen the ticket.
+
 ## Finding parts
 
 - **Search** by customer, WO #, part, or PO #.
@@ -100,5 +116,5 @@ Because completion isn't gated on the physical pull, a part occasionally gets le
 
 ## Related
 
-- To drop a part you no longer need, see [Cancel a part](/help/office/cancel-a-part).
+- To drop a part you no longer need, see [Cancel a part](/help/office/cancel-a-part). Cancelling is for a part we haven't received; **not used** is for one that arrived and didn't get fitted.
 - Keep this queue current: an un-triaged part in **Review** will block a service technician from completing their job.
