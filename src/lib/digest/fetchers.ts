@@ -8,6 +8,8 @@ import { getPartsQueue } from '@/lib/db/parts-queue'
 import { getWarrantyQueue } from '@/lib/db/warranty-queue'
 import { getAllLeads } from '@/lib/db/tech-leads'
 import { getCreditHoldCustomers } from '@/lib/db/dashboard-metrics'
+import { getOpenCreditReviewsForFollowup } from '@/lib/db/credit-followup'
+import { daysWaiting } from '@/lib/credit-followup'
 import { getPendingShipToRequests } from '@/lib/db/ship-to-requests'
 import { getBillingChaseQueue } from '@/lib/db/billing-chase'
 import { daysOverdue } from '@/lib/overdue'
@@ -417,6 +419,36 @@ export async function warrantyAwaitingCredit(db: DigestDb): Promise<DigestRow[]>
         badge: badge('Awaiting credit', AR),
       }
     })
+}
+
+// Blocked credit reviews, review-level (feedback #75).
+//
+// creditHoldWithOpenWork below is customer-level -- "Acme, 3 open tickets" --
+// which is why a blocked order could sit 68 days in production while appearing
+// in this digest every single weekday: the row never named the stuck order, its
+// age, or AR's reason, so there was nothing to act on. This section names all
+// three and links to the order, because clearing a block is a per-order action
+// (a manager types the release passcode against one review).
+export async function creditBlocked(db: DigestDb): Promise<DigestRow[]> {
+  const rows = await getOpenCreditReviewsForFollowup(db)
+  const now = new Date()
+  return rows
+    .filter((r) => r.status === 'blocked')
+    .map((r) => ({
+      days: daysWaiting(r, now),
+      r,
+    }))
+    .sort((a, b) => b.days - a.days)
+    .map(({ r, days }) => ({
+      entityKey: entityKey(r.ticketType === 'pm' ? 'pm' : 'svc', r.ticketId),
+      title: r.orderLabel,
+      subtitle: r.customerName,
+      meta: r.blockReason
+        ? `${days}d blocked — ${r.blockReason}`
+        : `${days}d blocked, needs a manager release`,
+      deepLink: r.ticketPath ?? '/credit-review',
+      badge: badge('Credit blocked', AR),
+    }))
 }
 
 export async function creditHoldWithOpenWork(db: DigestDb): Promise<DigestRow[]> {

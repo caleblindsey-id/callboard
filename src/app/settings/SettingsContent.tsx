@@ -47,6 +47,7 @@ interface SettingsContentProps {
   serviceEmail: string
   servicePhone: string
   arEmail: string
+  creditFollowupDays: string
   managerDigestTo: string
   managerDigestCc: string
   pickupAddress: string
@@ -69,6 +70,7 @@ export default function SettingsContent({
   serviceEmail,
   servicePhone,
   arEmail,
+  creditFollowupDays,
   managerDigestTo,
   managerDigestCc,
   pickupAddress,
@@ -104,6 +106,7 @@ export default function SettingsContent({
           {/* Credit Review — AR notification + release passcode */}
           <CreditReviewSetting
             initialArEmail={arEmail}
+            initialFollowupDays={creditFollowupDays}
             passcodeConfigured={passcodeConfigured}
           />
         </>
@@ -1200,12 +1203,18 @@ function ManagerDigestSetting({
 
 function CreditReviewSetting({
   initialArEmail,
+  initialFollowupDays,
   passcodeConfigured,
 }: {
   initialArEmail: string
+  initialFollowupDays: string
   passcodeConfigured: boolean
 }) {
   const [arEmail, setArEmail] = useState(initialArEmail)
+  const [followupDays, setFollowupDays] = useState(initialFollowupDays)
+  const [savingDays, setSavingDays] = useState(false)
+  const [daysSaved, setDaysSaved] = useState(false)
+  const [daysError, setDaysError] = useState<string | null>(null)
   const [savingEmail, setSavingEmail] = useState(false)
   const [emailSaved, setEmailSaved] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
@@ -1237,6 +1246,38 @@ function CreditReviewSetting({
       setEmailError('Could not save AR email.')
     } finally {
       setSavingEmail(false)
+    }
+  }
+
+  async function handleSaveFollowupDays() {
+    setSavingDays(true)
+    setDaysSaved(false)
+    setDaysError(null)
+    // Mirrors parseFollowupDays() in src/lib/credit-followup.ts, which clamps
+    // again server-side. Catching it here just gives a better message than a
+    // silently-corrected value.
+    const n = Number(followupDays.trim())
+    if (!Number.isFinite(n) || Math.floor(n) < 1 || Math.floor(n) > 30) {
+      setDaysError('Enter a whole number of days between 1 and 30.')
+      setSavingDays(false)
+      return
+    }
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'credit_followup_days', value: String(Math.floor(n)) }),
+      })
+      if (res.ok) {
+        setDaysSaved(true)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setDaysError(data.error ?? 'Failed to save the follow-up interval.')
+      }
+    } catch {
+      setDaysError('Could not save the follow-up interval.')
+    } finally {
+      setSavingDays(false)
     }
   }
 
@@ -1311,6 +1352,39 @@ function CreditReviewSetting({
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Separate multiple addresses with commas. Required — without it, credit-hold work is still
             gated but nobody is notified.
+          </p>
+        </div>
+
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Follow-up every
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={followupDays}
+                onChange={(e) => { setFollowupDays(e.target.value); setDaysSaved(false) }}
+                className="w-24 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
+            </div>
+            <button
+              onClick={handleSaveFollowupDays}
+              disabled={savingDays}
+              className="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {savingDays ? 'Saving...' : 'Save'}
+            </button>
+            {daysSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+            {daysError && <span className="text-sm text-red-600 font-medium">{daysError}</span>}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            An order still awaiting a credit decision gets AR re-sent its release link on this
+            cadence, and managers are emailed about anything AR has blocked — repeating until the
+            hold is cleared. 1–30 days.
           </p>
         </div>
 

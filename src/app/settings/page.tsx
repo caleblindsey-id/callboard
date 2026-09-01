@@ -5,6 +5,7 @@ import { getSetting } from '@/lib/db/settings'
 import { getAllSalesReps } from '@/lib/db/sales-reps'
 import { getAllSupplyCatalog } from '@/lib/db/supply-requests'
 import { SyncLogRow } from '@/types/database'
+import { FOLLOWUP_DEFAULT_DAYS } from '@/lib/credit-followup'
 import SettingsContent from './SettingsContent'
 
 export default async function SettingsPage({
@@ -17,7 +18,7 @@ export default async function SettingsPage({
   await requireRole('super_admin')
   const params = (await searchParams) ?? {}
   const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab
-  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, managerDigestTo, managerDigestCc, pickupAddress, pickupHours, passcodeHash, salesReps, supplyCatalog] = await Promise.all([
+  const [users, syncLog, laborRate, industrialLaborRate, vacuumLaborRate, tripCharge, companyName, serviceEmail, servicePhone, arEmail, creditFollowupDays, managerDigestTo, managerDigestCc, pickupAddress, pickupHours, passcodeHash, salesReps, supplyCatalog] = await Promise.all([
     getUsers(),
     getSyncLog(),
     getSetting('labor_rate_per_hour'),
@@ -28,6 +29,7 @@ export default async function SettingsPage({
     getSetting('service_email'),
     getSetting('service_phone'),
     getSetting('ar_email'),
+    getSetting('credit_followup_days'),
     getSetting('manager_digest_to'),
     getSetting('manager_digest_cc'),
     getSetting('pickup_address'),
@@ -56,6 +58,7 @@ export default async function SettingsPage({
         serviceEmail={serviceEmail ?? ''}
         servicePhone={servicePhone ?? ''}
         arEmail={arEmail ?? ''}
+        creditFollowupDays={creditFollowupDays ?? String(FOLLOWUP_DEFAULT_DAYS)}
         managerDigestTo={managerDigestTo ?? ''}
         managerDigestCc={managerDigestCc ?? ''}
         pickupAddress={pickupAddress ?? ''}

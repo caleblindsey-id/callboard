@@ -3,8 +3,8 @@ title: Release or block a credit hold
 category: Managers
 roles: [super_admin, manager, coordinator]
 order: 40
-summary: How credit-hold work gets reviewed by AR and released — or blocked and overridden.
-last_verified: 2026-05-28
+summary: How credit-hold work gets reviewed by AR and released — or blocked and overridden — and how CallBoard chases whatever is still open.
+last_verified: 2026-09-01
 ---
 
 A customer is on **credit hold** when their AR balance is over their credit limit, or they're past the allowed past-due days. When work is created for them, CallBoard gates it and sends it to AR to decide. Manage these on the **Credit Review** page.
@@ -23,6 +23,18 @@ AR receives an email with a link to a private page for each order. There they:
 
 Releasing unblocks the work immediately. Blocking locks it until a manager overrides.
 
+## The automatic follow-up
+
+Nothing on this page waits silently any more. Every few days CallBoard chases whatever is still open:
+
+- **Still pending?** AR is re-sent the Release/Block link automatically, with a fresh (unexpired) link each time. You don't need to tap **Resend AR** just because it's been a while.
+- **Still blocked?** Managers get an email listing every blocked order, how long it's been sitting, and AR's reason — with a link straight to the order. Blocked orders also appear in the weekday morning digest.
+- **AR gone quiet?** After two nudges with no decision, managers get copied on the pending ones too.
+
+The reminders repeat **until the hold is cleared** — releasing, unblocking, or deleting the order all stop them. There's no cap, deliberately: blocked orders used to sit for two months precisely because nothing kept asking.
+
+Change how often it runs in [Settings](/help/admin/settings) → Credit Review → **Follow-up every N days** (default 3).
+
 ## Overriding a block (manager passcode)
 
 On a **Blocked by AR** order, tap **🔒 Unblock**, enter the **Release passcode**, and tap **Unblock & proceed**. The passcode is set by an admin in [Settings](/help/admin/settings) — share it only with managers and AR.
@@ -30,5 +42,6 @@ On a **Blocked by AR** order, tap **🔒 Unblock**, enter the **Release passcode
 ## Gotchas
 
 - **The credit-hold flag comes from the AR numbers** (balance vs. credit limit, past-due days). To clear it for good, the customer's account has to be brought current — releasing here just lets *this* work proceed.
-- **The AR link is single-use and expires.** If AR sat on it too long, use **Resend AR** for a new one.
+- **The AR link is single-use and expires.** The follow-up re-sends a fresh one on its own, but **Resend AR** is still there if you want to push one immediately.
+- **Deleting the order stops the chasing.** A blocked review whose ticket is deleted is dropped from the follow-up, so it can't nag about work that no longer exists.
 - **No passcode set = no overrides.** If managers can't unblock, an admin needs to set the release passcode in Settings.

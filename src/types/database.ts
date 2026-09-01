@@ -909,6 +909,10 @@ export type CreditReviewRow = {
   unblocked_by_id: string | null
   unblocked_at: string | null
   auto_released_at: string | null
+  // Follow-up cadence (migration 166). reminder_count drives escalation;
+  // last_reminded_at NULL means never reminded, which the cron treats as due.
+  reminder_count: number
+  last_reminded_at: string | null
   updated_by_id: string | null
   created_at: string
   updated_at: string

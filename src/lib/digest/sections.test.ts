@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { SECTIONS, OWNER_BLOCKS, TOP_N } from './sections'
 import { KEY_PREFIXES } from './types'
 
-test('all sixteen sections are registered', () => {
-  assert.equal(SECTIONS.length, 16)
+test('all seventeen sections are registered', () => {
+  assert.equal(SECTIONS.length, 17)
 })
 
 test('section keys are unique', () => {
@@ -59,12 +59,15 @@ test('every section is wired to a real fetch function', () => {
   }
 })
 
-test('ready_to_bill, not_entered_synergy, and po_gated are the mixed-entity sections', () => {
+test('ready_to_bill, not_entered_synergy, po_gated and credit_blocked are the mixed-entity sections', () => {
   // The Billing Chase worklist (migration 163) spans both ticket types, so
   // both digest sections built on it are mixed alongside the pre-existing
-  // ready_to_bill.
+  // ready_to_bill. credit_blocked (feedback #75) is mixed for the same reason:
+  // a credit review gates either a PM or a service order, and its row must key
+  // on the gated ticket so the headline count dedupes against the sections that
+  // already list that ticket.
   const mixed = SECTIONS.filter((s) => s.keyPrefixes.length > 1).map((s) => s.key)
-  assert.deepEqual(mixed, ['ready_to_bill', 'not_entered_synergy', 'po_gated'])
+  assert.deepEqual(mixed, ['ready_to_bill', 'not_entered_synergy', 'po_gated', 'credit_blocked'])
 })
 
 test('TOP_N matches the Python original', () => {

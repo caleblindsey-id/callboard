@@ -10,9 +10,9 @@ export interface WhatsNewUpdate {
 }
 
 export const LATEST_UPDATE: WhatsNewUpdate | null = {
-  id: '2026-08-27-billing-chase-synergy-same-day',
+  id: '2026-09-01-credit-review-follow-up',
   headline:
-    'Change: bill completed work faster. Key the Synergy order the day work finishes — export is never blocked by a missing PO. One Billing Chase list covers PM and service; a nightly check pre-fills invoice numbers Synergy already shows as invoiced, for you to confirm.',
-  href: '/help/managers/billing-chase',
+    'New: credit holds chase themselves. An order still waiting on AR gets the release link re-sent every few days, and anything AR blocked now emails managers — with its age and AR’s reason — until the hold is cleared.',
+  href: '/help/managers/release-a-credit-hold',
   cta: 'See how',
 }
