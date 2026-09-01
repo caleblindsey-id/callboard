@@ -580,6 +580,28 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
       setPartsRequested(updatedParts)
     })
   }
+  // Undo the above. Manager-only at the control (see PartsSection) because it
+  // reverses a technician's on-site call and puts a billable line back in play.
+  // Without it the mark is one-way: the part is gone from the tech banner and
+  // from the office report, so a mis-tap — or a later decision that the
+  // customer should be charged after all — has no route back through the UI.
+  // Deletes the keys rather than nulling them so the row is byte-identical to a
+  // part that was never excluded; every reader tests presence, and a lingering
+  // wo_exclude_reason next to a cleared timestamp reads as corrupt data.
+  async function handleUndoExcludePartFromWorkOrder(index: number) {
+    const updatedParts = partsRequested.map((p, i) => {
+      if (i !== index) return p
+      const cleared = { ...p }
+      delete cleared.wo_excluded_at
+      delete cleared.wo_excluded_by
+      delete cleared.wo_exclude_reason
+      return cleared
+    })
+    await apiAction(async () => {
+      await patchTicket({ parts_requested: updatedParts })
+      setPartsRequested(updatedParts)
+    })
+  }
   const [signatureImage, setSignatureImage] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState('')
 
@@ -2984,6 +3006,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           onRemovePartRequest={handleRemovePartRequest}
           onUpdatePartStatus={handleUpdatePartStatus}
           onResetPartStatus={handleResetPartStatus}
+          onUndoExcludePart={handleUndoExcludePartFromWorkOrder}
           onSavePartSynergy={handleSavePartSynergy}
           onUpdatePartVendorItemCode={handleUpdatePartVendorItemCode}
           onSavePartVendorItemCode={handleSavePartVendorItemCode}

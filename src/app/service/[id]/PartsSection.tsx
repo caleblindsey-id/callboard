@@ -71,6 +71,8 @@ interface PartsSectionProps {
   onRemovePartRequest: (index: number) => Promise<void>
   onUpdatePartStatus: (index: number, status: PartRequest['status']) => Promise<void>
   onResetPartStatus: (index: number) => Promise<void>
+  /** Clear a part's "not used" stamp so it returns to the work-order lists. */
+  onUndoExcludePart: (index: number) => Promise<void>
   onSavePartSynergy: (index: number, next: { product_number: string; synergy_product_id: number | null }) => Promise<void>
   onUpdatePartVendorItemCode: (index: number, code: string) => void
   onSavePartVendorItemCode: (index: number) => Promise<void>
@@ -137,6 +139,7 @@ export default function PartsSection({
   onRemovePartRequest,
   onUpdatePartStatus,
   onResetPartStatus,
+  onUndoExcludePart,
   onSavePartSynergy,
   onUpdatePartVendorItemCode,
   onSavePartVendorItemCode,
@@ -272,6 +275,22 @@ export default function PartsSection({
                       {part.cancelled && part.cancel_reason && (
                         <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">Cancelled — {part.cancel_reason}</div>
                       )}
+                      {/* The tech decided against this part after it arrived.
+                          The reason has been captured since the feature shipped
+                          but was rendered nowhere, so the part sat here looking
+                          exactly like one that WAS fitted — which is what
+                          prompted feedback #90. Shown regardless of ticket
+                          status: the question ("what happened to the scrub
+                          motor?") is usually asked about a finished job. */}
+                      {!part.cancelled && part.wo_excluded_at && (
+                        <div className="text-xs text-orange-700 dark:text-orange-400 mt-0.5">
+                          Not used
+                          {part.wo_exclude_reason ? ` — ${part.wo_exclude_reason}` : ''}
+                          <span className="text-gray-500 dark:text-gray-400">
+                            {' '}· marked {formatDate(part.wo_excluded_at)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {part.cancelled ? (
@@ -280,6 +299,27 @@ export default function PartsSection({
                         <span className={`text-xs font-medium uppercase ${statusColors[part.status] ?? ''}`}>
                           {statusLabels[part.status] ?? part.status}
                         </span>
+                      )}
+                      {!part.cancelled && part.wo_excluded_at && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 whitespace-nowrap">
+                          Not used
+                        </span>
+                      )}
+                      {/* Undo — manager-only, and the only way back. Marking a
+                          part not-used removes it from the tech banner and the
+                          office report, so without this a mis-tap (or a later
+                          decision that the customer should be charged after
+                          all) is unrecoverable from the UI. Clearing the stamp
+                          puts the part back on both lists. */}
+                      {!part.cancelled && part.wo_excluded_at && isManager && (
+                        <button
+                          onClick={() => onUndoExcludePart(i)}
+                          disabled={loading}
+                          title="Undo &quot;not used&quot; — the part goes back on the missing-from-work-order list so it can be billed"
+                          className="px-2 py-1 text-xs font-medium text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-600 rounded hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 min-h-[44px] sm:min-h-0 transition-colors"
+                        >
+                          Undo
+                        </button>
                       )}
                       {!part.cancelled && (part.status === 'pending_review' || part.status === 'requested') && (
                         <button
