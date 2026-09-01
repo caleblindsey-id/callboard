@@ -1,7 +1,7 @@
 import type { DigestDb, DigestOwner, DigestRow, KeyPrefix } from './types'
 import * as f from './fetchers'
 
-// The sixteen action queues the morning digest surfaces, grouped by who does
+// The seventeen action queues the morning digest surfaces, grouped by who does
 // the work. Adding a section here is the only place it needs registering: the
 // email template renders whatever this list contains, and the headline dedupe
 // reads the declared key prefixes.
@@ -185,6 +185,15 @@ export const SECTIONS: readonly DigestSection[] = [
     viewAllPath: '/warranty-queue',
     keyPrefixes: ['svc'],
     fetch: f.warrantyAwaitingCredit,
+  },
+  {
+    key: 'credit_blocked',
+    owner: 'ar',
+    title: 'Credit blocked, needs a manager release',
+    action: 'release with the passcode or clear the balance',
+    viewAllPath: '/credit-review',
+    keyPrefixes: ['pm', 'svc'],
+    fetch: f.creditBlocked,
   },
   {
     key: 'credit_hold',

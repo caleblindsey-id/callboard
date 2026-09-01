@@ -16,6 +16,7 @@ const ALLOWED_KEYS = new Set([
   'service_email',
   'service_phone',
   'ar_email',
+  'credit_followup_days',
   'manager_digest_to',
   'manager_digest_cc',
   'pickup_address',
@@ -32,6 +33,14 @@ const NUMERIC_RATE_KEYS = new Set([
 // Keys holding a comma/semicolon/whitespace-separated email list. A non-empty
 // value must parse to at least one plausible address.
 const EMAIL_LIST_KEYS = new Set(['ar_email', 'manager_digest_to', 'manager_digest_cc'])
+
+// Whole-number keys with a hard range. credit_followup_days drives how often the
+// credit-followup cron re-emails AR: 0 would mean a fresh email on every daily
+// run, so the floor is enforced here as well as being clamped in
+// parseFollowupDays() when the value is read.
+const DAY_COUNT_KEYS = new Map<string, { min: number; max: number }>([
+  ['credit_followup_days', { min: 1, max: 30 }],
+])
 
 const VALUE_MAX_LEN = 500
 
@@ -83,6 +92,17 @@ export async function PATCH(request: NextRequest) {
       const n = parseFloat(value)
       if (!Number.isFinite(n) || n < 0) {
         return NextResponse.json({ error: `${key} must be a non-negative number` }, { status: 400 })
+      }
+    }
+
+    const dayRange = DAY_COUNT_KEYS.get(key)
+    if (dayRange) {
+      const n = Number(value.trim())
+      if (!Number.isInteger(n) || n < dayRange.min || n > dayRange.max) {
+        return NextResponse.json(
+          { error: `${key} must be a whole number between ${dayRange.min} and ${dayRange.max}.` },
+          { status: 400 }
+        )
       }
     }
 
