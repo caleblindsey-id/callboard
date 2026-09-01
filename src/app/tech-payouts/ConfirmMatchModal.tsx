@@ -16,12 +16,14 @@ interface Props {
 
 export default function ConfirmMatchModal({ candidate, proposedTier, onClose, onDone }: Props) {
   const [tier, setTier] = useState<EquipmentSaleTier | 'not_eligible' | ''>('')
+  const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!candidate) return
     setTier(proposedTier ?? '')
+    setReason('')
     setError(null)
   }, [candidate, proposedTier])
 
@@ -39,7 +41,11 @@ export default function ConfirmMatchModal({ candidate, proposedTier, onClose, on
       if (tier === 'not_eligible') {
         const res = await fetch(
           `/api/tech-leads/${candidate.tech_lead_id}/candidates/${candidate.id}/dismiss`,
-          { method: 'POST' }
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason.trim() || null }),
+          }
         )
         const body = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(body?.error || 'Failed to dismiss candidate.')
@@ -112,9 +118,25 @@ export default function ConfirmMatchModal({ candidate, proposedTier, onClose, on
               </p>
             )}
             {tier === 'not_eligible' && (
-              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                This candidate will be dismissed. The lead stays open for the next candidate.
-              </p>
+              <>
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  This candidate will be dismissed. The lead stays open for the next candidate.
+                </p>
+                <label
+                  htmlFor="dismiss-reason"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-3 mb-1"
+                >
+                  Why not? (optional)
+                </label>
+                <textarea
+                  id="dismiss-reason"
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. batteries only, no machine on this order"
+                  className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+              </>
             )}
             {selectedTierInfo && (
               <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">

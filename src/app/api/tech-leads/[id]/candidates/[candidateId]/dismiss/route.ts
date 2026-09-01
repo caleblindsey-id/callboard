@@ -7,7 +7,7 @@ import { getCurrentUser, RESET_ROLES } from '@/lib/auth'
 // Dismiss one candidate. If that was the last pending candidate, flip the lead
 // back from match_pending -> approved so it stops showing in the match tab.
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; candidateId: string }> }
 ) {
   const { id, candidateId } = await params
@@ -19,6 +19,13 @@ export async function POST(
     if (!RESET_ROLES.includes(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    // Optional -- the modal offers a reason but does not force one, and the
+    // account-correction sweep posts no body at all.
+    const body = await request.json().catch(() => ({}))
+    const rawReason = (body as { reason?: unknown })?.reason
+    const reason =
+      typeof rawReason === 'string' && rawReason.trim() ? rawReason.trim().slice(0, 1000) : null
 
     const supabase = await createClient()
 
@@ -40,7 +47,7 @@ export async function POST(
     const now = new Date().toISOString()
     const { error: dismissErr } = await supabase
       .from('equipment_sale_lead_candidates')
-      .update({ status: 'dismissed', reviewed_by: user.id, reviewed_at: now })
+      .update({ status: 'dismissed', reviewed_by: user.id, reviewed_at: now, dismissed_reason: reason })
       .eq('id', candidateId)
     if (dismissErr) {
       console.error('dismiss candidate error:', dismissErr)

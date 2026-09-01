@@ -1074,6 +1074,7 @@ export type EquipmentSaleLeadCandidateRow = {
   detected_at: string
   reviewed_by: string | null
   reviewed_at: string | null
+  dismissed_reason: string | null
 }
 
 export type ShipToRequestStatus = 'pending' | 'resolved' | 'dismissed'

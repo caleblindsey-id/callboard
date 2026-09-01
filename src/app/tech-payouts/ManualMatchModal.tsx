@@ -74,6 +74,26 @@ export default function ManualMatchModal({ lead, onClose, onDone }: Props) {
   const selectedTierInfo = tier ? EQUIPMENT_SALE_TIER_LIST.find(t => t.value === tier) : null
   const customerLabel = lead.customers?.name ?? lead.customer_name_text ?? '—'
 
+  // The nightly scan only ever matches a sale dated on or after the lead was
+  // submitted and before it expires. Manual match deliberately has no such rule --
+  // a tech who submits a few days late still deserves the bonus -- but the gap is
+  // worth seeing. One live bonus was matched to a sale that closed 11 weeks BEFORE
+  // the lead was raised, and nothing said a word. Warn, never block.
+  const windowWarning = (() => {
+    if (!orderDate) return null
+    const picked = new Date(`${orderDate}T12:00:00Z`).getTime()
+    if (Number.isNaN(picked)) return null
+    const submitted = new Date(lead.submitted_at).getTime()
+    if (picked < submitted) {
+      const days = Math.round((submitted - picked) / 86_400_000)
+      return `This sale closed ${days} day${days === 1 ? '' : 's'} BEFORE the lead was submitted, so it cannot have come from the lead. Match it only if you know why.`
+    }
+    if (lead.expires_at && picked > new Date(lead.expires_at).getTime()) {
+      return 'This sale closed after the lead’s window expired. Match it only if you know why.'
+    }
+    return null
+  })()
+
   return (
     <Modal open onClose={onClose} dismissible={!submitting} sheet size="md" ariaLabelledBy="manual-match-title">
       <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between">
@@ -106,7 +126,7 @@ export default function ManualMatchModal({ lead, onClose, onDone }: Props) {
               inputMode="numeric"
               value={orderNumber}
               onChange={e => setOrderNumber(e.target.value)}
-              placeholder="e.g. 949635"
+              placeholder="e.g. 620345"
               autoComplete="off"
               className="w-full min-h-[44px] rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
             />
@@ -123,6 +143,17 @@ export default function ManualMatchModal({ lead, onClose, onDone }: Props) {
             />
           </div>
         </div>
+
+        <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">
+          Use the <strong>order</strong> number, not the invoice number. An invoiced order is
+          filed under its order number in Synergy, so an invoice number here will not look up later.
+        </p>
+
+        {windowWarning && (
+          <p className="text-xs text-amber-700 dark:text-amber-400" role="status">
+            {windowWarning}
+          </p>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
