@@ -7,7 +7,7 @@ import { getCurrentUser, RESET_ROLES } from '@/lib/auth'
 // Dismiss every pending candidate on this lead and flip the lead back to
 // 'approved' if it was in 'match_pending'.
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
@@ -20,12 +20,17 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const body = await request.json().catch(() => ({}))
+    const rawReason = (body as { reason?: unknown })?.reason
+    const reason =
+      typeof rawReason === 'string' && rawReason.trim() ? rawReason.trim().slice(0, 1000) : null
+
     const supabase = await createClient()
 
     const now = new Date().toISOString()
     const { error: dismissErr } = await supabase
       .from('equipment_sale_lead_candidates')
-      .update({ status: 'dismissed', reviewed_by: user.id, reviewed_at: now })
+      .update({ status: 'dismissed', reviewed_by: user.id, reviewed_at: now, dismissed_reason: reason })
       .eq('tech_lead_id', id)
       .eq('status', 'pending')
     if (dismissErr) {

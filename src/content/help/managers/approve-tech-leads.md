@@ -31,9 +31,10 @@ CallBoard tells you live whether the lead will earn: a flat-rate monthly/bi-mont
 
 ## The lead lifecycle
 
-**Submitted → Approved → (equipment-sale: matched) → Earned → Paid.** A PM lead earns when its first PM completes; an equipment-sale lead earns when a qualifying sale is confirmed within the match window. Paying out is covered in [Run tech payouts](/help/managers/tech-payouts).
+**Submitted → Approved → (equipment-sale: matched) → Earned → Paid.** A PM lead earns when its first PM completes; an equipment-sale lead earns when a qualifying sale is confirmed within the match window. Judging those candidates is covered in [Confirm or dismiss an equipment sale match](/help/managers/match-equipment-sales); paying out is covered in [Run tech payouts](/help/managers/tech-payouts).
 
 ## Gotchas
 
 - **Monthly, bi-monthly, and quarterly flat-rate PMs earn the full bonus; semi-annual earns half.** If you set a 4-month, annual, or non-flat billing type, the lead stays approved but never earns — CallBoard shows the bonus (or warns you) before you save.
 - **A free-text "new customer" must be matched** to a real Synergy account when you create the equipment, or it can't be linked.
+- **An equipment-sale lead with no linked customer never matches.** The nightly Synergy scan can only look up a real account, so an unlinked lead sits in Awaiting Match until it expires. Link it as soon as you approve it.

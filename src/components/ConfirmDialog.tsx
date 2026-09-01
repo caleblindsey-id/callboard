@@ -13,6 +13,9 @@ interface ConfirmDialogProps {
   onConfirm: () => void
   onCancel: () => void
   loading?: boolean
+  // Optional extra content under the message (e.g. a reason field). Renders
+  // nothing when absent, so the plain yes/no case is unchanged.
+  children?: React.ReactNode
 }
 
 // Shared confirm dialog replacing window.confirm() calls app-wide. A thin
@@ -33,6 +36,7 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   loading = false,
+  children,
 }: ConfirmDialogProps) {
   const confirmClasses =
     confirmVariant === 'danger'
@@ -52,6 +56,7 @@ export default function ConfirmDialog({
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{message}</p>
         </div>
       </div>
+      {children && <div className="mt-4">{children}</div>}
       <div className="mt-5 flex justify-end gap-3">
         <button
           type="button"

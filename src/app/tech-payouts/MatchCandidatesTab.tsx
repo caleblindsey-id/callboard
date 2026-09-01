@@ -14,6 +14,48 @@ interface Props {
   onRefresh: () => void
 }
 
+// The whole judgment on this tab is "is the machine on that Synergy order the
+// replacement for the machine the tech flagged?" -- so the flagged machine has to
+// be on screen. It used to be missing entirely, leaving the reviewer to guess from
+// the tier dropdown alone. Every field here is already on the lead row; no extra
+// query.
+function FlaggedMachine({ lead }: { lead: TechLeadWithJoins }) {
+  const identity = [lead.make, lead.model].filter(Boolean).join(' ')
+  const details: string[] = []
+  if (lead.serial_number) details.push(`S/N ${lead.serial_number}`)
+  if (lead.location_on_site) details.push(lead.location_on_site)
+  if (lead.quoted_amount) details.push(`Quoted ${lead.quoted_amount}`)
+
+  const description = lead.equipment_description?.trim()
+  // equipment_description mirrors the tier label on equipment-sale leads, so it is
+  // only worth showing when the tech actually wrote something more specific.
+  const showDescription =
+    description && description.toLowerCase() !== tierLabel(lead.proposed_equipment_tier).toLowerCase()
+
+  if (!identity && !details.length && !showDescription) {
+    return (
+      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1.5">
+        Tech recorded no make, model or serial for the flagged machine.
+      </p>
+    )
+  }
+
+  return (
+    <div className="mt-1.5 text-xs">
+      <span className="text-gray-500 dark:text-gray-400">Flagged machine: </span>
+      <span className="text-gray-900 dark:text-gray-200 font-medium">
+        {identity || 'unspecified'}
+      </span>
+      {details.length > 0 && (
+        <span className="text-gray-500 dark:text-gray-400"> · {details.join(' · ')}</span>
+      )}
+      {showDescription && (
+        <span className="text-gray-500 dark:text-gray-400"> · {description}</span>
+      )}
+    </div>
+  )
+}
+
 export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh }: Props) {
   const [activeCandidate, setActiveCandidate] = useState<CandidateWithLead | null>(null)
   const [activeProposedTier, setActiveProposedTier] = useState<TechLeadWithJoins['proposed_equipment_tier']>(null)
@@ -21,6 +63,7 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
   const [error, setError] = useState<string | null>(null)
   // Inline replacement for window.confirm — null = closed.
   const [pendingDismissLeadId, setPendingDismissLeadId] = useState<string | null>(null)
+  const [dismissAllReason, setDismissAllReason] = useState('')
 
   const leadsWithCandidates = leads.filter(l => (candidatesByLead[l.id] ?? []).length > 0)
 
@@ -28,7 +71,11 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
     setBusyId(leadId)
     setError(null)
     try {
-      const res = await fetch(`/api/tech-leads/${leadId}/candidates/dismiss-all`, { method: 'POST' })
+      const res = await fetch(`/api/tech-leads/${leadId}/candidates/dismiss-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: dismissAllReason.trim() || null }),
+      })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body?.error || 'Failed to dismiss candidates.')
       onRefresh()
@@ -37,6 +84,7 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
     } finally {
       setBusyId(null)
       setPendingDismissLeadId(null)
+      setDismissAllReason('')
     }
   }
 
@@ -72,11 +120,12 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
                   Tech tier guess: <strong>{tierLabel(lead.proposed_equipment_tier)}</strong>
                   {lead.notes && ` · ${lead.notes}`}
                 </p>
+                <FlaggedMachine lead={lead} />
               </div>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setPendingDismissLeadId(lead.id)}
+                  onClick={() => { setDismissAllReason(''); setPendingDismissLeadId(lead.id) }}
                   disabled={isBusy}
                   className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                 >
@@ -152,11 +201,26 @@ export default function MatchCandidatesTab({ leads, candidatesByLead, onRefresh 
         confirmLabel="Dismiss all"
         confirmVariant="danger"
         loading={pendingDismissLeadId !== null && busyId === pendingDismissLeadId}
-        onCancel={() => setPendingDismissLeadId(null)}
+        onCancel={() => { setPendingDismissLeadId(null); setDismissAllReason('') }}
         onConfirm={() => {
           if (pendingDismissLeadId) performDismissAll(pendingDismissLeadId)
         }}
-      />
+      >
+        <label
+          htmlFor="dismiss-all-reason"
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+        >
+          Why not? (optional)
+        </label>
+        <textarea
+          id="dismiss-all-reason"
+          value={dismissAllReason}
+          onChange={e => setDismissAllReason(e.target.value)}
+          rows={2}
+          placeholder="e.g. none of these are the machine the tech flagged"
+          className="w-full rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:placeholder-gray-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+      </ConfirmDialog>
     </div>
   )
 }
