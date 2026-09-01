@@ -1,20 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth'
+import { isLaborRateType, LABOR_RATE_TYPES } from '@/lib/labor-rate-type'
+import { decideAceEdit } from '@/lib/ace-labor/edit-policy'
+import type { AceLaborStatus } from '@/types/database'
 
 type PatchBody = {
   hours?: number
   reason?: string
+  labor_rate_type?: string
 }
 
-// PATCH /api/ace-labor/[id] — tech edits a pending or rejected entry.
-// On a rejected entry, the edit flips status back to 'pending' so a manager
-// sees the resubmission in the approval queue.
+// PATCH /api/ace-labor/[id] — edit a pending or rejected entry.
 //
-// RLS already restricts which rows a tech can touch (own entry, status in
-// pending/rejected). This route stays on the user-context client so RLS
-// enforces ownership; we just add the value validation and the rejected->
-// pending status flip.
+// Two callers:
+//   - the submitting tech, fixing their own entry; and
+//   - a manager / super_admin correcting someone else's entry in review
+//     rather than rejecting it and waiting for a resubmission (feedback #93).
+//
+// Either way, editing a *rejected* entry flips it back to 'pending' so it
+// lands in the approval queue with the rejection cleared.
+//
+// RLS already permits both callers (policy `ace_labor_update`, migration 139:
+// super_admin/manager on any row, technician on own rows in pending/rejected),
+// so this stays on the user-context client and RLS is the backstop. What the
+// route adds is value validation, the rejected->pending flip, and the explicit
+// authorization decision in `decideAceEdit` — which also keeps coordinators
+// out, since they can reach /tech-payouts but hold no write rights here.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -44,6 +56,22 @@ export async function PATCH(
       }
       updates.reason = body.reason.trim()
     }
+    if (body.labor_rate_type !== undefined) {
+      // Staff-only, enforced after the authorization decision below. The tech
+      // never picks this: completion snapshots it off the parent ticket so a
+      // later ticket edit can't shift the entry's rate category. Re-picking it
+      // is a reviewer correction, not a resubmission field.
+      //
+      // Only reachable before approval, so no rate snapshot has been taken yet
+      // — the entry is still open to a rate-category correction.
+      if (!isLaborRateType(body.labor_rate_type)) {
+        return NextResponse.json(
+          { error: `labor_rate_type must be one of: ${LABOR_RATE_TYPES.join(', ')}.` },
+          { status: 400 }
+        )
+      }
+      updates.labor_rate_type = body.labor_rate_type
+    }
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No fields to update.' }, { status: 400 })
     }
@@ -61,21 +89,31 @@ export async function PATCH(
     if (!existing) {
       return NextResponse.json({ error: 'Entry not found.' }, { status: 404 })
     }
-    // Defense-in-depth: RLS already restricts a tech to their own rows, but
-    // assert ownership here too so a future policy slip doesn't open the route.
-    if (existing.tech_id !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-    if (existing.status !== 'pending' && existing.status !== 'rejected') {
+
+    const status = existing.status as AceLaborStatus
+    const decision = decideAceEdit(
+      { id: user.id, role: user.role },
+      { tech_id: existing.tech_id, status },
+    )
+    if (!decision.allowed) {
+      if (decision.reason === 'forbidden') {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
       return NextResponse.json(
-        { error: `Cannot edit an entry in status '${existing.status}'.` },
+        { error: `Cannot edit an entry in status '${status}'.` },
         { status: 409 }
       )
     }
+    if (updates.labor_rate_type !== undefined && !decision.asStaff) {
+      return NextResponse.json(
+        { error: 'Only a manager can change the rate type on an ACE entry.' },
+        { status: 403 }
+      )
+    }
 
-    // If the entry was rejected, flip it back to pending so the manager
-    // sees the resubmission and the rejected reason is cleared.
-    if (existing.status === 'rejected') {
+    // A rejected entry going back into the queue: clear the rejection and the
+    // reviewer stamps, and re-date the submission so it sorts as fresh.
+    if (decision.resubmits) {
       updates.status = 'pending'
       updates.rejected_reason = null
       updates.approved_by_id = null
@@ -84,13 +122,25 @@ export async function PATCH(
     }
     updates.updated_by_id = user.id
 
-    const { error: writeErr } = await supabase
+    // CAS on the status we authorized against: a concurrent approve/reject
+    // between the SELECT and the UPDATE must not have its decision overwritten
+    // by an edit that was authorized against the older status.
+    const { data: written, error: writeErr } = await supabase
       .from('ace_labor_entries')
       .update(updates)
       .eq('id', id)
+      .eq('status', status)
+      .select('id')
+      .maybeSingle()
     if (writeErr) {
       console.error('ace-labor PATCH write error:', writeErr)
       return NextResponse.json({ error: 'Failed to update entry.' }, { status: 500 })
+    }
+    if (!written) {
+      return NextResponse.json(
+        { error: 'Entry status changed between load and save. Refresh and try again.' },
+        { status: 409 }
+      )
     }
 
     return NextResponse.json({ success: true })

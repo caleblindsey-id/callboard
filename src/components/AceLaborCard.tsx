@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AceLaborEntry, UserRole } from '@/types/database'
+import type { AceLaborEntry, LaborRateType, UserRole } from '@/types/database'
+import { LABOR_RATE_TYPES } from '@/lib/labor-rate-type'
+import { decideAceEdit } from '@/lib/ace-labor/edit-policy'
 
 interface Props {
   entry: AceLaborEntry | null
@@ -17,21 +19,34 @@ const STATUS_BADGE: Record<string, string> = {
   paid: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300',
 }
 
-// Read-only summary + tech-editable form for the ACE entry attached to a
-// ticket. New entries are created from the completion form (TicketActions /
+// Read-only summary + edit form for the ACE entry attached to a ticket. New
+// entries are created from the completion form (TicketActions /
 // ServiceTicketDetail); this card is only shown when an entry already exists.
+//
+// Who can edit is decided by decideAceEdit — the submitting tech on their own
+// pending/rejected entry, or a manager/super_admin on anyone's (feedback #93:
+// a manager who spots wrong hours should correct them here rather than reject
+// the entry and wait for the tech to resubmit). Rate type is manager-only:
+// completion snapshots it off the ticket, so changing it is a review call.
 export default function AceLaborCard({ entry, userRole, userId }: Props) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [hours, setHours] = useState(entry ? String(entry.hours) : '')
   const [reason, setReason] = useState(entry?.reason ?? '')
+  const [rateType, setRateType] = useState<LaborRateType>(entry?.labor_rate_type ?? 'standard')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   if (!entry) return null
 
-  const isOwner = userRole === 'technician' && entry.tech_id === userId
-  const canEdit = isOwner && (entry.status === 'pending' || entry.status === 'rejected')
+  const decision = userId
+    ? decideAceEdit({ id: userId, role: userRole }, { tech_id: entry.tech_id, status: entry.status })
+    : ({ allowed: false, reason: 'forbidden' } as const)
+  const canEdit = decision.allowed
+  const asStaff = decision.allowed && decision.asStaff
+  // Saving a rejected entry puts it back in the approval queue — true for the
+  // tech resubmitting and for a manager undoing their own rejection.
+  const reopens = decision.allowed && decision.resubmits
 
   async function save() {
     const h = parseFloat(hours)
@@ -49,7 +64,11 @@ export default function AceLaborCard({ entry, userRole, userId }: Props) {
       const res = await fetch(`/api/ace-labor/${entry!.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hours: h, reason: reason.trim() }),
+        body: JSON.stringify({
+          hours: h,
+          reason: reason.trim(),
+          ...(asStaff ? { labor_rate_type: rateType } : {}),
+        }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -109,11 +128,21 @@ export default function AceLaborCard({ entry, userRole, userId }: Props) {
             <div className="sm:col-span-2 pt-2">
               <button
                 type="button"
-                onClick={() => { setEditing(true); setError(null) }}
+                onClick={() => {
+                  setEditing(true)
+                  setError(null)
+                }}
                 className="px-3 py-1 text-xs font-medium rounded-md border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20"
               >
-                {entry.status === 'rejected' ? 'Edit & Resubmit' : 'Edit'}
+                {reopens ? (asStaff ? 'Edit & Reopen' : 'Edit & Resubmit') : 'Edit'}
               </button>
+              {asStaff && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {reopens
+                    ? 'Editing puts this entry back in the ACE Review queue instead of leaving it rejected.'
+                    : "Correct the tech's entry here instead of rejecting it — it stays in the review queue for approval."}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -124,16 +153,32 @@ export default function AceLaborCard({ entry, userRole, userId }: Props) {
               {error}
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hours</label>
-            <input
-              type="number"
-              step="0.25"
-              min="0"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
+          <div className="flex flex-wrap gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hours</label>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            {asStaff && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rate type</label>
+                <select
+                  value={rateType}
+                  onChange={(e) => setRateType(e.target.value as LaborRateType)}
+                  className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-3 py-2 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {LABOR_RATE_TYPES.map((t) => (
+                    <option key={t} value={t} className="capitalize">{t}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</label>
@@ -151,7 +196,7 @@ export default function AceLaborCard({ entry, userRole, userId }: Props) {
               onClick={save}
               className="px-3 py-1 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
             >
-              {saving ? 'Saving...' : (entry.status === 'rejected' ? 'Resubmit' : 'Save')}
+              {saving ? 'Saving...' : reopens ? (asStaff ? 'Save & Reopen' : 'Resubmit') : 'Save'}
             </button>
             <button
               type="button"
@@ -160,6 +205,7 @@ export default function AceLaborCard({ entry, userRole, userId }: Props) {
                 setEditing(false)
                 setHours(String(entry!.hours))
                 setReason(entry!.reason)
+                setRateType(entry!.labor_rate_type)
                 setError(null)
               }}
               className="px-3 py-1 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"

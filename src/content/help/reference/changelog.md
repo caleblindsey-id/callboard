@@ -4,10 +4,14 @@ category: Reference
 roles: [super_admin, manager, coordinator, technician]
 order: 30
 summary: Recent changes and additions to CallBoard.
-last_verified: 2026-08-27
+last_verified: 2026-09-01
 ---
 
 The latest updates to CallBoard, newest first.
+
+## September 2026
+
+- **Fix an ACE labor entry instead of rejecting it.** When a tech's ACE entry has the right idea but a wrong number, **Edit** it in place — hours, rate type, and reason are all editable from the **ACE Review** tab and from the **ACE Labor** card on the ticket. The entry stays in the queue for approval, so nobody waits on a resubmission. Rejecting still works for entries that shouldn't be paid at all, and editing a rejected entry puts it back in the queue. Approved and paid entries stay locked. See [Run tech payouts](/help/managers/tech-payouts).
 
 ## August 2026
 

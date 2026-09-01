@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { TechLeadStatus, TechLeadType, SalesRep, UserRole } from '@/types/database'
+import type { TechLeadStatus, TechLeadType, SalesRep, UserRole, LaborRateType } from '@/types/database'
+import { LABOR_RATE_TYPES } from '@/lib/labor-rate-type'
 import { STATUS_META } from '@/lib/status-meta'
 import { RESET_ROLES } from '@/types/database'
 import type { TechLeadWithJoins } from '@/lib/db/tech-leads'
@@ -161,6 +162,12 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
   const [error, setError] = useState<string | null>(null)
   const [rejectingAceId, setRejectingAceId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  // Inline correction of a pending ACE entry — the alternative to rejecting it
+  // over a wrong number and waiting for the tech to resubmit (feedback #93).
+  const [editingAceId, setEditingAceId] = useState<string | null>(null)
+  const [aceEdit, setAceEdit] = useState<{ hours: string; reason: string; rateType: LaborRateType }>(
+    { hours: '', reason: '', rateType: 'standard' }
+  )
 
   const typeFiltered = useMemo(
     () => typeFilter === 'all' ? leads : leads.filter(l => l.lead_type === typeFilter),
@@ -253,6 +260,50 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
     }
   }
 
+  function startAceEdit(e: AceLaborEntryWithJoins) {
+    setEditingAceId(e.id)
+    setAceEdit({ hours: String(e.hours), reason: e.reason, rateType: e.labor_rate_type })
+    setRejectingAceId(null)
+    setError(null)
+  }
+
+  // Save a manager's correction. The entry stays pending — approving is still a
+  // separate, deliberate click.
+  async function saveAceEdit(id: string) {
+    const hours = parseFloat(aceEdit.hours)
+    if (!Number.isFinite(hours) || hours <= 0) {
+      setError('Hours must be greater than 0.')
+      return
+    }
+    if (!aceEdit.reason.trim()) {
+      setError('Reason is required.')
+      return
+    }
+    setBusyId(id)
+    setError(null)
+    try {
+      const res = await fetch(`/api/ace-labor/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hours,
+          reason: aceEdit.reason.trim(),
+          labor_rate_type: aceEdit.rateType,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to save')
+      }
+      setEditingAceId(null)
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <>
       {error && (
@@ -340,6 +391,7 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
               {pendingAce.map(e => {
                 const link = aceTicketLink(e)
                 const isSelf = e.tech_id === currentUserId
+                const isEditing = editingAceId === e.id
                 return (
                   <tr key={e.id} className="bg-white dark:bg-gray-900">
                     <td className="px-3 py-2 text-gray-900 dark:text-white">{e.tech?.name ?? '—'}</td>
@@ -348,11 +400,71 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                     </td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{link.customer}</td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{formatDate(e.submitted_at)}</td>
-                    <td className="px-3 py-2 text-gray-900 dark:text-white font-medium">{Number(e.hours).toFixed(2)}</td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 capitalize">{e.labor_rate_type}</td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-md whitespace-pre-wrap">{e.reason}</td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-white font-medium">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0"
+                          value={aceEdit.hours}
+                          onChange={(ev) => setAceEdit(s => ({ ...s, hours: ev.target.value }))}
+                          aria-label="Hours"
+                          className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      ) : (
+                        Number(e.hours).toFixed(2)
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 capitalize">
+                      {isEditing ? (
+                        <select
+                          value={aceEdit.rateType}
+                          onChange={(ev) => setAceEdit(s => ({ ...s, rateType: ev.target.value as LaborRateType }))}
+                          aria-label="Rate type"
+                          className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-2 py-1 text-sm capitalize focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          {LABOR_RATE_TYPES.map(t => (
+                            <option key={t} value={t} className="capitalize">{t}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        e.labor_rate_type
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-md whitespace-pre-wrap">
+                      {isEditing ? (
+                        <textarea
+                          value={aceEdit.reason}
+                          onChange={(ev) => setAceEdit(s => ({ ...s, reason: ev.target.value }))}
+                          rows={3}
+                          aria-label="Reason"
+                          className="rounded-md border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 px-2 py-1 text-sm w-full min-w-[16rem] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      ) : (
+                        e.reason
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right">
-                      {isSelf ? (
+                      {isEditing ? (
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            type="button"
+                            disabled={busyId === e.id}
+                            onClick={() => setEditingAceId(null)}
+                            className="px-2 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === e.id}
+                            onClick={() => saveAceEdit(e.id)}
+                            className="px-3 py-1 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                          >
+                            {busyId === e.id ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      ) : isSelf ? (
                         <span className="text-xs italic text-gray-500 dark:text-gray-400">Own entry</span>
                       ) : rejectingAceId === e.id ? (
                         <div className="flex flex-col gap-2 items-end">
@@ -391,6 +503,20 @@ export default function TechPayoutsClient({ leads, candidatesByLead, aceEntries,
                           >
                             Approve
                           </button>
+                          {/* Fix a wrong number in place rather than rejecting
+                              the entry and waiting on a resubmission. Manager /
+                              super_admin only — the PATCH route refuses a
+                              coordinator, same as approve and reject do. */}
+                          {canActPastPending && (
+                            <button
+                              type="button"
+                              disabled={busyId === e.id}
+                              onClick={() => startAceEdit(e)}
+                              className="px-3 py-1 text-xs font-medium rounded-md border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50"
+                            >
+                              Edit
+                            </button>
+                          )}
                           <button
                             type="button"
                             disabled={busyId === e.id}
