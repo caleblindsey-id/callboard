@@ -11,7 +11,7 @@ import { PdfHeader, PdfFooter, type PdfHeaderLine } from '@/lib/pdf/chrome'
 // counterpart to the PM CustomerWorkOrderDocument. Styling mirrors the service
 // estimate-template so estimate and work order read as one family.
 
-interface ServiceWorkOrderPart {
+export interface ServiceWorkOrderPart {
   description: string
   // Free-text detail for catch-all items (e.g. SHOP SUPPLIES). Optional.
   detail?: string | null
@@ -20,7 +20,7 @@ interface ServiceWorkOrderPart {
   warrantyCovered: boolean
 }
 
-interface ServiceWorkOrderData {
+export interface ServiceWorkOrderData {
   workOrderNumber: number | null
   // Synergy parts-order # — printed so coordinators can match the exported WO
   // back to its Synergy record when keying the invoice # (feedback #48). Optional.
@@ -194,10 +194,16 @@ function money(amount: number): string {
 }
 
 // ============================================================
-// Document
+// Page
 // ============================================================
 
-export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }: ServiceWorkOrderDocumentProps) {
+// One work order = one <Page>. Split out of ServiceWorkOrderDocument so a batch
+// export can compose N of them into a single <Document> (@react-pdf cannot nest
+// Documents). Single-ticket callers keep using ServiceWorkOrderDocument below,
+// which is now just this page in a one-page Document — so the page itself renders
+// the same either way. Note PdfFooter's "Page X of Y" is Document-scoped, so a
+// batched work order footers as "Page 2 of 5" rather than "Page 1 of 1".
+export function ServiceWorkOrderPage({ workOrder, logoBase64, companyName }: ServiceWorkOrderDocumentProps) {
   const isNet = workOrder.pricingMode === 'net'
   // A part line zeroes for display when net mode says so: either every line
   // zeroes (legacy full 'warranty' row) or just this line's own flag does.
@@ -222,259 +228,270 @@ export function ServiceWorkOrderDocument({ workOrder, logoBase64, companyName }:
   const grandTotal = workOrder.billingTotal + taxAmount
 
   return (
-    <Document>
-      <Page size="LETTER" style={styles.page} wrap>
-        {/* Header */}
-        <PdfHeader
-          logoBase64={logoBase64}
-          companyName={companyName ?? APP_NAME}
-          title="Service Work Order"
-          documentNumber={workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : undefined}
-          rightLines={[
-            workOrder.synergyOrderNumber ? { text: `Synergy Order #: ${workOrder.synergyOrderNumber}` } : null,
-            workOrder.poNumber ? { text: `PO: ${workOrder.poNumber}` } : null,
-            { text: workOrder.completedDate },
-          ].filter((line): line is PdfHeaderLine => line !== null)}
-        />
+    <Page size="LETTER" style={styles.page} wrap>
+      {/* Header */}
+      <PdfHeader
+        logoBase64={logoBase64}
+        companyName={companyName ?? APP_NAME}
+        title="Service Work Order"
+        documentNumber={workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : undefined}
+        rightLines={[
+          workOrder.synergyOrderNumber ? { text: `Synergy Order #: ${workOrder.synergyOrderNumber}` } : null,
+          workOrder.poNumber ? { text: `PO: ${workOrder.poNumber}` } : null,
+          { text: workOrder.completedDate },
+        ].filter((line): line is PdfHeaderLine => line !== null)}
+      />
 
-        {/* Customer */}
-        <Text style={styles.sectionLabel}>Customer</Text>
+      {/* Customer */}
+      <Text style={styles.sectionLabel}>Customer</Text>
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldLabel}>Name:</Text>
+        <Text style={styles.fieldValue}>{dash(workOrder.customerName)}</Text>
+      </View>
+      {workOrder.accountNumber && (
         <View style={styles.fieldRow}>
-          <Text style={styles.fieldLabel}>Name:</Text>
-          <Text style={styles.fieldValue}>{dash(workOrder.customerName)}</Text>
+          <Text style={styles.fieldLabel}>Account #:</Text>
+          <Text style={styles.fieldValue}>{workOrder.accountNumber}</Text>
         </View>
-        {workOrder.accountNumber && (
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Account #:</Text>
-            <Text style={styles.fieldValue}>{workOrder.accountNumber}</Text>
-          </View>
-        )}
-        {workOrder.serviceAddress && (
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Service Location:</Text>
-            <Text style={styles.fieldValue}>{workOrder.serviceAddress}</Text>
-          </View>
-        )}
-
-        {/* Equipment */}
-        <Text style={styles.sectionLabel}>Equipment</Text>
+      )}
+      {workOrder.serviceAddress && (
         <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Service Location:</Text>
+          <Text style={styles.fieldValue}>{workOrder.serviceAddress}</Text>
+        </View>
+      )}
+
+      {/* Equipment */}
+      <Text style={styles.sectionLabel}>Equipment</Text>
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldValue}>
+          {workOrder.equipmentLine}
+          {workOrder.serialNumber ? `  |  Serial: ${workOrder.serialNumber}` : ''}
+        </Text>
+      </View>
+      {(workOrder.machineHours != null || workOrder.dateCode) && (
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Service Data:</Text>
           <Text style={styles.fieldValue}>
-            {workOrder.equipmentLine}
-            {workOrder.serialNumber ? `  |  Serial: ${workOrder.serialNumber}` : ''}
+            {[
+              workOrder.machineHours != null ? `${workOrder.machineHours} machine hrs` : null,
+              workOrder.dateCode ? `Date code ${workOrder.dateCode}` : null,
+            ].filter(Boolean).join('  |  ')}
           </Text>
         </View>
-        {(workOrder.machineHours != null || workOrder.dateCode) && (
+      )}
+      {(workOrder.contactName || workOrder.contactEmail || workOrder.contactPhone) && (
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Site Contact:</Text>
+          <Text style={styles.fieldValue}>
+            {[workOrder.contactName, workOrder.contactEmail, workOrder.contactPhone].filter(Boolean).join('  |  ')}
+          </Text>
+        </View>
+      )}
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldLabel}>Technician:</Text>
+        <Text style={styles.fieldValue}>{dash(workOrder.technicianName)}</Text>
+      </View>
+
+      {/* Problem */}
+      <Text style={styles.sectionLabel}>Problem Description</Text>
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldValue}>{dash(workOrder.problemDescription)}</Text>
+      </View>
+
+      {/* Diagnosis */}
+      {workOrder.diagnosisNotes && (
+        <>
+          <Text style={styles.sectionLabel}>Diagnosis</Text>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Service Data:</Text>
-            <Text style={styles.fieldValue}>
-              {[
-                workOrder.machineHours != null ? `${workOrder.machineHours} machine hrs` : null,
-                workOrder.dateCode ? `Date code ${workOrder.dateCode}` : null,
-              ].filter(Boolean).join('  |  ')}
+            <Text style={styles.fieldValue}>{workOrder.diagnosisNotes}</Text>
+          </View>
+        </>
+      )}
+
+      {/* Work Performed */}
+      <Text style={styles.sectionLabel}>Work Performed</Text>
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldValue}>{dash(workOrder.workPerformed)}</Text>
+      </View>
+
+      {/* Charges */}
+      <Text style={styles.sectionLabel}>Charges</Text>
+      <View style={styles.table}>
+        <View style={styles.tableHeaderRow}>
+          <Text style={[styles.colDescription, styles.tableHeaderText]}>Description</Text>
+          <Text style={[styles.colQty, styles.tableHeaderText]}>Qty</Text>
+          <Text style={[styles.colPrice, styles.tableHeaderText]}>Rate/Price</Text>
+          <Text style={[styles.colTotal, styles.tableHeaderText]}>Amount</Text>
+        </View>
+
+        {workOrder.laborHours > 0 && (
+          <View style={styles.tableRow}>
+            <Text style={styles.colDescription}>Service Labor</Text>
+            <Text style={styles.colQty}>{workOrder.laborHours}</Text>
+            <Text style={styles.colPrice}>{money(workOrder.laborRate)}/hr</Text>
+            <Text style={styles.colTotal}>{money(workOrder.laborTotal)}</Text>
+          </View>
+        )}
+
+        {workOrder.parts.map((part, idx) => (
+          <View key={idx} style={styles.tableRow}>
+            <Text style={styles.colDescription}>
+              {partLabel(part)}
+              {isNet && part.warrantyCovered ? ' (warranty)' : ''}
+            </Text>
+            <Text style={styles.colQty}>{part.quantity}</Text>
+            <Text style={styles.colPrice}>{money(part.unitPrice)}</Text>
+            <Text style={styles.colTotal}>
+              {partZeroed(part) ? '$0.00' : money(part.quantity * part.unitPrice)}
+            </Text>
+          </View>
+        ))}
+
+        {workOrder.tripCharge > 0 && (
+          <View style={styles.tableRow}>
+            <Text style={styles.colDescription}>Trip Charge</Text>
+            <Text style={styles.colQty}>—</Text>
+            <Text style={styles.colPrice}>—</Text>
+            <Text style={styles.colTotal}>{money(workOrder.tripCharge)}</Text>
+          </View>
+        )}
+
+        {workOrder.shippingCharge > 0 && (
+          <View style={styles.tableRow}>
+            <Text style={styles.colDescription}>Shipping</Text>
+            <Text style={styles.colQty}>—</Text>
+            <Text style={styles.colPrice}>—</Text>
+            <Text style={styles.colTotal}>{money(workOrder.shippingCharge)}</Text>
+          </View>
+        )}
+
+        {workOrder.diagnosticCharge > 0 && (
+          <View style={styles.tableRow}>
+            <Text style={styles.colDescription}>
+              {workOrder.diagnosticZeroed
+                ? 'Diagnostic Fee (warranty)'
+                : workOrder.diagnosticInvoiceNumber
+                  ? `Diagnostic Fee Credit (Inv #${workOrder.diagnosticInvoiceNumber})`
+                  : 'Diagnostic Fee'}
+            </Text>
+            <Text style={styles.colQty}>—</Text>
+            <Text style={styles.colPrice}>—</Text>
+            <Text style={styles.colTotal}>
+              {workOrder.diagnosticZeroed
+                ? '$0.00'
+                : workOrder.diagnosticInvoiceNumber
+                  ? `-${money(workOrder.diagnosticCharge)}`
+                  : money(workOrder.diagnosticCharge)}
             </Text>
           </View>
         )}
-        {(workOrder.contactName || workOrder.contactEmail || workOrder.contactPhone) && (
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Site Contact:</Text>
-            <Text style={styles.fieldValue}>
-              {[workOrder.contactName, workOrder.contactEmail, workOrder.contactPhone].filter(Boolean).join('  |  ')}
-            </Text>
-          </View>
-        )}
-        <View style={styles.fieldRow}>
-          <Text style={styles.fieldLabel}>Technician:</Text>
-          <Text style={styles.fieldValue}>{dash(workOrder.technicianName)}</Text>
+      </View>
+
+      {/* Summary */}
+      <View style={styles.summaryBlock}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Labor Subtotal:</Text>
+          <Text style={styles.summaryValue}>{money(workOrder.laborTotal)}</Text>
         </View>
-
-        {/* Problem */}
-        <Text style={styles.sectionLabel}>Problem Description</Text>
-        <View style={styles.fieldRow}>
-          <Text style={styles.fieldValue}>{dash(workOrder.problemDescription)}</Text>
-        </View>
-
-        {/* Diagnosis */}
-        {workOrder.diagnosisNotes && (
-          <>
-            <Text style={styles.sectionLabel}>Diagnosis</Text>
-            <View style={styles.fieldRow}>
-              <Text style={styles.fieldValue}>{workOrder.diagnosisNotes}</Text>
-            </View>
-          </>
-        )}
-
-        {/* Work Performed */}
-        <Text style={styles.sectionLabel}>Work Performed</Text>
-        <View style={styles.fieldRow}>
-          <Text style={styles.fieldValue}>{dash(workOrder.workPerformed)}</Text>
-        </View>
-
-        {/* Charges */}
-        <Text style={styles.sectionLabel}>Charges</Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={[styles.colDescription, styles.tableHeaderText]}>Description</Text>
-            <Text style={[styles.colQty, styles.tableHeaderText]}>Qty</Text>
-            <Text style={[styles.colPrice, styles.tableHeaderText]}>Rate/Price</Text>
-            <Text style={[styles.colTotal, styles.tableHeaderText]}>Amount</Text>
-          </View>
-
-          {workOrder.laborHours > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.colDescription}>Service Labor</Text>
-              <Text style={styles.colQty}>{workOrder.laborHours}</Text>
-              <Text style={styles.colPrice}>{money(workOrder.laborRate)}/hr</Text>
-              <Text style={styles.colTotal}>{money(workOrder.laborTotal)}</Text>
-            </View>
-          )}
-
-          {workOrder.parts.map((part, idx) => (
-            <View key={idx} style={styles.tableRow}>
-              <Text style={styles.colDescription}>
-                {partLabel(part)}
-                {isNet && part.warrantyCovered ? ' (warranty)' : ''}
-              </Text>
-              <Text style={styles.colQty}>{part.quantity}</Text>
-              <Text style={styles.colPrice}>{money(part.unitPrice)}</Text>
-              <Text style={styles.colTotal}>
-                {partZeroed(part) ? '$0.00' : money(part.quantity * part.unitPrice)}
-              </Text>
-            </View>
-          ))}
-
-          {workOrder.tripCharge > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.colDescription}>Trip Charge</Text>
-              <Text style={styles.colQty}>—</Text>
-              <Text style={styles.colPrice}>—</Text>
-              <Text style={styles.colTotal}>{money(workOrder.tripCharge)}</Text>
-            </View>
-          )}
-
-          {workOrder.shippingCharge > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.colDescription}>Shipping</Text>
-              <Text style={styles.colQty}>—</Text>
-              <Text style={styles.colPrice}>—</Text>
-              <Text style={styles.colTotal}>{money(workOrder.shippingCharge)}</Text>
-            </View>
-          )}
-
-          {workOrder.diagnosticCharge > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.colDescription}>
-                {workOrder.diagnosticZeroed
-                  ? 'Diagnostic Fee (warranty)'
-                  : workOrder.diagnosticInvoiceNumber
-                    ? `Diagnostic Fee Credit (Inv #${workOrder.diagnosticInvoiceNumber})`
-                    : 'Diagnostic Fee'}
-              </Text>
-              <Text style={styles.colQty}>—</Text>
-              <Text style={styles.colPrice}>—</Text>
-              <Text style={styles.colTotal}>
-                {workOrder.diagnosticZeroed
-                  ? '$0.00'
-                  : workOrder.diagnosticInvoiceNumber
-                    ? `-${money(workOrder.diagnosticCharge)}`
-                    : money(workOrder.diagnosticCharge)}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Summary */}
-        <View style={styles.summaryBlock}>
+        {workOrder.parts.length > 0 && (
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Labor Subtotal:</Text>
-            <Text style={styles.summaryValue}>{money(workOrder.laborTotal)}</Text>
+            <Text style={styles.summaryLabel}>Parts Subtotal:</Text>
+            <Text style={styles.summaryValue}>{money(partsTotal)}</Text>
           </View>
-          {workOrder.parts.length > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Parts Subtotal:</Text>
-              <Text style={styles.summaryValue}>{money(partsTotal)}</Text>
-            </View>
-          )}
-          {workOrder.tripCharge > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Trip Charge:</Text>
-              <Text style={styles.summaryValue}>{money(workOrder.tripCharge)}</Text>
-            </View>
-          )}
-          {workOrder.shippingCharge > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Shipping:</Text>
-              <Text style={styles.summaryValue}>{money(workOrder.shippingCharge)}</Text>
-            </View>
-          )}
-          {workOrder.diagnosticCharge > 0 && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>
-                {workOrder.diagnosticZeroed
-                  ? 'Diagnostic Fee (warranty):'
-                  : workOrder.diagnosticInvoiceNumber ? 'Diagnostic Fee Credit:' : 'Diagnostic Fee:'}
-              </Text>
-              <Text style={styles.summaryValue}>
-                {workOrder.diagnosticZeroed
-                  ? '$0.00'
-                  : workOrder.diagnosticInvoiceNumber
-                    ? `-${money(workOrder.diagnosticCharge)}`
-                    : money(workOrder.diagnosticCharge)}
-              </Text>
-            </View>
-          )}
-          {warrantyNote && (
-            <View style={styles.warrantyNoteBlock}>
-              <Text style={styles.warrantyNoteText}>{warrantyNote}</Text>
-            </View>
-          )}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalValue}>{money(workOrder.billingTotal)}</Text>
+        )}
+        {workOrder.tripCharge > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Trip Charge:</Text>
+            <Text style={styles.summaryValue}>{money(workOrder.tripCharge)}</Text>
           </View>
-          {taxAmount > 0 && (
-            <>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Sales Tax ({workOrder.taxRatePercent}%):</Text>
-                <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Total with tax:</Text>
-                <Text style={styles.summaryValue}>{money(grandTotal)}</Text>
-              </View>
-            </>
-          )}
+        )}
+        {workOrder.shippingCharge > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Shipping:</Text>
+            <Text style={styles.summaryValue}>{money(workOrder.shippingCharge)}</Text>
+          </View>
+        )}
+        {workOrder.diagnosticCharge > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>
+              {workOrder.diagnosticZeroed
+                ? 'Diagnostic Fee (warranty):'
+                : workOrder.diagnosticInvoiceNumber ? 'Diagnostic Fee Credit:' : 'Diagnostic Fee:'}
+            </Text>
+            <Text style={styles.summaryValue}>
+              {workOrder.diagnosticZeroed
+                ? '$0.00'
+                : workOrder.diagnosticInvoiceNumber
+                  ? `-${money(workOrder.diagnosticCharge)}`
+                  : money(workOrder.diagnosticCharge)}
+            </Text>
+          </View>
+        )}
+        {warrantyNote && (
+          <View style={styles.warrantyNoteBlock}>
+            <Text style={styles.warrantyNoteText}>{warrantyNote}</Text>
+          </View>
+        )}
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Total:</Text>
+          <Text style={styles.totalValue}>{money(workOrder.billingTotal)}</Text>
         </View>
-
-        {/* Service Photos */}
-        {workOrder.photoUrls.length > 0 && (
+        {taxAmount > 0 && (
           <>
-            <Text style={styles.sectionLabel}>Service Photos</Text>
-            <View style={styles.photoGrid}>
-              {workOrder.photoUrls.map((url, idx) => (
-                <Image key={idx} src={url} style={styles.photoImage} />
-              ))}
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Sales Tax ({workOrder.taxRatePercent}%):</Text>
+              <Text style={styles.summaryValue}>{money(taxAmount)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Total with tax:</Text>
+              <Text style={styles.summaryValue}>{money(grandTotal)}</Text>
             </View>
           </>
         )}
+      </View>
 
-        {/* Customer Signature */}
-        {workOrder.customerSignature && (
-          <View style={styles.signatureBlock} wrap={false}>
-            <Text style={styles.signatureDate}>Signed on {dash(workOrder.completedDate)}</Text>
-            <Image src={workOrder.customerSignature} style={styles.signatureImage} />
-            <View style={styles.signatureLine} />
-            <Text style={styles.signatureName}>{workOrder.customerSignatureName ?? '—'}</Text>
-            <Text style={styles.signatureCaption}>Customer Signature</Text>
+      {/* Service Photos */}
+      {workOrder.photoUrls.length > 0 && (
+        <>
+          <Text style={styles.sectionLabel}>Service Photos</Text>
+          <View style={styles.photoGrid}>
+            {workOrder.photoUrls.map((url, idx) => (
+              <Image key={idx} src={url} style={styles.photoImage} />
+            ))}
           </View>
-        )}
+        </>
+      )}
 
-        {/* Footer */}
-        <PdfFooter
-          left={workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : 'Work Order'}
-          right={`${companyName ?? APP_NAME} Service Department`}
-        />
-      </Page>
+      {/* Customer Signature */}
+      {workOrder.customerSignature && (
+        <View style={styles.signatureBlock} wrap={false}>
+          <Text style={styles.signatureDate}>Signed on {dash(workOrder.completedDate)}</Text>
+          <Image src={workOrder.customerSignature} style={styles.signatureImage} />
+          <View style={styles.signatureLine} />
+          <Text style={styles.signatureName}>{workOrder.customerSignatureName ?? '—'}</Text>
+          <Text style={styles.signatureCaption}>Customer Signature</Text>
+        </View>
+      )}
+
+      {/* Footer */}
+      <PdfFooter
+        left={workOrder.workOrderNumber ? `WO-${workOrder.workOrderNumber}` : 'Work Order'}
+        right={`${companyName ?? APP_NAME} Service Department`}
+      />
+    </Page>
+  )
+}
+
+// ============================================================
+// Document
+// ============================================================
+
+// Single-ticket wrapper — the shape every existing caller uses.
+export function ServiceWorkOrderDocument(props: ServiceWorkOrderDocumentProps) {
+  return (
+    <Document>
+      <ServiceWorkOrderPage {...props} />
     </Document>
   )
 }

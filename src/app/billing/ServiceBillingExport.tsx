@@ -20,8 +20,16 @@ import { matchesSearch } from '@/lib/search'
 // list): clicking Export downloads the ticket's work-order PDF AND flips
 // billing_exported=true, moving the ticket to the "Awaiting Invoice #" queue
 // below where the coordinator keys the Synergy invoice # and marks it billed.
-// Per-ticket PDFs mean export is per-row — browsers block multi-file programmatic
-// downloads, so there's no batch export here.
+//
+// Two ways to export, both landing in the same place:
+//   - per row, via each row's Export button (one work order, one file)
+//   - in bulk, via the checkboxes + Export Selected (feedback #95 — this was
+//     the only list on /billing with no bulk select, so clearing a month of
+//     service tickets meant one click and one download per ticket)
+// Bulk goes through /api/billing/service/export-pdf, which composes the selected
+// work orders into ONE PDF, a page each. That indirection exists because
+// browsers block multi-file programmatic downloads — the reason this list was
+// per-row only to begin with.
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -136,6 +144,10 @@ export default function ServiceBillingExport({
   const [year, setYear] = useState(selectedYear ?? thisYear)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [exportingId, setExportingId] = useState<string | null>(null)
+  // Default to nothing selected so bulk export is an intentional opt-in
+  // (feedback #26, same rule as the PM list).
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkExporting, setBulkExporting] = useState(false)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
 
   // Deliberately counted over the UNFILTERED list: the banner reports a
@@ -147,10 +159,49 @@ export default function ServiceBillingExport({
     [tickets, search]
   )
 
+  // Selection is derived from the full `tickets` list, not `visible`, which
+  // does two jobs at once:
+  //
+  //  1. A search never drops a ticket you ticked — the convention the sibling
+  //     billing lists set: search one customer, tick their rows, search another
+  //     and tick more, then export once. Hidden-but-ticked rows ARE exported,
+  //     and hiddenSelectedCount below warns about them.
+  //  2. A stale id still falls out. Changing the month re-renders the server
+  //     component with a different ticket list while this client component (and
+  //     its Set) survives; a row that left the board entirely is not in
+  //     `tickets`, so it can't be sent to the route's strict count check.
+  const selectedTickets = tickets.filter((t) => selected.has(t.id))
+  const selectedTotal = selectedTickets.reduce((sum, t) => sum + (customerAmount(t) ?? 0), 0)
+
+  // The header/toolbar select-all reflects the rows on screen, so it can still
+  // read "select all" while off-screen rows are already ticked.
+  const allVisibleSelected = visible.length > 0 && visible.every((t) => selected.has(t.id))
+  const visibleIds = new Set(visible.map((t) => t.id))
+  const hiddenSelectedCount = selectedTickets.filter((t) => !visibleIds.has(t.id)).length
+  const busy = bulkExporting || exportingId !== null
+
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     ServiceBillingTicket,
     ServiceBillingSortKey
   >(visible, SERVICE_BILLING_SORT_ACCESSORS)
+
+  function toggleSelect(id: string) {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelected(next)
+  }
+
+  // Only ever adds or removes the rows currently on screen — selections the
+  // search is hiding are left alone (mirrors ServiceAwaitingInvoice).
+  function toggleAll() {
+    const next = new Set(selected)
+    for (const t of visible) {
+      if (allVisibleSelected) next.delete(t.id)
+      else next.add(t.id)
+    }
+    setSelected(next)
+  }
 
   function handleMonthChange(newMonth: number, newYear: number) {
     setMonth(newMonth)
@@ -176,7 +227,7 @@ export default function ServiceBillingExport({
   // PDF-first so a render failure leaves the ticket in Ready to Export (idempotent
   // retry), mirroring the render-then-mark ordering in the PM /api/billing/pdf route.
   async function handleExport(ticketId: string) {
-    if (exportingId) return
+    if (busy) return
     setExportingId(ticketId)
     setToast(null)
     try {
@@ -216,6 +267,51 @@ export default function ServiceBillingExport({
       setToast({ message, type: 'error' })
     } finally {
       setExportingId(null)
+    }
+  }
+
+  // Bulk export — one request, one combined PDF, one download. The route
+  // renders before it flips billing_exported, so a failure here leaves every
+  // selected ticket in Ready to Export and the retry is safe.
+  async function handleBulkExport() {
+    if (selectedTickets.length === 0 || busy) return
+    setBulkExporting(true)
+    setToast(null)
+    try {
+      const res = await fetch('/api/billing/service/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketIds: selectedTickets.map((t) => t.id) }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Failed to generate the combined work order PDF')
+      }
+
+      const count = Number(res.headers.get('X-Exported-Count')) || selectedTickets.length
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download =
+        res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ??
+        'service-work-orders.pdf'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      setToast({
+        message: `Exported — ${count} work order${count === 1 ? '' : 's'} downloaded in one PDF. ${count === 1 ? 'It' : 'They'} moved to Awaiting Invoice #.`,
+        type: 'success',
+      })
+      setSelected(new Set())
+      router.refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Export failed. Please try again.'
+      setToast({ message, type: 'error' })
+    } finally {
+      setBulkExporting(false)
     }
   }
 
@@ -317,9 +413,9 @@ export default function ServiceBillingExport({
     return (
       <button
         onClick={(e) => { e.stopPropagation(); handleExport(t.id) }}
-        disabled={exportingId === t.id}
+        disabled={busy}
         className="px-3 py-1 text-xs font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        title="Download the work order PDF and move this ticket to Awaiting Invoice #"
+        title="Download this ticket's work order PDF and move it to Awaiting Invoice #"
       >
         {exportingId === t.id ? 'Exporting…' : 'Export'}
       </button>
@@ -340,7 +436,7 @@ export default function ServiceBillingExport({
               : ''}
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Completed service tickets. Export each to download its work order, then it moves to Awaiting Invoice #.
+            Completed service tickets. Export one at a time, or tick several and export them as a single combined PDF. Either way they move to Awaiting Invoice #.
           </p>
         </div>
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
@@ -369,6 +465,40 @@ export default function ServiceBillingExport({
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
+          </div>
+          {/* Bulk export controls. The select-all lives here rather than only in
+              the table header so it's reachable on mobile, where the list
+              renders as cards with no header row. */}
+          <div className="w-full lg:w-auto lg:ml-auto flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+            {visible.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="self-start text-sm text-slate-700 dark:text-slate-300 underline underline-offset-2 hover:text-slate-900 dark:hover:text-white"
+              >
+                {allVisibleSelected ? 'Clear selection' : `Select all ${visible.length}`}
+              </button>
+            )}
+            {selectedTickets.length > 0 && (
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {selectedTickets.length} selected — ${selectedTotal.toFixed(2)}
+                {hiddenSelectedCount > 0 && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-400">
+                    {hiddenSelectedCount} hidden by your search
+                  </span>
+                )}
+              </span>
+            )}
+            <button
+              onClick={handleBulkExport}
+              disabled={selectedTickets.length === 0 || busy}
+              className="w-full lg:w-auto px-4 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Download the selected work orders as one combined PDF and move them to Awaiting Invoice #"
+            >
+              {bulkExporting
+                ? 'Generating PDF...'
+                : `Export Selected${selectedTickets.length > 0 ? ` (${selectedTickets.length})` : ''}`}
+            </button>
           </div>
         </div>
       </div>
@@ -409,7 +539,15 @@ export default function ServiceBillingExport({
             {/* Mobile cards */}
             <div className="lg:hidden divide-y divide-gray-100 dark:divide-gray-700">
               {sorted.map((t) => (
-                <div key={t.id} className="px-4 py-3">
+                <div key={t.id} className="px-4 py-3 flex items-start gap-3" onClick={() => toggleSelect(t.id)}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(t.id)}
+                    onChange={() => toggleSelect(t.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select WO#${t.work_order_number ?? t.id}`}
+                    className="accent-slate-600 rounded border-gray-300 dark:border-gray-600 mt-0.5 shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {t.customers?.name ?? '—'}
@@ -445,11 +583,11 @@ export default function ServiceBillingExport({
                       Completed:{' '}
                       {formatDateShort(t.completed_at)}
                     </p>
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400" onClick={(e) => e.stopPropagation()}>
                       <span>PO:</span>
                       {renderPoStatus(t)}
                     </div>
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400" onClick={(e) => e.stopPropagation()}>
                       <span>{FIELDS.synergyOrder}:</span>
                       {renderSynergyCell(t)}
                     </div>
@@ -467,6 +605,15 @@ export default function ServiceBillingExport({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    <th className="px-4 py-3 text-left">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleAll}
+                        aria-label="Select all shown tickets ready to export"
+                        className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
+                      />
+                    </th>
                     <SortHeader label="Customer" colKey="customer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="WO#" colKey="wo" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortHeader label="PO Status" colKey="poStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
@@ -483,6 +630,15 @@ export default function ServiceBillingExport({
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {sorted.map((t) => (
                     <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(t.id)}
+                          onChange={() => toggleSelect(t.id)}
+                          aria-label={`Select WO#${t.work_order_number ?? t.id}`}
+                          className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-gray-900 dark:text-white">
                         {t.customers?.name ?? '—'}
                         {customerSubline(t) && (

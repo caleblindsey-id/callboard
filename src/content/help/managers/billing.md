@@ -52,7 +52,14 @@ Exported a ticket by mistake? Tap **Un-export** on its row, then confirm **Just 
 
 ## Bill service tickets
 
-Service tickets follow the same idea: each must have its **Synergy Invoice #** entered before it can be marked billed — that's the number proving the work was invoiced in Synergy. The service **Ready to Export** list carries the same optional **Synergy Order #** column — fill it in before you tap **Export** and it prints on the work order you download. Each service ticket exports its own work-order PDF (one per row). The Synergy Order # also stays editable later in **Awaiting Invoice #**, next to the invoice number. Both service lists show the sortable **WO#** column as well.
+Service tickets follow the same idea: each must have its **Synergy Invoice #** entered before it can be marked billed — that's the number proving the work was invoiced in Synergy. The service **Ready to Export** list carries the same optional **Synergy Order #** column — fill it in before you export and it prints on the work order you download. The Synergy Order # also stays editable later in **Awaiting Invoice #**, next to the invoice number. Both service lists show the sortable **WO#** column as well.
+
+You can export service tickets two ways:
+
+- **One at a time** — tap **Export** on a row to download just that work order.
+- **Several at once** — tick the checkbox on each row you want, then tap **Export Selected**. **Select all** ticks every row currently shown, so you can search one customer, select theirs, search another and add more; the amber **_n_ hidden by your search** note tells you when ticked rows are off screen, and those still export. The running count and dollar total next to the button show what you've picked. This downloads **one PDF containing every work order you selected**, a page each — so a month of service work is one click and one file instead of one of each.
+
+Either way the tickets move to **Awaiting Invoice #** together, and a missing PO never blocks the export. Because a combined PDF is one document, its page footers number the whole stack ("Page 3 of 7") rather than each work order — if you need a clean single copy to send a customer, export that row on its own.
 
 Use the **Service Type** toggle at the top of the tab — **All / Inside / Outside** — to work one group at a time. It narrows both the **Ready to Export** and **Awaiting Invoice #** lists at once, so you can clear all the inside (bench) repairs before switching to the outside (field) ones.
 
