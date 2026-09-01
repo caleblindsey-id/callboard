@@ -4,12 +4,23 @@ category: Managers
 roles: [super_admin, manager, coordinator]
 order: 60
 summary: Export completed PMs and service tickets for billing — and what it takes to mark them billed.
-last_verified: 2026-08-27
+last_verified: 2026-09-01
 ---
 
 The **Billing** page lists completed work that hasn't been invoiced yet. Billing is a two-step flow: **export** the work to a PDF, then **mark it billed** once you've created the invoice in Synergy. Exporting no longer marks anything billed on its own — a ticket only counts as billed after its Synergy invoice number is entered.
 
 The expectation is to key the Synergy order the same day the work completes — export never waits on a PO, so there's no reason to let the order number sit. If a job's Synergy order, PO, or invoice # falls behind, it shows up on the **[Billing Chase](/help/managers/billing-chase)** worklist for the office to work.
+
+## Find a ticket
+
+Each tab has a **Search** box at the top. Type any part of a customer name, account number, **WO#**, equipment make/model, serial number, technician, **PO #**, or **Synergy order #** — plus the **Synergy invoice #** on the Awaiting Invoice # and Invoiced lists — and the rows narrow as you type. Several words all have to match, in any order: `acme 1638` finds work order 1638 for Acme and nothing else.
+
+On the **PM Tickets** and **Service Tickets** tabs one box narrows **both** lists at once, so you don't have to guess whether a job is still in **Ready to Export** or already sitting in **Awaiting Invoice #**. The section heading counts what's showing against the full list — *Ready to Export (3 of 14)*. Clear the box with the **×** to get everything back; switching tabs clears it too.
+
+Two things the search deliberately does **not** do:
+
+- **It never hides a warning.** The amber banners ("*3 tickets need a Synergy invoice #*", "*2 tickets are waiting on a PO*") always count the whole list, so searching can't hide a job that's blocked.
+- **It never quietly drops a ticket you ticked.** Selections survive a search, so you can search one customer, tick their rows, then search another and tick more before exporting once. If a ticked row is currently hidden, an amber **_n_ hidden by your search** note appears next to the selected count — those rows are still going to be exported or marked billed. The confirmation step always lists everything that's actually selected.
 
 ## Bill PM tickets
 
@@ -63,4 +74,5 @@ Per ticket: customer and account, equipment, technician, completion date, machin
 - **Synergy Order #** is an optional reference that helps you find the invoice in Synergy — it never blocks billing. Only the **Synergy Invoice #** does. Enter it in **Ready to Export** before exporting and it prints on the work order; you can still add or change it afterward in **Awaiting Invoice #**.
 - **The emerald pill means "confirm," not "billed."** An auto-detected invoice number still needs a human to tick the row and tap **Mark Billed** — Synergy showing invoiced isn't the same as this ticket being marked billed here.
 - **Typing over a pre-filled invoice number is fine.** If the auto-filled number is wrong, just correct it and save — the pill clears once you've entered your own number.
+- **Search keeps your ticks, even the ones it hides.** Narrowing the list doesn't clear what you've already selected. Watch for the amber **_n_ hidden by your search** note next to the selected count — it means rows you can't see right now are still part of the export or Mark Billed you're about to confirm.
 - **Falling behind on any of the three fields** (Synergy order #, PO, invoice #) puts the job on the **[Billing Chase](/help/managers/billing-chase)** worklist, where it stays until it's cleared.

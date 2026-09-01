@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TicketWithJoins } from '@/lib/db/tickets'
 import BillingPreviewModal from './BillingPreviewModal'
@@ -12,6 +12,7 @@ import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
 import { formatDateShort } from '@/lib/format'
 import { FIELDS } from '@/lib/labels'
+import { matchesSearch } from '@/lib/search'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -23,6 +24,9 @@ interface BillingExportProps {
   // Active narrowing filter from the URL. undefined → "All months" (default).
   selectedMonth?: number
   selectedYear?: number
+  // Free-text query owned by PmBillingPanel — the same box filters this list
+  // and Awaiting Invoice # below it. '' shows everything.
+  search?: string
 }
 
 function needsPo(t: TicketWithJoins): boolean {
@@ -45,6 +49,24 @@ function customerSubline(t: TicketWithJoins): string | null {
   const acct = t.customers?.account_number
   const parts = [acct ? `Acct #${acct}` : null, shipToLabel(t)].filter(Boolean)
   return parts.length ? parts.join(' · ') : null
+}
+
+// Fields the tab's search box matches against. Everything a coordinator would
+// recognise a PM ticket by on the phone, including the numbers they key into
+// Synergy (feedback #92).
+function billingHaystack(t: TicketWithJoins) {
+  return [
+    t.work_order_number,
+    t.customers?.name,
+    t.customers?.account_number,
+    shipToLabel(t),
+    t.equipment?.make,
+    t.equipment?.model,
+    t.equipment?.serial_number,
+    t.users?.name,
+    t.po_number,
+    t.synergy_order_number,
+  ]
 }
 
 // 0 is the "All months" sentinel for the month picker — no date narrowing.
@@ -78,6 +100,7 @@ export default function BillingExport({
   tickets,
   selectedMonth,
   selectedYear,
+  search = '',
 }: BillingExportProps) {
   const router = useRouter()
   const thisYear = new Date().getFullYear()
@@ -90,12 +113,23 @@ export default function BillingExport({
   const [previewOpen, setPreviewOpen] = useState(false)
   const [notesCustomer, setNotesCustomer] = useState<{ id: number; name: string } | null>(null)
 
+  // Deliberately counted over the UNFILTERED list: the banner reports a
+  // condition that blocks billing, so a search must never hide it.
   const poMissingCount = tickets.filter(needsPo).length
+
+  const visible = useMemo(
+    () => tickets.filter((t) => matchesSearch(billingHaystack(t), search)),
+    [tickets, search]
+  )
+  const visibleIds = useMemo(() => new Set(visible.map((t) => t.id)), [visible])
+  // Rows the search has hidden but that are still selected — they WILL be
+  // exported, so the toolbar calls them out rather than dropping them.
+  const hiddenSelectedCount = Array.from(selected).filter((id) => !visibleIds.has(id)).length
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
     TicketWithJoins,
     BillingSortKey
-  >(tickets, BILLING_SORT_ACCESSORS)
+  >(visible, BILLING_SORT_ACCESSORS)
 
   function toggleSelect(id: string) {
     const next = new Set(selected)
@@ -104,12 +138,17 @@ export default function BillingExport({
     setSelected(next)
   }
 
+  // Select-all acts on what's on screen. Rows hidden by the search keep
+  // whatever selection they already had.
+  const allVisibleSelected = visible.length > 0 && visible.every((t) => selected.has(t.id))
+
   function toggleAll() {
-    if (selected.size === tickets.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(tickets.map((t) => t.id)))
+    const next = new Set(selected)
+    for (const t of visible) {
+      if (allVisibleSelected) next.delete(t.id)
+      else next.add(t.id)
     }
+    setSelected(next)
   }
 
   function handleMonthChange(newMonth: number, newYear: number) {
@@ -289,7 +328,12 @@ export default function BillingExport({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="mb-3">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Ready to Export{tickets.length > 0 ? ` (${tickets.length})` : ''}
+            Ready to Export
+            {tickets.length > 0
+              ? search
+                ? ` (${visible.length} of ${tickets.length})`
+                : ` (${tickets.length})`
+              : ''}
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             Completed PM tickets. Select the ones ready to bill, then export a combined PDF.
@@ -326,6 +370,11 @@ export default function BillingExport({
             {selected.size > 0 && (
               <span className="text-sm text-gray-600 dark:text-gray-400">
                 {selected.size} selected — ${selectedTotal.toFixed(2)}
+                {hiddenSelectedCount > 0 && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-400">
+                    {hiddenSelectedCount} hidden by your search
+                  </span>
+                )}
               </span>
             )}
             <button
@@ -362,11 +411,13 @@ export default function BillingExport({
 
       {/* Billing list */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {tickets.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            {month === ALL_MONTHS
-              ? 'No completed, unexported tickets ready to bill.'
-              : 'No completed, unexported tickets for this period.'}
+            {search
+              ? 'No tickets ready to export match your search.'
+              : month === ALL_MONTHS
+                ? 'No completed, unexported tickets ready to bill.'
+                : 'No completed, unexported tickets for this period.'}
           </div>
         ) : (
           <>
@@ -441,9 +492,9 @@ export default function BillingExport({
                     <th className="px-4 py-3 text-left">
                       <input
                         type="checkbox"
-                        checked={tickets.length > 0 && selected.size === tickets.length}
+                        checked={allVisibleSelected}
                         onChange={toggleAll}
-                        disabled={tickets.length === 0}
+                        disabled={visible.length === 0}
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"
                       />
                     </th>

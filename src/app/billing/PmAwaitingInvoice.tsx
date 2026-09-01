@@ -6,6 +6,7 @@ import { TicketWithJoins } from '@/lib/db/tickets'
 import ScrollableTable from '@/components/ScrollableTable'
 import SortHeader from '@/components/SortHeader'
 import { useSortableTable, type SortAccessors } from '@/lib/hooks/useSortableTable'
+import { matchesSearch } from '@/lib/search'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import InlineEditCell from './InlineEditCell'
 import { formatDate, formatDateShort } from '@/lib/format'
@@ -20,6 +21,27 @@ import { formatDate, formatDateShort } from '@/lib/format'
 
 interface PmAwaitingInvoiceProps {
   tickets: TicketWithJoins[]
+  // Free-text query owned by PmBillingPanel — the same box filters this list
+  // and Ready to Export above it. '' shows everything.
+  search?: string
+}
+
+// Fields the tab's search box matches against. Same set as Ready to Export
+// plus the Synergy invoice # this queue exists to collect (feedback #92).
+function awaitingHaystack(t: TicketWithJoins) {
+  return [
+    t.work_order_number,
+    t.customers?.name,
+    t.customers?.account_number,
+    shipToLabel(t),
+    t.equipment?.make,
+    t.equipment?.model,
+    t.equipment?.serial_number,
+    t.users?.name,
+    t.po_number,
+    t.synergy_order_number,
+    t.synergy_invoice_number,
+  ]
 }
 
 function needsInvoice(t: TicketWithJoins): boolean {
@@ -97,7 +119,7 @@ function customerSubline(t: TicketWithJoins): string | null {
   return parts.length ? parts.join(' · ') : null
 }
 
-export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
+export default function PmAwaitingInvoice({ tickets, search = '' }: PmAwaitingInvoiceProps) {
   const router = useRouter()
   // Default to nothing selected so bulk mark-billed is an intentional opt-in (feedback #26).
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -122,16 +144,23 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     })
   }
 
+  // Both counted over the UNFILTERED list: these banners report conditions that
+  // block Mark Billed, so a search must never hide one.
   const missingCount = tickets.filter(needsInvoice).length
   const poMissingCount = tickets.filter(needsPo).length
+
+  const visible = useMemo(
+    () => tickets.filter((t) => matchesSearch(awaitingHaystack(t), search)),
+    [tickets, search]
+  )
 
   // Default order (before any header click): auto-detected rows float to the
   // top so the office sees one-click-confirmable tickets first, otherwise
   // preserves the incoming (completed_date desc) order. Stable sort keeps
   // column-header sorting (below) working exactly as before.
   const defaultOrderedTickets = useMemo(
-    () => [...tickets].sort((a, b) => Number(isSynergyDetected(b)) - Number(isSynergyDetected(a))),
-    [tickets]
+    () => [...visible].sort((a, b) => Number(isSynergyDetected(b)) - Number(isSynergyDetected(a))),
+    [visible]
   )
 
   const { sorted, sortKey, sortDir, toggleSort } = useSortableTable<
@@ -148,13 +177,17 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     setSelected(next)
   }
 
+  // Select-all acts on what's on screen. Rows hidden by the search keep
+  // whatever selection they already had.
   function toggleAll() {
-    const selectable = tickets.filter((t) => !isBlocked(t))
-    if (selected.size === selectable.length) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(selectable.map((t) => t.id)))
+    const selectable = visible.filter((t) => !isBlocked(t))
+    const allSelected = selectable.length > 0 && selectable.every((t) => selected.has(t.id))
+    const next = new Set(selected)
+    for (const t of selectable) {
+      if (allSelected) next.delete(t.id)
+      else next.add(t.id)
     }
+    setSelected(next)
   }
 
   // Shared onSave callbacks for the InlineEditCell instances below — same
@@ -312,7 +345,14 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
     .filter((t) => selected.has(t.id))
     .reduce((sum, t) => sum + (t.billing_amount ?? 0), 0)
 
-  const selectableCount = tickets.filter((t) => !isBlocked(t)).length
+  const selectable = visible.filter((t) => !isBlocked(t))
+  const selectableCount = selectable.length
+  const allVisibleSelected = selectableCount > 0 && selectable.every((t) => selected.has(t.id))
+
+  // Rows the search has hidden but that are still selected — they WILL be
+  // marked billed, so the toolbar calls them out rather than dropping them.
+  const visibleIds = new Set(visible.map((t) => t.id))
+  const hiddenSelectedCount = Array.from(selected).filter((id) => !visibleIds.has(id)).length
 
   function renderInvoiceStatus(t: TicketWithJoins) {
     return (
@@ -367,7 +407,12 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Awaiting Invoice #{tickets.length > 0 ? ` (${tickets.length})` : ''}
+              Awaiting Invoice #
+              {tickets.length > 0
+                ? search
+                  ? ` (${visible.length} of ${tickets.length})`
+                  : ` (${tickets.length})`
+                : ''}
             </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Exported PM tickets. Enter the Synergy invoice # for each, then mark them billed.
@@ -377,6 +422,11 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
             {selected.size > 0 && (
               <span className="text-sm text-gray-600 dark:text-gray-400">
                 {selected.size} selected — ${selectedTotal.toFixed(2)}
+                {hiddenSelectedCount > 0 && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-400">
+                    {hiddenSelectedCount} hidden by your search
+                  </span>
+                )}
               </span>
             )}
             <button
@@ -420,9 +470,11 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
 
       {/* List */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {tickets.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            No exported PM tickets awaiting an invoice #.
+            {search
+              ? 'No tickets awaiting an invoice # match your search.'
+              : 'No exported PM tickets awaiting an invoice #.'}
           </div>
         ) : (
           <>
@@ -498,7 +550,7 @@ export default function PmAwaitingInvoice({ tickets }: PmAwaitingInvoiceProps) {
                     <th className="px-4 py-3 text-left">
                       <input
                         type="checkbox"
-                        checked={selectableCount > 0 && selected.size === selectableCount}
+                        checked={allVisibleSelected}
                         onChange={toggleAll}
                         disabled={selectableCount === 0}
                         className="accent-slate-600 rounded border-gray-300 dark:border-gray-600"

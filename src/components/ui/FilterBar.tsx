@@ -1,14 +1,11 @@
 'use client'
 
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import SegmentedControl, { type SegmentedOption } from './SegmentedControl'
+import SearchField, { type SearchFieldProps } from './SearchField'
 
-export interface FilterBarSearchProps {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-}
+export type FilterBarSearchProps = Pick<SearchFieldProps, 'value' | 'onChange' | 'placeholder'>
 
 export interface FilterBarSegmentedProps {
   options: SegmentedOption[]
@@ -58,30 +55,11 @@ export default function FilterBar({ search, segmented, activeCount = 0, children
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-3">
         {search && (
-          <div className="w-full lg:w-64">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Search</label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
-              <input
-                type="search"
-                inputMode="search"
-                value={search.value}
-                onChange={(e) => search.onChange(e.target.value)}
-                placeholder={search.placeholder}
-                className="w-full rounded-md border border-gray-300 dark:border-gray-600 pl-8 pr-8 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              />
-              {search.value && (
-                <button
-                  type="button"
-                  onClick={() => search.onChange('')}
-                  aria-label="Clear search"
-                  className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
+          <SearchField
+            value={search.value}
+            onChange={search.onChange}
+            placeholder={search.placeholder}
+          />
         )}
 
         {hasCollapsibleControls && (
