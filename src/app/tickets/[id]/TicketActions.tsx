@@ -32,6 +32,12 @@ export interface ProductResult {
   synergy_id: string
   number: string
   description: string | null
+  // Synergy's two 30-char description fields, unjoined (migration 167).
+  // `description` stays the joined form; these let Desc2 — the office's item
+  // codes — render on its own line. NULL until the row is re-synced after 167,
+  // so always read them through productDescriptionLines().
+  description_1?: string | null
+  description_2?: string | null
   unit_price: number | null
   // Catch-all items (e.g. "SHOP SUPPLIES") set this so the entry form prompts
   // for a free-text detail of what the supplies actually were.
@@ -40,6 +46,11 @@ export interface ProductResult {
 
 export interface PartEntry {
   description: string
+  // Synergy Desc2 (item code) for the selected catalog part, captured on
+  // select so the row can show it as its own field instead of leaving it
+  // buried at the tail of `description` (feedback #96). null on manual lines
+  // and on catalog parts with no Desc2.
+  description2?: string | null
   // quantity/unitPrice are kept as raw input strings (mirroring hoursWorked)
   // so the fields can be empty instead of showing a stray leading "0"/"1"
   // that the user has to delete. Parsed with parseFloat at the use sites.

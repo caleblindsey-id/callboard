@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
-import { shouldSearchProducts } from '@/lib/products-search'
+import { shouldSearchProducts, productDescriptionLines, productLabel } from '@/lib/products-search'
 import { minPrice } from '@/lib/margin'
 import VendorPicker from '@/components/VendorPicker'
 import {
@@ -20,6 +20,12 @@ export interface ProductResult {
   synergy_id: string
   number: string
   description: string | null
+  // Synergy's two 30-char description fields, unjoined (migration 167).
+  // `description` stays the joined form; these let Desc2 — which carries the
+  // office's item codes — render as its own line. NULL on rows not yet
+  // re-synced since 167, so always read them via productDescriptionLines().
+  description_1?: string | null
+  description_2?: string | null
   unit_price: number | null
   // Loaded cost — only selected/used when allowPriceOverride is set (staff).
   // Never requested in tech-facing contexts. Backs the per-line margin floor.
@@ -31,6 +37,13 @@ export interface ProductResult {
 
 export interface PartEntry {
   description: string
+  // Synergy Desc2 for the selected catalog part — the item code the office
+  // keys on (feedback #96). Captured on select and persisted so the WO line
+  // can show it as its own field instead of leaving it buried at the tail of
+  // `description`. null on manual lines, on catalog parts with no Desc2, and on
+  // every line saved before this field existed — all of which fall back to
+  // showing `description`, which already contains the Desc2 text.
+  description2?: string | null
   // quantity/unitPrice are kept as raw input strings (mirroring hoursWorked)
   // so the fields can be empty instead of showing a stray leading "0"/"1"
   // that the user has to delete. Parsed with parseFloat at the use sites.
@@ -106,6 +119,7 @@ export interface PartEntry {
 export function emptyPart(): PartEntry {
   return {
     description: '',
+    description2: null,
     quantity: '1',
     unitPrice: '',
     synergyProductId: null,
@@ -121,9 +135,13 @@ export function emptyPart(): PartEntry {
   }
 }
 
-export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; quantity: number; unit_price: number; warranty_covered?: boolean; vendor_credit_amount?: number | null; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[]): PartEntry[] {
+export function partsFromSaved(saved: { synergy_product_id?: number | null; description: string; description_2?: string | null; quantity: number; unit_price: number; warranty_covered?: boolean; vendor_credit_amount?: number | null; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[]): PartEntry[] {
   return saved.map((p) => ({
     description: p.description,
+    // Restore Desc2 so it survives the form round-trip (same reason as the
+    // vendor fields below — the completion form PUTs the rehydrated array back
+    // wholesale, so anything dropped here is stripped off the saved line).
+    description2: p.description_2 ?? null,
     quantity: String(p.quantity),
     unitPrice: String(p.unit_price),
     synergyProductId: p.synergy_product_id ?? null,
@@ -151,7 +169,7 @@ export function partsFromSaved(saved: { synergy_product_id?: number | null; desc
   }))
 }
 
-export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; quantity: number; unit_price: number; warranty_covered: boolean; vendor_credit_amount?: number | null; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[] {
+export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: number | null; description: string; description_2?: string; quantity: number; unit_price: number; warranty_covered: boolean; vendor_credit_amount?: number | null; detail?: string; requires_detail?: boolean; product_number?: string; vendor_item_code?: string; vendor?: string; vendor_code?: string; from_request_at?: string }[] {
   return entries.map((p) => ({
     synergy_product_id: p.synergyProductId ? Number(p.synergyProductId) : null,
     description: p.description,
@@ -161,6 +179,9 @@ export function toServicePartUsed(entries: PartEntry[]): { synergy_product_id: n
     // Persist the office-set vendor credit through the round-trip (see
     // PartEntry) — only when set, so unreconciled lines stay lean.
     ...(p.vendorCreditAmount != null ? { vendor_credit_amount: p.vendorCreditAmount } : {}),
+    // Synergy Desc2 (item code) for catalog lines. Only written when set, so
+    // manual lines and pre-167 catalog picks stay exactly as lean as before.
+    ...(p.description2?.trim() ? { description_2: p.description2.trim() } : {}),
     // Persist only when meaningful so non-flagged parts stay lean.
     ...(p.detail?.trim() ? { detail: p.detail.trim() } : {}),
     ...(p.requiresDetail ? { requires_detail: true } : {}),
@@ -277,14 +298,18 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
       // Cost is only pulled for staff who can override prices (drives the floor
       // hint). Tech-facing callers never request unit_cost.
       const cols = allowPriceOverride
-        ? 'id, synergy_id, number, description, unit_price, unit_cost, requires_detail'
-        : 'id, synergy_id, number, description, unit_price, requires_detail'
+        ? 'id, synergy_id, number, description, description_1, description_2, unit_price, unit_cost, requires_detail'
+        : 'id, synergy_id, number, description, description_1, description_2, unit_price, requires_detail'
       const { data } = await supabase
         .from('products')
         .select(cols)
         .or(safeOrRaw([
           { column: 'number', op: 'ilike', raw: `%${q}%` },
           { column: 'description', op: 'ilike', raw: `%${q}%` },
+          // Desc2 is already inside the joined `description`, so this is
+          // redundant for pre-167 rows — but it is the field techs are now told
+          // they can search by, and it is trigram-indexed (migration 167).
+          { column: 'description_2', op: 'ilike', raw: `%${q}%` },
         ]))
         .order('number')
         .limit(10)
@@ -313,7 +338,12 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
       const updated = [...prev]
       updated[index] = {
         ...updated[index],
-        description: `${product.number} - ${product.description ?? ''}`,
+        // Unchanged shape ("<number> - <desc1> <desc2>"): this string is the
+        // billable line description and is matched against elsewhere, so it
+        // must keep containing Desc2. description2 is carried alongside it
+        // purely so the UI can also show that half on its own.
+        description: productLabel(product),
+        description2: productDescriptionLines(product).secondary,
         unitPrice: String(product.unit_price ?? 0),
         synergyProductId: Number(product.synergy_id),
         productNumber: product.number,
@@ -378,8 +408,12 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                 ref={(el) => { comboRefs.current.set(i, el) }}
               >
                 {part.isFromDb ? (
-                  <div className="flex items-center gap-1 rounded-md border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 dark:text-white">
-                    <span className="flex-1 truncate">{part.description}</span>
+                  // Height is min-, not fixed, and the label wraps rather than
+                  // ellipsing: Desc2 sits at the TAIL of the description, so a
+                  // single-line `truncate` here ate the item code first — the
+                  // exact complaint in feedback #96.
+                  <div className="flex items-start gap-1 rounded-md border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 py-2 min-h-[44px] sm:min-h-[34px] text-sm text-gray-900 dark:text-white">
+                    <span className="flex-1 min-w-0 break-words">{part.description}</span>
                     <button
                       type="button"
                       onClick={() => handleClearProduct(i)}
@@ -424,7 +458,9 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                 )}
                 {part.searchOpen && part.searchResults.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    {part.searchResults.map((product, ri) => (
+                    {part.searchResults.map((product, ri) => {
+                      const lines = productDescriptionLines(product)
+                      return (
                       <button
                         key={product.id}
                         type="button"
@@ -436,14 +472,23 @@ export default function PartsEntryList({ parts, setParts, showPricing, showWarra
                         }`}
                       >
                         <span className="font-medium text-gray-900 dark:text-white">{product.number}</span>
-                        <span className="text-gray-500 dark:text-gray-400"> — {product.description ?? ''}</span>
+                        <span className="text-gray-500 dark:text-gray-400"> — {lines.primary}</span>
+                        {/* Description 2 on its own line — this is where the
+                            office's item codes live (feedback #96). Absent
+                            until the product has been re-synced since 167. */}
+                        {lines.secondary && (
+                          <span className="block text-gray-600 dark:text-gray-300 font-mono text-xs mt-0.5">
+                            {lines.secondary}
+                          </span>
+                        )}
                         {product.unit_price != null && (
                           <span className="text-green-700 dark:text-green-400 sm:float-right font-medium block sm:inline mt-0.5 sm:mt-0">
                             ${product.unit_price.toFixed(2)}
                           </span>
                         )}
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
                 {part.searchOpen && !part.searching && part.searchResults.length === 0 && part.description.trim() && (

@@ -350,6 +350,14 @@ export type PartRequestStatus =
 
 export interface PartRequest {
   description: string
+  // Synergy Desc2 for the catalog part behind this request — the office's item
+  // code (feedback #96). `description` already ENDS with this text (it is the
+  // joined "<number> - <desc1> <desc2>" snapshot); this field just carries the
+  // Desc2 half separately so the queue and the WO can label it instead of
+  // leaving it buried at the tail, where it was the first thing an ellipsis
+  // cut off. Absent on manual lines, on catalog parts with no Desc2, and on
+  // every row predating this field — all of which fall back to `description`.
+  description_2?: string
   quantity: number
   // Price to charge the customer for this part, captured by the tech at request
   // time. Required on new MANUAL (off-catalog) requests; catalog parts resolve
@@ -646,7 +654,16 @@ export type ProductRow = {
   id: number
   synergy_id: string
   number: string
+  // Synergy Desc1 and Desc2 JOINED ("desc1 desc2"), which is why values top out
+  // at 61 chars. Kept as-is: it is the string snapshotted onto every part line.
   description: string | null
+  // The same two fields unjoined (migration 167). Desc2 carries the office's
+  // item codes and could not be shown separately while the join was the only
+  // stored form — it is not reversible, since Desc1 is variable-length.
+  // Both are NULL until the first products sync after 167, so read them through
+  // productDescriptionLines() rather than directly.
+  description_1: string | null
+  description_2: string | null
   unit_price: number | null
   // Loaded cost (Synergy CostLoad, CostPO fallback). Internal/server-only —
   // never select this onto a tech-facing payload. Backs the margin floor.
@@ -1166,7 +1183,7 @@ export type ContactInsert = MakeOptional<
 
 export type ProductInsert = MakeOptional<
   Omit<ProductRow, 'id'>,
-  'synced_at' | 'description' | 'unit_price' | 'unit_cost' | 'requires_detail' | 'qty_on_hand' | 'qty_on_po' | 'bin_location'
+  'synced_at' | 'description' | 'description_1' | 'description_2' | 'unit_price' | 'unit_cost' | 'requires_detail' | 'qty_on_hand' | 'qty_on_po' | 'bin_location'
 >
 
 export type UserInsert = MakeOptional<

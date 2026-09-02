@@ -18,7 +18,7 @@ import {
   triagePart,
   updatePartFields,
 } from '@/lib/parts-queue'
-import { partLabel, canEditPartQuantity, isQueueRowStranded, normalizePartQuantity } from '@/lib/parts'
+import { partLabel, partDescriptionLines, canEditPartQuantity, isQueueRowStranded, normalizePartQuantity } from '@/lib/parts'
 import {
   isPriorityShipping,
   normalizeShippingCharge,
@@ -1135,6 +1135,7 @@ export default function PartsQueueClient({
                 const isFlashed = flashedRow === key
                 const isExpanded = expandedRows.has(key)
                 const rowBg = isFlashed ? 'bg-green-50 dark:bg-green-900/20' : ''
+                const descLines = partDescriptionLines(row)
                 return (
                   <Fragment key={key}>
                   <tr
@@ -1157,8 +1158,17 @@ export default function PartsQueueClient({
                     </td>
                     <td className="px-3 py-2 max-w-[220px]">
                       <div className="text-gray-900 dark:text-white truncate" title={partLabel(row) || (row.description ?? '')}>
-                        {partLabel(row) || '—'}
+                        {descLines.label || '—'}
                       </div>
+                      {/* Synergy Description 2 — the office's item code
+                          (feedback #96). Its own line, and not truncated: it is
+                          at most 30 chars, and burying it at the end of the
+                          label above is what hid it in the first place. */}
+                      {descLines.itemCode && (
+                        <div className="font-mono text-xs text-gray-600 dark:text-gray-300 break-words">
+                          {descLines.itemCode}
+                        </div>
+                      )}
                       {isPriorityShipping(row) && (
                         <div className="mt-0.5">
                           <PriorityShippingBadge row={row} />

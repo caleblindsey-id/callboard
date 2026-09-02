@@ -15,6 +15,12 @@ export interface ProductSearchResult {
   synergy_id: string
   number: string
   description: string | null
+  // Synergy's two description fields, unjoined (migration 167). `description`
+  // remains the joined form; these let the UI show Desc2 — which carries the
+  // office's item codes — on its own line. Both are NULL on rows not yet
+  // re-synced since 167, so render via productDescriptionLines().
+  description_1: string | null
+  description_2: string | null
   unit_price: number | null
   synced_at: string | null
   // Primary vendor + vendor part # from Synergy (migration 091). Used to prefill
@@ -88,10 +94,14 @@ export function useProductSearch(options?: { limit?: number }): UseProductSearch
       const q = sanitizeOrValue(query.trim())
       const { data, error: fetchError } = await supabase
         .from('products')
-        .select('id, synergy_id, number, description, unit_price, synced_at, vendor_code, vendor, vendor_item_code')
+        .select('id, synergy_id, number, description, description_1, description_2, unit_price, synced_at, vendor_code, vendor, vendor_item_code')
         .or(safeOrRaw([
           { column: 'number', op: 'ilike', raw: `%${q}%` },
           { column: 'description', op: 'ilike', raw: `%${q}%` },
+          // Redundant with `description` (which contains Desc2) for rows synced
+          // the old way, but required once description_2 is the field techs are
+          // told they can search. Trigram-indexed by migration 167.
+          { column: 'description_2', op: 'ilike', raw: `%${q}%` },
         ]))
         .order('number')
         .limit(limit)
