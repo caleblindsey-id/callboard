@@ -7,7 +7,7 @@ import { CheckCircle2, Package, Trash2 } from 'lucide-react'
 import PartSynergyPicker from '@/components/PartSynergyPicker'
 import PartQuantityField from '@/components/PartQuantityField'
 import PartsEntryList, { PartEntry } from '@/components/service/PartsEntryList'
-import { partLabel, partsOnOrder } from '@/lib/parts'
+import { partDescriptionLines, partsOnOrder } from '@/lib/parts'
 import { normalizeShippingNote } from '@/lib/shipping'
 import { formatDate } from '@/lib/format'
 import { getStatusMeta } from '@/lib/status-meta'
@@ -93,6 +93,10 @@ export default function PmPartsSection({
       const priceParsed = parseFloat(entry.unitPrice)
       const newPart: PartRequest = {
         description: entry.description.trim(),
+        // Synergy Desc2 (item code) for catalog picks. Only written when set,
+        // so manual requests stay exactly as lean on the JSONB as before —
+        // same convention as shipping_method below.
+        ...(entry.description2?.trim() ? { description_2: entry.description2.trim() } : {}),
         quantity: Number(entry.quantity) || 1,
         ...(entry.detail?.trim() ? { detail: entry.detail.trim() } : {}),
         ...(entry.productNumber?.trim() ? { product_number: entry.productNumber.trim() } : {}),
@@ -375,13 +379,23 @@ export default function PmPartsSection({
         {/* Parts list */}
         {parts.length > 0 && (
           <div>
-            {parts.map((part, i) => (
+            {parts.map((part, i) => {
+              const partLines = partDescriptionLines(part)
+              return (
               <div key={i} className="flex flex-col gap-2 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <div className="flex-1 min-w-0">
-                    <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{partLabel(part)}</span>
+                    <span className={`text-sm font-medium ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>{partLines.label}</span>
                     {part.product_number && isTech && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">#{part.product_number}</span>
+                    )}
+                    {/* Synergy Description 2 — the office's item code
+                        (feedback #96). Split off the label above rather than
+                        appended, so it never renders twice. */}
+                    {partLines.itemCode && (
+                      <span className={`block font-mono text-xs mt-0.5 ${part.cancelled ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-600 dark:text-gray-300'}`}>
+                        {partLines.itemCode}
+                      </span>
                     )}
                     <PartQuantityField
                       part={part}
@@ -535,7 +549,8 @@ export default function PmPartsSection({
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 

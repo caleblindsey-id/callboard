@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
-import { shouldSearchProducts } from '@/lib/products-search'
+import { shouldSearchProducts, productDescriptionLines, productLabel } from '@/lib/products-search'
 import type { PartEntry, ProductResult } from './TicketActions'
 
 // ──────────────────────────────────────────────
@@ -65,10 +65,13 @@ function handlePartSearch(
     const q = sanitizeOrValue(value.trim())
     const { data } = await supabase
       .from('products')
-      .select('id, synergy_id, number, description, unit_price, requires_detail')
+      .select('id, synergy_id, number, description, description_1, description_2, unit_price, requires_detail')
       .or(safeOrRaw([
         { column: 'number', op: 'ilike', raw: `%${q}%` },
         { column: 'description', op: 'ilike', raw: `%${q}%` },
+        // Desc2 (item codes) as an explicit, trigram-indexed match target —
+        // migration 167. See useProductSearch for the full rationale.
+        { column: 'description_2', op: 'ilike', raw: `%${q}%` },
       ]))
       .order('number')
       .limit(25)
@@ -98,7 +101,11 @@ function handleSelectProduct(
     const updated = [...prev]
     updated[index] = {
       ...updated[index],
-      description: `${product.number} - ${product.description ?? ''}`,
+      // Same string as before ("<number> - <desc1> <desc2>") — it is the
+      // billable line description. description2 rides alongside so the UI can
+      // show that half on its own (feedback #96).
+      description: productLabel(product),
+      description2: productDescriptionLines(product).secondary,
       unitPrice: zeroPrices ? '0' : String(product.unit_price ?? 0),
       synergyProductId: Number(product.synergy_id),
       isFromDb: true,
@@ -174,8 +181,11 @@ export function renderPartsSection({
                 ref={(el) => { comboMap.current.set(i, el) }}
               >
                 {part.isFromDb ? (
-                  <div className="flex items-center gap-1 rounded-md border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 h-[44px] sm:h-[34px] text-sm text-gray-900 dark:text-white">
-                    <span className="flex-1 truncate">{part.description}</span>
+                  // Wraps instead of ellipsing: Desc2 sits at the TAIL of the
+                  // description, so a single-line `truncate` here cut off the
+                  // item code first — the complaint in feedback #96.
+                  <div className="flex items-start gap-1 rounded-md border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 py-2 min-h-[44px] sm:min-h-[34px] text-sm text-gray-900 dark:text-white">
+                    <span className="flex-1 min-w-0 break-words">{part.description}</span>
                     <button
                       type="button"
                       onClick={() => handleClearProduct(i, setter)}
@@ -195,7 +205,9 @@ export function renderPartsSection({
                 )}
                 {part.searchOpen && part.searchResults.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    {part.searchResults.map((product) => (
+                    {part.searchResults.map((product) => {
+                      const lines = productDescriptionLines(product)
+                      return (
                       <button
                         key={product.id}
                         type="button"
@@ -203,14 +215,22 @@ export function renderPartsSection({
                         className="w-full text-left px-3 py-3 sm:py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
                       >
                         <span className="font-medium text-gray-900 dark:text-white">{product.number}</span>
-                        <span className="text-gray-500 dark:text-gray-400"> — {product.description ?? ''}</span>
+                        <span className="text-gray-500 dark:text-gray-400"> — {lines.primary}</span>
+                        {/* Description 2 on its own line — where the office's
+                            item codes live (feedback #96). */}
+                        {lines.secondary && (
+                          <span className="block text-gray-600 dark:text-gray-300 font-mono text-xs mt-0.5">
+                            {lines.secondary}
+                          </span>
+                        )}
                         {options.showPrices && product.unit_price != null && (
                           <span className="text-green-700 dark:text-green-400 sm:float-right font-medium block sm:inline mt-0.5 sm:mt-0">
                             ${product.unit_price.toFixed(2)}
                           </span>
                         )}
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
                 {part.searchOpen && !part.searching && part.searchResults.length === 0 && part.description.trim() && (

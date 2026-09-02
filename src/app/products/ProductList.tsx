@@ -4,6 +4,7 @@ import { Package } from 'lucide-react'
 import { useProductSearch, type ProductSearchResult } from '@/lib/hooks/useProductSearch'
 import { sanitizeOrValue } from '@/lib/db/safe-or'
 import { formatDate } from '@/lib/format'
+import { productDescriptionLines } from '@/lib/products-search'
 import FilterBar from '@/components/ui/FilterBar'
 import DataTable, { type DataTableColumn } from '@/components/ui/DataTable'
 import EmptyState, { emptyCopy } from '@/components/ui/EmptyState'
@@ -28,7 +29,25 @@ const PRODUCT_COLUMNS: DataTableColumn<ProductSearchResult>[] = [
     sortValue: (p) => p.description,
     className: 'text-gray-900 dark:text-white',
     cardLabel: '',
-    render: (p) => p.description ?? '—',
+    // Synergy's two description fields on separate lines. Desc2 carries the
+    // office's item codes (feedback #96) and used to be indistinguishable from
+    // Desc1 in the joined string. Falls back to the joined `description` on
+    // rows not yet re-synced since migration 167.
+    render: (p) => {
+      const lines = productDescriptionLines(p)
+      if (!lines.primary) return '—'
+      if (!lines.secondary) return lines.primary
+      // <span className="block">, not <div>: DataTable's MobileCard renders a
+      // column's value inside a <p>, and a <div> there is invalid nesting —
+      // React reports it as a hydration error. Spans are phrasing content and
+      // are legal in both the <p> (mobile card) and the <td> (desktop table).
+      return (
+        <>
+          <span className="block">{lines.primary}</span>
+          <span className="block font-mono text-xs text-gray-600 dark:text-gray-300">{lines.secondary}</span>
+        </>
+      )
+    },
   },
   {
     key: 'unit_price',
@@ -60,13 +79,13 @@ export default function ProductList() {
         search={{
           value: query,
           onChange: setQuery,
-          placeholder: 'Search by product number or description...',
+          placeholder: 'Search by product number, description, or item code...',
         }}
       />
 
       {!trimmed ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          Search by item # or description to look up a product.
+          Search by item #, description, or the item code in Description 2 to look up a product.
         </div>
       ) : !settled ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden p-8 text-center text-sm text-gray-500 dark:text-gray-400">

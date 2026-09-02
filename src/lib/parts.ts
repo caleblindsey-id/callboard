@@ -779,6 +779,38 @@ export function partLabel(
 }
 
 /**
+ * Split a stored part line into its main label and the Synergy Desc2 tail
+ * (the office's item code) so the two can be shown on separate lines.
+ *
+ * The stored `description` snapshot is the joined "<number> - <desc1> <desc2>"
+ * string and ALREADY ends with Desc2 — `description_2` is only carried
+ * alongside it (feedback #96) so the tail can be identified. So this strips the
+ * tail off the label rather than appending it, or the item code would render
+ * twice.
+ *
+ * Falls back to the plain label whenever the split can't be made safely:
+ * no `description_2` (manual lines, catalog parts without a Desc2, and every
+ * row saved before the field existed), or a `description` that does not
+ * actually end with it (a hand-edited line). In those cases the Desc2 text is
+ * still visible — it's just inside the main label, exactly as before.
+ */
+export function partDescriptionLines(
+  part: { description?: string | null; description_2?: string | null; detail?: string | null }
+): { label: string; itemCode: string | null } {
+  const label = partLabel(part)
+  const code = (part.description_2 ?? '').trim()
+  if (!code) return { label, itemCode: null }
+  const desc = (part.description ?? '').trim()
+  if (!desc.endsWith(code)) return { label, itemCode: null }
+  const head = desc.slice(0, desc.length - code.length).trim()
+  // A description that is nothing BUT the Desc2 tail has no main label left to
+  // show, so keep it whole rather than rendering an empty first line.
+  if (!head) return { label, itemCode: null }
+  const detail = (part.detail ?? '').trim()
+  return { label: detail ? `${head} — ${detail}` : head, itemCode: code }
+}
+
+/**
  * The outcome of deciding which parts array a completion should persist.
  * `would_blank` means the caller asked to empty a work order that currently has
  * billable lines on it, which is refused rather than obeyed.

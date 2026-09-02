@@ -571,7 +571,14 @@ def sync_products(conn) -> int:
 
     products = []
     for row in rows:
-        # Combine Desc1 and Desc2, skip Desc2 if blank
+        # Combine Desc1 and Desc2, skip Desc2 if blank.
+        #
+        # `description` keeps the joined form it has always had — every stored
+        # parts_requested/parts_used snapshot, the 121 trigram index, and every
+        # existing read depend on it. The two halves are ALSO written separately
+        # (migration 167) because the join is not reversible: Desc1 is not padded
+        # to 30, so the UI cannot split "desc1 desc2" back apart to show Desc2 —
+        # which carries the office's item codes — as its own field (feedback #96).
         desc1 = safe_str(row.Desc1) or ""
         desc2 = safe_str(row.Desc2)
         description = (f"{desc1} {desc2}".strip()) if desc2 else desc1 or None
@@ -614,6 +621,10 @@ def sync_products(conn) -> int:
             "synergy_id": str(row.ProdCode).strip(),
             "number": str(row.ProdCode).strip(),
             "description": description,
+            # Migration 167 — the same two fields, unjoined, so the part pickers
+            # can show and search Desc2 (item codes) on its own.
+            "description_1": desc1 or None,
+            "description_2": desc2 or None,
             "unit_price": float(row.ListPrice1) if row.ListPrice1 is not None else None,
             "unit_cost": unit_cost,
             "vendor_code": vendor_code,

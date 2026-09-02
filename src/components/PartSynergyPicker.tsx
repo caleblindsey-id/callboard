@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizeOrValue, safeOrRaw } from '@/lib/db/safe-or'
-import { shouldSearchProducts } from '@/lib/products-search'
+import { shouldSearchProducts, productDescriptionLines } from '@/lib/products-search'
 import { Check, Pencil } from 'lucide-react'
 
 interface ProductSearchResult {
@@ -11,6 +11,10 @@ interface ProductSearchResult {
   synergy_id: string
   number: string
   description: string | null
+  // Synergy Desc1/Desc2, unjoined (migration 167). Desc2 carries the office's
+  // item codes and is rendered on its own line below. NULL until re-sync.
+  description_1: string | null
+  description_2: string | null
 }
 
 interface PartSynergyPickerProps {
@@ -52,10 +56,13 @@ export default function PartSynergyPicker({
       const supabase = createClient()
       const { data } = await supabase
         .from('products')
-        .select('id, synergy_id, number, description')
+        .select('id, synergy_id, number, description, description_1, description_2')
         .or(safeOrRaw([
           { column: 'number', op: 'ilike', raw: `%${q}%` },
           { column: 'description', op: 'ilike', raw: `%${q}%` },
+          // Desc2 (item codes) as an explicit, trigram-indexed match target —
+          // migration 167. See useProductSearch for the full rationale.
+          { column: 'description_2', op: 'ilike', raw: `%${q}%` },
         ]))
         .order('number')
         .limit(10)
@@ -182,7 +189,9 @@ export default function PartSynergyPicker({
               No catalog match. Use &quot;<span className="font-mono">{search.trim()}</span>&quot; anyway.
             </button>
           )}
-          {!searching && results.map(p => (
+          {!searching && results.map(p => {
+            const lines = productDescriptionLines(p)
+            return (
             <button
               key={p.id}
               type="button"
@@ -190,11 +199,19 @@ export default function PartSynergyPicker({
               className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
             >
               <span className="font-mono text-gray-900 dark:text-white">{p.number}</span>
-              {p.description && (
-                <span className="text-gray-500 dark:text-gray-400"> — {p.description}</span>
+              {lines.primary && (
+                <span className="text-gray-500 dark:text-gray-400"> — {lines.primary}</span>
+              )}
+              {/* Description 2 on its own line — the office's item codes
+                  (feedback #96). */}
+              {lines.secondary && (
+                <span className="block font-mono text-xs text-gray-600 dark:text-gray-300 mt-0.5">
+                  {lines.secondary}
+                </span>
               )}
             </button>
-          ))}
+            )
+          })}
           {!searching && results.length > 0 && (
             <button
               type="button"
