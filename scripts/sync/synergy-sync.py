@@ -1456,9 +1456,17 @@ def trigger_credit_hold_sweep() -> None:
 
 def main_products_only() -> None:
     """Lightweight refresh of just the product catalog (incl. qty_on_hand /
-    qty_on_po). Scheduled hourly so the parts-queue Review step shows fresh stock
-    numbers, without re-running the heavy customer/contact/ship-to sync. Reuses
-    sync_products (full upsert with complete data, so no risk of junk rows)."""
+    qty_on_po), without re-running the heavy customer/contact/ship-to sync.
+    Reuses sync_products (full upsert with complete data, so no risk of junk
+    rows).
+
+    NOT SCHEDULED, deliberately. Everything this does — sync_products +
+    sync_po_lines — is a strict subset of the 5 AM nightly main(), and Synergy's
+    source data is rebuilt by an overnight batch, so re-running it during the day
+    re-reads and re-upserts ~2,600 unchanged rows for no new information. Kept as
+    a manual entry point (`--products-only`) for exactly one case: pulling the
+    catalog immediately after a code or schema change, instead of waiting for
+    5 AM. See setup-inventory-refresh-task.ps1 before scheduling it."""
     log.info("=" * 60)
     log.info("PM Scheduler — Hourly Product/Inventory Refresh starting")
     log.info("=" * 60)

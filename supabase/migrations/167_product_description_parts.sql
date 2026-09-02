@@ -22,10 +22,14 @@
 -- the primary line and Desc2 as its own labeled line, falling back to
 -- `description` wherever the new columns are still NULL.
 --
--- These columns stay NULL until the updated scripts/sync/synergy-sync.py runs
--- (hourly `--products-only` refresh). They cannot be backfilled from existing
--- data: splitting "desc1 desc2" back into its parts is ambiguous, since Desc1 is
--- variable-length. The fallback path above is what covers that window.
+-- These columns stay NULL until the updated scripts/sync/synergy-sync.py runs.
+-- That is the 5 AM nightly sync ("CallBoard - Nightly Synergy Sync"), which is
+-- the ONLY thing that refreshes products: Synergy's own source data is rebuilt
+-- by an overnight batch, so there is nothing new to pick up during the day.
+--
+-- They cannot be backfilled from existing data: splitting "desc1 desc2" back
+-- into its parts is ambiguous, since Desc1 is variable-length. The fallback
+-- path above is what covers that window.
 ALTER TABLE products
   ADD COLUMN IF NOT EXISTS description_1 TEXT,
   ADD COLUMN IF NOT EXISTS description_2 TEXT;
