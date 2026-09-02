@@ -14,6 +14,7 @@ import {
   partsAllFulfilled,
   partsAwaitingReview,
   partsMissingFromWorkOrder,
+  partsMissingFromEstimate,
   requestToUsedLine,
 } from '@/lib/parts'
 import {
@@ -827,6 +828,59 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
   }
 
   // ── Actions ──
+
+  // Opening the estimate builder pulls in any requested part that isn't quoted
+  // yet.
+  //
+  // `parts_requested` (procurement) and `estimate_parts` (the customer's quote)
+  // are unlinked arrays and only the latter feeds estimate_amount, so a tech
+  // who requests parts first — which is the DESIGNED order, since the Parts
+  // Queue deliberately holds service parts until the estimate is approved (see
+  // isHeldForEstimate) — opened an empty builder and quoted labor only.
+  // Feedback #97: $699.83 of parts requested, estimate submitted at $360 for a
+  // $1,059.83 job, and the customer approved that. Ten tickets since June went
+  // out understated the same way.
+  //
+  // Seeded here, in the open handler, rather than in an effect. An effect that
+  // sets state on mount is a CI error under react-hooks/set-state-in-effect
+  // (AGENTS.md), and it would also fire for anyone merely VIEWING the ticket —
+  // whose 3s autosave would then persist a quote nobody authored.
+  //
+  // Runs on every open, not only when the estimate is empty: quoting three
+  // parts and later requesting a fourth is the same understated-quote bug on
+  // the second pass. The cost of that choice is that a deliberately deleted
+  // line comes back on reopen (the PM completion seed avoids this with a
+  // completion_seeded_at stamp). That trade is deliberate — a resurrected line
+  // is sitting in front of the tech on the very screen they must review before
+  // submitting, whereas an omitted one is invisible until the customer
+  // disputes the invoice.
+  //
+  // Lines are built through requestToUsedLine so a seeded line is
+  // indistinguishable from a hand-entered one and carries from_request_at,
+  // which is what makes the dedupe an exact link rather than description
+  // guessing (both service converters round-trip the field).
+  function openEstimateForm(open: boolean) {
+    if (!open) {
+      setShowEstimateForm(false)
+      return
+    }
+    setEstimateParts((prev) => {
+      const missing = partsMissingFromEstimate(partsRequested, toServicePartUsed(prev))
+      if (missing.length === 0) return prev
+      // alreadyRequested renders "✓ Requested" in place of the per-row Request
+      // button. Correct by construction here — every seeded line IS a live
+      // request — and load-bearing: the flag is otherwise only set by an
+      // in-session Request click, so without it each seeded row would offer to
+      // request a part that is already on order, appending a duplicate to the
+      // append-only parts_requested array.
+      const seeded = partsFromSaved(missing.map((r) => requestToUsedLine(r))).map((e) => ({
+        ...e,
+        alreadyRequested: true,
+      }))
+      return [...prev, ...seeded]
+    })
+    setShowEstimateForm(true)
+  }
 
   async function handleSubmitEstimate(e: React.FormEvent) {
     e.preventDefault()
@@ -2536,7 +2590,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           isWarrantyOpen={isWarrantyOpen}
           partsBlocking={partsBlocking}
           showEstimateForm={showEstimateForm}
-          setShowEstimateForm={setShowEstimateForm}
+          setShowEstimateForm={openEstimateForm}
           showCompletionForm={showCompletionForm}
           setShowCompletionForm={setShowCompletionForm}
           setBypassOpen={setBypassOpen}
@@ -2904,7 +2958,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
           equipmentToVerify={equipmentToVerify}
           onEquipmentVerified={handleEquipmentVerified}
           showEstimateForm={showEstimateForm}
-          setShowEstimateForm={setShowEstimateForm}
+          setShowEstimateForm={openEstimateForm}
           estimateRateType={estimateRateType}
           setEstimateRateType={setEstimateRateType}
           estimateLaborHours={estimateLaborHours}
@@ -3400,7 +3454,7 @@ export function ServiceTicketDetail({ ticket, userRole, userId, laborRate, labor
             <div className="space-y-2">
               <button
                 type="button"
-                onClick={() => setShowEstimateForm(true)}
+                onClick={() => openEstimateForm(true)}
                 className="w-full px-5 py-3 text-sm font-semibold text-white bg-yellow-600 rounded-md hover:bg-yellow-700 transition-colors min-h-[48px]"
               >
                 {ticket.estimate_amount != null ? 'Revise Estimate' : 'Build Estimate'}

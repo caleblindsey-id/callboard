@@ -11,6 +11,7 @@ import {
   fulfilledRequestedParts,
   resolveCompletionParts,
   partsMissingFromWorkOrder,
+  partsMissingFromEstimate,
   partsMarkedNotUsed,
   requestToUsedLine,
   isCoveredByAgreement,
@@ -1037,4 +1038,68 @@ test('partsHeldForEstimate holds nothing once the estimate is approved', () => {
 test('partsHeldForEstimate tolerates a null parts array', () => {
   assert.deepEqual(partsHeldForEstimate('open', null), [])
   assert.deepEqual(partsHeldForEstimate('open', undefined), [])
+})
+
+// ── partsMissingFromEstimate ──
+
+test('a requested part with no estimate line at all is missing from the estimate', () => {
+  // Feedback #97: the exact shape of Richard Bryant's ticket — three parts
+  // requested, estimate built with labor only, customer quoted $360 for a
+  // $1,059.83 job.
+  const part = manual({ status: 'pending_review' })
+  assert.deepEqual(partsMissingFromEstimate([part], []), [part])
+})
+
+test('unfulfilled requested parts still count for the estimate', () => {
+  // The key difference from partsMissingFromWorkOrder, which only considers
+  // received/from_stock parts. You quote what you intend to install, and the
+  // Parts Queue deliberately HOLDS service parts until the estimate is
+  // approved (isHeldForEstimate) — so at estimate time nothing is fulfilled
+  // yet. Reusing the work-order predicate here would report nothing missing
+  // on exactly the tickets this is meant to catch.
+  const ordered = manual({ status: 'ordered' })
+  const review = manual({ status: 'pending_review', description: 'Brush cover' })
+  assert.deepEqual(partsMissingFromEstimate([ordered, review], []), [ordered, review])
+})
+
+test('a cancelled request is never missing from the estimate', () => {
+  // The office cancelling a request is a deliberate "not on this job".
+  assert.deepEqual(
+    partsMissingFromEstimate([manual({ status: 'cancelled', cancelled: true })], []),
+    []
+  )
+})
+
+test('a part already quoted on the estimate is not missing', () => {
+  const part = manual({ status: 'pending_review' })
+  const line = used({ description: 'Drive belt' })
+  assert.deepEqual(partsMissingFromEstimate([part], [line]), [])
+})
+
+test('a seeded estimate line matches its request exactly via from_request_at', () => {
+  // Seeding routes through requestToUsedLine, which stamps from_request_at, and
+  // both service converters round-trip it. That exact link is what stops a
+  // reopened builder from double-adding a part whose description the tech
+  // rewrote.
+  const part = manual({ status: 'pending_review', requested_at: '2026-09-01T17:47:03.397Z' })
+  const line = requestToUsedLine(part)
+  assert.equal(line.from_request_at, '2026-09-01T17:47:03.397Z')
+  assert.deepEqual(partsMissingFromEstimate([part], [line]), [])
+})
+
+test('a part requested after the estimate was built is reported missing', () => {
+  // The incremental case: quoting three parts then requesting a fourth must
+  // still flag the fourth, or the same understated-quote bug returns on the
+  // second pass.
+  const quoted = manual({ status: 'pending_review', description: 'AGM batteries' })
+  const late = manual({ status: 'pending_review', description: 'Hub', requested_at: '2026-09-02T19:07:57.757Z' })
+  assert.deepEqual(
+    partsMissingFromEstimate([quoted, late], [requestToUsedLine(quoted)]),
+    [late]
+  )
+})
+
+test('partsMissingFromEstimate tolerates null/undefined inputs', () => {
+  assert.deepEqual(partsMissingFromEstimate(null, null), [])
+  assert.deepEqual(partsMissingFromEstimate(undefined, undefined), [])
 })
