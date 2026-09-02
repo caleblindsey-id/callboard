@@ -172,6 +172,45 @@ export function partsMissingFromWorkOrder(
 }
 
 /**
+ * Live requested parts that aren't on the estimate yet.
+ *
+ * The estimate-side twin of partsMissingFromWorkOrder, and it exists for the
+ * same structural reason: `parts_requested` (procurement) and `estimate_parts`
+ * (the customer's quote) are separate JSONB arrays with no foreign key, and
+ * only the latter feeds estimate_amount. A tech who works in the natural order
+ * — diagnose, request the parts, then quote — opened the builder to an empty
+ * parts list and quoted labor only. Feedback #97: three parts worth $699.83
+ * requested, estimate submitted at $360, customer approved a quote for a
+ * $1,059.83 job. Ten tickets since June went out the same way.
+ *
+ * Two deliberate differences from the work-order predicate:
+ *
+ *  1. The base population is every NON-CANCELLED request, not just the
+ *     fulfilled ones. Estimating happens BEFORE fulfillment by design — the
+ *     Parts Queue holds service parts until the estimate is approved (see
+ *     isHeldForEstimate) — so filtering to received/from_stock would report
+ *     nothing missing on precisely the tickets this is meant to catch.
+ *  2. No wo_excluded_at filter. That stamp means "the tech didn't end up
+ *     installing this", which is a completion-time judgement about a part
+ *     already in hand; it says nothing about what belonged in the quote.
+ *
+ * Shares usedLineMatchesRequest with the work-order side so the two can never
+ * disagree about whether a given request is already represented on a list.
+ */
+export function partsMissingFromEstimate(
+  requested: PartRequest[] | null | undefined,
+  estimateParts: PartUsed[] | null | undefined
+): PartRequest[] {
+  const quoted = estimateParts ?? []
+  return (requested ?? []).filter(
+    (r) =>
+      !r.cancelled &&
+      r.status !== 'cancelled' &&
+      !quoted.some((q) => usedLineMatchesRequest(q, r))
+  )
+}
+
+/**
  * Fulfilled requested parts a tech deliberately marked "not used".
  *
  * The exact complement of partsMissingFromWorkOrder's `wo_excluded_at` filter,
